@@ -1,0 +1,5 @@
+"Metamod Plugin"
+{
+	"alias"	"BotLocker"
+	"file"	"addons/BotLocker/bin/win64/BotLocker"
+}

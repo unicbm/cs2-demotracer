@@ -1,0 +1,37 @@
+# Rust
+/converter/target/
+/target/
+
+# .NET / CounterStrikeSharp
+/css/bin/
+/css/obj/
+*.user
+*.suo
+
+# Native runtime builds
+/runtime/BotMimicRuntime/build/
+/runtime/BotMimicRuntime/out/
+*.dll
+*.pdb
+*.lib
+*.exp
+*.obj
+*.exe
+
+# Local conversion data
+/output/
+/tmp/
+/converter/output/
+*.dem
+*.cs2rec
+*.log
+*.tmp
+
+# IDE
+/.vs/
+/.idea/
+.vscode/
+
+# Avoid accidentally committing full upstream checkouts or test assets.
+/third_party/demoparser/src/parser/test_demo.dem
+/third_party/demoparser/src/csgoproto/GameTracking-CS2/.git/

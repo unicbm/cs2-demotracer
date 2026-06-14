@@ -1,0 +1,90 @@
+{
+  "CCSBot::EquipBestWeapon": {
+    "signatures": {
+      "library": "server",
+      "windows": "48 89 5C 24 ? 48 89 74 24 ? 57 48 83 EC ? 48 8B F9 84 D2",
+      "linux": ""
+    },
+    "comment": "Bot: bot picks and equips its best weapon."
+  },
+  "CCSBot::EquipPistol": {
+    "signatures": {
+      "library": "server",
+      "windows": "48 89 5C 24 ? 48 89 74 24 ? 57 48 83 EC ? 48 8B D9 84 D2",
+      "linux": ""
+    },
+    "comment": "Bot: bot switches to its pistol secondary."
+  },
+  "CCSPlayer_WeaponServices::SelectItem": {
+    "signatures": {
+      "library": "server",
+      "windows": "48 89 5C 24 ? 48 89 6C 24 ? 48 89 74 24 ? 57 48 83 EC ? 41 8B E8 48 8B DA 48 8B F1",
+      "linux": ""
+    },
+    "comment": "Funnel for any weapon switch"
+  },
+  "CCSPlayer_WeaponServices::GetSlot": {
+    "signatures": {
+      "library": "server",
+      "windows": "48 89 5C 24 ? 48 89 6C 24 ? 48 89 74 24 ? 48 89 7C 24 ? 41 54 41 56 41 57 48 83 EC ? 45 33 E4 45 8B F0",
+      "linux": ""
+    },
+    "comment": "Returns the weapon in engine slot N (0=primary, 1=pistol, 2=knife)."
+  },
+  "CCSBot::Update": {
+    "signatures": {
+      "library": "server",
+      "windows": "40 55 56 57 41 55 48 8D AC 24 ? ? ? ? 48 81 EC ? ? ? ? 48 8D 05",
+      "linux": ""
+    },
+    "comment": "Per-tick decision entry; PathFollower + look-around + reaction + weapon."
+  },
+  "CCSBot::Upkeep": {
+    "signatures": {
+      "library": "server",
+      "windows": "40 53 57 41 54 48 81 EC",
+      "linux": ""
+    },
+    "comment": "Per-frame view mBotntenance; UpdateLookAround + jitter + UpdateLookAngles."
+  },
+  "CCSBot::Jump": {
+    "signatures": {
+      "library": "server",
+      "windows": "48 89 5C 24 ? 57 48 83 EC ? 48 8B D9 0F B6 FA 48 8B 49 ? 48 8B 91",
+      "linux": ""
+    },
+    "comment": "Bot requests a jump."
+  },
+  "CCSBot::UpdateLookAngles": {
+    "signatures": {
+      "library": "server",
+      "windows": "40 55 53 56 57 48 8D 6C 24 ? 48 81 EC ? ? ? ? 48 8D 05",
+      "linux": ""
+    },
+    "comment": "Spring-smooths view to m_lookPitch/m_lookYaw."
+  },
+  "CCSPlayerPawn::SetEyeAngles": {
+    "signatures": {
+      "library": "server",
+      "windows": "48 89 5C 24 ? 48 89 74 24 ? 48 89 7C 24 ? 55 48 8D 6C 24 ? 48 81 EC ? ? ? ? 48 8B DA 48 8B F1 48 8D 55",
+      "linux": ""
+    },
+    "comment": "Engine eye-angle."
+  },
+  "CCSPlayer_MovementServices::ProcessMovement": {
+    "signatures": {
+      "library": "server",
+      "windows": "40 57 41 57 48 81 EC B8 00 00 00",
+      "linux": ""
+    },
+    "comment": "Per-tick movement entry; 2nd arg is CMoveData."
+  },
+  "CCSPlayer_MovementServices::PhysicsSimulate": {
+    "signatures": {
+      "library": "server",
+      "windows": "40 55 53 56 57 41 54 41 56 48 8D AC 24 ? ? ? ? 48 81 EC",
+      "linux": ""
+    },
+    "comment": "Per-tick physics entry; replay pre-write + moveType restore."
+  }
+}

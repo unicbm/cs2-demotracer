@@ -1,0 +1,26 @@
+build/
+out/
+deassemble/
+cmake-build-*/
+.claude/
+*.dll
+*.exp
+*.lib
+*.pdb
+*.obj
+
+# .NET (csharp/BotRecorder)
+bin/
+obj/
+*.nupkg
+project.assets.json
+
+.vs/
+.vscode/
+.idea/
+*.user
+CMakeSettings.json
+CMakeUserPresets.json
+
+*.log
+CLAUDE.md
