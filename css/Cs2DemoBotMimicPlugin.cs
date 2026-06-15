@@ -663,6 +663,9 @@ public sealed class Cs2DemoBotMimicPlugin : BasePlugin
         uint equipment = 0;
         foreach (var bot in bots)
         {
+            if (bot.PlayerPawn is not { IsValid: true, Value.IsValid: true })
+                continue;
+
             var pawn = bot.PlayerPawn.Value;
             if (pawn.WeaponServices == null)
                 continue;
