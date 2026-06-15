@@ -5,6 +5,7 @@
 #include "WeaponLocker.h"
 #include "BotController.h"
 #include "InputInjector.h"
+#include "MotionRecorder.h"
 #include "WeaponLockerState.h"
 #include "BotControllerState.h"
 
@@ -119,6 +120,18 @@ namespace BotController
                 return "jump";
             }
             return "?";
+        }
+
+        static const char *ViewDebugName(int target, char *buf, size_t len)
+        {
+            if (target == -2)
+                return "all";
+            if (target >= 0)
+            {
+                std::snprintf(buf, len, "slot%d", target);
+                return buf;
+            }
+            return "off";
         }
     }
 }
@@ -245,6 +258,55 @@ CON_COMMAND_F(bc_unlock_all,
                                 "[BC] error: unlock_all failed (rc=%d)\n", rc);
 }
 
+CON_COMMAND_F(bc_view_debug,
+              "bc_view_debug <0|1> [slot]  Toggle replay view phase debug logs.",
+              FCVAR_NONE)
+{
+    using namespace BotController;
+
+    if (args.ArgC() < 2)
+    {
+        Commands::PrintToCaller(context,
+                                "usage: bc_view_debug <0|1> [slot]\n");
+        return;
+    }
+
+    int target = -1;
+    if (std::strcmp(args.Arg(1), "0") == 0 ||
+        std::strcmp(args.Arg(1), "off") == 0)
+    {
+        target = -1;
+    }
+    else if (std::strcmp(args.Arg(1), "1") == 0 ||
+             std::strcmp(args.Arg(1), "on") == 0)
+    {
+        target = -2;
+        if (args.ArgC() >= 3)
+        {
+            target = std::atoi(args.Arg(2));
+            if (target < 0 || target >= MotionRecorder::kMaxSlots)
+            {
+                Commands::PrintToCaller(context,
+                                        "[BC] error: slot must be 0..%d\n",
+                                        MotionRecorder::kMaxSlots - 1);
+                return;
+            }
+        }
+    }
+    else
+    {
+        Commands::PrintToCaller(context,
+                                "usage: bc_view_debug <0|1> [slot]\n");
+        return;
+    }
+
+    MotionRecorder::SetViewDebugTarget(target);
+    char name[32];
+    Commands::PrintToCaller(context, "[BC] view_debug=%s\n",
+                            Commands::ViewDebugName(
+                                MotionRecorder::ViewDebugTarget(), name, sizeof(name)));
+}
+
 CON_COMMAND_F(bc_status,
               "bc_status  Print hook status and every per-slot lock.",
               FCVAR_NONE)
@@ -276,6 +338,13 @@ CON_COMMAND_F(bc_status,
                             "[BC] usercmd hook fired: %llu times | last slot=%d\n",
                             (unsigned long long)InputInjector::HookCallCount(),
                             InputInjector::LastResolvedSlot());
+
+    char viewDebugName[32];
+    Commands::PrintToCaller(context,
+                            "[BC] view_debug: %s\n",
+                            Commands::ViewDebugName(
+                                MotionRecorder::ViewDebugTarget(),
+                                viewDebugName, sizeof(viewDebugName)));
 
     // All lock
     int nAll = BotControllerState::CountAll();

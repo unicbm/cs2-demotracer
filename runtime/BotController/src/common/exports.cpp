@@ -2,6 +2,7 @@
 
 #include "dispatch.h"
 #include "MotionRecorder.h"
+#include "InputInjector.h"
 
 #include <cstdint>
 #include <vector>
@@ -33,6 +34,11 @@ extern "C" __declspec(dllexport) int BotController_IsLocked(int slot, int kind)
 extern "C" __declspec(dllexport) int BotController_GetVersion()
 {
     return 10;
+}
+
+extern "C" __declspec(dllexport) int BotController_SetControllerControllingBotOffset(int offset)
+{
+    return BotController::InputInjector::SetControllerControllingBotOffset(offset) ? 0 : -1;
 }
 
 // ---- Motion recording & replay ----

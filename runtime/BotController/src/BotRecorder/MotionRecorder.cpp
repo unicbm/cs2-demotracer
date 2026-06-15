@@ -1,6 +1,7 @@
 // Motion recording & replay implementation
 
 #include "MotionRecorder.h"
+#include "BotController.h"
 #include "InputInjector.h"
 #include "WeaponLocker.h"
 #include "version_targets.h"
@@ -62,8 +63,49 @@ namespace BotController
         static float g_recLastNodeX[kMaxSlots] = {0};
         static float g_recLastNodeY[kMaxSlots] = {0};
         static bool g_recHaveLast[kMaxSlots] = {false};
+        static std::atomic<int> g_viewDebugTarget{-1};
+        static int g_viewDebugLastSeaCursor[kMaxSlots] = {0};
+        static int g_viewDebugSeaCalls[kMaxSlots] = {0};
 
         static bool ValidSlot(int s) { return s >= 0 && s < kMaxSlots; }
+
+        static float NormalizeDeg(float a)
+        {
+            a = std::fmod(a + 180.0f, 360.0f);
+            if (a < 0.0f)
+                a += 360.0f;
+            return a - 180.0f;
+        }
+
+        static float AngleDelta(float to, float from)
+        {
+            return NormalizeDeg(to - from);
+        }
+
+        static bool ShouldViewDebug(int slot)
+        {
+            int target = g_viewDebugTarget.load(std::memory_order_relaxed);
+            return target == -2 || target == slot;
+        }
+
+        static void DebugReplayView(const char *phase, int slot, int cursor,
+                                    const ReplayTick &t)
+        {
+            if (!ShouldViewDebug(slot))
+                return;
+
+            char dbg[256];
+            std::snprintf(dbg, sizeof(dbg),
+                          "[BC][view][%s] slot=%d cursor=%d pre=(%.2f,%.2f) "
+                          "post=(%.2f,%.2f) d=(%.2f,%.2f) nSub=%u\n",
+                          phase, slot, cursor,
+                          t.pre.pitch, NormalizeDeg(t.pre.yaw),
+                          t.post.pitch, NormalizeDeg(t.post.yaw),
+                          t.post.pitch - t.pre.pitch,
+                          AngleDelta(t.post.yaw, t.pre.yaw),
+                          t.numSubtick);
+            OutputDebugStringA(dbg);
+        }
 
         // Read a MovementSnapshot from live engine state (services -> pawn).
         static bool ReadSnapshot(void *services, MovementSnapshot &out)
@@ -424,7 +466,24 @@ namespace BotController
             return static_cast<int>(p.ticks.size());
         }
 
-        // cursor points at the NEXT tick; the one just applied is cursor-1.
+        bool ReplayTickForSimulation(int slot, ReplayTick &out)
+        {
+            if (!ValidSlot(slot))
+                return false;
+            ReplayState &p = g_rep[slot];
+            if (!p.playing.load(std::memory_order_acquire))
+                return false;
+            std::lock_guard<std::mutex> lk(p.mu);
+            int total = static_cast<int>(p.ticks.size());
+            int cur = p.cursor.load(std::memory_order_relaxed);
+            if (cur < 0 || cur >= total)
+                return false;
+            out = p.ticks[cur];
+            return true;
+        }
+
+        // Public status API: cursor points at the next tick, so the last
+        // applied tick is cursor - 1. Clamp at 0 during the opening tick.
         bool CurrentReplayTick(int slot, ReplayTick &out)
         {
             if (!ValidSlot(slot))
@@ -452,10 +511,8 @@ namespace BotController
                 return -1;
             std::lock_guard<std::mutex> lk(p.mu);
             int total = static_cast<int>(p.ticks.size());
-            int idx = p.cursor.load(std::memory_order_relaxed) - 1;
-            if (idx < 0)
-                idx = 0;
-            if (idx >= total)
+            int idx = p.cursor.load(std::memory_order_relaxed);
+            if (idx < 0 || idx >= total)
                 return -1;
             uint32_t begin = p.subOffset[idx];
             uint32_t end = p.subOffset[idx + 1];
@@ -551,6 +608,30 @@ namespace BotController
             return WeaponLockerHooks::WeaponEntIndex(weapon);
         }
 
+        static void WriteRawViewAnglesToPawn(char *p, float pitch, float yaw)
+        {
+            const float normalizedYaw = NormalizeDeg(yaw);
+            *reinterpret_cast<float *>(p + tg::kPawn_ViewAngle + 0) = pitch;
+            *reinterpret_cast<float *>(p + tg::kPawn_ViewAngle + 4) = normalizedYaw;
+            *reinterpret_cast<float *>(p + tg::kPawn_ViewAngle + 8) = 0.0f;
+            *reinterpret_cast<float *>(p + tg::kPawn_EyeAngles + 0) = pitch;
+            *reinterpret_cast<float *>(p + tg::kPawn_EyeAngles + 4) = normalizedYaw;
+            *reinterpret_cast<float *>(p + tg::kPawn_EyeAngles + 8) = 0.0f;
+        }
+
+        static void WriteViewAnglesToPawn(void *services, const MovementSnapshot &s)
+        {
+            auto *sv = reinterpret_cast<char *>(services);
+            void *pawn = *reinterpret_cast<void **>(sv + tg::kServices_Pawn);
+            if (!pawn)
+                return;
+            auto *p = reinterpret_cast<char *>(pawn);
+
+            WriteRawViewAnglesToPawn(p, s.pitch, s.yaw);
+            BotControllerHooks::ApplyReplayEyeAngles(pawn, s.pitch, s.yaw);
+            WriteRawViewAnglesToPawn(p, s.pitch, s.yaw);
+        }
+
         // Write velocity + view angles onto the pawn
         static void WriteAnglesVelToPawn(void *services, const MovementSnapshot &s)
         {
@@ -563,13 +644,7 @@ namespace BotController
             *reinterpret_cast<float *>(p + tg::kEnt_AbsVelocity + 0) = s.velX;
             *reinterpret_cast<float *>(p + tg::kEnt_AbsVelocity + 4) = s.velY;
             *reinterpret_cast<float *>(p + tg::kEnt_AbsVelocity + 8) = s.velZ;
-
-            *reinterpret_cast<float *>(p + tg::kPawn_ViewAngle + 0) = s.pitch;
-            *reinterpret_cast<float *>(p + tg::kPawn_ViewAngle + 4) = s.yaw;
-            *reinterpret_cast<float *>(p + tg::kPawn_ViewAngle + 8) = 0.0f;
-            *reinterpret_cast<float *>(p + tg::kPawn_EyeAngles + 0) = s.pitch;
-            *reinterpret_cast<float *>(p + tg::kPawn_EyeAngles + 4) = s.yaw;
-            *reinterpret_cast<float *>(p + tg::kPawn_EyeAngles + 8) = 0.0f;
+            WriteViewAnglesToPawn(services, s);
         }
 
         // Write origin + velocity into CMoveData.
@@ -601,6 +676,7 @@ namespace BotController
                     return; // commit handler will stop/loop
                 t = p.ticks[cur];
             }
+            DebugReplayView("pre", slot, ReplayCursor(slot), t);
             WriteMoveData(moveData, t.pre);
             WriteAnglesVelToPawn(services, t.pre);
             auto *sv = reinterpret_cast<char *>(services);
@@ -696,6 +772,7 @@ namespace BotController
                 t = p.ticks[cur];
             }
 
+            DebugReplayView("commit", slot, cur, t);
             auto *sv = reinterpret_cast<char *>(services);
             void *pawn = *reinterpret_cast<void **>(sv + tg::kServices_Pawn);
             if (pawn)
@@ -709,6 +786,7 @@ namespace BotController
                 live = (live & ~mask) | (t.post.entityFlags & mask);
                 *reinterpret_cast<uint32_t *>(pp + tg::kEnt_Flags) = live;
             }
+            WriteViewAnglesToPawn(services, t.post);
 
             // Overwrite duck/ladder state
             *reinterpret_cast<float *>(sv + tg::kServices_DuckAmount) = t.post.duckAmount;
@@ -750,6 +828,74 @@ namespace BotController
                           "post=(%.1f,%.1f,%.1f)\n",
                           cur, total, dtUs, (unsigned)t.post.moveType, (int)(t.post.entityFlags & 1),
                           velR, velD, t.post.originX, t.post.originY, t.post.originZ);
+            OutputDebugStringA(dbg);
+        }
+
+        void SetViewDebugTarget(int target)
+        {
+            if (target < -2 || target >= kMaxSlots)
+                target = -1;
+            g_viewDebugTarget.store(target, std::memory_order_relaxed);
+            for (int i = 0; i < kMaxSlots; ++i)
+            {
+                g_viewDebugLastSeaCursor[i] = -999;
+                g_viewDebugSeaCalls[i] = 0;
+            }
+        }
+
+        int ViewDebugTarget()
+        {
+            return g_viewDebugTarget.load(std::memory_order_relaxed);
+        }
+
+        bool ViewDebugEnabled(int slot)
+        {
+            return ValidSlot(slot) && ShouldViewDebug(slot);
+        }
+
+        void DebugSetEyeAnglesSuppressed(int slot, const float *angle)
+        {
+            if (!ValidSlot(slot) || !ShouldViewDebug(slot))
+                return;
+
+            int cursor = ReplayCursor(slot);
+            if (g_viewDebugLastSeaCursor[slot] != cursor)
+            {
+                g_viewDebugLastSeaCursor[slot] = cursor;
+                g_viewDebugSeaCalls[slot] = 0;
+            }
+            ++g_viewDebugSeaCalls[slot];
+
+            const float inPitch = angle ? angle[0] : 0.0f;
+            const float inYaw = angle ? NormalizeDeg(angle[1]) : 0.0f;
+            char dbg[192];
+            std::snprintf(dbg, sizeof(dbg),
+                          "[BC][view][sea_suppress] slot=%d cursor=%d calls=%d "
+                          "in=(%.2f,%.2f)\n",
+                          slot, cursor, g_viewDebugSeaCalls[slot], inPitch, inYaw);
+            OutputDebugStringA(dbg);
+        }
+
+        void DebugReplayCommandView(int slot, int subtickCount, const SubtickMove *subticks)
+        {
+            if (!ValidSlot(slot) || !ShouldViewDebug(slot))
+                return;
+
+            if (subtickCount < 0)
+                subtickCount = 0;
+            float sumPitch = 0.0f;
+            float sumYaw = 0.0f;
+            for (int i = 0; i < subtickCount; ++i)
+            {
+                sumPitch += subticks[i].pitchDelta;
+                sumYaw += subticks[i].yawDelta;
+            }
+
+            char dbg[192];
+            std::snprintf(dbg, sizeof(dbg),
+                          "[BC][view][cmd] slot=%d cursor=%d nSub=%d "
+                          "sumPitch=%.3f sumYaw=%.3f\n",
+                          slot, ReplayCursor(slot), subtickCount, sumPitch, sumYaw);
             OutputDebugStringA(dbg);
         }
 

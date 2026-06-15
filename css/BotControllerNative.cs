@@ -30,6 +30,9 @@ internal static class BotControllerNative
     private static extern int BotController_GetVersion();
 
     [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_SetControllerControllingBotOffset(int offset);
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
     private static extern int BotController_LoadReplay(
         int slot,
         [In] NativeReplayTick[] ticks,
@@ -76,6 +79,18 @@ internal static class BotControllerNative
     }
 
     public static bool IsCompatible => AbiVersion == ExpectedAbiVersion;
+
+    public static bool SetControllerControllingBotOffset(int offset)
+    {
+        try
+        {
+            return BotController_SetControllerControllingBotOffset(offset) == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     public static bool LoadReplayFromFile(int slot, string path)
     {

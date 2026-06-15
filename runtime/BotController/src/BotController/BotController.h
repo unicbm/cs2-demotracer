@@ -20,6 +20,10 @@ namespace BotController
 
         const char *Status();
 
+        // Apply replay-owned eye angles through the native engine path so
+        // derived third-person/body orientation state stays synchronized.
+        bool ApplyReplayEyeAngles(void *pawn, float pitch, float yaw);
+
         void *UpdateAddress();
         void *UpkeepAddress();
         void *JumpAddress();

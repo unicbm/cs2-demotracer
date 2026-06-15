@@ -93,6 +93,8 @@ namespace BotController
         int ReplayTotal(int slot);  // loaded tick count
 
         // Current tick being applied this server tick
+        bool ReplayTickForSimulation(int slot, ReplayTick &out);
+        // Last tick already applied; used by external status readers.
         bool CurrentReplayTick(int slot, ReplayTick &out);
         // Copy the current tick's subtick moves into out
         // Returns count, or -1 if not replaying.
@@ -121,6 +123,13 @@ namespace BotController
         void OnReplayFinishMove(int slot, void *services, void *moveData);
         // FinishMove (post): commit post moveType/flags, advance cursor.
         void OnReplayCommit(int slot, void *services);
+
+        // View-phase diagnostics. target = -1 off, -2 all, or a slot id.
+        void SetViewDebugTarget(int target);
+        int ViewDebugTarget();
+        bool ViewDebugEnabled(int slot);
+        void DebugSetEyeAnglesSuppressed(int slot, const float *angle);
+        void DebugReplayCommandView(int slot, int subtickCount, const SubtickMove *subticks);
 
         void ClearAll(); // wipe all record + replay buffers (on unload)
     }

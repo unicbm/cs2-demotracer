@@ -2,6 +2,7 @@ using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Core.Attributes.Registration;
 using CounterStrikeSharp.API.Modules.Commands;
+using CounterStrikeSharp.API.Modules.Memory;
 using CounterStrikeSharp.API.Modules.Utils;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
@@ -60,6 +61,7 @@ public sealed class Cs2DemoBotMimicPlugin : BasePlugin
     public override void Load(bool hotReload)
     {
         RegisterListener<Listeners.OnTick>(OnTick);
+        ConfigureNativeSafetyOffsets();
         _teamRegistry.Load(ModuleDirectory, out var teamLoadMessage);
         Server.PrintToConsole($"cs2bm: {teamLoadMessage}");
         Server.PrintToConsole("cs2bm: CSS control plugin loaded");
@@ -68,6 +70,22 @@ public sealed class Cs2DemoBotMimicPlugin : BasePlugin
     public override void Unload(bool hotReload)
     {
         _botHiderProbe.Dispose();
+    }
+
+    private static void ConfigureNativeSafetyOffsets()
+    {
+        try
+        {
+            var offset = Schema.GetSchemaOffset("CCSPlayerController", "m_bControllingBot");
+            var ok = BotControllerNative.SetControllerControllingBotOffset(offset);
+            Server.PrintToConsole(ok
+                ? $"cs2bm: native takeover guard enabled, ControllingBot offset=0x{offset:X}"
+                : "cs2bm: native takeover guard unavailable; CSS safety checks remain active");
+        }
+        catch (Exception ex)
+        {
+            Server.PrintToConsole($"cs2bm: native takeover guard unavailable: {ex.Message}");
+        }
     }
 
     [ConsoleCommand("cs2bm_run_manifest", "cs2bm_run_manifest <manifest.json> [start-round]")]
@@ -454,6 +472,12 @@ public sealed class Cs2DemoBotMimicPlugin : BasePlugin
             PreloadReplayWeaponsForSlot(slot, replay);
         _lastEnsuredWeaponDef.Remove(slot);
 
+        if (!IsReplaySlotStillSafe(slot))
+        {
+            command.ReplyToCommand($"cs2bm: refused to play slot {slot}: not a safe bot target");
+            return;
+        }
+
         var ok = BotControllerNative.StartReplay(slot, loop);
         if (ok)
             MarkReplayStarted(slot);
@@ -536,8 +560,11 @@ public sealed class Cs2DemoBotMimicPlugin : BasePlugin
         foreach (var bot in players)
         {
             var managed = _botHiderProbe.IsManagedBot(bot.Slot);
+            var controllingBot = TryGetControllingBotState(bot, out var isControllingBot)
+                ? (isControllingBot ? "1" : "0")
+                : "unknown";
             command.ReplyToCommand(
-                $"slot={bot.Slot} team={bot.Team} isBot={bot.IsBot} managed={managed} candidate={IsReplayTargetBot(bot)} name={bot.PlayerName}");
+                $"slot={bot.Slot} team={bot.Team} isBot={bot.IsBot} managed={managed} controllingBot={controllingBot} candidate={IsReplayTargetBot(bot)} name={bot.PlayerName}");
         }
     }
 
@@ -615,6 +642,13 @@ public sealed class Cs2DemoBotMimicPlugin : BasePlugin
             {
                 if (_lastPlayingSlots.Contains(slot))
                     ReleaseReplaySlot(slot, "replay_finished");
+                continue;
+            }
+
+            if (!IsReplaySlotStillSafe(slot))
+            {
+                BotControllerNative.StopReplay(slot);
+                ReleaseReplaySlot(slot, "unsafe_replay_target");
                 continue;
             }
 
@@ -1012,6 +1046,8 @@ public sealed class Cs2DemoBotMimicPlugin : BasePlugin
 
         foreach (var slot in _loadedSlots)
         {
+            if (!IsReplaySlotStillSafe(slot))
+                continue;
             if (_loadedReplays.TryGetValue(slot, out var replay))
                 PreloadReplayWeaponsForSlot(slot, replay);
         }
@@ -1025,6 +1061,12 @@ public sealed class Cs2DemoBotMimicPlugin : BasePlugin
             _lastEnsuredWeaponDef.Remove(slot);
             _lastReplayWeaponDef.Remove(slot);
             _lastLockedWeaponTarget.Remove(slot);
+
+            if (!IsReplaySlotStillSafe(slot))
+            {
+                ReleaseReplaySlot(slot, "unsafe_start_target");
+                continue;
+            }
 
             if (BotControllerNative.StartReplay(slot, loop))
             {
@@ -1716,7 +1758,62 @@ public sealed class Cs2DemoBotMimicPlugin : BasePlugin
 
     private bool IsReplayTargetBot(CCSPlayerController player)
     {
+        if (!IsReplayControllerSafe(player) || IsReplayPawnTakenByController(player))
+            return false;
         return player.IsBot || _botHiderProbe.IsManagedBot(player.Slot);
+    }
+
+    private bool IsReplaySlotStillSafe(int slot)
+    {
+        var player = Utilities.GetPlayerFromSlot(slot);
+        return player is { IsValid: true } && IsReplayTargetBot(player);
+    }
+
+    private static bool IsReplayControllerSafe(CCSPlayerController player)
+    {
+        return TryGetControllingBotState(player, out var controllingBot) && !controllingBot;
+    }
+
+    private static bool TryGetControllingBotState(CCSPlayerController player, out bool controllingBot)
+    {
+        controllingBot = false;
+        if (player is not { IsValid: true })
+            return false;
+
+        try
+        {
+            controllingBot = player.ControllingBot;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool IsReplayPawnTakenByController(CCSPlayerController replayTarget)
+    {
+        if (replayTarget.PlayerPawn is not { IsValid: true, Value.IsValid: true } replayPawn)
+            return true;
+
+        var replayPawnIndex = replayPawn.Value.Index;
+        foreach (var controller in Utilities.FindAllEntitiesByDesignerName<CCSPlayerController>("cs_player_controller"))
+        {
+            if (controller is not { IsValid: true } || controller.Slot == replayTarget.Slot)
+                continue;
+            if (!TryGetControllingBotState(controller, out var controllingBot) || !controllingBot)
+                continue;
+
+            if (controller.PlayerPawn is { IsValid: true, Value.IsValid: true } controlledPawn &&
+                controlledPawn.Value.Index == replayPawnIndex)
+                return true;
+
+            if (controller.OriginalControllerOfCurrentPawn is { IsValid: true, Value.IsValid: true } original &&
+                original.Value.Slot == replayTarget.Slot)
+                return true;
+        }
+
+        return false;
     }
 
     private static List<CCSPlayerController> FindTeamPlayers()

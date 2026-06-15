@@ -16,6 +16,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <cmath>
 #include <cstdio>
 #include <vector>
 
@@ -53,6 +54,8 @@ namespace BotController
 
         // slot -> live CCSPlayer_MovementServices*
         static std::array<std::atomic<void *>, kMaxSlots> g_slotServices{};
+        static std::array<std::atomic<bool>, kMaxSlots> g_slotControllingBot{};
+        static std::atomic<int> g_controllerControllingBotOffset{-1};
 
         static std::atomic<uint64_t> g_hookCalls{0};
         static std::atomic<int> g_lastSlot{-1};
@@ -82,6 +85,46 @@ namespace BotController
                 reinterpret_cast<char *>(pawn) + tg::kPawn_WeaponServices);
         }
 
+        static float NormalizeDeg(float a)
+        {
+            a = std::fmod(a + 180.0f, 360.0f);
+            if (a < 0.0f)
+                a += 360.0f;
+            return a - 180.0f;
+        }
+
+        bool SetControllerControllingBotOffset(int offset)
+        {
+            if (offset < 0 || offset > 0x10000)
+                offset = -1;
+            g_controllerControllingBotOffset.store(offset, std::memory_order_release);
+            return true;
+        }
+
+        static bool ControllerIsControllingBot(void *controller)
+        {
+            int offset = g_controllerControllingBotOffset.load(std::memory_order_acquire);
+            if (!controller || offset < 0)
+                return false;
+            return *reinterpret_cast<uint8_t *>(reinterpret_cast<char *>(controller) + offset) != 0;
+        }
+
+        static bool ReplayActiveAndSafe(int slot)
+        {
+            if (slot < 0 || slot >= kMaxSlots || !MotionRecorder::IsReplaying(slot))
+                return false;
+            if (!g_slotControllingBot[slot].load(std::memory_order_acquire))
+                return true;
+
+            MotionRecorder::StopReplay(slot);
+            char dbg[128];
+            std::snprintf(dbg, sizeof(dbg),
+                          "[BotController] stopped replay slot=%d: controller is controlling a bot\n",
+                          slot);
+            DebugOut(dbg);
+            return false;
+        }
+
         // ---- ProcessMovement: record pre/post + replay pre ----
 
         // Defined after HookedFinishMove
@@ -102,8 +145,7 @@ namespace BotController
 
             bool recording = slot >= 0 && slot < kMaxSlots &&
                              MotionRecorder::IsRecording(slot);
-            bool replaying = slot >= 0 && slot < kMaxSlots &&
-                             MotionRecorder::IsReplaying(slot);
+            bool replaying = ReplayActiveAndSafe(slot);
 
             // Recording weapon tap
             if (recording)
@@ -130,8 +172,7 @@ namespace BotController
                                                 void *moveData)
         {
             int slot = ServicesToSlot(services);
-            bool replaying = slot >= 0 && slot < kMaxSlots &&
-                             MotionRecorder::IsReplaying(slot);
+            bool replaying = ReplayActiveAndSafe(slot);
 
             // Before original: write post snapshot into MoveData + force resync.
             if (replaying)
@@ -151,8 +192,7 @@ namespace BotController
             int slot = ServicesToSlot(services);
             bool recording = slot >= 0 && slot < kMaxSlots &&
                              MotionRecorder::IsRecording(slot);
-            bool replaying = slot >= 0 && slot < kMaxSlots &&
-                             MotionRecorder::IsReplaying(slot);
+            bool replaying = ReplayActiveAndSafe(slot);
 
             if (cmd && (recording || replaying))
             {
@@ -196,6 +236,15 @@ namespace BotController
                         pc->buttonstates.m_pButtonStates[2] = b2;
                     }
 
+                    ReplayTick simTick{};
+                    if (MotionRecorder::ReplayTickForSimulation(slot, simTick))
+                    {
+                        CMsgQAngle *view = base->mutable_viewangles();
+                        view->set_x(simTick.pre.pitch);
+                        view->set_y(NormalizeDeg(simTick.pre.yaw));
+                        view->set_z(0.0f);
+                    }
+
                     int wsel = MotionRecorder::CurrentReplayWeaponSelect(slot);
                     if (wsel >= 0)
                         base->set_weaponselect(wsel);
@@ -204,6 +253,7 @@ namespace BotController
                     SubtickMove out[MotionRecorder::kMaxSubtickPerTick];
                     int n = MotionRecorder::CurrentReplaySubticks(
                         slot, out, MotionRecorder::kMaxSubtickPerTick);
+                    MotionRecorder::DebugReplayCommandView(slot, n, out);
                     base->clear_subtick_moves();
                     /* ? Throw-window diagnostic */
                     int dbgStBtn = -1;
@@ -265,8 +315,10 @@ namespace BotController
 
             bool recording = slot >= 0 && slot < kMaxSlots && services &&
                              MotionRecorder::IsRecording(slot);
-            bool replaying = slot >= 0 && slot < kMaxSlots && services &&
-                             MotionRecorder::IsReplaying(slot);
+            if (slot >= 0 && slot < kMaxSlots)
+                g_slotControllingBot[slot].store(ControllerIsControllingBot(controller), std::memory_order_release);
+
+            bool replaying = services && ReplayActiveAndSafe(slot);
 
             // pre: snapshot start-of-tick state once (before any subtick mover).
             if (recording)
@@ -409,6 +461,8 @@ namespace BotController
             g_vtHooksTried.store(false, std::memory_order_release);
             for (auto &s : g_slotServices)
                 s.store(nullptr, std::memory_order_release);
+            for (auto &taken : g_slotControllingBot)
+                taken.store(false, std::memory_order_release);
             g_installed = false;
             g_status = "not_attempted";
         }

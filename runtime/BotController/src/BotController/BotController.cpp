@@ -38,6 +38,7 @@ namespace BotController
         static void *g_addrUpdateLookAngles = nullptr;
         static SetEyeAngles_t g_origSetEyeAngles = nullptr;
         static void *g_addrSetEyeAngles = nullptr;
+        static thread_local bool g_replayOwnedSetEyeAngles = false;
         static bool g_installed = false;
         static std::string g_status = "not_attempted";
 
@@ -46,6 +47,14 @@ namespace BotController
         static Hook g_hookJump;
         static Hook g_hookUpdateLookAngles;
         static Hook g_hookSetEyeAngles;
+
+        static float NormalizeDeg(float a)
+        {
+            a = std::fmod(a + 180.0f, 360.0f);
+            if (a < 0.0f)
+                a += 360.0f;
+            return a - 180.0f;
+        }
 
         // Skip the Bot tick under All lock OR while replaying
         static void BC_FASTCALL HookedUpdate(void *bot)
@@ -60,19 +69,14 @@ namespace BotController
             g_origUpdate(bot);
         }
 
-        // Skip the per-frame view tick under All or Aim lock.
-        // EXCEPTION: while a slot is replaying, drive ONLY the view
+        // Skip the per-frame view tick under replay, All, or Aim lock.
         static void BC_FASTCALL HookedUpdateLookAngles(void *bot); // fwd decl
 
         static void BC_FASTCALL HookedUpkeep(void *bot)
         {
             int slot = CCSBotToSlot(bot);
             if (slot >= 0 && MotionRecorder::IsReplaying(slot))
-            {
-                if (g_origUpdateLookAngles)
-                    HookedUpdateLookAngles(bot); // view only, no locomotion
                 return;
-            }
             if (slot >= 0 &&
                 (BotControllerState::GetAll(slot) || BotControllerState::GetAim(slot)))
             {
@@ -81,9 +85,16 @@ namespace BotController
             g_origUpkeep(bot);
         }
 
-        // view replay
         static void BC_FASTCALL HookedUpdateLookAngles(void *bot)
         {
+            int slot = CCSBotToSlot(bot);
+            if (slot >= 0 &&
+                (MotionRecorder::IsReplaying(slot) ||
+                 BotControllerState::GetAll(slot) ||
+                 BotControllerState::GetAim(slot)))
+            {
+                return;
+            }
             g_origUpdateLookAngles(bot);
         }
 
@@ -91,14 +102,25 @@ namespace BotController
         static void BC_FASTCALL HookedSetEyeAngles(void *pawn, float *angle)
         {
             int slot = pawn ? ControllerSlotForPawn(pawn) : -1;
-            ReplayTick t{};
-            if (slot >= 0 && MotionRecorder::CurrentReplayTick(slot, t))
+            if (slot >= 0 && MotionRecorder::IsReplaying(slot) && !g_replayOwnedSetEyeAngles)
             {
-                float a[3] = {t.post.pitch, t.post.yaw, 0.0f};
-                g_origSetEyeAngles(pawn, a);
+                MotionRecorder::DebugSetEyeAnglesSuppressed(slot, angle);
                 return;
             }
             g_origSetEyeAngles(pawn, angle);
+        }
+
+        bool ApplyReplayEyeAngles(void *pawn, float pitch, float yaw)
+        {
+            if (!pawn || !g_origSetEyeAngles)
+                return false;
+
+            float angle[3] = {pitch, NormalizeDeg(yaw), 0.0f};
+            bool oldGuard = g_replayOwnedSetEyeAngles;
+            g_replayOwnedSetEyeAngles = true;
+            g_origSetEyeAngles(pawn, angle);
+            g_replayOwnedSetEyeAngles = oldGuard;
+            return true;
         }
 
         // Skip Jump under Jump lock; return 0 mimics its own gate-fail.
