@@ -1,6 +1,6 @@
 use crate::demo_reader::read_demo;
 use crate::export::{export_demo, ConvertOptions};
-use crate::model::{RoundPoolCandidate, RoundPoolManifest, Side, CS2BM_ABI};
+use crate::model::{RoundPoolCandidate, RoundPoolManifest, Side, SubtickMode, CS2BM_ABI};
 use crate::quality::AnalysisOptions;
 use crate::{io_error, Result};
 use serde::{Deserialize, Serialize};
@@ -16,6 +16,7 @@ pub struct BuildPoolOptions {
     pub recursive: bool,
     pub include_suspicious: bool,
     pub cut_before_bomb_plant: bool,
+    pub subtick_mode: SubtickMode,
     pub analysis: AnalysisOptions,
 }
 
@@ -67,6 +68,7 @@ pub fn build_round_pool(options: &BuildPoolOptions) -> Result<BuildPoolReport> {
                         selected_rounds: None,
                         include_suspicious: options.include_suspicious,
                         cut_before_bomb_plant: options.cut_before_bomb_plant,
+                        subtick_mode: options.subtick_mode,
                         analysis: options.analysis,
                     },
                 )?;

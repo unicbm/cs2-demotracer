@@ -324,6 +324,25 @@ mod tests {
     use crate::model::{Cs2RecHeader, MovementSnapshot, ReplayTick, SubtickMove};
 
     #[test]
+    fn rec_reader_rejects_mismatched_subtick_count() {
+        let rec = Cs2Rec {
+            ticks: vec![ReplayTick {
+                num_subtick: 1,
+                ..ReplayTick::default()
+            }],
+            subticks: Vec::new(),
+            ..Cs2Rec::default()
+        };
+
+        let mut bytes = Vec::new();
+        write_rec(&mut bytes, &rec).unwrap();
+        let err = read_rec(&mut &bytes[..]).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("tick subtick sum 1 != header subtick count 0"));
+    }
+
+    #[test]
     fn rec_roundtrip_is_stable() {
         let snapshot = MovementSnapshot {
             origin: [1.0, 2.0, 3.0],

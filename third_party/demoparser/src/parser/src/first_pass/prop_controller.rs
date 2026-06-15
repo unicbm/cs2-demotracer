@@ -78,6 +78,7 @@ pub const USERCMD_ATTACK_START_HISTORY_INDEX_2: u32 = 100000041;
 pub const USERCMD_ATTACK_START_HISTORY_INDEX_3: u32 = 100000042;
 
 pub const USERCMD_INPUT_HISTORY_BASEID: u32 = 100001000;
+pub const USERCMD_SUBTICK_MOVES_BASEID: u32 = 100001001;
 pub const INPUT_HISTORY_X_OFFSET: u32 = 0;
 pub const INPUT_HISTORY_Y_OFFSET: u32 = 1;
 pub const INPUT_HISTORY_Z_OFFSET: u32 = 2;
@@ -486,7 +487,7 @@ impl PropController {
         if full_name.starts_with("CCSPlayerPawn") && prop_name.contains("CEconItemAttribute.m_iRawValue32") {
             f.prop_id = GLOVE_PAINT_ID as u32;
         }
-        if full_name == "CCSPlayerPawn.CCSPlayer_WeaponServices.m_iAmmo"{
+        if full_name == "CCSPlayerPawn.CCSPlayer_WeaponServices.m_iAmmo" {
             f.prop_id = GRENADE_AMMO_ID;
         }
         self.id += 1;

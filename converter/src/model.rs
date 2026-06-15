@@ -60,6 +60,35 @@ impl FromStr for Side {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SubtickMode {
+    #[default]
+    Auto,
+    Off,
+}
+
+impl fmt::Display for SubtickMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SubtickMode::Auto => f.write_str("auto"),
+            SubtickMode::Off => f.write_str("off"),
+        }
+    }
+}
+
+impl FromStr for SubtickMode {
+    type Err = String;
+
+    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
+        match value.to_ascii_lowercase().as_str() {
+            "auto" | "on" | "1" | "true" => Ok(SubtickMode::Auto),
+            "off" | "0" | "false" => Ok(SubtickMode::Off),
+            _ => Err(format!("unknown subtick mode: {value}")),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct MovementSnapshot {
     pub origin: [f32; 3],
@@ -87,7 +116,7 @@ pub struct ReplayTick {
     pub num_subtick: u32,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct SubtickMove {
     pub when: f32,
     pub button: u32,
@@ -168,6 +197,8 @@ pub struct ParsedPlayerTick {
     pub cash_spent_this_round: u32,
     pub entity_flags: u32,
     pub move_type: u8,
+    pub subtick_moves: Vec<SubtickMove>,
+    pub subtick_button_truncated: usize,
 }
 
 impl ParsedPlayerTick {

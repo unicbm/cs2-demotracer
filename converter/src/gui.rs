@@ -1,6 +1,6 @@
 use crate::demo_reader::read_demo;
 use crate::export::{export_demo, ConversionReport, ConvertOptions};
-use crate::model::{DemoAnalysis, ParsedDemo, RoundStatus, Side};
+use crate::model::{DemoAnalysis, ParsedDemo, RoundStatus, Side, SubtickMode};
 use crate::quality::{analyze_demo, AnalysisOptions};
 use crate::{Error, Result};
 use eframe::egui;
@@ -43,6 +43,7 @@ struct ConverterApp {
     side: Side,
     include_suspicious: bool,
     cut_before_bomb_plant: bool,
+    write_subticks: bool,
     max_round_seconds: f32,
     parsed: Option<ParsedDemo>,
     analysis: Option<DemoAnalysis>,
@@ -61,6 +62,7 @@ impl Default for ConverterApp {
             side: Side::Both,
             include_suspicious: false,
             cut_before_bomb_plant: true,
+            write_subticks: true,
             max_round_seconds: 240.0,
             parsed: None,
             analysis: None,
@@ -125,6 +127,8 @@ impl eframe::App for ConverterApp {
                 ui.checkbox(&mut self.include_suspicious, suspicious_label);
                 let cut_label = self.t("Cut before C4 plant", "C4 安放前截断");
                 ui.checkbox(&mut self.cut_before_bomb_plant, cut_label);
+                let subtick_label = self.t("Write subtick input", "写入 subtick 输入");
+                ui.checkbox(&mut self.write_subticks, subtick_label);
                 ui.label(self.t("Max round seconds", "最大回合秒数"));
                 ui.add(
                     egui::DragValue::new(&mut self.max_round_seconds)
@@ -269,6 +273,11 @@ impl ConverterApp {
             selected_rounds: Some(self.selected_rounds.clone()),
             include_suspicious: self.include_suspicious,
             cut_before_bomb_plant: self.cut_before_bomb_plant,
+            subtick_mode: if self.write_subticks {
+                SubtickMode::Auto
+            } else {
+                SubtickMode::Off
+            },
             analysis: AnalysisOptions {
                 max_round_seconds: self.max_round_seconds,
                 ..AnalysisOptions::default()

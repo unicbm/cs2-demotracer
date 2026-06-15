@@ -182,9 +182,7 @@ impl<'a> SecondPassParser<'a> {
     }
     pub fn get_controller_prop(&self, prop_id: &u32, player: &PlayerMetaData) -> Result<Variant, PropCollectionError> {
         match player.controller_entid {
-            Some(entid) => {
-                return self.get_prop_from_ent(prop_id, &entid)
-            },
+            Some(entid) => return self.get_prop_from_ent(prop_id, &entid),
             None => return Err(PropCollectionError::ControllerEntityIdNotSet),
         }
     }
@@ -234,8 +232,14 @@ impl<'a> SecondPassParser<'a> {
 
     pub fn collect_projectiles(&mut self) {
         for projectile_entid in &self.projectiles {
-            let grenade_type = match self.find_grenade_type(projectile_entid) {              
-                Some(t) => {if !t.contains("Projectile") && !self.parse_grenades{continue}else{t}},
+            let grenade_type = match self.find_grenade_type(projectile_entid) {
+                Some(t) => {
+                    if !t.contains("Projectile") && !self.parse_grenades {
+                        continue;
+                    } else {
+                        t
+                    }
+                }
                 None => continue,
             };
             let steamid = match self.find_thrower_steamid(projectile_entid) {
@@ -445,6 +449,7 @@ impl<'a> SecondPassParser<'a> {
             "agent_skin" => return self.find_agent_skin(player),
             "CCSPlayerController.m_iCompTeammateColor" => return self.find_player_color(player, prop_info),
             "usercmd_input_history" => self.get_prop_from_ent(&USERCMD_INPUT_HISTORY_BASEID, entity_id),
+            "usercmd_subtick_moves" => self.get_prop_from_ent(&USERCMD_SUBTICK_MOVES_BASEID, entity_id),
             "glove_paint_id" => self.find_glove_skin_id(entity_id),
             "glove_skin" => self.find_glove_skin(entity_id),
             "glove_paint_seed" => self.find_glove_paint_seed(entity_id),

@@ -1,5 +1,35 @@
-use crate::model::{Cs2Rec, Cs2RecHeader, ParsedPlayerTick, ReplayTick};
+use crate::model::{Cs2Rec, Cs2RecHeader, ParsedPlayerTick, ReplayTick, SubtickMode, SubtickMove};
 use crate::{Error, Result};
+
+pub const MAX_SUBTICKS_PER_TICK: usize = 36;
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SynthesisOptions {
+    pub subtick_mode: SubtickMode,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SynthesisStats {
+    pub source_subticks: usize,
+    pub written_subticks: usize,
+    pub ticks_with_source_subticks: usize,
+    pub ticks_with_written_subticks: usize,
+    pub dropped_invalid_subticks: usize,
+    pub dropped_overflow_subticks: usize,
+    pub truncated_button_subticks: usize,
+}
+
+impl SynthesisStats {
+    pub fn add_assign(&mut self, other: &Self) {
+        self.source_subticks += other.source_subticks;
+        self.written_subticks += other.written_subticks;
+        self.ticks_with_source_subticks += other.ticks_with_source_subticks;
+        self.ticks_with_written_subticks += other.ticks_with_written_subticks;
+        self.dropped_invalid_subticks += other.dropped_invalid_subticks;
+        self.dropped_overflow_subticks += other.dropped_overflow_subticks;
+        self.truncated_button_subticks += other.truncated_button_subticks;
+    }
+}
 
 pub fn synthesize_player_rec(
     rows: &[ParsedPlayerTick],
@@ -7,6 +37,17 @@ pub fn synthesize_player_rec(
     tick_rate: f32,
     round: u32,
 ) -> Result<Cs2Rec> {
+    synthesize_player_rec_with_options(rows, map, tick_rate, round, SynthesisOptions::default())
+        .map(|(rec, _stats)| rec)
+}
+
+pub fn synthesize_player_rec_with_options(
+    rows: &[ParsedPlayerTick],
+    map: &str,
+    tick_rate: f32,
+    round: u32,
+    options: SynthesisOptions,
+) -> Result<(Cs2Rec, SynthesisStats)> {
     if rows.len() < 2 {
         return Err(Error::InvalidDemo(
             "need at least two player rows to synthesize replay".to_string(),
@@ -14,31 +55,85 @@ pub fn synthesize_player_rec(
     }
     let first = &rows[0];
     let mut ticks = Vec::with_capacity(rows.len().saturating_sub(1));
+    let mut subticks = Vec::new();
+    let mut stats = SynthesisStats::default();
     for pair in rows.windows(2) {
         let pre = pair[0].snapshot();
         let post = pair[1].snapshot();
+        let mut tick_subticks = sanitize_subticks(&pair[0], options.subtick_mode, &mut stats);
+        let num_subtick = tick_subticks.len() as u32;
+        subticks.append(&mut tick_subticks);
         ticks.push(ReplayTick {
             pre,
             post,
             weapon_def_index: normalize_replay_weapon_def_index(pair[0].item_def_idx),
-            num_subtick: 0,
+            num_subtick,
         });
     }
 
-    Ok(Cs2Rec {
-        header: Cs2RecHeader {
-            version: crate::model::CS2REC_VERSION,
-            tick_rate,
-            map: map.to_string(),
-            round,
-            side: first.team_num,
-            steam_id: first.steam_id,
-            player_name: first.name.clone(),
-            flags: 0,
+    Ok((
+        Cs2Rec {
+            header: Cs2RecHeader {
+                version: crate::model::CS2REC_VERSION,
+                tick_rate,
+                map: map.to_string(),
+                round,
+                side: first.team_num,
+                steam_id: first.steam_id,
+                player_name: first.name.clone(),
+                flags: 0,
+            },
+            ticks,
+            subticks,
         },
-        ticks,
-        subticks: Vec::new(),
-    })
+        stats,
+    ))
+}
+
+fn sanitize_subticks(
+    row: &ParsedPlayerTick,
+    subtick_mode: SubtickMode,
+    stats: &mut SynthesisStats,
+) -> Vec<SubtickMove> {
+    if subtick_mode == SubtickMode::Off {
+        return Vec::new();
+    }
+
+    stats.source_subticks += row.subtick_moves.len();
+    stats.truncated_button_subticks += row.subtick_button_truncated;
+    if !row.subtick_moves.is_empty() {
+        stats.ticks_with_source_subticks += 1;
+    }
+
+    let mut valid = Vec::with_capacity(row.subtick_moves.len().min(MAX_SUBTICKS_PER_TICK));
+    for subtick in &row.subtick_moves {
+        if subtick_is_valid(subtick) {
+            valid.push(*subtick);
+        } else {
+            stats.dropped_invalid_subticks += 1;
+        }
+    }
+
+    valid.sort_by(|a, b| a.when.total_cmp(&b.when));
+    if valid.len() > MAX_SUBTICKS_PER_TICK {
+        stats.dropped_overflow_subticks += valid.len() - MAX_SUBTICKS_PER_TICK;
+        valid.truncate(MAX_SUBTICKS_PER_TICK);
+    }
+    if !valid.is_empty() {
+        stats.ticks_with_written_subticks += 1;
+        stats.written_subticks += valid.len();
+    }
+    valid
+}
+
+fn subtick_is_valid(subtick: &SubtickMove) -> bool {
+    subtick.when.is_finite()
+        && (0.0..1.0).contains(&subtick.when)
+        && subtick.pressed.is_finite()
+        && subtick.analog_forward.is_finite()
+        && subtick.analog_left.is_finite()
+        && subtick.pitch_delta.is_finite()
+        && subtick.yaw_delta.is_finite()
 }
 
 fn normalize_replay_weapon_def_index(def: i32) -> i32 {
@@ -84,6 +179,20 @@ mod tests {
             cash_spent_this_round: 0,
             entity_flags: 1,
             move_type: 2,
+            subtick_moves: Vec::new(),
+            subtick_button_truncated: 0,
+        }
+    }
+
+    fn subtick(when: f32, button: u32) -> SubtickMove {
+        SubtickMove {
+            when,
+            button,
+            pressed: 1.0,
+            analog_forward: 0.25,
+            analog_left: 0.5,
+            pitch_delta: 0.75,
+            yaw_delta: 1.0,
         }
     }
 
@@ -108,5 +217,57 @@ mod tests {
         )
         .unwrap();
         assert_eq!(rec.ticks[0].weapon_def_index, 42);
+    }
+
+    #[test]
+    fn synthesis_writes_sorted_and_bounded_subticks() {
+        let mut r0 = row(10, 7);
+        r0.subtick_moves = vec![subtick(0.7, 2), subtick(1.0, 3), subtick(0.1, 1)];
+        r0.subtick_button_truncated = 1;
+        let mut r1 = row(11, 7);
+        r1.subtick_moves = (0..40).map(|i| subtick(i as f32 / 80.0, i)).collect();
+        let r2 = row(12, 7);
+
+        let (rec, stats) = synthesize_player_rec_with_options(
+            &[r0, r1, r2],
+            "de_nuke",
+            64.0,
+            1,
+            SynthesisOptions::default(),
+        )
+        .unwrap();
+
+        assert_eq!(rec.ticks[0].num_subtick, 2);
+        assert_eq!(rec.ticks[1].num_subtick, MAX_SUBTICKS_PER_TICK as u32);
+        assert_eq!(rec.subticks[0].button, 1);
+        assert_eq!(rec.subticks[1].button, 2);
+        assert_eq!(stats.source_subticks, 43);
+        assert_eq!(stats.written_subticks, 38);
+        assert_eq!(stats.ticks_with_source_subticks, 2);
+        assert_eq!(stats.ticks_with_written_subticks, 2);
+        assert_eq!(stats.dropped_invalid_subticks, 1);
+        assert_eq!(stats.dropped_overflow_subticks, 4);
+        assert_eq!(stats.truncated_button_subticks, 1);
+    }
+
+    #[test]
+    fn synthesis_can_disable_subticks() {
+        let mut r0 = row(10, 7);
+        r0.subtick_moves = vec![subtick(0.25, 1)];
+        let r1 = row(11, 7);
+        let (rec, stats) = synthesize_player_rec_with_options(
+            &[r0, r1],
+            "de_nuke",
+            64.0,
+            1,
+            SynthesisOptions {
+                subtick_mode: SubtickMode::Off,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(rec.ticks[0].num_subtick, 0);
+        assert!(rec.subticks.is_empty());
+        assert_eq!(stats, SynthesisStats::default());
     }
 }

@@ -6,7 +6,7 @@ use std::path::Path;
 mod demoparser_impl {
     use super::*;
     use crate::io_error;
-    use crate::model::ParsedPlayerTick;
+    use crate::model::{ParsedPlayerTick, SubtickMove};
     use ahash::AHashMap;
     use parser::first_pass::parser_settings::{rm_user_friendly_names, ParserInputs};
     use parser::parse_demo::{Parser, ParsingMode};
@@ -40,6 +40,7 @@ mod demoparser_impl {
             "is_freeze_period",
             "total_rounds_played",
             "game_time",
+            "usercmd_subtick_moves",
         ]
         .into_iter()
         .map(str::to_string)
@@ -111,6 +112,8 @@ mod demoparser_impl {
             let team_num = get_u32(&columns, "team_num", idx).unwrap_or_default() as u8;
             let is_airborne = get_bool(&columns, "is_airborne", idx).unwrap_or(false);
             let explicit_flags = get_u32(&columns, "CCSPlayerPawn.m_fFlags", idx);
+            let (subtick_moves, subtick_button_truncated) =
+                get_subtick_moves(&columns, "usercmd_subtick_moves", idx).unwrap_or_default();
             rows.push(ParsedPlayerTick {
                 tick,
                 steam_id,
@@ -151,6 +154,8 @@ mod demoparser_impl {
                     .unwrap_or_default(),
                 entity_flags: explicit_flags.unwrap_or(if is_airborne { 0 } else { 1 }),
                 move_type: get_u32(&columns, "move_type", idx).unwrap_or(2) as u8,
+                subtick_moves,
+                subtick_button_truncated,
             });
         }
         rows.sort_by_key(|row| (row.round, row.tick, row.steam_id));
@@ -262,6 +267,38 @@ mod demoparser_impl {
     ) -> Option<Vec<u32>> {
         match columns.get(name)?.data.as_ref()? {
             VarVec::U32Vec(v) => v.get(idx).cloned(),
+            _ => None,
+        }
+    }
+
+    fn get_subtick_moves(
+        columns: &AHashMap<String, &PropColumn>,
+        name: &str,
+        idx: usize,
+    ) -> Option<(Vec<SubtickMove>, usize)> {
+        match columns.get(name)?.data.as_ref()? {
+            VarVec::UserCmdSubtickMoves(v) => {
+                let raw = v.get(idx)?;
+                let mut truncated = 0_usize;
+                let moves = raw
+                    .iter()
+                    .map(|subtick| {
+                        if subtick.button > u32::MAX as u64 {
+                            truncated += 1;
+                        }
+                        SubtickMove {
+                            when: subtick.when,
+                            button: subtick.button as u32,
+                            pressed: if subtick.pressed { 1.0 } else { 0.0 },
+                            analog_forward: subtick.analog_forward,
+                            analog_left: subtick.analog_left,
+                            pitch_delta: subtick.pitch_delta,
+                            yaw_delta: subtick.yaw_delta,
+                        }
+                    })
+                    .collect();
+                Some((moves, truncated))
+            }
             _ => None,
         }
     }

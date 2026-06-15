@@ -1,10 +1,10 @@
 use crate::model::{
     ConversionManifest, ConvertedFile, ConvertedRound, EconomyClass, ParsedDemo, ParsedPlayerTick,
-    Side, TeamEconomy, CS2BM_ABI, CS2REC_VERSION,
+    Side, SubtickMode, TeamEconomy, CS2BM_ABI, CS2REC_VERSION,
 };
 use crate::quality::{analyze_demo, AnalysisOptions};
 use crate::rec_writer::write_rec_file;
-use crate::synthesis::synthesize_player_rec;
+use crate::synthesis::{synthesize_player_rec_with_options, SynthesisOptions, SynthesisStats};
 use crate::{io_error, Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -19,6 +19,7 @@ pub struct ConvertOptions {
     pub selected_rounds: Option<BTreeSet<u32>>,
     pub include_suspicious: bool,
     pub cut_before_bomb_plant: bool,
+    pub subtick_mode: SubtickMode,
     pub analysis: AnalysisOptions,
 }
 
@@ -46,6 +47,7 @@ pub fn export_demo(parsed: &ParsedDemo, options: &ConvertOptions) -> Result<Conv
         files: Vec::new(),
     };
     let mut log = Vec::new();
+    let mut subtick_stats = SynthesisStats::default();
     log.push(format!(
         "demo={} map={} tick_rate={:.3}",
         parsed.path, parsed.map, parsed.tick_rate
@@ -129,8 +131,16 @@ pub fn export_demo(parsed: &ParsedDemo, options: &ConvertOptions) -> Result<Conv
                 ));
                 continue;
             }
-            let rec =
-                synthesize_player_rec(&player_rows, &parsed.map, parsed.tick_rate, round.round)?;
+            let (rec, stats) = synthesize_player_rec_with_options(
+                &player_rows,
+                &parsed.map,
+                parsed.tick_rate,
+                round.round,
+                SynthesisOptions {
+                    subtick_mode: options.subtick_mode,
+                },
+            )?;
+            subtick_stats.add_assign(&stats);
             let team_dir = Side::team_dir(player_rows[0].team_num);
             let player_name = if player_rows[0].name.is_empty() {
                 steam_id.to_string()
@@ -186,6 +196,17 @@ pub fn export_demo(parsed: &ParsedDemo, options: &ConvertOptions) -> Result<Conv
 
     let log_path = root.join("conversion.log");
     log.push(format!("files_written={}", manifest.files.len()));
+    log.push(format!(
+        "subticks mode={} source={} written={} ticks_with_source={} ticks_with_written={} dropped_invalid={} dropped_overflow={} truncated_buttons={}",
+        options.subtick_mode,
+        subtick_stats.source_subticks,
+        subtick_stats.written_subticks,
+        subtick_stats.ticks_with_source_subticks,
+        subtick_stats.ticks_with_written_subticks,
+        subtick_stats.dropped_invalid_subticks,
+        subtick_stats.dropped_overflow_subticks,
+        subtick_stats.truncated_button_subticks
+    ));
     fs::write(&log_path, log.join("\n")).map_err(|e| io_error(&log_path, e))?;
 
     Ok(ConversionReport {

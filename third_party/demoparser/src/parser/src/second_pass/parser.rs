@@ -30,7 +30,7 @@ use prost::Message;
 use snap::raw::decompress_len;
 use snap::raw::Decoder as SnapDecoder;
 
-use super::variants::InputHistory;
+use super::variants::{InputHistory, UserCmdSubtickMove};
 
 const OUTER_BUF_DEFAULT_LEN: usize = 400_000;
 const INNER_BUF_DEFAULT_LEN: usize = 8192 * 15;
@@ -277,6 +277,19 @@ impl<'a> SecondPassParser<'a> {
                         history.push(ih);
                     }
                     ent.props.insert(USERCMD_INPUT_HISTORY_BASEID, Variant::InputHistory(history));
+                    let mut subtick_moves = vec![];
+                    for subtick in &base.subtick_moves {
+                        subtick_moves.push(UserCmdSubtickMove {
+                            when: subtick.when(),
+                            button: subtick.button(),
+                            pressed: subtick.pressed(),
+                            analog_forward: subtick.analog_forward_delta(),
+                            analog_left: subtick.analog_left_delta(),
+                            pitch_delta: subtick.pitch_delta(),
+                            yaw_delta: subtick.yaw_delta(),
+                        });
+                    }
+                    ent.props.insert(USERCMD_SUBTICK_MOVES_BASEID, Variant::UserCmdSubtickMoves(subtick_moves));
                     ent.props.insert(USERCMD_LEFTMOVE, Variant::F32(base.leftmove()));
                     ent.props.insert(USERCMD_FORWARDMOVE, Variant::F32(base.forwardmove()));
                     ent.props.insert(USERCMD_IMPULSE, Variant::I32(base.impulse()));

@@ -444,6 +444,8 @@ mod tests {
             cash_spent_this_round: 0,
             entity_flags: 1,
             move_type: 2,
+            subtick_moves: Vec::new(),
+            subtick_button_truncated: 0,
         }
     }
 
