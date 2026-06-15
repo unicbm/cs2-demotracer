@@ -67,6 +67,7 @@ namespace BotController
         static int g_viewDebugLastSeaCursor[kMaxSlots] = {0};
         static int g_viewDebugSeaCalls[kMaxSlots] = {0};
         static std::atomic<int> g_replaySnapMode{static_cast<int>(ReplaySnapMode::Hard)};
+        static std::atomic<int> g_replayViewMode{static_cast<int>(ReplayViewMode::PrePost)};
 
         static constexpr float kSoftSnapDistance = 64.0f;
         static constexpr float kSoftSnapVerticalDistance = 48.0f;
@@ -99,6 +100,19 @@ namespace BotController
             }
         }
 
+        static ReplayViewMode ActiveReplayViewMode()
+        {
+            switch (g_replayViewMode.load(std::memory_order_relaxed))
+            {
+            case static_cast<int>(ReplayViewMode::PostOnly):
+                return ReplayViewMode::PostOnly;
+            case static_cast<int>(ReplayViewMode::Cmd):
+                return ReplayViewMode::Cmd;
+            default:
+                return ReplayViewMode::PrePost;
+            }
+        }
+
         const char *ReplaySnapModeName(ReplaySnapMode mode)
         {
             switch (mode)
@@ -121,6 +135,46 @@ namespace BotController
         ReplaySnapMode GetReplaySnapMode()
         {
             return ActiveReplaySnapMode();
+        }
+
+        const char *ReplayViewModeName(ReplayViewMode mode)
+        {
+            switch (mode)
+            {
+            case ReplayViewMode::PrePost:
+                return "prepost";
+            case ReplayViewMode::PostOnly:
+                return "post";
+            case ReplayViewMode::Cmd:
+                return "cmd";
+            }
+            return "prepost";
+        }
+
+        void SetReplayViewMode(ReplayViewMode mode)
+        {
+            g_replayViewMode.store(static_cast<int>(mode), std::memory_order_relaxed);
+        }
+
+        ReplayViewMode GetReplayViewMode()
+        {
+            return ActiveReplayViewMode();
+        }
+
+        bool ReplayViewAllowsEngineSetEyeAngles()
+        {
+            return ActiveReplayViewMode() == ReplayViewMode::Cmd;
+        }
+
+        static bool ShouldDirectWritePreView()
+        {
+            return ActiveReplayViewMode() == ReplayViewMode::PrePost;
+        }
+
+        static bool ShouldDirectWritePostView()
+        {
+            ReplayViewMode mode = ActiveReplayViewMode();
+            return mode == ReplayViewMode::PrePost || mode == ReplayViewMode::PostOnly;
         }
 
         static bool ShouldViewDebug(int slot)
@@ -704,8 +758,9 @@ namespace BotController
             WriteRawViewAnglesToPawn(p, s.pitch, s.yaw);
         }
 
-        // Write velocity + view angles onto the pawn
-        static void WriteAnglesVelToPawn(void *services, const MovementSnapshot &s)
+        // Write velocity onto the pawn. View is controlled separately so
+        // we can A/B direct view writes without changing movement replay.
+        static void WriteVelocityToPawn(void *services, const MovementSnapshot &s)
         {
             auto *sv = reinterpret_cast<char *>(services);
             void *pawn = *reinterpret_cast<void **>(sv + tg::kServices_Pawn);
@@ -716,7 +771,6 @@ namespace BotController
             *reinterpret_cast<float *>(p + tg::kEnt_AbsVelocity + 0) = s.velX;
             *reinterpret_cast<float *>(p + tg::kEnt_AbsVelocity + 4) = s.velY;
             *reinterpret_cast<float *>(p + tg::kEnt_AbsVelocity + 8) = s.velZ;
-            WriteViewAnglesToPawn(services, s);
         }
 
         // Write origin + velocity into CMoveData.
@@ -757,12 +811,10 @@ namespace BotController
             if (snapMovement)
             {
                 WriteMoveData(moveData, t.pre);
-                WriteAnglesVelToPawn(services, t.pre);
+                WriteVelocityToPawn(services, t.pre);
             }
-            else if (snapMode != ReplaySnapMode::Off)
-            {
+            if (ShouldDirectWritePreView())
                 WriteViewAnglesToPawn(services, t.pre);
-            }
             auto *sv = reinterpret_cast<char *>(services);
             // Feed recorded buttons so the engine's Duck()/ladder logic runs
             *reinterpret_cast<uint64_t *>(sv + tg::kServices_Buttons) = t.pre.buttons;
@@ -880,7 +932,7 @@ namespace BotController
                     *reinterpret_cast<uint32_t *>(pp + tg::kEnt_Flags) = live;
                 }
             }
-            if (snapMode != ReplaySnapMode::Off)
+            if (ShouldDirectWritePostView())
                 WriteViewAnglesToPawn(services, t.post);
 
             if (hardSnap)

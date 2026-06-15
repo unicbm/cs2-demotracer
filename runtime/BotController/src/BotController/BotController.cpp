@@ -102,7 +102,8 @@ namespace BotController
         static void BC_FASTCALL HookedSetEyeAngles(void *pawn, float *angle)
         {
             int slot = pawn ? ControllerSlotForPawn(pawn) : -1;
-            if (slot >= 0 && MotionRecorder::IsReplaying(slot) && !g_replayOwnedSetEyeAngles)
+            if (slot >= 0 && MotionRecorder::IsReplaying(slot) && !g_replayOwnedSetEyeAngles &&
+                !MotionRecorder::ReplayViewAllowsEngineSetEyeAngles())
             {
                 MotionRecorder::DebugSetEyeAnglesSuppressed(slot, angle);
                 return;

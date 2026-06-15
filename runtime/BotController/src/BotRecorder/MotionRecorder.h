@@ -65,9 +65,20 @@ namespace BotController
             Off = 2,  // replay usercmd/subtick/view only; no movement snapshot correction
         };
 
+        enum class ReplayViewMode : int
+        {
+            PrePost = 0, // direct-write pre and post view, matching the current stable behavior
+            PostOnly = 1, // direct-write only final post view for this server tick
+            Cmd = 2,      // let injected usercmd/subtick view update pawn eye angles
+        };
+
         void SetReplaySnapMode(ReplaySnapMode mode);
         ReplaySnapMode GetReplaySnapMode();
         const char *ReplaySnapModeName(ReplaySnapMode mode);
+        void SetReplayViewMode(ReplayViewMode mode);
+        ReplayViewMode GetReplayViewMode();
+        const char *ReplayViewModeName(ReplayViewMode mode);
+        bool ReplayViewAllowsEngineSetEyeAngles();
 
         // ---- recording ----
         bool StartRecord(int slot); // clears old buffer, begins capture

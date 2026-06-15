@@ -155,6 +155,28 @@ namespace BotController
             }
             return false;
         }
+
+        static bool ParseReplayViewMode(const char *s, MotionRecorder::ReplayViewMode &out)
+        {
+            if (!s)
+                return false;
+            if (std::strcmp(s, "prepost") == 0 || std::strcmp(s, "hard") == 0)
+            {
+                out = MotionRecorder::ReplayViewMode::PrePost;
+                return true;
+            }
+            if (std::strcmp(s, "post") == 0 || std::strcmp(s, "postonly") == 0)
+            {
+                out = MotionRecorder::ReplayViewMode::PostOnly;
+                return true;
+            }
+            if (std::strcmp(s, "cmd") == 0 || std::strcmp(s, "usercmd") == 0)
+            {
+                out = MotionRecorder::ReplayViewMode::Cmd;
+                return true;
+            }
+            return false;
+        }
     }
 }
 
@@ -352,6 +374,29 @@ CON_COMMAND_F(bc_replay_snap,
                                 MotionRecorder::GetReplaySnapMode()));
 }
 
+CON_COMMAND_F(bc_replay_view,
+              "bc_replay_view [prepost|post|cmd]  Set replay eye-angle write mode.",
+              FCVAR_NONE)
+{
+    using namespace BotController;
+
+    if (args.ArgC() >= 2)
+    {
+        MotionRecorder::ReplayViewMode mode;
+        if (!Commands::ParseReplayViewMode(args.Arg(1), mode))
+        {
+            Commands::PrintToCaller(context,
+                                    "usage: bc_replay_view [prepost|post|cmd]\n");
+            return;
+        }
+        MotionRecorder::SetReplayViewMode(mode);
+    }
+
+    Commands::PrintToCaller(context, "[BC] replay_view=%s\n",
+                            MotionRecorder::ReplayViewModeName(
+                                MotionRecorder::GetReplayViewMode()));
+}
+
 CON_COMMAND_F(bc_status,
               "bc_status  Print hook status and every per-slot lock.",
               FCVAR_NONE)
@@ -394,6 +439,10 @@ CON_COMMAND_F(bc_status,
                             "[BC] replay_snap: %s\n",
                             MotionRecorder::ReplaySnapModeName(
                                 MotionRecorder::GetReplaySnapMode()));
+    Commands::PrintToCaller(context,
+                            "[BC] replay_view: %s\n",
+                            MotionRecorder::ReplayViewModeName(
+                                MotionRecorder::GetReplayViewMode()));
 
     // All lock
     int nAll = BotControllerState::CountAll();
