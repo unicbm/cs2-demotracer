@@ -43,6 +43,8 @@ Plugin/runtime authors who only need to inspect replay fields can read the binar
 
 The converter is a standalone CLI executable. The playback plugins are only needed when loading generated `.dtr` files in CS2.
 
+If you only want to test plugin playback, use the pre-converted Mirage sample pack: [`samples/cs2-demotracer-sample-spirit-vs-falcons-m2-mirage-full.zip`](samples/cs2-demotracer-sample-spirit-vs-falcons-m2-mirage-full.zip). Unzip it and run playback from the included `manifest.json`.
+
 ## Convert One Demo
 
 Open PowerShell:
