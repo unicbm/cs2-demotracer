@@ -25,43 +25,36 @@ bot 会回放从 CS2 demo 转换出的移动、视角、开火和武器状态；
 ## 适合谁
 
 - 想把职业比赛 demo 里的 10 人轨迹搬进本地 CS2 服务器。
-- 想用简单向导选择 demo、分析回合、导出回放文件。
+- 想用快速 CLI 完成 `.dem` -> `.dtr` 转换。
 - 想做 CS2 路线回放、bot playback 或 demo 分析工具。
 
 ## 你需要准备什么
 
-- Windows 版 CS2。
-- Rust，用来运行转换器。
-- 本地 CS2 服务器环境。
-- Metamod + CounterStrikeSharp，用来加载播放插件。
+- Windows x64，用来运行打包好的转换器。
+- 如果从源码构建转换器，需要 Rust。
+- 如果要在游戏里播放，需要本地 CS2 服务器、Metamod 和 CounterStrikeSharp。
 
-后面会尽量提供打包好的 exe 和插件包；当前开发版需要本地构建。
+转换器本身是独立 CLI exe。只有把 `.dtr` 放进 CS2 本地服务器播放时，才需要插件。
 
-## 第一步：用向导转换 demo
+## 转换单个 demo
 
 打开 PowerShell：
 
 ```powershell
-cd cs2-demotracer\converter
-cargo run --release -- wizard
+cs2-demotracer.exe inspect --demo "<demo.dem>"
+cs2-demotracer.exe convert --demo "<demo.dem>" --output "<输出目录>"
+cs2-demotracer.exe validate --input "<输出目录>"
 ```
 
-打包好的 Windows 版本也是同一个入口：
+常用转换选项：
 
 ```powershell
-cs2-demotracer.exe wizard
+cs2-demotracer.exe convert --demo "<demo.dem>" --output "<输出目录>" --rounds 0,1,5-8
+cs2-demotracer.exe convert --demo "<demo.dem>" --output "<输出目录>" --side t
+cs2-demotracer.exe convert --demo "<demo.dem>" --output "<输出目录>" --full-round
 ```
 
-向导里按这个流程：
-
-1. 粘贴或输入 CS2 `.dem` 路径。
-2. 选择输出目录，默认是 `output`。
-3. 查看回合分析摘要。
-4. 直接回车导出推荐回合，或者输入 `0,1,5-8` 这样的回合列表。
-5. 选择是否导出整回合、是否允许可疑回合、是否只导出单边、subtick 是否保持 auto。
-6. 开始转换并自动校验生成的 `.dtr` 文件。
-
-默认导出的 replay 会在 C4 开始安放前截断，先专注“开局路线”。如果要整回合导出，向导里可以选择，CLI 也可以加 `--full-round`。
+`inspect` 会输出地图、tick rate、行数，以及推荐/可疑回合列表。`convert` 默认只导出推荐回合；只有明确需要可疑回合时再加 `--include-suspicious`。默认导出的 replay 会在 C4 开始安放前截断，先专注“开局路线”；需要整回合时加 `--full-round`。
 
 导出后会生成类似这样的目录：
 
@@ -76,16 +69,29 @@ output/<demo-id>/round01/...
 
 `manifest.json` 是播放时最方便使用的入口文件。
 
-## 批量生成 Mirage 回合池
+也可以使用交互式向导：
+
+```powershell
+cs2-demotracer.exe wizard
+```
+
+## 批量生成地图回合池
 
 如果你有很多 demo，可以先生成一个 Mirage 回合池，让插件按双方经济自动挑相似回合：
 
 ```powershell
-cd cs2-demotracer\converter
-cargo run --release -- convert-pool --demo-dir "<demo根目录>" --output "..\output\mirage_pool" --map de_mirage --recursive
+cs2-demotracer.exe convert-pool --demo-dir "<demo根目录>" --output "<输出目录>\mirage_pool" --map de_mirage --recursive
 ```
 
-输出目录里会有 `pool_manifest.json`，以及每个 demo 自己的 manifest 和压缩 `.dtr` 文件。
+输出目录会类似这样：
+
+```text
+<输出目录>/mirage_pool/pool_manifest.json
+<输出目录>/mirage_pool/replays/<demo-id>/manifest.json
+<输出目录>/mirage_pool/replays/<demo-id>/roundNN/...
+```
+
+`convert-pool` 会按地图过滤 demo，转换每个匹配 demo，并写入回合经济信息供插件选择。
 
 ## 第二步：进游戏播放
 
@@ -121,19 +127,6 @@ dtr_run_pool "<输出目录>\mirage_pool\pool_manifest.json" 0
 ```
 
 round 0 和 round 12 只会匹配 demo 的 round 0/12 手枪局；其他回合会按双方当前装备价值粗略匹配 eco / force / full。
-
-可选：一条命令换职业队 bot：
-
-```text
-dtr_team vitality spirit
-dtr_team vitality ct
-dtr_replay_identity 1
-dtr_teams
-dtr_team_reload
-```
-
-`dtr_team <T队> <CT队>` 会一次性添加两边 bot、设置队名和队标；`dtr_team <队伍> <t|ct>` 只换一边。想自定义队伍时，把 `css/teams.example.json` 复制到 CSS 插件 DLL 同目录并改名为 `teams.json`。
-`dtr_replay_identity 1` 会在加载 replay 时请求 BotHider 把已分配 bot 改名，并使用 manifest 里的真实 SteamID64，默认关闭。
 
 查看状态：
 
@@ -178,10 +171,11 @@ dtr_stop_all
 ```powershell
 cd cs2-demotracer\converter
 cargo test
-cargo run --release -- wizard
 cargo run --release -- inspect --demo <demo.dem>
 cargo run --release -- convert --demo <demo.dem> --output <输出目录>
+cargo run --release -- convert-pool --demo-dir <demo根目录> --output <输出目录> --map de_mirage --recursive
 cargo run --release -- validate --input <输出目录>
+cargo run --release -- wizard
 ```
 
 目录：

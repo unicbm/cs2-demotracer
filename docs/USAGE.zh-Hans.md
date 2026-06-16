@@ -4,23 +4,25 @@
 
 ## 1. 转换 demo
 
-最推荐用向导：
+先分析 demo：
 
 ```powershell
-cd cs2-demotracer\converter
-cargo run --release -- wizard
+cs2-demotracer.exe inspect --demo <demo.dem>
 ```
 
-流程：
+转换推荐回合：
 
-1. 输入或粘贴 `.dem` 路径。
-2. 选择输出目录，默认 `output`。
-3. 自动分析回合。
-4. 直接回车导出推荐回合，或输入指定回合列表。
-5. 选择是否整回合、是否允许可疑回合、导出哪一边、subtick 模式。
-6. 转换并自动校验 `.dtr`。
+```powershell
+cs2-demotracer.exe convert --demo <demo.dem> --output <输出目录>
+```
 
-默认会在 C4 开始安放前截断，只导出开局路线。CLI 需要整回合时加 `--full-round`。
+校验输出：
+
+```powershell
+cs2-demotracer.exe validate --input <输出目录>
+```
+
+默认会在 C4 开始安放前截断，只导出开局路线。需要整回合时加 `--full-round`。
 
 输出目录里最重要的是：
 
@@ -36,34 +38,22 @@ round00/ct/*.dtr
 
 ## 2. 命令行转换
 
-分析 demo：
-
-```powershell
-cargo run --release -- inspect --demo <demo.dem>
-```
-
-转换推荐回合：
-
-```powershell
-cargo run --release -- convert --demo <demo.dem> --output <输出目录>
-```
-
 只转换指定回合：
 
 ```powershell
-cargo run --release -- convert --demo <demo.dem> --output <输出目录> --rounds 0,1,2,5-8
+cs2-demotracer.exe convert --demo <demo.dem> --output <输出目录> --rounds 0,1,2,5-8
 ```
 
 批量生成 Mirage 回合池：
 
 ```powershell
-cargo run --release -- convert-pool --demo-dir <demo根目录> --output <输出目录>\mirage_pool --map de_mirage --recursive
+cs2-demotracer.exe convert-pool --demo-dir <demo根目录> --output <输出目录>\mirage_pool --map de_mirage --recursive
 ```
 
-校验输出：
+交互式向导：
 
 ```powershell
-cargo run --release -- validate --input <输出目录>
+cs2-demotracer.exe wizard
 ```
 
 ## 3. 进 CS2 播放

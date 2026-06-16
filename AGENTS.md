@@ -39,6 +39,8 @@ Keep module boundaries clear:
 - CounterStrikeSharp plugin owns commands, manifest loading, bot-slot
   assignment, replay sequencing, BotHider identity handoff, and user-facing
   server messages.
+- Team rosters, bot AI setup, team logos, and bot-profile databases are outside
+  this repository's public scope. Do not add built-in team/roster commands.
 
 ## Public Hygiene
 
@@ -93,6 +95,8 @@ Keep module boundaries clear:
   runtime movement hooks, with snapshots used for state seeding/correction.
 - Keep server commands concise and stable. If adding commands, make them useful
   for local testing and status diagnosis, and use the `dtr_` prefix.
+- Do not add commands that manage team rosters, team branding, or bot AI
+  profiles. Those belong in external bot/server tooling.
 
 ## Documentation
 

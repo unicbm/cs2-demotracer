@@ -37,7 +37,6 @@ public sealed class DemoTracerPlugin : BasePlugin
     private readonly HashSet<int> _lastPlayingSlots = new();
     private readonly Dictionary<int, float> _replayStartedAt = new();
     private readonly BotHiderMemoryProbe _botHiderProbe = new();
-    private readonly TeamRegistry _teamRegistry = new();
 
     private bool _armed;
     private bool _armedLoop;
@@ -65,8 +64,6 @@ public sealed class DemoTracerPlugin : BasePlugin
     {
         RegisterListener<Listeners.OnTick>(OnTick);
         ConfigureNativeSafetyOffsets();
-        _teamRegistry.Load(ModuleDirectory, out var teamLoadMessage);
-        Server.PrintToConsole($"dtr: {teamLoadMessage}");
         Server.PrintToConsole("dtr: CSS control plugin loaded");
     }
 
@@ -207,25 +204,6 @@ public sealed class DemoTracerPlugin : BasePlugin
         command.ReplyToCommand("dtr: pool stopped");
     }
 
-    [ConsoleCommand("dtr_team", "dtr_team <t-team> <ct-team> OR dtr_team <team> <t|ct>")]
-    public void TeamCommand(CCSPlayerController? player, CommandInfo command)
-        => RunTeamCommand(command);
-
-    [ConsoleCommand("dtr_teams", "List configured DemoTracer teams")]
-    public void TeamsCommand(CCSPlayerController? player, CommandInfo command)
-    {
-        EnsureTeamRegistryLoaded();
-        var names = _teamRegistry.Teams.Select(team => team.Key).Order(StringComparer.OrdinalIgnoreCase);
-        command.ReplyToCommand($"dtr: teams={string.Join(", ", names)}");
-    }
-
-    [ConsoleCommand("dtr_team_reload", "Reload teams.json")]
-    public void TeamReloadCommand(CCSPlayerController? player, CommandInfo command)
-    {
-        _teamRegistry.Load(ModuleDirectory, out var message, force: true);
-        command.ReplyToCommand($"dtr: {message}");
-    }
-
     [ConsoleCommand("dtr_weapon_align", "dtr_weapon_align <0|1>")]
     public void WeaponAlignCommand(CCSPlayerController? player, CommandInfo command)
     {
@@ -274,106 +252,6 @@ public sealed class DemoTracerPlugin : BasePlugin
         command.ReplyToCommand(
             $"dtr: handoff={FormatHandoffMode(_handoffMode)} scope={(_handoffAllSlots ? "all" : "slot")}");
     }
-
-    private void RunTeamCommand(CommandInfo command)
-    {
-        if (command.ArgCount < 3)
-        {
-            command.ReplyToCommand("usage: team <t-team> <ct-team> OR team <team> <t|ct>");
-            return;
-        }
-
-        EnsureTeamRegistryLoaded();
-        var first = command.GetArg(1);
-        var second = command.GetArg(2);
-
-        if (TryParseTeamSide(second, out var side))
-        {
-            if (!_teamRegistry.TryResolve(first, out var team, out var error))
-            {
-                command.ReplyToCommand($"dtr: {error}");
-                return;
-            }
-
-            StopAndUnloadLoaded();
-            ApplyTeamToSide(team, side);
-            command.ReplyToCommand($"dtr: TEAM {team.Name} joined {FormatTeamSide(side)} side");
-            return;
-        }
-
-        if (!_teamRegistry.TryResolve(first, out var tTeam, out var tError))
-        {
-            command.ReplyToCommand($"dtr: T team {tError}");
-            return;
-        }
-
-        if (!_teamRegistry.TryResolve(second, out var ctTeam, out var ctError))
-        {
-            command.ReplyToCommand($"dtr: CT team {ctError}");
-            return;
-        }
-
-        StopAndUnloadLoaded();
-        ApplyTeamToSide(tTeam, TeamSide.Terrorist);
-        ApplyTeamToSide(ctTeam, TeamSide.CounterTerrorist);
-        command.ReplyToCommand(
-            $"dtr: TEAM {tTeam.Name} joined t; TEAM {ctTeam.Name} joined ct");
-    }
-
-    private void EnsureTeamRegistryLoaded()
-    {
-        if (!_teamRegistry.Loaded)
-            _teamRegistry.Load(ModuleDirectory, out _);
-    }
-
-    private static void ApplyTeamToSide(TeamDefinition team, TeamSide side)
-    {
-        var sideArg = side == TeamSide.Terrorist ? "t" : "ct";
-        var addCommand = side == TeamSide.Terrorist ? "bot_add_t" : "bot_add_ct";
-        var teamSuffix = side == TeamSide.Terrorist ? "2" : "1";
-        var playerCount = Math.Min(5, team.Players.Count);
-
-        for (var i = 0; i < Math.Max(5, playerCount); i++)
-            Server.ExecuteCommand($"bot_kick {sideArg}");
-
-        foreach (var botName in team.Players.Take(5))
-            Server.ExecuteCommand($"{addCommand} \"{EscapeConsoleString(botName)}\"");
-
-        if (!string.IsNullOrWhiteSpace(team.Logo))
-            Server.ExecuteCommand($"mp_teamlogo_{teamSuffix} {EscapeConsoleToken(team.Logo)}");
-        if (!string.IsNullOrWhiteSpace(team.Name))
-            Server.ExecuteCommand($"mp_teamname_{teamSuffix} \"{EscapeConsoleString(team.Name)}\"");
-    }
-
-    private static bool TryParseTeamSide(string value, out TeamSide side)
-    {
-        switch (value.Trim().ToLowerInvariant())
-        {
-            case "t":
-            case "terrorist":
-            case "terrorists":
-            case "2":
-                side = TeamSide.Terrorist;
-                return true;
-            case "ct":
-            case "counterterrorist":
-            case "counter-terrorist":
-            case "counterterrorists":
-            case "counter-terrorists":
-            case "3":
-                side = TeamSide.CounterTerrorist;
-                return true;
-            default:
-                side = TeamSide.Terrorist;
-                return false;
-        }
-    }
-
-    private static string FormatTeamSide(TeamSide side)
-        => side == TeamSide.Terrorist ? "t" : "ct";
-
-    private static string EscapeConsoleToken(string value)
-        => EscapeConsoleString(value).Replace(" ", string.Empty, StringComparison.Ordinal);
 
     private static string EscapeConsoleString(string value)
         => value.Replace("\\", "\\\\", StringComparison.Ordinal)

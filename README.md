@@ -29,43 +29,36 @@ Plugin/runtime authors who only need to inspect replay fields can read the binar
 ## Who This Is For
 
 - People who want to replay pro match movement inside a local CS2 server.
-- People who want a simple PowerShell-friendly wizard.
+- People who want a fast CLI pipeline for `.dem` -> `.dtr` conversion.
 - Developers building CS2 route replay, bot playback, or demo analysis tooling.
 
 ## Requirements
 
-- Windows CS2.
-- Rust, for running the converter.
-- A local CS2 server environment.
-- Metamod and CounterStrikeSharp, for loading the playback plugins.
+- Windows x64 for the packaged converter.
+- Rust only if building the converter from source.
+- A local CS2 server with Metamod and CounterStrikeSharp if you want in-game playback.
 
-Prebuilt packages are planned. For now, this development version is built locally.
+The converter is a standalone CLI executable. The playback plugins are only needed when loading generated `.dtr` files in CS2.
 
-## Quick Start With The Wizard
+## Convert One Demo
 
 Open PowerShell:
 
 ```powershell
-cd cs2-demotracer\converter
-cargo run --release -- wizard
+cs2-demotracer.exe inspect --demo "<demo.dem>"
+cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>"
+cs2-demotracer.exe validate --input "<output-dir>"
 ```
 
-Packaged Windows releases use the same flow:
+Common conversion options:
 
 ```powershell
-cs2-demotracer.exe wizard
+cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>" --rounds 0,1,5-8
+cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>" --side t
+cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>" --full-round
 ```
 
-Wizard flow:
-
-1. Paste or type a CS2 `.dem` path.
-2. Choose an output folder. The default is `output`.
-3. Review the recommended and suspicious round summary.
-4. Press Enter to export recommended rounds, or type a comma/range list such as `0,1,5-8`.
-5. Choose whether to export full rounds, include suspicious rounds, limit by side, and keep subtick input on auto.
-6. Convert and validate the generated `.dtr` files.
-
-By default, exported replays stop before the C4 plant begins. This keeps the first version focused on opening routes; full-round export is available in the wizard and from the CLI with `--full-round`.
+`inspect` prints the map, tick rate, row count, and recommended/suspicious round table. `convert` exports recommended rounds by default. Use `--include-suspicious` only when you intentionally want suspicious rounds. By default, exported replays stop before the C4 plant begins; use `--full-round` for full-round export.
 
 The output looks like this:
 
@@ -80,16 +73,29 @@ output/<demo-id>/round01/...
 
 `manifest.json` is the easiest file to use for playback.
 
-## Build A Mirage Round Pool
+An interactive prompt is also available:
+
+```powershell
+cs2-demotracer.exe wizard
+```
+
+## Batch Convert A Map Pool
 
 If you have many demos, you can build a replay pool and let the plugin choose a similar round by economy:
 
 ```powershell
-cd cs2-demotracer\converter
-cargo run --release -- convert-pool --demo-dir "<demo-root>" --output "..\output\mirage_pool" --map de_mirage --recursive
+cs2-demotracer.exe convert-pool --demo-dir "<demo-root>" --output "<output-dir>\mirage_pool" --map de_mirage --recursive
 ```
 
-This writes `pool_manifest.json` plus normal per-demo manifests and compressed `.dtr` files under the output folder.
+This writes:
+
+```text
+<output-dir>/mirage_pool/pool_manifest.json
+<output-dir>/mirage_pool/replays/<demo-id>/manifest.json
+<output-dir>/mirage_pool/replays/<demo-id>/roundNN/...
+```
+
+`convert-pool` filters by map, converts each matching demo, and records economy metadata for round selection.
 
 ## Play In CS2
 
@@ -121,19 +127,6 @@ dtr_run_pool "<output-dir>\mirage_pool\pool_manifest.json" 0
 ```
 
 Round 0 and round 12 only match pistol-round candidates from demo round 0 or 12. Other rounds are matched by each side's current equipment value.
-
-Optional team setup:
-
-```text
-dtr_team vitality spirit
-dtr_team vitality ct
-dtr_replay_identity 1
-dtr_teams
-dtr_team_reload
-```
-
-`dtr_team <t-team> <ct-team>` adds named bots, team names, and team logos in one command. Put a custom `teams.json` next to the CSS plugin DLL to override the built-in examples; `css/teams.example.json` shows the format.
-`dtr_replay_identity 1` optionally asks BotHider to rename each loaded bot and use the replay manifest's real SteamID64.
 
 Useful checks:
 
@@ -176,10 +169,11 @@ For normal use, export the recommended rounds only.
 ```powershell
 cd cs2-demotracer\converter
 cargo test
-cargo run --release -- wizard
 cargo run --release -- inspect --demo <demo.dem>
 cargo run --release -- convert --demo <demo.dem> --output <output-dir>
+cargo run --release -- convert-pool --demo-dir <demo-root> --output <output-dir> --map de_mirage --recursive
 cargo run --release -- validate --input <output-dir>
+cargo run --release -- wizard
 ```
 
 Repository layout:
