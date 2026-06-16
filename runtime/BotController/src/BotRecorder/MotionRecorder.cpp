@@ -976,6 +976,20 @@ namespace BotController
             *reinterpret_cast<float *>(m + tg::kMove_Velocity + 8) = s.velZ;
         }
 
+        static void WriteMovementServiceState(void *services,
+                                              const MovementSnapshot &s)
+        {
+            auto *sv = reinterpret_cast<char *>(services);
+            *reinterpret_cast<float *>(sv + tg::kServices_DuckAmount) = s.duckAmount;
+            *reinterpret_cast<float *>(sv + tg::kServices_DuckSpeed) = s.duckSpeed;
+            *reinterpret_cast<float *>(sv + tg::kServices_LadderNormal + 0) = s.ladderNormalX;
+            *reinterpret_cast<float *>(sv + tg::kServices_LadderNormal + 4) = s.ladderNormalY;
+            *reinterpret_cast<float *>(sv + tg::kServices_LadderNormal + 8) = s.ladderNormalZ;
+            *reinterpret_cast<uint8_t *>(sv + tg::kServices_Ducked) = s.ducked;
+            *reinterpret_cast<uint8_t *>(sv + tg::kServices_Ducking) = s.ducking;
+            *reinterpret_cast<uint8_t *>(sv + tg::kServices_DesiresDuck) = s.desiresDuck;
+        }
+
         // ProcessMovement (pre): seed CMoveData + pawn + moveType with pre state.
         void OnReplayPre(int slot, void *services, void *moveData)
         {
@@ -1002,6 +1016,7 @@ namespace BotController
             {
                 WriteMoveData(moveData, t.pre);
                 WriteVelocityToPawn(services, t.pre);
+                WriteMovementServiceState(services, t.pre);
             }
             if (ShouldDirectWritePreView())
                 SyncReplayView(slot, services, t.pre);
@@ -1158,15 +1173,7 @@ namespace BotController
 
             if (hardSnap)
             {
-                // Overwrite duck/ladder state only in hard snapshot mode.
-                *reinterpret_cast<float *>(sv + tg::kServices_DuckAmount) = t.post.duckAmount;
-                *reinterpret_cast<float *>(sv + tg::kServices_DuckSpeed) = t.post.duckSpeed;
-                *reinterpret_cast<float *>(sv + tg::kServices_LadderNormal + 0) = t.post.ladderNormalX;
-                *reinterpret_cast<float *>(sv + tg::kServices_LadderNormal + 4) = t.post.ladderNormalY;
-                *reinterpret_cast<float *>(sv + tg::kServices_LadderNormal + 8) = t.post.ladderNormalZ;
-                *reinterpret_cast<uint8_t *>(sv + tg::kServices_Ducked) = t.post.ducked;
-                *reinterpret_cast<uint8_t *>(sv + tg::kServices_Ducking) = t.post.ducking;
-                *reinterpret_cast<uint8_t *>(sv + tg::kServices_DesiresDuck) = t.post.desiresDuck;
+                WriteMovementServiceState(services, t.post);
             }
 
             p.cursor.store(cur + 1, std::memory_order_relaxed);

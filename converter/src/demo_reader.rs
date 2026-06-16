@@ -39,6 +39,12 @@ mod demoparser_impl {
             "is_airborne",
             "move_type",
             "CCSPlayerPawn.m_fFlags",
+            "duck_amount",
+            "duck_speed",
+            "ducked",
+            "ducking",
+            "CCSPlayerPawn.CCSPlayer_MovementServices.m_bDesiresDuck",
+            "CCSPlayerPawn.CCSPlayer_MovementServices.m_vecLadderNormal",
             "round_in_progress",
             "is_freeze_period",
             "total_rounds_played",
@@ -160,6 +166,20 @@ mod demoparser_impl {
                     .unwrap_or_default(),
                 entity_flags: explicit_flags.unwrap_or(if is_airborne { 0 } else { 1 }),
                 move_type: get_u32(&columns, "move_type", idx).unwrap_or(2) as u8,
+                duck_amount: get_f32(&columns, "duck_amount", idx),
+                duck_speed: get_f32(&columns, "duck_speed", idx),
+                ladder_normal: get_vec3(
+                    &columns,
+                    "CCSPlayerPawn.CCSPlayer_MovementServices.m_vecLadderNormal",
+                    idx,
+                ),
+                ducked: get_bool(&columns, "ducked", idx),
+                ducking: get_bool(&columns, "ducking", idx),
+                desires_duck: get_bool(
+                    &columns,
+                    "CCSPlayerPawn.CCSPlayer_MovementServices.m_bDesiresDuck",
+                    idx,
+                ),
                 subtick_moves,
                 subtick_button_truncated,
             });
@@ -273,6 +293,17 @@ mod demoparser_impl {
     ) -> Option<Vec<u32>> {
         match columns.get(name)?.data.as_ref()? {
             VarVec::U32Vec(v) => v.get(idx).cloned(),
+            _ => None,
+        }
+    }
+
+    fn get_vec3(
+        columns: &AHashMap<String, &PropColumn>,
+        name: &str,
+        idx: usize,
+    ) -> Option<[f32; 3]> {
+        match columns.get(name)?.data.as_ref()? {
+            VarVec::XYZVec(v) => v.get(idx).copied().flatten(),
             _ => None,
         }
     }

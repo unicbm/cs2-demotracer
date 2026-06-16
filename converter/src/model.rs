@@ -200,6 +200,12 @@ pub struct ParsedPlayerTick {
     pub cash_spent_this_round: u32,
     pub entity_flags: u32,
     pub move_type: u8,
+    pub duck_amount: Option<f32>,
+    pub duck_speed: Option<f32>,
+    pub ladder_normal: Option<[f32; 3]>,
+    pub ducked: Option<bool>,
+    pub ducking: Option<bool>,
+    pub desires_duck: Option<bool>,
     pub subtick_moves: Vec<SubtickMove>,
     pub subtick_button_truncated: usize,
 }
@@ -215,8 +221,11 @@ impl ParsedPlayerTick {
             } else {
                 (self.buttons, 0, 0)
             };
-        let ducking = (self.entity_flags & FL_DUCKING) != 0 || (buttons & IN_DUCK) != 0;
-        let duck_byte = u8::from(ducking);
+        let physically_ducked = (self.entity_flags & FL_DUCKING) != 0;
+        let wants_duck = ((buttons | buttons1) & IN_DUCK) != 0;
+        let ducked = self.ducked.unwrap_or(physically_ducked);
+        let ducking = self.ducking.unwrap_or(wants_duck && !physically_ducked);
+        let desires_duck = self.desires_duck.unwrap_or(wants_duck);
 
         MovementSnapshot {
             origin: self.origin,
@@ -227,14 +236,79 @@ impl ParsedPlayerTick {
             buttons,
             buttons1,
             buttons2,
-            duck_amount: if ducking { 1.0 } else { 0.0 },
-            duck_speed: if ducking { 8.0 } else { 0.0 },
-            ladder_normal: [0.0, 0.0, 0.0],
-            ducked: duck_byte,
-            ducking: duck_byte,
-            desires_duck: duck_byte,
+            duck_amount: self
+                .duck_amount
+                .unwrap_or(if physically_ducked { 1.0 } else { 0.0 }),
+            duck_speed: self
+                .duck_speed
+                .unwrap_or(if physically_ducked || wants_duck {
+                    8.0
+                } else {
+                    0.0
+                }),
+            ladder_normal: self.ladder_normal.unwrap_or([0.0, 0.0, 0.0]),
+            ducked: u8::from(ducked),
+            ducking: u8::from(ducking),
+            desires_duck: u8::from(desires_duck),
             actual_move_type: self.move_type,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snapshot_preserves_real_duck_and_ladder_fields() {
+        let row = ParsedPlayerTick {
+            duck_amount: Some(0.375),
+            duck_speed: Some(-0.0),
+            ladder_normal: Some([1.0, -0.0, 0.5]),
+            ducked: Some(false),
+            ducking: Some(true),
+            desires_duck: Some(true),
+            ..ParsedPlayerTick::default()
+        };
+
+        let snapshot = row.snapshot();
+
+        assert_eq!(snapshot.duck_amount.to_bits(), 0.375_f32.to_bits());
+        assert_eq!(snapshot.duck_speed.to_bits(), (-0.0_f32).to_bits());
+        assert_eq!(snapshot.ladder_normal[0].to_bits(), 1.0_f32.to_bits());
+        assert_eq!(snapshot.ladder_normal[1].to_bits(), (-0.0_f32).to_bits());
+        assert_eq!(snapshot.ladder_normal[2].to_bits(), 0.5_f32.to_bits());
+        assert_eq!(snapshot.ducked, 0);
+        assert_eq!(snapshot.ducking, 1);
+        assert_eq!(snapshot.desires_duck, 1);
+    }
+
+    #[test]
+    fn snapshot_duck_fallback_separates_desire_from_physical_duck() {
+        const FL_DUCKING: u32 = 1 << 1;
+        const IN_DUCK: u64 = 1 << 2;
+
+        let wanting_duck = ParsedPlayerTick {
+            buttons: IN_DUCK,
+            ..ParsedPlayerTick::default()
+        }
+        .snapshot();
+
+        assert_eq!(wanting_duck.duck_amount, 0.0);
+        assert_eq!(wanting_duck.ducked, 0);
+        assert_eq!(wanting_duck.ducking, 1);
+        assert_eq!(wanting_duck.desires_duck, 1);
+
+        let physically_ducked = ParsedPlayerTick {
+            entity_flags: FL_DUCKING,
+            ..ParsedPlayerTick::default()
+        }
+        .snapshot();
+
+        assert_eq!(physically_ducked.duck_amount, 1.0);
+        assert_eq!(physically_ducked.ducked, 1);
+        assert_eq!(physically_ducked.ducking, 0);
+        assert_eq!(physically_ducked.desires_duck, 0);
     }
 }
 

@@ -447,6 +447,12 @@ mod tests {
             cash_spent_this_round: 0,
             entity_flags: 1,
             move_type: 2,
+            duck_amount: None,
+            duck_speed: None,
+            ladder_normal: None,
+            ducked: None,
+            ducking: None,
+            desires_duck: None,
             subtick_moves: Vec::new(),
             subtick_button_truncated: 0,
         }
