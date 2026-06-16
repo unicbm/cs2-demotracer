@@ -6,6 +6,14 @@ Convert CS2 match demos into bot replay files, then play those rounds back on a 
 
 If this project helps you, please consider giving it a star. It makes the project easier for other CS2 tool/plugin developers to find.
 
+## Demo
+
+First-person spectator view stays synchronized while bots replay converted CS2 demo movement, view angles, firing, and weapon state.
+
+![First-person CS2 bot replay on Nuke](docs/media/first-person-replay-nuke.gif)
+
+[Watch the 720p/60fps MP4](docs/media/first-person-replay-nuke.mp4)
+
 ## What It Does
 
 CS2 Demo BotMimic takes a `.dem` file, analyzes its rounds, and exports `.cs2rec` replay files for each player.

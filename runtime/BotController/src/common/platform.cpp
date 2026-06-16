@@ -14,7 +14,8 @@ namespace BotController
     void DebugOut(const char *msg)
     {
 #if defined(_WIN32)
-        OutputDebugStringA(msg);
+        if (msg)
+            OutputDebugStringA(msg);
 #else
         (void)msg;
 #endif

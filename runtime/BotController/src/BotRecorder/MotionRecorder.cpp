@@ -6,12 +6,11 @@
 #include "WeaponLocker.h"
 #include "version_targets.h"
 
-#include <Windows.h>
+#include <entity2/entityinstance.h>
 
 #include <array>
 #include <atomic>
 #include <cmath>
-#include <cstdio>
 #include <mutex>
 #include <vector>
 
@@ -51,28 +50,45 @@ namespace BotController
         static std::array<RecordState, kMaxSlots> g_rec;
         static std::array<ReplayState, kMaxSlots> g_rep;
 
-        /* ! Replay-rate probe */
-        static LARGE_INTEGER g_qpcFreq{};
-        static int64_t g_lastCommitQpc[kMaxSlots] = {0};
-        /* ? Velocity-vs-displacement probe */
-        static float g_lastPostX[kMaxSlots] = {0};
-        static float g_lastPostY[kMaxSlots] = {0};
-        static bool g_haveLastPost[kMaxSlots] = {false};
-        /* ? Record-side probe */
-        static int64_t g_recLastQpc[kMaxSlots] = {0};
-        static float g_recLastNodeX[kMaxSlots] = {0};
-        static float g_recLastNodeY[kMaxSlots] = {0};
-        static bool g_recHaveLast[kMaxSlots] = {false};
-        static std::atomic<int> g_viewDebugTarget{-1};
-        static int g_viewDebugLastSeaCursor[kMaxSlots] = {0};
-        static int g_viewDebugSeaCalls[kMaxSlots] = {0};
         static std::atomic<int> g_replaySnapMode{static_cast<int>(ReplaySnapMode::Hard)};
-        static std::atomic<int> g_replayViewMode{static_cast<int>(ReplayViewMode::PrePost)};
+        static std::atomic<int> g_replayViewMode{static_cast<int>(ReplayViewMode::PostOnly)};
+        static std::atomic<int> g_replayCmdViewMode{static_cast<int>(ReplayCommandViewMode::Pre)};
+        static std::array<uint32_t, kMaxSlots> g_serverViewChangeIndex = [] {
+            std::array<uint32_t, kMaxSlots> values{};
+            values.fill(0);
+            return values;
+        }();
+        static std::array<int, kMaxSlots> g_lastFinalViewCursor = [] {
+            std::array<int, kMaxSlots> values{};
+            values.fill(-1);
+            return values;
+        }();
 
         static constexpr float kSoftSnapDistance = 64.0f;
         static constexpr float kSoftSnapVerticalDistance = 48.0f;
 
         static bool ValidSlot(int s) { return s >= 0 && s < kMaxSlots; }
+
+        static void MarkNetworkStateChanged(void *entity, uint32_t offset,
+                                            int arrayIndex = -1)
+        {
+            if (!entity || offset == 0)
+                return;
+
+            NetworkStateChangedData data(offset, arrayIndex);
+            reinterpret_cast<CEntityInstance *>(entity)->NetworkStateChanged(data);
+        }
+
+        static void MarkReplayViewNetworkChanged(void *pawn, int serverViewElement)
+        {
+            if (!pawn || serverViewElement < 0)
+                return;
+
+            MarkNetworkStateChanged(
+                pawn,
+                static_cast<uint32_t>(tg::kPawn_ServerViewAngleChanges),
+                serverViewElement);
+        }
 
         static float NormalizeDeg(float a)
         {
@@ -80,11 +96,6 @@ namespace BotController
             if (a < 0.0f)
                 a += 360.0f;
             return a - 180.0f;
-        }
-
-        static float AngleDelta(float to, float from)
-        {
-            return NormalizeDeg(to - from);
         }
 
         static ReplaySnapMode ActiveReplaySnapMode()
@@ -110,6 +121,19 @@ namespace BotController
                 return ReplayViewMode::Cmd;
             default:
                 return ReplayViewMode::PrePost;
+            }
+        }
+
+        static ReplayCommandViewMode ActiveReplayCommandViewMode()
+        {
+            switch (g_replayCmdViewMode.load(std::memory_order_relaxed))
+            {
+            case static_cast<int>(ReplayCommandViewMode::Post):
+                return ReplayCommandViewMode::Post;
+            case static_cast<int>(ReplayCommandViewMode::NextPre):
+                return ReplayCommandViewMode::NextPre;
+            default:
+                return ReplayCommandViewMode::Pre;
             }
         }
 
@@ -161,6 +185,30 @@ namespace BotController
             return ActiveReplayViewMode();
         }
 
+        const char *ReplayCommandViewModeName(ReplayCommandViewMode mode)
+        {
+            switch (mode)
+            {
+            case ReplayCommandViewMode::Pre:
+                return "pre";
+            case ReplayCommandViewMode::Post:
+                return "post";
+            case ReplayCommandViewMode::NextPre:
+                return "nextpre";
+            }
+            return "pre";
+        }
+
+        void SetReplayCommandViewMode(ReplayCommandViewMode mode)
+        {
+            g_replayCmdViewMode.store(static_cast<int>(mode), std::memory_order_relaxed);
+        }
+
+        ReplayCommandViewMode GetReplayCommandViewMode()
+        {
+            return ActiveReplayCommandViewMode();
+        }
+
         bool ReplayViewAllowsEngineSetEyeAngles()
         {
             return ActiveReplayViewMode() == ReplayViewMode::Cmd;
@@ -175,31 +223,6 @@ namespace BotController
         {
             ReplayViewMode mode = ActiveReplayViewMode();
             return mode == ReplayViewMode::PrePost || mode == ReplayViewMode::PostOnly;
-        }
-
-        static bool ShouldViewDebug(int slot)
-        {
-            int target = g_viewDebugTarget.load(std::memory_order_relaxed);
-            return target == -2 || target == slot;
-        }
-
-        static void DebugReplayView(const char *phase, int slot, int cursor,
-                                    const ReplayTick &t)
-        {
-            if (!ShouldViewDebug(slot))
-                return;
-
-            char dbg[256];
-            std::snprintf(dbg, sizeof(dbg),
-                          "[BC][view][%s] slot=%d cursor=%d pre=(%.2f,%.2f) "
-                          "post=(%.2f,%.2f) d=(%.2f,%.2f) nSub=%u\n",
-                          phase, slot, cursor,
-                          t.pre.pitch, NormalizeDeg(t.pre.yaw),
-                          t.post.pitch, NormalizeDeg(t.post.yaw),
-                          t.post.pitch - t.pre.pitch,
-                          AngleDelta(t.post.yaw, t.pre.yaw),
-                          t.numSubtick);
-            OutputDebugStringA(dbg);
         }
 
         // Read a MovementSnapshot from live engine state (services -> pawn).
@@ -382,19 +405,6 @@ namespace BotController
             r.pendingSubs.clear();
             for (int i = 0; i < count; ++i)
                 r.pendingSubs.push_back(moves[i]);
-
-            /* ? Record-side subtick diagnostic */
-            for (int i = 0; i < count; ++i)
-            {
-                if (moves[i].button & 1u)
-                {
-                    char dbg[160];
-                    std::snprintf(dbg, sizeof(dbg),
-                                  "[BL][recSt] slot=%d i=%d btn=%u pressed=%.2f when=%.3f\n",
-                                  slot, i, moves[i].button, moves[i].pressed, moves[i].when);
-                    OutputDebugStringA(dbg);
-                }
-            }
         }
 
         void OnCapturePost(int slot, void *services, void *cmd)
@@ -424,60 +434,19 @@ namespace BotController
             if (def < 0)
                 def = r.currentDef.load(std::memory_order_relaxed);
 
-            int tickIdx;
-            uint32_t nSub;
             {
                 std::lock_guard<std::mutex> lk(r.mu);
                 ReplayTick t{};
                 t.pre = r.havePre ? r.pendingPre : post;
                 t.post = post;
                 t.weaponDefIndex = def;
-                nSub = static_cast<uint32_t>(r.pendingSubs.size());
-                t.numSubtick = nSub;
+                t.numSubtick = static_cast<uint32_t>(r.pendingSubs.size());
                 for (const auto &sm : r.pendingSubs)
                     r.subs.push_back(sm);
                 r.ticks.push_back(t);
                 r.pendingSubs.clear();
                 r.havePre = false;
-                tickIdx = static_cast<int>(r.ticks.size()) - 1;
             }
-
-            /* ? Record-side diagnostics */
-            if (g_qpcFreq.QuadPart == 0)
-                QueryPerformanceFrequency(&g_qpcFreq);
-            LARGE_INTEGER now;
-            QueryPerformanceCounter(&now);
-            long long dtUs = g_recHaveLast[slot]
-                                 ? (now.QuadPart - g_recLastQpc[slot]) * 1000000LL / g_qpcFreq.QuadPart
-                                 : -1;
-            float velR = std::sqrt(post.velX * post.velX + post.velY * post.velY);
-            float nodeD = -1.0f;
-            if (g_recHaveLast[slot])
-            {
-                float dx = post.originX - g_recLastNodeX[slot];
-                float dy = post.originY - g_recLastNodeY[slot];
-                nodeD = std::sqrt(dx * dx + dy * dy) * 64.0f;
-            }
-            // MoveData origin this tick (cmd == moveData)
-            float mvX = 0, mvY = 0;
-            if (cmd)
-            {
-                auto *m = reinterpret_cast<char *>(cmd);
-                mvX = *reinterpret_cast<float *>(m + tg::kMove_AbsOrigin + 0);
-                mvY = *reinterpret_cast<float *>(m + tg::kMove_AbsOrigin + 4);
-            }
-            g_recLastQpc[slot] = now.QuadPart;
-            g_recLastNodeX[slot] = post.originX;
-            g_recLastNodeY[slot] = post.originY;
-            g_recHaveLast[slot] = true;
-
-            char dbg[256];
-            std::snprintf(dbg, sizeof(dbg),
-                          "[BL][rec] t=%d dt_us=%lld mt=%u nSub=%u def=%d velR=%.1f nodeD=%.1f "
-                          "node=(%.1f,%.1f) mv=(%.1f,%.1f)\n",
-                          tickIdx, dtUs, (unsigned)post.moveType, nSub, def, velR, nodeD,
-                          post.originX, post.originY, mvX, mvY);
-            OutputDebugStringA(dbg);
         }
 
         int CopyTicks(int slot, ReplayTick *out, int maxTicks)
@@ -539,6 +508,8 @@ namespace BotController
             RebuildSubOffset(p);
             p.cursor.store(0, std::memory_order_relaxed);
             p.lastAppliedDef.store(-1, std::memory_order_relaxed);
+            g_lastFinalViewCursor[slot] = -1;
+            g_serverViewChangeIndex[slot] = 0;
             return true;
         }
 
@@ -554,6 +525,8 @@ namespace BotController
             }
             p.cursor.store(0, std::memory_order_relaxed);
             p.lastAppliedDef.store(-1, std::memory_order_relaxed);
+            g_lastFinalViewCursor[slot] = -1;
+            g_serverViewChangeIndex[slot] = 0;
             p.loop.store(loop, std::memory_order_relaxed);
             p.playing.store(true, std::memory_order_release);
             return true;
@@ -564,6 +537,8 @@ namespace BotController
             if (!ValidSlot(slot))
                 return false;
             g_rep[slot].playing.store(false, std::memory_order_release);
+            g_lastFinalViewCursor[slot] = -1;
+            g_serverViewChangeIndex[slot] = 0;
             return true;
         }
 
@@ -605,6 +580,72 @@ namespace BotController
             if (cur < 0 || cur >= total)
                 return false;
             out = p.ticks[cur];
+            return true;
+        }
+
+        bool ReplayCommandViewSnapshot(int slot, MovementSnapshot &out)
+        {
+            if (!ValidSlot(slot))
+                return false;
+            ReplayState &p = g_rep[slot];
+            if (!p.playing.load(std::memory_order_acquire))
+                return false;
+            std::lock_guard<std::mutex> lk(p.mu);
+            int total = static_cast<int>(p.ticks.size());
+            int cur = p.cursor.load(std::memory_order_relaxed);
+            if (cur < 0 || cur >= total)
+                return false;
+
+            const ReplayCommandViewMode mode = ActiveReplayCommandViewMode();
+            if (mode == ReplayCommandViewMode::Post)
+            {
+                out = p.ticks[cur].post;
+                return true;
+            }
+            if (mode == ReplayCommandViewMode::NextPre)
+            {
+                out = (cur + 1 < total) ? p.ticks[cur + 1].pre : p.ticks[cur].post;
+                return true;
+            }
+
+            out = p.ticks[cur].pre;
+            return true;
+        }
+
+        bool ReplaySpectatorView(int slot, MovementSnapshot &out)
+        {
+            if (!ValidSlot(slot))
+                return false;
+            ReplayState &p = g_rep[slot];
+            if (!p.playing.load(std::memory_order_acquire))
+                return false;
+            std::lock_guard<std::mutex> lk(p.mu);
+            int total = static_cast<int>(p.ticks.size());
+            if (total <= 0)
+                return false;
+
+            const int cur = p.cursor.load(std::memory_order_relaxed);
+            const int lastFinal = g_lastFinalViewCursor[slot];
+            int idx = -1;
+
+            if (lastFinal >= 0 && lastFinal < total &&
+                (lastFinal == cur || lastFinal + 1 == cur || cur >= total))
+            {
+                idx = lastFinal;
+            }
+            else if (cur >= 0 && cur < total)
+            {
+                idx = cur;
+            }
+            else if (lastFinal >= 0 && lastFinal < total)
+            {
+                idx = lastFinal;
+            }
+
+            if (idx < 0 || idx >= total)
+                return false;
+
+            out = p.ticks[idx].post;
             return true;
         }
 
@@ -745,17 +786,160 @@ namespace BotController
             *reinterpret_cast<float *>(p + tg::kPawn_EyeAngles + 8) = 0.0f;
         }
 
-        static void WriteViewAnglesToPawn(void *services, const MovementSnapshot &s)
+        static void WriteReplayViewHistory(void *services, char *pawn, float pitch, float yaw)
+        {
+            const float normalizedYaw = NormalizeDeg(yaw);
+            *reinterpret_cast<float *>(pawn + tg::kPawn_ViewAnglePrevious + 0) = pitch;
+            *reinterpret_cast<float *>(pawn + tg::kPawn_ViewAnglePrevious + 4) = normalizedYaw;
+            *reinterpret_cast<float *>(pawn + tg::kPawn_ViewAnglePrevious + 8) = 0.0f;
+
+            auto *sv = reinterpret_cast<char *>(services);
+            *reinterpret_cast<float *>(sv + tg::kServices_OldViewAngles + 0) = pitch;
+            *reinterpret_cast<float *>(sv + tg::kServices_OldViewAngles + 4) = normalizedYaw;
+            *reinterpret_cast<float *>(sv + tg::kServices_OldViewAngles + 8) = 0.0f;
+        }
+
+        static bool CanWriteMemory(void *ptr, size_t len)
+        {
+            if (!ptr || len == 0)
+                return false;
+
+            MEMORY_BASIC_INFORMATION mbi{};
+            if (VirtualQuery(ptr, &mbi, sizeof(mbi)) == 0)
+                return false;
+            if (mbi.State != MEM_COMMIT)
+                return false;
+            if (mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS))
+                return false;
+
+            const DWORD writable =
+                PAGE_READWRITE | PAGE_WRITECOPY |
+                PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
+            if ((mbi.Protect & writable) == 0)
+                return false;
+
+            const auto begin = reinterpret_cast<uintptr_t>(ptr);
+            const auto end = begin + len;
+            const auto regionEnd = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+            return end >= begin && end <= regionEnd;
+        }
+
+        struct ServerViewVectorCandidate
+        {
+            const char *layout;
+            char *elements;
+            int *sizePtr;
+            int size;
+            int alloc;
+        };
+
+        static bool PlausibleServerViewVector(const ServerViewVectorCandidate &c)
+        {
+            if (!c.elements || !c.sizePtr)
+                return false;
+            if (c.size < 0 || c.alloc <= 0 || c.size > c.alloc)
+                return false;
+            if (c.alloc > 64)
+                return false;
+
+            constexpr size_t kViewChangeSize = 0x48;
+            const int elementIndex = (c.size > 0) ? (c.size - 1) : 0;
+            char *element = c.elements + static_cast<size_t>(elementIndex) * kViewChangeSize;
+            return CanWriteMemory(c.sizePtr, sizeof(int)) &&
+                   CanWriteMemory(element + 0x40, sizeof(uint32_t));
+        }
+
+        static bool ResolveServerViewVector(char *pawn, ServerViewVectorCandidate &out)
+        {
+            char *vec = pawn + tg::kPawn_ServerViewAngleChanges;
+
+            // Current hl2sdk-cs2 CUtlVector layout: int size at +0,
+            // padding, then CUtlMemory at +8 (pointer, alloc, grow).
+            ServerViewVectorCandidate sdk{};
+            sdk.layout = "sdk";
+            sdk.sizePtr = reinterpret_cast<int *>(vec + 0x00);
+            sdk.size = *sdk.sizePtr;
+            sdk.elements = *reinterpret_cast<char **>(vec + 0x08);
+            sdk.alloc = *reinterpret_cast<int *>(vec + 0x10);
+            if (PlausibleServerViewVector(sdk))
+            {
+                out = sdk;
+                return true;
+            }
+
+            // Older Source-style vectors put memory first and size later.
+            ServerViewVectorCandidate legacy{};
+            legacy.layout = "legacy";
+            legacy.elements = *reinterpret_cast<char **>(vec + 0x00);
+            legacy.alloc = *reinterpret_cast<int *>(vec + 0x08);
+            legacy.sizePtr = reinterpret_cast<int *>(vec + 0x10);
+            legacy.size = *legacy.sizePtr;
+            if (PlausibleServerViewVector(legacy))
+            {
+                out = legacy;
+                return true;
+            }
+
+            return false;
+        }
+
+        static bool WriteServerViewAngleChange(char *pawn, int slot,
+                                               const MovementSnapshot &s,
+                                               int *elementOut)
+        {
+            if (elementOut)
+                *elementOut = -1;
+
+            ServerViewVectorCandidate vec{};
+            if (!ResolveServerViewVector(pawn, vec))
+                return false;
+
+            constexpr size_t kViewChangeSize = 0x48;
+            constexpr uint32_t kFixAngleAbsolute = 1;
+            const int elementIndex = (vec.size > 0) ? (vec.size - 1) : 0;
+            char *element = vec.elements + static_cast<size_t>(elementIndex) * kViewChangeSize;
+            const float normalizedYaw = NormalizeDeg(s.yaw);
+            auto *type = reinterpret_cast<uint32_t *>(element + 0x30);
+            auto *pitch = reinterpret_cast<float *>(element + 0x34);
+            auto *yaw = reinterpret_cast<float *>(element + 0x38);
+            auto *roll = reinterpret_cast<float *>(element + 0x3C);
+            auto *index = reinterpret_cast<uint32_t *>(element + 0x40);
+
+            uint32_t next = g_serverViewChangeIndex[slot] + 1;
+            if (*index >= next)
+                next = *index + 1;
+            if (next == 0)
+                next = 1;
+
+            *type = kFixAngleAbsolute;
+            *pitch = s.pitch;
+            *yaw = normalizedYaw;
+            *roll = 0.0f;
+            *index = next;
+            g_serverViewChangeIndex[slot] = next;
+            if (vec.size == 0)
+                *vec.sizePtr = 1;
+            if (elementOut)
+                *elementOut = elementIndex;
+            return true;
+        }
+
+        static bool SyncReplayView(int slot, void *services,
+                                   const MovementSnapshot &s)
         {
             auto *sv = reinterpret_cast<char *>(services);
             void *pawn = *reinterpret_cast<void **>(sv + tg::kServices_Pawn);
             if (!pawn)
-                return;
+                return false;
             auto *p = reinterpret_cast<char *>(pawn);
 
-            WriteRawViewAnglesToPawn(p, s.pitch, s.yaw);
             BotControllerHooks::ApplyReplayEyeAngles(pawn, s.pitch, s.yaw);
             WriteRawViewAnglesToPawn(p, s.pitch, s.yaw);
+            WriteReplayViewHistory(services, p, s.pitch, s.yaw);
+            int serverViewElement = -1;
+            WriteServerViewAngleChange(p, slot, s, &serverViewElement);
+            MarkReplayViewNetworkChanged(pawn, serverViewElement);
+            return true;
         }
 
         // Write velocity onto the pawn. View is controlled separately so
@@ -807,14 +991,13 @@ namespace BotController
             const bool snapMovement =
                 ShouldApplyMovementSnap(snapMode, cursor, services, t.pre);
 
-            DebugReplayView("pre", slot, cursor, t);
             if (snapMovement)
             {
                 WriteMoveData(moveData, t.pre);
                 WriteVelocityToPawn(services, t.pre);
             }
             if (ShouldDirectWritePreView())
-                WriteViewAnglesToPawn(services, t.pre);
+                SyncReplayView(slot, services, t.pre);
             auto *sv = reinterpret_cast<char *>(services);
             // Feed recorded buttons so the engine's Duck()/ladder logic runs
             *reinterpret_cast<uint64_t *>(sv + tg::kServices_Buttons) = t.pre.buttons;
@@ -884,6 +1067,35 @@ namespace BotController
             }
         }
 
+        // FinishMove (post): publish the final post view before replay commit
+        // advances the cursor. This is intentionally separate from movement
+        // commit because first-person spectator state can sample before the
+        // later PhysicsSimulate boundary.
+        void OnReplayFinalView(int slot, void *services)
+        {
+            if (!ValidSlot(slot) || !services)
+                return;
+            ReplayState &p = g_rep[slot];
+            if (!p.playing.load(std::memory_order_acquire))
+                return;
+            if (!ShouldDirectWritePostView())
+                return;
+
+            ReplayTick t{};
+            int cur = -1;
+            {
+                std::lock_guard<std::mutex> lk(p.mu);
+                int total = static_cast<int>(p.ticks.size());
+                cur = p.cursor.load(std::memory_order_relaxed);
+                if (cur < 0 || cur >= total)
+                    return;
+                t = p.ticks[cur];
+            }
+
+            SyncReplayView(slot, services, t.post);
+            g_lastFinalViewCursor[slot] = cur;
+        }
+
         // FinishMove (post): commit post moveType/flags + advance cursor.
         void OnReplayCommit(int slot, void *services)
         {
@@ -905,6 +1117,8 @@ namespace BotController
                     {
                         p.cursor.store(0, std::memory_order_relaxed);
                         p.lastAppliedDef.store(-1, std::memory_order_relaxed);
+                        g_lastFinalViewCursor[slot] = -1;
+                        g_serverViewChangeIndex[slot] = 0;
                         return;
                     }
                     p.playing.store(false, std::memory_order_release);
@@ -913,7 +1127,6 @@ namespace BotController
                 t = p.ticks[cur];
             }
 
-            DebugReplayView("commit", slot, cur, t);
             auto *sv = reinterpret_cast<char *>(services);
             const ReplaySnapMode snapMode = ActiveReplaySnapMode();
             const bool hardSnap = snapMode == ReplaySnapMode::Hard;
@@ -932,8 +1145,8 @@ namespace BotController
                     *reinterpret_cast<uint32_t *>(pp + tg::kEnt_Flags) = live;
                 }
             }
-            if (ShouldDirectWritePostView())
-                WriteViewAnglesToPawn(services, t.post);
+            if (ShouldDirectWritePostView() && g_lastFinalViewCursor[slot] != cur)
+                SyncReplayView(slot, services, t.post);
 
             if (hardSnap)
             {
@@ -949,104 +1162,6 @@ namespace BotController
             }
 
             p.cursor.store(cur + 1, std::memory_order_relaxed);
-
-            /* ! Rate probe */
-            if (g_qpcFreq.QuadPart == 0)
-                QueryPerformanceFrequency(&g_qpcFreq);
-            LARGE_INTEGER now;
-            QueryPerformanceCounter(&now);
-            int64_t prev = g_lastCommitQpc[slot];
-            g_lastCommitQpc[slot] = now.QuadPart;
-            long long dtUs = prev ? (now.QuadPart - prev) * 1000000LL / g_qpcFreq.QuadPart : -1;
-
-            /* ? Speed probe */
-            float velR = std::sqrt(t.post.velX * t.post.velX + t.post.velY * t.post.velY);
-            float velD = -1.0f;
-            if (g_haveLastPost[slot])
-            {
-                float dx = t.post.originX - g_lastPostX[slot];
-                float dy = t.post.originY - g_lastPostY[slot];
-                velD = std::sqrt(dx * dx + dy * dy) * 64.0f;
-            }
-            g_lastPostX[slot] = t.post.originX;
-            g_lastPostY[slot] = t.post.originY;
-            g_haveLastPost[slot] = true;
-
-            char dbg[256];
-            std::snprintf(dbg, sizeof(dbg),
-                          "[BL][replay] t=%d/%d dt_us=%lld mt=%u grnd=%d velR=%.1f velD=%.1f "
-                          "post=(%.1f,%.1f,%.1f)\n",
-                          cur, total, dtUs, (unsigned)t.post.moveType, (int)(t.post.entityFlags & 1),
-                          velR, velD, t.post.originX, t.post.originY, t.post.originZ);
-            OutputDebugStringA(dbg);
-        }
-
-        void SetViewDebugTarget(int target)
-        {
-            if (target < -2 || target >= kMaxSlots)
-                target = -1;
-            g_viewDebugTarget.store(target, std::memory_order_relaxed);
-            for (int i = 0; i < kMaxSlots; ++i)
-            {
-                g_viewDebugLastSeaCursor[i] = -999;
-                g_viewDebugSeaCalls[i] = 0;
-            }
-        }
-
-        int ViewDebugTarget()
-        {
-            return g_viewDebugTarget.load(std::memory_order_relaxed);
-        }
-
-        bool ViewDebugEnabled(int slot)
-        {
-            return ValidSlot(slot) && ShouldViewDebug(slot);
-        }
-
-        void DebugSetEyeAnglesSuppressed(int slot, const float *angle)
-        {
-            if (!ValidSlot(slot) || !ShouldViewDebug(slot))
-                return;
-
-            int cursor = ReplayCursor(slot);
-            if (g_viewDebugLastSeaCursor[slot] != cursor)
-            {
-                g_viewDebugLastSeaCursor[slot] = cursor;
-                g_viewDebugSeaCalls[slot] = 0;
-            }
-            ++g_viewDebugSeaCalls[slot];
-
-            const float inPitch = angle ? angle[0] : 0.0f;
-            const float inYaw = angle ? NormalizeDeg(angle[1]) : 0.0f;
-            char dbg[192];
-            std::snprintf(dbg, sizeof(dbg),
-                          "[BC][view][sea_suppress] slot=%d cursor=%d calls=%d "
-                          "in=(%.2f,%.2f)\n",
-                          slot, cursor, g_viewDebugSeaCalls[slot], inPitch, inYaw);
-            OutputDebugStringA(dbg);
-        }
-
-        void DebugReplayCommandView(int slot, int subtickCount, const SubtickMove *subticks)
-        {
-            if (!ValidSlot(slot) || !ShouldViewDebug(slot))
-                return;
-
-            if (subtickCount < 0)
-                subtickCount = 0;
-            float sumPitch = 0.0f;
-            float sumYaw = 0.0f;
-            for (int i = 0; i < subtickCount; ++i)
-            {
-                sumPitch += subticks[i].pitchDelta;
-                sumYaw += subticks[i].yawDelta;
-            }
-
-            char dbg[192];
-            std::snprintf(dbg, sizeof(dbg),
-                          "[BC][view][cmd] slot=%d cursor=%d nSub=%d "
-                          "sumPitch=%.3f sumYaw=%.3f\n",
-                          slot, ReplayCursor(slot), subtickCount, sumPitch, sumYaw);
-            OutputDebugStringA(dbg);
         }
 
         void ClearAll()
@@ -1072,6 +1187,8 @@ namespace BotController
                 g_rec[i].liveWs.store(nullptr, std::memory_order_relaxed);
                 g_rep[i].cursor.store(0, std::memory_order_relaxed);
                 g_rep[i].lastAppliedDef.store(-1, std::memory_order_relaxed);
+                g_lastFinalViewCursor[i] = -1;
+                g_serverViewChangeIndex[i] = 0;
             }
         }
     }

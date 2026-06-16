@@ -28,5 +28,7 @@ namespace BotController
         void *UpkeepAddress();
         void *JumpAddress();
         void *UpdateLookAnglesAddress();
+        void *SetEyeAnglesAddress();
+        void *GetEyeAnglesAddress();
     }
 }

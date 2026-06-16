@@ -122,18 +122,6 @@ namespace BotController
             return "?";
         }
 
-        static const char *ViewDebugName(int target, char *buf, size_t len)
-        {
-            if (target == -2)
-                return "all";
-            if (target >= 0)
-            {
-                std::snprintf(buf, len, "slot%d", target);
-                return buf;
-            }
-            return "off";
-        }
-
         static bool ParseReplaySnapMode(const char *s, MotionRecorder::ReplaySnapMode &out)
         {
             if (!s)
@@ -173,6 +161,28 @@ namespace BotController
             if (std::strcmp(s, "cmd") == 0 || std::strcmp(s, "usercmd") == 0)
             {
                 out = MotionRecorder::ReplayViewMode::Cmd;
+                return true;
+            }
+            return false;
+        }
+
+        static bool ParseReplayCommandViewMode(const char *s, MotionRecorder::ReplayCommandViewMode &out)
+        {
+            if (!s)
+                return false;
+            if (std::strcmp(s, "pre") == 0)
+            {
+                out = MotionRecorder::ReplayCommandViewMode::Pre;
+                return true;
+            }
+            if (std::strcmp(s, "post") == 0)
+            {
+                out = MotionRecorder::ReplayCommandViewMode::Post;
+                return true;
+            }
+            if (std::strcmp(s, "nextpre") == 0 || std::strcmp(s, "next") == 0)
+            {
+                out = MotionRecorder::ReplayCommandViewMode::NextPre;
                 return true;
             }
             return false;
@@ -302,55 +312,6 @@ CON_COMMAND_F(bc_unlock_all,
                                 "[BC] error: unlock_all failed (rc=%d)\n", rc);
 }
 
-CON_COMMAND_F(bc_view_debug,
-              "bc_view_debug <0|1> [slot]  Toggle replay view phase debug logs.",
-              FCVAR_NONE)
-{
-    using namespace BotController;
-
-    if (args.ArgC() < 2)
-    {
-        Commands::PrintToCaller(context,
-                                "usage: bc_view_debug <0|1> [slot]\n");
-        return;
-    }
-
-    int target = -1;
-    if (std::strcmp(args.Arg(1), "0") == 0 ||
-        std::strcmp(args.Arg(1), "off") == 0)
-    {
-        target = -1;
-    }
-    else if (std::strcmp(args.Arg(1), "1") == 0 ||
-             std::strcmp(args.Arg(1), "on") == 0)
-    {
-        target = -2;
-        if (args.ArgC() >= 3)
-        {
-            target = std::atoi(args.Arg(2));
-            if (target < 0 || target >= MotionRecorder::kMaxSlots)
-            {
-                Commands::PrintToCaller(context,
-                                        "[BC] error: slot must be 0..%d\n",
-                                        MotionRecorder::kMaxSlots - 1);
-                return;
-            }
-        }
-    }
-    else
-    {
-        Commands::PrintToCaller(context,
-                                "usage: bc_view_debug <0|1> [slot]\n");
-        return;
-    }
-
-    MotionRecorder::SetViewDebugTarget(target);
-    char name[32];
-    Commands::PrintToCaller(context, "[BC] view_debug=%s\n",
-                            Commands::ViewDebugName(
-                                MotionRecorder::ViewDebugTarget(), name, sizeof(name)));
-}
-
 CON_COMMAND_F(bc_replay_snap,
               "bc_replay_snap [hard|soft|off]  Set replay movement snapshot correction mode.",
               FCVAR_NONE)
@@ -395,6 +356,29 @@ CON_COMMAND_F(bc_replay_view,
     Commands::PrintToCaller(context, "[BC] replay_view=%s\n",
                             MotionRecorder::ReplayViewModeName(
                                 MotionRecorder::GetReplayViewMode()));
+}
+
+CON_COMMAND_F(bc_replay_cmd_view,
+              "bc_replay_cmd_view [pre|post|nextpre]  Set injected usercmd base view source.",
+              FCVAR_NONE)
+{
+    using namespace BotController;
+
+    if (args.ArgC() >= 2)
+    {
+        MotionRecorder::ReplayCommandViewMode mode;
+        if (!Commands::ParseReplayCommandViewMode(args.Arg(1), mode))
+        {
+            Commands::PrintToCaller(context,
+                                    "usage: bc_replay_cmd_view [pre|post|nextpre]\n");
+            return;
+        }
+        MotionRecorder::SetReplayCommandViewMode(mode);
+    }
+
+    Commands::PrintToCaller(context, "[BC] replay_cmd_view=%s\n",
+                            MotionRecorder::ReplayCommandViewModeName(
+                                MotionRecorder::GetReplayCommandViewMode()));
 }
 
 CON_COMMAND_F(bc_subtick_view_delta,
@@ -443,11 +427,14 @@ CON_COMMAND_F(bc_status,
                             WeaponLockerHooks::GetSlotAddress());
 
     Commands::PrintToCaller(context,
-                            "[BC] bot hooks:    %s | Update=%p Upkeep=%p Jump=%p\n",
+                            "[BC] bot hooks:    %s | Update=%p Upkeep=%p Jump=%p ULA=%p SEA=%p GEA=%p\n",
                             BotControllerHooks::Status(),
                             BotControllerHooks::UpdateAddress(),
                             BotControllerHooks::UpkeepAddress(),
-                            BotControllerHooks::JumpAddress());
+                            BotControllerHooks::JumpAddress(),
+                            BotControllerHooks::UpdateLookAnglesAddress(),
+                            BotControllerHooks::SetEyeAnglesAddress(),
+                            BotControllerHooks::GetEyeAnglesAddress());
 
     Commands::PrintToCaller(context,
                             "[BC] input inject: %s | ProcessUsercmd=%p\n",
@@ -459,12 +446,6 @@ CON_COMMAND_F(bc_status,
                             (unsigned long long)InputInjector::HookCallCount(),
                             InputInjector::LastResolvedSlot());
 
-    char viewDebugName[32];
-    Commands::PrintToCaller(context,
-                            "[BC] view_debug: %s\n",
-                            Commands::ViewDebugName(
-                                MotionRecorder::ViewDebugTarget(),
-                                viewDebugName, sizeof(viewDebugName)));
     Commands::PrintToCaller(context,
                             "[BC] replay_snap: %s\n",
                             MotionRecorder::ReplaySnapModeName(
@@ -473,6 +454,10 @@ CON_COMMAND_F(bc_status,
                             "[BC] replay_view: %s\n",
                             MotionRecorder::ReplayViewModeName(
                                 MotionRecorder::GetReplayViewMode()));
+    Commands::PrintToCaller(context,
+                            "[BC] replay_cmd_view: %s\n",
+                            MotionRecorder::ReplayCommandViewModeName(
+                                MotionRecorder::GetReplayCommandViewMode()));
     Commands::PrintToCaller(context,
                             "[BC] subtick_view_delta: %s\n",
                             InputInjector::ReplaySubtickViewDeltas() ? "on" : "off");

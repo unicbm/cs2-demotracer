@@ -23,6 +23,7 @@ using Upkeep_t = void(BC_FASTCALL *)(void *bot);
 using Jump_t = char(BC_FASTCALL *)(void *bot, char mustJump);
 using UpdateLookAngles_t = void(BC_FASTCALL *)(void *bot);
 using SetEyeAngles_t = void(BC_FASTCALL *)(void *pawn, float *angle);
+using GetEyeAngles_t = float *(BC_FASTCALL *)(void *pawn, float *out);
 
 namespace BotController
 {
@@ -38,6 +39,8 @@ namespace BotController
         static void *g_addrUpdateLookAngles = nullptr;
         static SetEyeAngles_t g_origSetEyeAngles = nullptr;
         static void *g_addrSetEyeAngles = nullptr;
+        static GetEyeAngles_t g_origGetEyeAngles = nullptr;
+        static void *g_addrGetEyeAngles = nullptr;
         static thread_local bool g_replayOwnedSetEyeAngles = false;
         static bool g_installed = false;
         static std::string g_status = "not_attempted";
@@ -47,6 +50,7 @@ namespace BotController
         static Hook g_hookJump;
         static Hook g_hookUpdateLookAngles;
         static Hook g_hookSetEyeAngles;
+        static Hook g_hookGetEyeAngles;
 
         static float NormalizeDeg(float a)
         {
@@ -105,7 +109,6 @@ namespace BotController
             if (slot >= 0 && MotionRecorder::IsReplaying(slot) && !g_replayOwnedSetEyeAngles &&
                 !MotionRecorder::ReplayViewAllowsEngineSetEyeAngles())
             {
-                MotionRecorder::DebugSetEyeAnglesSuppressed(slot, angle);
                 return;
             }
             g_origSetEyeAngles(pawn, angle);
@@ -122,6 +125,25 @@ namespace BotController
             g_origSetEyeAngles(pawn, angle);
             g_replayOwnedSetEyeAngles = oldGuard;
             return true;
+        }
+
+        static float *BC_FASTCALL HookedGetEyeAngles(void *pawn, float *out)
+        {
+            int slot = pawn ? ControllerSlotForPawn(pawn) : -1;
+
+            if (slot >= 0 && out && MotionRecorder::IsReplaying(slot))
+            {
+                MovementSnapshot view{};
+                if (MotionRecorder::ReplaySpectatorView(slot, view))
+                {
+                    out[0] = view.pitch;
+                    out[1] = NormalizeDeg(view.yaw);
+                    out[2] = 0.0f;
+                    return out;
+                }
+            }
+
+            return g_origGetEyeAngles ? g_origGetEyeAngles(pawn, out) : out;
         }
 
         // Skip Jump under Jump lock; return 0 mimics its own gate-fail.
@@ -192,6 +214,22 @@ namespace BotController
                 std::snprintf(dbg, sizeof(dbg),
                               "[BotController] WARN: CCSPlayerPawn::SetEyeAngles sig not resolved (%s); replay 1:1 view disabled\n",
                               seaErr);
+                DebugOut(dbg);
+            }
+
+            // GetEyeAngles is optional; replay can still drive server state
+            // without it, but first-person spectator camera may read through
+            // this getter instead of raw pawn fields.
+            char geaErr[256] = {0};
+            g_addrGetEyeAngles = Sig::ResolveSig(gd, serverModule,
+                                                 "CBasePlayerPawn::GetEyeAngles",
+                                                 geaErr, sizeof(geaErr));
+            if (!g_addrGetEyeAngles)
+            {
+                char dbg[320];
+                std::snprintf(dbg, sizeof(dbg),
+                              "[BotController] WARN: CBasePlayerPawn::GetEyeAngles sig not resolved (%s); replay spectator view override disabled\n",
+                              geaErr);
                 DebugOut(dbg);
             }
 
@@ -268,14 +306,30 @@ namespace BotController
                 }
             }
 
+            // optional: GetEyeAngles
+            if (g_addrGetEyeAngles)
+            {
+                if (!g_hookGetEyeAngles.Create(g_addrGetEyeAngles,
+                                               reinterpret_cast<void *>(&HookedGetEyeAngles),
+                                               reinterpret_cast<void **>(&g_origGetEyeAngles)) ||
+                    !g_hookGetEyeAngles.Enable())
+                {
+                    DebugOut("[BotController] WARN: hook GetEyeAngles failed; replay spectator view override disabled\n");
+                    g_hookGetEyeAngles.Remove();
+                    g_origGetEyeAngles = nullptr;
+                    g_addrGetEyeAngles = nullptr;
+                }
+            }
+
             g_installed = true;
             g_status = "ok";
 
             char dbg[400];
             std::snprintf(dbg, sizeof(dbg),
-                          "[BotController] Update@%p Upkeep@%p Jump@%p ULA@%p SEA@%p\n",
+                          "[BotController] Update@%p Upkeep@%p Jump@%p ULA@%p SEA@%p GEA@%p\n",
                           g_addrUpdate, g_addrUpkeep, g_addrJump,
-                          g_addrUpdateLookAngles, g_addrSetEyeAngles);
+                          g_addrUpdateLookAngles, g_addrSetEyeAngles,
+                          g_addrGetEyeAngles);
             DebugOut(dbg);
             return true;
         }
@@ -284,6 +338,8 @@ namespace BotController
         {
             if (!g_installed)
                 return;
+            g_hookGetEyeAngles.Remove();
+            g_origGetEyeAngles = nullptr;
             g_hookSetEyeAngles.Remove();
             g_origSetEyeAngles = nullptr;
             g_hookUpdateLookAngles.Remove();
@@ -303,5 +359,7 @@ namespace BotController
         void *UpkeepAddress() { return g_addrUpkeep; }
         void *JumpAddress() { return g_addrJump; }
         void *UpdateLookAnglesAddress() { return g_addrUpdateLookAngles; }
+        void *SetEyeAnglesAddress() { return g_addrSetEyeAngles; }
+        void *GetEyeAnglesAddress() { return g_addrGetEyeAngles; }
     }
 }

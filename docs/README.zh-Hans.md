@@ -6,6 +6,14 @@
 
 如果这个项目对你有帮助，欢迎给一个 Star。这样其他 CS2 工具和插件开发者也更容易找到它。
 
+## 演示
+
+bot 会回放从 CS2 demo 转换出的移动、视角、开火和武器状态；第一人称观察视角会跟随 replay 状态同步。
+
+![Nuke 第一人称 CS2 bot replay](media/first-person-replay-nuke.gif)
+
+[查看 720p/60fps MP4](media/first-person-replay-nuke.mp4)
+
 简单说：你给它一个 `.dem`，它会分析每个回合，导出 `.cs2rec` 回放文件。进 CS2 本地服务器后，插件可以按回合让 bot 复刻 demo 里的走位、视角、跳跃、下蹲、开火和基础武器切换。
 
 这个项目还在 MVP 阶段，但已经可以做端到端测试。

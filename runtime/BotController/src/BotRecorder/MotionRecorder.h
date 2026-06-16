@@ -72,12 +72,22 @@ namespace BotController
             Cmd = 2,      // let injected usercmd/subtick view update pawn eye angles
         };
 
+        enum class ReplayCommandViewMode : int
+        {
+            Pre = 0,     // base usercmd view = current replay tick pre
+            Post = 1,    // base usercmd view = current replay tick post
+            NextPre = 2, // base usercmd view = next tick pre, falling back to current post
+        };
+
         void SetReplaySnapMode(ReplaySnapMode mode);
         ReplaySnapMode GetReplaySnapMode();
         const char *ReplaySnapModeName(ReplaySnapMode mode);
         void SetReplayViewMode(ReplayViewMode mode);
         ReplayViewMode GetReplayViewMode();
         const char *ReplayViewModeName(ReplayViewMode mode);
+        void SetReplayCommandViewMode(ReplayCommandViewMode mode);
+        ReplayCommandViewMode GetReplayCommandViewMode();
+        const char *ReplayCommandViewModeName(ReplayCommandViewMode mode);
         bool ReplayViewAllowsEngineSetEyeAngles();
 
         // ---- recording ----
@@ -116,6 +126,12 @@ namespace BotController
 
         // Current tick being applied this server tick
         bool ReplayTickForSimulation(int slot, ReplayTick &out);
+        // Snapshot to use as injected CBaseUserCmdPB.viewangles for this tick.
+        bool ReplayCommandViewSnapshot(int slot, MovementSnapshot &out);
+        // Snapshot to return from replay-owned eye-angle getters. This uses
+        // the last post view published by FinishMove when available, so camera
+        // readers do not jump one tick ahead after cursor advance.
+        bool ReplaySpectatorView(int slot, MovementSnapshot &out);
         // Last tick already applied; used by external status readers.
         bool CurrentReplayTick(int slot, ReplayTick &out);
         // Copy the current tick's subtick moves into out
@@ -143,15 +159,10 @@ namespace BotController
         // FinishMove (pre): write post snapshot into CMoveData + force
         // scene-node origin resync (+1000 on Z).
         void OnReplayFinishMove(int slot, void *services, void *moveData);
+        // FinishMove (post): publish final post view before replay cursor advance.
+        void OnReplayFinalView(int slot, void *services);
         // FinishMove (post): commit post moveType/flags, advance cursor.
         void OnReplayCommit(int slot, void *services);
-
-        // View-phase diagnostics. target = -1 off, -2 all, or a slot id.
-        void SetViewDebugTarget(int target);
-        int ViewDebugTarget();
-        bool ViewDebugEnabled(int slot);
-        void DebugSetEyeAnglesSuppressed(int slot, const float *angle);
-        void DebugReplayCommandView(int slot, int subtickCount, const SubtickMove *subticks);
 
         void ClearAll(); // wipe all record + replay buffers (on unload)
     }

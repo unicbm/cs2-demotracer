@@ -6,6 +6,7 @@ internal static class BotControllerNative
 {
     public const int ExpectedAbiVersion = 10;
     public const uint RecFormatVersion = 2;
+    public const uint LegacyRecFormatVersion = 1;
     public const int MovementSnapshotByteSize = 92;
     public const int ReplayTickByteSize = 192;
 
@@ -187,8 +188,9 @@ internal static class BotControllerNative
             throw new InvalidDataException("bad .cs2rec magic");
 
         var version = reader.ReadUInt32();
-        if (version != RecFormatVersion)
-            throw new InvalidDataException($"unsupported .cs2rec version {version}; expected {RecFormatVersion}");
+        if (version is not (LegacyRecFormatVersion or RecFormatVersion))
+            throw new InvalidDataException(
+                $"unsupported .cs2rec version {version}; expected {LegacyRecFormatVersion} or {RecFormatVersion}");
 
         _ = reader.ReadSingle(); // tick_rate
         _ = reader.ReadUInt32(); // round
@@ -206,8 +208,8 @@ internal static class BotControllerNative
         {
             ticks[i] = new NativeReplayTick
             {
-                Pre = ReadSnapshot(reader),
-                Post = ReadSnapshot(reader),
+                Pre = ReadSnapshot(reader, version),
+                Post = ReadSnapshot(reader, version),
                 WeaponDefIndex = reader.ReadInt32(),
                 NumSubtick = reader.ReadUInt32()
             };
@@ -242,7 +244,47 @@ internal static class BotControllerNative
         return (int)value;
     }
 
-    private static NativeMovementSnapshot ReadSnapshot(BinaryReader reader)
+    private static NativeMovementSnapshot ReadSnapshot(BinaryReader reader, uint version)
+        => version == LegacyRecFormatVersion
+            ? ReadLegacySnapshot(reader)
+            : ReadCurrentSnapshot(reader);
+
+    private static NativeMovementSnapshot ReadLegacySnapshot(BinaryReader reader)
+    {
+        const uint FlDucking = 1 << 1;
+        const ulong InDuck = 1UL << 2;
+
+        var snapshot = new NativeMovementSnapshot
+        {
+            OriginX = reader.ReadSingle(),
+            OriginY = reader.ReadSingle(),
+            OriginZ = reader.ReadSingle(),
+            VelX = reader.ReadSingle(),
+            VelY = reader.ReadSingle(),
+            VelZ = reader.ReadSingle(),
+            Pitch = reader.ReadSingle(),
+            Yaw = reader.ReadSingle(),
+            Roll = reader.ReadSingle(),
+            EntityFlags = reader.ReadUInt32(),
+            MoveType = reader.ReadByte(),
+            Pad0 = reader.ReadByte(),
+            Pad1 = reader.ReadByte(),
+            Pad2 = reader.ReadByte(),
+            Buttons = reader.ReadUInt64()
+        };
+
+        var ducking = (snapshot.EntityFlags & FlDucking) != 0 || (snapshot.Buttons & InDuck) != 0;
+        var duckByte = (byte)(ducking ? 1 : 0);
+        snapshot.DuckAmount = ducking ? 1.0f : 0.0f;
+        snapshot.DuckSpeed = ducking ? 8.0f : 0.0f;
+        snapshot.Ducked = duckByte;
+        snapshot.Ducking = duckByte;
+        snapshot.DesiresDuck = duckByte;
+        snapshot.ActualMoveType = snapshot.MoveType;
+        return snapshot;
+    }
+
+    private static NativeMovementSnapshot ReadCurrentSnapshot(BinaryReader reader)
     {
         return new NativeMovementSnapshot
         {

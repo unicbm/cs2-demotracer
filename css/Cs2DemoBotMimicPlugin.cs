@@ -24,6 +24,7 @@ public sealed class Cs2DemoBotMimicPlugin : BasePlugin
         (byte)'M', (byte)'R', (byte)'E', (byte)'C'
     ];
     private const float HandoffGraceSeconds = 0.25f;
+    private const int MaxPlayerSlots = 64;
 
     private readonly List<int> _loadedSlots = new();
     private readonly Dictionary<int, LoadedReplay> _loadedReplays = new();
@@ -389,7 +390,6 @@ public sealed class Cs2DemoBotMimicPlugin : BasePlugin
         command.ReplyToCommand($"cs2bm: partial_replay={_partialReplayEnabled}");
     }
 
-
     [ConsoleCommand("cs2bm_load", "cs2bm_load <slot> <absolute-or-game-path.cs2rec>")]
     public void LoadCommand(CCSPlayerController? player, CommandInfo command)
     {
@@ -481,9 +481,10 @@ public sealed class Cs2DemoBotMimicPlugin : BasePlugin
         var ok = BotControllerNative.StartReplay(slot, loop);
         if (ok)
             MarkReplayStarted(slot);
+        var state = ok ? default : BotControllerNative.GetReplayState(slot);
         command.ReplyToCommand(ok
             ? $"cs2bm: playing slot {slot}, loop={loop}"
-            : $"cs2bm: failed to play slot {slot}");
+            : $"cs2bm: failed to play slot {slot} (cursor={state.Cursor}, total={state.Total})");
     }
 
     [ConsoleCommand("cs2bm_stop", "cs2bm_stop <slot>")]
@@ -987,10 +988,10 @@ public sealed class Cs2DemoBotMimicPlugin : BasePlugin
 
             StopAndUnloadLoaded();
             var loaded = new List<string>();
-            if (!LoadSide(tFiles, tBots, manifestDir, loaded))
-                return LoadRoundResult.Fail($"cs2bm: failed while loading round {round}");
-            if (!LoadSide(ctFiles, ctBots, manifestDir, loaded))
-                return LoadRoundResult.Fail($"cs2bm: failed while loading round {round}");
+            if (!LoadSide(tFiles, tBots, manifestDir, loaded, out var loadError))
+                return LoadRoundResult.Fail($"cs2bm: failed while loading round {round}: {loadError}");
+            if (!LoadSide(ctFiles, ctBots, manifestDir, loaded, out loadError))
+                return LoadRoundResult.Fail($"cs2bm: failed while loading round {round}: {loadError}");
 
             var partial = skippedT > 0 || skippedCt > 0
                 ? $" partial replay skipped T={skippedT}/CT={skippedCt}"
@@ -1007,8 +1008,10 @@ public sealed class Cs2DemoBotMimicPlugin : BasePlugin
         IReadOnlyList<ManifestFile> files,
         IReadOnlyList<CCSPlayerController> bots,
         string manifestDir,
-        List<string> loaded)
+        List<string> loaded,
+        out string error)
     {
+        error = string.Empty;
         for (var i = 0; i < files.Count; i++)
         {
             var file = files[i];
@@ -1019,7 +1022,10 @@ public sealed class Cs2DemoBotMimicPlugin : BasePlugin
                 : Path.GetFullPath(Path.Combine(manifestDir, file.Path.Replace('/', Path.DirectorySeparatorChar)));
 
             if (!BotControllerNative.LoadReplayFromFile(slot, recPath))
+            {
+                error = $"{file.Side}:slot{slot}:{file.PlayerName} {recPath} ({BotControllerNative.LastLoadError})";
                 return false;
+            }
 
             RememberLoadedSlot(slot);
             TrackLoadedReplay(
@@ -1230,6 +1236,16 @@ public sealed class Cs2DemoBotMimicPlugin : BasePlugin
     {
         if (!_loadedSlots.Contains(slot))
             _loadedSlots.Add(slot);
+    }
+
+    private void ForgetLoadedReplayMetadata(int slot)
+    {
+        _loadedReplays.Remove(slot);
+        _lastEnsuredWeaponDef.Remove(slot);
+        _lastReplayWeaponDef.Remove(slot);
+        _lastLockedWeaponTarget.Remove(slot);
+        _pendingWeaponAlign.Remove(slot);
+        _rebuiltInventorySlots.Remove(slot);
     }
 
     private void TrackLoadedReplay(

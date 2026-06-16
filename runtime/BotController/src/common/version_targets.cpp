@@ -22,6 +22,8 @@ namespace BotController::targets
         kPawn_Controller         = Sig::FindPlatformOffset(gd, "CCSPlayerPawn::Controller", kPawn_Controller);
         kPawn_OriginalController = Sig::FindPlatformOffset(gd, "CCSPlayerPawn::OriginalController", kPawn_OriginalController);
         kPawn_ViewAngle          = Sig::FindPlatformOffset(gd, "CCSPlayerPawn::ViewAngle", kPawn_ViewAngle);
+        kPawn_ViewAnglePrevious  = Sig::FindPlatformOffset(gd, "CCSPlayerPawn::ViewAnglePrevious", kPawn_ViewAnglePrevious);
+        kPawn_ServerViewAngleChanges = Sig::FindPlatformOffset(gd, "CCSPlayerPawn::ServerViewAngleChanges", kPawn_ServerViewAngleChanges);
         kPawn_EyeAngles          = Sig::FindPlatformOffset(gd, "CCSPlayerPawn::EyeAngles", kPawn_EyeAngles);
         kWs_ActiveWeapon         = Sig::FindPlatformOffset(gd, "CCSPlayer_WeaponServices::ActiveWeapon", kWs_ActiveWeapon);
         kWeapon_ItemDefIndex     = Sig::FindPlatformOffset(gd, "CBasePlayerWeapon::ItemDefIndex", kWeapon_ItemDefIndex);
@@ -29,6 +31,7 @@ namespace BotController::targets
         kServices_Buttons        = Sig::FindPlatformOffset(gd, "CCSPlayer_MovementServices::Buttons", kServices_Buttons);
         kServices_Buttons1       = Sig::FindPlatformOffset(gd, "CCSPlayer_MovementServices::Buttons1", kServices_Buttons1);
         kServices_Buttons2       = Sig::FindPlatformOffset(gd, "CCSPlayer_MovementServices::Buttons2", kServices_Buttons2);
+        kServices_OldViewAngles  = Sig::FindPlatformOffset(gd, "CCSPlayer_MovementServices::OldViewAngles", kServices_OldViewAngles);
         kServices_LadderNormal   = Sig::FindPlatformOffset(gd, "CCSPlayer_MovementServices::LadderNormal", kServices_LadderNormal);
         kServices_Ducked         = Sig::FindPlatformOffset(gd, "CCSPlayer_MovementServices::Ducked", kServices_Ducked);
         kServices_DuckAmount     = Sig::FindPlatformOffset(gd, "CCSPlayer_MovementServices::DuckAmount", kServices_DuckAmount);

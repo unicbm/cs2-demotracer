@@ -45,6 +45,10 @@ namespace BotController::targets
     inline int kPawn_OriginalController = 0xB84;
     // CCSPlayerPawn -> v_angle (QAngle)
     inline int kPawn_ViewAngle = 0xAB8;
+    // v_anglePrevious (QAngle) — keep first-person spectator/camera history aligned
+    inline int kPawn_ViewAnglePrevious = 0xAC4;
+    // m_ServerViewAngleChanges — embedded network vector consumed by local/observer camera view.
+    inline int kPawn_ServerViewAngleChanges = 0xA50;
     // m_angEyeAngles (QAngle) — written each replay tick alongside v_angle
     inline int kPawn_EyeAngles = 0x1340;
 
@@ -67,6 +71,8 @@ namespace BotController::targets
     inline int kServices_Buttons = 88;       // states[0] (pressed)
     inline int kServices_Buttons1 = 88 + 8;  // states[1]
     inline int kServices_Buttons2 = 88 + 16; // states[2]
+    // m_vecOldViewAngles (QAngle)
+    inline int kServices_OldViewAngles = 0x240;
 
     // duck/ladder state
     inline int kServices_LadderNormal = 0x3F8; // Vector m_vecLadderNormal

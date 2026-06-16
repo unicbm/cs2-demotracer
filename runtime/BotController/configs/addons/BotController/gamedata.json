@@ -71,6 +71,14 @@
     },
     "comment": "Engine eye-angle."
   },
+  "CBasePlayerPawn::GetEyeAngles": {
+    "signatures": {
+      "library": "server",
+      "windows": "48 89 5C 24 ? 57 48 81 EC ? ? ? ? 48 8B F9 48 8B DA 48 8B 89 ? ? ? ? 48 85 C9",
+      "linux": ""
+    },
+    "comment": "Eye-angle getter used by server-side camera/spectator paths."
+  },
   "CCSPlayer_MovementServices::ProcessMovement": {
     "signatures": {
       "library": "server",
@@ -185,6 +193,20 @@
     },
     "comment": "v_angle (0xAB8). linux: TODO"
   },
+  "CCSPlayerPawn::ViewAnglePrevious": {
+    "offsets": {
+      "windows": 2756,
+      "linux": 0
+    },
+    "comment": "v_anglePrevious (0xAC4). linux: TODO"
+  },
+  "CCSPlayerPawn::ServerViewAngleChanges": {
+    "offsets": {
+      "windows": 2640,
+      "linux": 0
+    },
+    "comment": "m_ServerViewAngleChanges (0xA50), read-only diagnostics. linux: TODO"
+  },
   "CCSPlayerPawn::EyeAngles": {
     "offsets": {
       "windows": 4928,
@@ -233,6 +255,13 @@
       "linux": 0
     },
     "comment": "states[2] (104). linux: TODO"
+  },
+  "CCSPlayer_MovementServices::OldViewAngles": {
+    "offsets": {
+      "windows": 576,
+      "linux": 0
+    },
+    "comment": "m_vecOldViewAngles (0x240). linux: TODO"
   },
   "CCSPlayer_MovementServices::LadderNormal": {
     "offsets": {

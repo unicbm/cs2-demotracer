@@ -191,6 +191,11 @@ namespace BotController
 
             g_origFinishMove(services, cmd, moveData);
 
+            // After original: publish post view while the current replay cursor
+            // still points at this simulation tick.
+            if (replaying)
+                MotionRecorder::OnReplayFinalView(slot, services);
+
             // After original: commit moveType/flags + advance the replay cursor
             if (replaying && !g_physicsActive)
                 MotionRecorder::OnReplayCommit(slot, services);
@@ -247,12 +252,12 @@ namespace BotController
                         pc->buttonstates.m_pButtonStates[2] = b2;
                     }
 
-                    ReplayTick simTick{};
-                    if (MotionRecorder::ReplayTickForSimulation(slot, simTick))
+                    MovementSnapshot cmdView{};
+                    if (MotionRecorder::ReplayCommandViewSnapshot(slot, cmdView))
                     {
                         CMsgQAngle *view = base->mutable_viewangles();
-                        view->set_x(simTick.pre.pitch);
-                        view->set_y(NormalizeDeg(simTick.pre.yaw));
+                        view->set_x(cmdView.pitch);
+                        view->set_y(NormalizeDeg(cmdView.yaw));
                         view->set_z(0.0f);
                     }
 
@@ -264,11 +269,7 @@ namespace BotController
                     SubtickMove out[MotionRecorder::kMaxSubtickPerTick];
                     int n = MotionRecorder::CurrentReplaySubticks(
                         slot, out, MotionRecorder::kMaxSubtickPerTick);
-                    MotionRecorder::DebugReplayCommandView(slot, n, out);
                     base->clear_subtick_moves();
-                    /* ? Throw-window diagnostic */
-                    int dbgStBtn = -1;
-                    float dbgStPressed = -1.0f, dbgStWhen = -1.0f;
                     const bool injectViewDeltas = ReplaySubtickViewDeltas();
                     for (int i = 0; i < n; ++i)
                     {
@@ -285,29 +286,6 @@ namespace BotController
                             m->set_analog_forward_delta(out[i].analogForward);
                         if (out[i].analogLeft != 0.0f)
                             m->set_analog_left_delta(out[i].analogLeft);
-                        if (out[i].button & 1ull) // IN_ATTACK subtick
-                        {
-                            dbgStBtn = static_cast<int>(out[i].button);
-                            dbgStPressed = out[i].pressed;
-                            dbgStWhen = out[i].when;
-                        }
-                    }
-
-                    /* ? Throw-window diagnostic */
-                    const uint64_t kInAttack = 1ull; // IN_ATTACK bit0
-                    if (((b0 | b1 | b2) & kInAttack) || wsel >= 0 || dbgStBtn >= 0)
-                    {
-                        char dbg[256];
-                        std::snprintf(dbg, sizeof(dbg),
-                                      "[BL][rep] c=%d held=%llX prs=%llX rel=%llX "
-                                      "wsel=%d actDef=%d nSt=%d stBtn=%d stPr=%.2f stWhen=%.2f\n",
-                                      MotionRecorder::ReplayCursor(slot),
-                                      (unsigned long long)b0,
-                                      (unsigned long long)b1,
-                                      (unsigned long long)b2,
-                                      wsel, MotionRecorder::BotActiveWeaponDef(slot),
-                                      n, dbgStBtn, dbgStPressed, dbgStWhen);
-                        DebugOut(dbg);
                     }
                 }
             }
