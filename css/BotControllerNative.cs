@@ -6,12 +6,14 @@ namespace DemoTracer;
 internal static class BotControllerNative
 {
     public const int ExpectedAbiVersion = 11;
-    public const uint RecFormatVersion = 3;
+    public const uint RecFormatVersion = 4;
+    public const uint MinRecFormatVersion = 3;
     public const int MovementSnapshotByteSize = 92;
     public const int ReplayTickByteSize = 192;
 
     private const byte RecCodecBrotli = 1;
     private const int TickMetadataByteSize = 8;
+    private const int ProjectileEventByteSize = 48;
     private const int SubtickMoveByteSize = 28;
     private const int LockKindAll = 0;
     private const int LockKindAim = 1;
@@ -144,6 +146,20 @@ internal static class BotControllerNative
         }
     }
 
+    public static bool TryReadReplayProjectiles(string path, out IReadOnlyList<ReplayProjectileEvent> projectiles)
+    {
+        try
+        {
+            projectiles = ReadReplayFile(path).Projectiles;
+            return true;
+        }
+        catch
+        {
+            projectiles = Array.Empty<ReplayProjectileEvent>();
+            return false;
+        }
+    }
+
     public static bool UnloadReplay(int slot)
     {
         StopReplay(slot);
@@ -271,9 +287,9 @@ internal static class BotControllerNative
             throw new InvalidDataException("bad .dtr magic");
 
         var version = reader.ReadUInt32();
-        if (version != RecFormatVersion)
+        if (version is < MinRecFormatVersion or > RecFormatVersion)
             throw new InvalidDataException(
-                $"unsupported .dtr version {version}; expected {RecFormatVersion}");
+                $"unsupported .dtr version {version}; expected {MinRecFormatVersion}..{RecFormatVersion}");
 
         _ = reader.ReadSingle(); // tick_rate
         _ = reader.ReadUInt32(); // round
@@ -282,6 +298,9 @@ internal static class BotControllerNative
         _ = reader.ReadUInt64(); // steam_id
         var tickCount = CheckedCount(reader.ReadUInt32(), "tick_count");
         var subtickCount = CheckedCount(reader.ReadUInt32(), "subtick_count");
+        var projectileCount = version >= 4
+            ? CheckedCount(reader.ReadUInt32(), "projectile_count")
+            : 0;
         _ = ReadRecString(reader); // map
         _ = ReadRecString(reader); // player name
 
@@ -291,7 +310,7 @@ internal static class BotControllerNative
 
         var bodyUncompressedLength = CheckedLength(reader.ReadUInt64(), "body_uncompressed_len");
         var bodyCompressedLength = CheckedLength(reader.ReadUInt64(), "body_compressed_len");
-        var expectedBodyLength = ExpectedBodyLength(tickCount, subtickCount);
+        var expectedBodyLength = ExpectedBodyLength(tickCount, subtickCount, projectileCount);
         if (bodyUncompressedLength != expectedBodyLength)
             throw new InvalidDataException($"body length {bodyUncompressedLength} != expected {expectedBodyLength}");
 
@@ -325,6 +344,10 @@ internal static class BotControllerNative
         if (expectedSubticks != subtickCount)
             throw new InvalidDataException($"tick subtick sum {expectedSubticks} != header subtick count {subtickCount}");
 
+        var projectiles = new ReplayProjectileEvent[projectileCount];
+        for (var i = 0; i < projectileCount; i++)
+            projectiles[i] = ReadProjectileEvent(bodyReader);
+
         var subticks = new NativeSubtickMove[subtickCount];
         for (var i = 0; i < subtickCount; i++)
         {
@@ -343,7 +366,7 @@ internal static class BotControllerNative
         if (bodyStream.Position != bodyStream.Length)
             throw new InvalidDataException("trailing bytes in .dtr body");
 
-        return new ReplayFile(ticks, subticks);
+        return new ReplayFile(ticks, projectiles, subticks);
     }
 
     private static int CheckedCount(uint value, string fieldName)
@@ -360,12 +383,13 @@ internal static class BotControllerNative
         return (int)value;
     }
 
-    private static int ExpectedBodyLength(int tickCount, int subtickCount)
+    private static int ExpectedBodyLength(int tickCount, int subtickCount, int projectileCount)
     {
         var snapshotCount = tickCount == 0 ? 0 : checked(tickCount + 1);
         return checked(
             snapshotCount * MovementSnapshotByteSize +
             tickCount * TickMetadataByteSize +
+            projectileCount * ProjectileEventByteSize +
             subtickCount * SubtickMoveByteSize);
     }
 
@@ -413,6 +437,35 @@ internal static class BotControllerNative
         };
     }
 
+    private static ReplayProjectileEvent ReadProjectileEvent(BinaryReader reader)
+    {
+        var tickIndex = reader.ReadUInt32();
+        var weaponDefIndex = reader.ReadInt32();
+        var kind = (ReplayProjectileKind)reader.ReadByte();
+        _ = reader.ReadByte();
+        _ = reader.ReadByte();
+        _ = reader.ReadByte();
+        var initialPosition = new ReplayVector3(
+            reader.ReadSingle(),
+            reader.ReadSingle(),
+            reader.ReadSingle());
+        var initialVelocity = new ReplayVector3(
+            reader.ReadSingle(),
+            reader.ReadSingle(),
+            reader.ReadSingle());
+        var detonationPosition = new ReplayVector3(
+            reader.ReadSingle(),
+            reader.ReadSingle(),
+            reader.ReadSingle());
+        return new ReplayProjectileEvent(
+            tickIndex,
+            kind,
+            weaponDefIndex,
+            initialPosition,
+            initialVelocity,
+            detonationPosition);
+    }
+
     private static string ReadRecString(BinaryReader reader)
     {
         var len = reader.ReadUInt16();
@@ -433,10 +486,33 @@ internal static class BotControllerNative
             throw new InvalidOperationException($"ReplayTick layout is {tickSize}, expected {ReplayTickByteSize}");
     }
 
-    private readonly record struct ReplayFile(NativeReplayTick[] Ticks, NativeSubtickMove[] Subticks);
+    private readonly record struct ReplayFile(
+        NativeReplayTick[] Ticks,
+        ReplayProjectileEvent[] Projectiles,
+        NativeSubtickMove[] Subticks);
 }
 
 internal readonly record struct ReplayState(int Cursor, int Total, bool Playing);
+
+internal enum ReplayProjectileKind : byte
+{
+    Unknown = 0,
+    Smoke = 1,
+    Flash = 2,
+    He = 3,
+    Molotov = 4,
+    Decoy = 5
+}
+
+internal readonly record struct ReplayVector3(float X, float Y, float Z);
+
+internal readonly record struct ReplayProjectileEvent(
+    uint TickIndex,
+    ReplayProjectileKind Kind,
+    int WeaponDefIndex,
+    ReplayVector3 InitialPosition,
+    ReplayVector3 InitialVelocity,
+    ReplayVector3 DetonationPosition);
 
 [StructLayout(LayoutKind.Sequential, Pack = 4)]
 internal struct NativeMovementSnapshot

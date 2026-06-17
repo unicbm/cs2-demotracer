@@ -1,5 +1,6 @@
 use crate::model::{
-    Cs2Rec, Cs2RecHeader, MovementSnapshot, ReplayTick, SubtickMove, DTR_FORMAT_VERSION,
+    Cs2Rec, Cs2RecHeader, MovementSnapshot, ProjectileKind, ReplayProjectile, ReplayTick,
+    SubtickMove, DTR_FORMAT_VERSION,
 };
 use crate::{io_error, Error, Result};
 use std::fs::File;
@@ -13,6 +14,7 @@ const BROTLI_QUALITY: u32 = 6;
 const BROTLI_LGWIN: u32 = 22;
 const SNAPSHOT_BYTE_SIZE: usize = 92;
 const TICK_METADATA_BYTE_SIZE: usize = 8;
+const PROJECTILE_BYTE_SIZE: usize = 48;
 const SUBTICK_BYTE_SIZE: usize = 28;
 
 pub fn write_rec_file(path: &Path, rec: &Cs2Rec) -> Result<()> {
@@ -44,6 +46,7 @@ pub fn write_rec<W: Write>(writer: &mut W, rec: &Cs2Rec) -> Result<()> {
     write_u64(writer, rec.header.steam_id)?;
     write_u32(writer, rec.ticks.len() as u32)?;
     write_u32(writer, rec.subticks.len() as u32)?;
+    write_u32(writer, rec.projectiles.len() as u32)?;
     write_string(writer, &rec.header.map)?;
     write_string(writer, &rec.header.player_name)?;
     write_u8(writer, CODEC_BROTLI)?;
@@ -66,7 +69,7 @@ pub fn read_rec<R: Read>(reader: &mut R) -> Result<Cs2Rec> {
     }
 
     let version = read_u32(reader)?;
-    if version != DTR_FORMAT_VERSION {
+    if !(3..=DTR_FORMAT_VERSION).contains(&version) {
         return Err(Error::InvalidRec(format!("unsupported version {version}")));
     }
 
@@ -77,6 +80,11 @@ pub fn read_rec<R: Read>(reader: &mut R) -> Result<Cs2Rec> {
     let steam_id = read_u64(reader)?;
     let tick_count = read_u32(reader)? as usize;
     let subtick_count = read_u32(reader)? as usize;
+    let projectile_count = if version >= 4 {
+        read_u32(reader)? as usize
+    } else {
+        0
+    };
     let map = read_string(reader)?;
     let player_name = read_string(reader)?;
     let codec = read_u8(reader)?;
@@ -86,7 +94,7 @@ pub fn read_rec<R: Read>(reader: &mut R) -> Result<Cs2Rec> {
 
     let body_uncompressed_len = checked_len(read_u64(reader)?, "body_uncompressed_len")?;
     let body_compressed_len = checked_len(read_u64(reader)?, "body_compressed_len")?;
-    let expected_body_len = expected_body_len(tick_count, subtick_count)?;
+    let expected_body_len = expected_body_len(tick_count, subtick_count, projectile_count)?;
     if body_uncompressed_len != expected_body_len {
         return Err(Error::InvalidRec(format!(
             "body length {body_uncompressed_len} != expected {expected_body_len}"
@@ -98,7 +106,8 @@ pub fn read_rec<R: Read>(reader: &mut R) -> Result<Cs2Rec> {
         .read_exact(&mut compressed)
         .map_err(|e| Error::InvalidRec(e.to_string()))?;
     let body = decompress_body(&compressed, body_uncompressed_len)?;
-    let (ticks, subticks) = read_body(&body, tick_count, subtick_count)?;
+    let (ticks, projectiles, subticks) =
+        read_body(&body, tick_count, projectile_count, subtick_count)?;
 
     Ok(Cs2Rec {
         header: Cs2RecHeader {
@@ -112,6 +121,7 @@ pub fn read_rec<R: Read>(reader: &mut R) -> Result<Cs2Rec> {
             flags,
         },
         ticks,
+        projectiles,
         subticks,
     })
 }
@@ -140,7 +150,11 @@ fn validate_snapshot_chain(rec: &Cs2Rec) -> Result<()> {
 }
 
 fn build_body(rec: &Cs2Rec) -> Result<Vec<u8>> {
-    let mut body = Vec::with_capacity(expected_body_len(rec.ticks.len(), rec.subticks.len())?);
+    let mut body = Vec::with_capacity(expected_body_len(
+        rec.ticks.len(),
+        rec.subticks.len(),
+        rec.projectiles.len(),
+    )?);
     if let Some(first) = rec.ticks.first() {
         write_snapshot(&mut body, &first.pre)?;
         for tick in &rec.ticks {
@@ -151,6 +165,9 @@ fn build_body(rec: &Cs2Rec) -> Result<Vec<u8>> {
         write_i32(&mut body, tick.weapon_def_index)?;
         write_u32(&mut body, tick.num_subtick)?;
     }
+    for projectile in &rec.projectiles {
+        write_projectile(&mut body, projectile)?;
+    }
     for subtick in &rec.subticks {
         write_subtick(&mut body, subtick)?;
     }
@@ -160,8 +177,9 @@ fn build_body(rec: &Cs2Rec) -> Result<Vec<u8>> {
 fn read_body(
     body: &[u8],
     tick_count: usize,
+    projectile_count: usize,
     subtick_count: usize,
-) -> Result<(Vec<ReplayTick>, Vec<SubtickMove>)> {
+) -> Result<(Vec<ReplayTick>, Vec<ReplayProjectile>, Vec<SubtickMove>)> {
     let mut reader = Cursor::new(body);
     let snapshot_count = if tick_count == 0 { 0 } else { tick_count + 1 };
     let mut snapshots = Vec::with_capacity(snapshot_count);
@@ -189,6 +207,11 @@ fn read_body(
         )));
     }
 
+    let mut projectiles = Vec::with_capacity(projectile_count);
+    for _ in 0..projectile_count {
+        projectiles.push(read_projectile(&mut reader)?);
+    }
+
     let mut subticks = Vec::with_capacity(subtick_count);
     for _ in 0..subtick_count {
         subticks.push(read_subtick(&mut reader)?);
@@ -196,7 +219,7 @@ fn read_body(
     if reader.position() != body.len() as u64 {
         return Err(Error::InvalidRec("trailing bytes in .dtr body".to_string()));
     }
-    Ok((ticks, subticks))
+    Ok((ticks, projectiles, subticks))
 }
 
 fn compress_body(body: &[u8]) -> Result<Vec<u8>> {
@@ -233,7 +256,11 @@ fn decompress_body(compressed: &[u8], expected_len: usize) -> Result<Vec<u8>> {
     Ok(body)
 }
 
-fn expected_body_len(tick_count: usize, subtick_count: usize) -> Result<usize> {
+fn expected_body_len(
+    tick_count: usize,
+    subtick_count: usize,
+    projectile_count: usize,
+) -> Result<usize> {
     let snapshot_count = if tick_count == 0 { 0 } else { tick_count + 1 };
     let snapshot_bytes = snapshot_count
         .checked_mul(SNAPSHOT_BYTE_SIZE)
@@ -244,8 +271,12 @@ fn expected_body_len(tick_count: usize, subtick_count: usize) -> Result<usize> {
     let subtick_bytes = subtick_count
         .checked_mul(SUBTICK_BYTE_SIZE)
         .ok_or_else(|| Error::InvalidRec("subtick body too large".to_string()))?;
+    let projectile_bytes = projectile_count
+        .checked_mul(PROJECTILE_BYTE_SIZE)
+        .ok_or_else(|| Error::InvalidRec("projectile body too large".to_string()))?;
     snapshot_bytes
         .checked_add(tick_bytes)
+        .and_then(|value| value.checked_add(projectile_bytes))
         .and_then(|value| value.checked_add(subtick_bytes))
         .ok_or_else(|| Error::InvalidRec("body too large".to_string()))
 }
@@ -355,6 +386,55 @@ fn read_subtick<R: Read>(reader: &mut R) -> Result<SubtickMove> {
         analog_left: read_f32(reader)?,
         pitch_delta: read_f32(reader)?,
         yaw_delta: read_f32(reader)?,
+    })
+}
+
+fn write_projectile<W: Write>(writer: &mut W, projectile: &ReplayProjectile) -> Result<()> {
+    write_u32(writer, projectile.tick_index)?;
+    write_i32(writer, projectile.weapon_def_index)?;
+    write_u8(writer, projectile.kind.to_u8())?;
+    writer
+        .write_all(&[0, 0, 0])
+        .map_err(|e| Error::InvalidRec(e.to_string()))?;
+    for value in projectile.initial_position {
+        write_f32(writer, value)?;
+    }
+    for value in projectile.initial_velocity {
+        write_f32(writer, value)?;
+    }
+    for value in projectile.detonation_position {
+        write_f32(writer, value)?;
+    }
+    Ok(())
+}
+
+fn read_projectile<R: Read>(reader: &mut R) -> Result<ReplayProjectile> {
+    let tick_index = read_u32(reader)?;
+    let weapon_def_index = read_i32(reader)?;
+    let kind = ProjectileKind::from_u8(read_u8(reader)?);
+    let mut pad = [0_u8; 3];
+    reader
+        .read_exact(&mut pad)
+        .map_err(|e| Error::InvalidRec(e.to_string()))?;
+    let mut initial_position = [0.0_f32; 3];
+    let mut initial_velocity = [0.0_f32; 3];
+    let mut detonation_position = [0.0_f32; 3];
+    for value in &mut initial_position {
+        *value = read_f32(reader)?;
+    }
+    for value in &mut initial_velocity {
+        *value = read_f32(reader)?;
+    }
+    for value in &mut detonation_position {
+        *value = read_f32(reader)?;
+    }
+    Ok(ReplayProjectile {
+        tick_index,
+        kind,
+        weapon_def_index,
+        initial_position,
+        initial_velocity,
+        detonation_position,
     })
 }
 
@@ -492,7 +572,9 @@ fn read_f32<R: Read>(reader: &mut R) -> Result<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Cs2RecHeader, MovementSnapshot, ReplayTick, SubtickMove};
+    use crate::model::{
+        Cs2RecHeader, MovementSnapshot, ProjectileKind, ReplayProjectile, ReplayTick, SubtickMove,
+    };
 
     #[test]
     fn rec_writer_rejects_mismatched_subtick_count() {
@@ -515,6 +597,7 @@ mod tests {
             &body,
             rec.ticks.len(),
             rec.subticks.len(),
+            rec.projectiles.len(),
             CODEC_BROTLI,
             None,
         );
@@ -531,10 +614,14 @@ mod tests {
         let mut bytes = Vec::new();
         write_rec(&mut bytes, &rec).unwrap();
         assert_eq!(&bytes[0..8], MAGIC);
-        assert_eq!(u32::from_le_bytes(bytes[8..12].try_into().unwrap()), 3);
+        assert_eq!(
+            u32::from_le_bytes(bytes[8..12].try_into().unwrap()),
+            DTR_FORMAT_VERSION
+        );
         let parsed = read_rec(&mut &bytes[..]).unwrap();
         assert_eq!(parsed.header, rec.header);
         assert_eq!(parsed.ticks.len(), rec.ticks.len());
+        assert_eq!(parsed.projectiles, rec.projectiles);
         assert_eq!(parsed.subticks.len(), rec.subticks.len());
         for (parsed_tick, tick) in parsed.ticks.iter().zip(rec.ticks.iter()) {
             assert!(snapshot_bit_eq(&parsed_tick.pre, &tick.pre));
@@ -571,7 +658,7 @@ mod tests {
     }
 
     #[test]
-    fn rec_reader_rejects_non_v3_version() {
+    fn rec_reader_rejects_unsupported_version() {
         let mut bytes = encoded_sample_rec();
         bytes[8..12].copy_from_slice(&2_u32.to_le_bytes());
         let err = read_rec(&mut &bytes[..]).unwrap_err();
@@ -581,7 +668,7 @@ mod tests {
     #[test]
     fn rec_reader_rejects_unknown_codec() {
         let mut bytes = encoded_sample_rec();
-        let (codec_offset, _, _) = v3_offsets(&bytes);
+        let (codec_offset, _, _) = v4_offsets(&bytes);
         bytes[codec_offset] = 9;
         let err = read_rec(&mut &bytes[..]).unwrap_err();
         assert!(err.to_string().contains("unsupported codec 9"));
@@ -590,7 +677,7 @@ mod tests {
     #[test]
     fn rec_reader_rejects_body_length_mismatch() {
         let mut bytes = encoded_sample_rec();
-        let (_, body_len_offset, _) = v3_offsets(&bytes);
+        let (_, body_len_offset, _) = v4_offsets(&bytes);
         bytes[body_len_offset..body_len_offset + 8].copy_from_slice(&999_u64.to_le_bytes());
         let err = read_rec(&mut &bytes[..]).unwrap_err();
         assert!(err.to_string().contains("body length 999 != expected"));
@@ -660,6 +747,14 @@ mod tests {
                     num_subtick: 0,
                 },
             ],
+            projectiles: vec![ReplayProjectile {
+                tick_index: 1,
+                kind: ProjectileKind::Smoke,
+                weapon_def_index: 45,
+                initial_position: [10.0, 20.0, 30.0],
+                initial_velocity: [100.0, 200.0, 300.0],
+                detonation_position: [40.0, 50.0, 60.0],
+            }],
             subticks: vec![SubtickMove {
                 when: 0.5,
                 button: 1,
@@ -682,6 +777,7 @@ mod tests {
         body: &[u8],
         tick_count: usize,
         subtick_count: usize,
+        projectile_count: usize,
         codec: u8,
         body_len: Option<u64>,
     ) -> Vec<u8> {
@@ -696,6 +792,7 @@ mod tests {
         write_u64(&mut bytes, 76561198000000000).unwrap();
         write_u32(&mut bytes, tick_count as u32).unwrap();
         write_u32(&mut bytes, subtick_count as u32).unwrap();
+        write_u32(&mut bytes, projectile_count as u32).unwrap();
         write_string(&mut bytes, "de_mirage").unwrap();
         write_string(&mut bytes, "player").unwrap();
         write_u8(&mut bytes, codec).unwrap();
@@ -705,8 +802,8 @@ mod tests {
         bytes
     }
 
-    fn v3_offsets(bytes: &[u8]) -> (usize, usize, usize) {
-        let mut offset = 8 + 4 + 4 + 4 + 1 + 4 + 8 + 4 + 4;
+    fn v4_offsets(bytes: &[u8]) -> (usize, usize, usize) {
+        let mut offset = 8 + 4 + 4 + 4 + 1 + 4 + 8 + 4 + 4 + 4;
         let map_len = u16::from_le_bytes(bytes[offset..offset + 2].try_into().unwrap()) as usize;
         offset += 2 + map_len;
         let player_len = u16::from_le_bytes(bytes[offset..offset + 2].try_into().unwrap()) as usize;

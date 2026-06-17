@@ -142,6 +142,10 @@ namespace BotController
         bool CurrentReplayInputButtons(int slot, uint64_t &b0, uint64_t &b1,
                                        uint64_t &b2);
 
+        // PlayerRunCommand (pre): seed pawn/service state before weapon input
+        // consumes view/origin/velocity for shots and grenade throws.
+        void OnReplayCommandPre(int slot, void *services);
+
         // Switch a bot to the weapon with this def index.
         bool SwitchBotWeaponByDef(int slot, int defIndex);
 

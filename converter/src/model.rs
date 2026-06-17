@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
-pub const DEMOTRACER_ABI: i32 = 10;
-pub const DTR_FORMAT_VERSION: u32 = 3;
+pub const DEMOTRACER_ABI: i32 = 11;
+pub const DTR_FORMAT_VERSION: u32 = 4;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -116,6 +116,83 @@ pub struct ReplayTick {
     pub num_subtick: u32,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectileKind {
+    #[default]
+    Unknown,
+    Smoke,
+    Flash,
+    He,
+    Molotov,
+    Decoy,
+}
+
+impl ProjectileKind {
+    pub fn from_grenade_type(value: &str) -> Self {
+        let lower = value.to_ascii_lowercase();
+        if lower.contains("smoke") {
+            Self::Smoke
+        } else if lower.contains("flash") {
+            Self::Flash
+        } else if lower.contains("hegrenade") || lower.contains("he_grenade") {
+            Self::He
+        } else if lower.contains("molotov")
+            || lower.contains("incgrenade")
+            || lower.contains("inferno")
+        {
+            Self::Molotov
+        } else if lower.contains("decoy") {
+            Self::Decoy
+        } else {
+            Self::Unknown
+        }
+    }
+
+    pub fn to_u8(self) -> u8 {
+        match self {
+            Self::Unknown => 0,
+            Self::Smoke => 1,
+            Self::Flash => 2,
+            Self::He => 3,
+            Self::Molotov => 4,
+            Self::Decoy => 5,
+        }
+    }
+
+    pub fn from_u8(value: u8) -> Self {
+        match value {
+            1 => Self::Smoke,
+            2 => Self::Flash,
+            3 => Self::He,
+            4 => Self::Molotov,
+            5 => Self::Decoy,
+            _ => Self::Unknown,
+        }
+    }
+
+    pub fn weapon_def_index(self) -> i32 {
+        match self {
+            Self::Flash => 43,
+            Self::He => 44,
+            Self::Smoke => 45,
+            Self::Molotov => 46,
+            Self::Decoy => 47,
+            Self::Unknown => -1,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct ReplayProjectile {
+    pub tick_index: u32,
+    pub kind: ProjectileKind,
+    pub weapon_def_index: i32,
+    pub initial_position: [f32; 3],
+    pub initial_velocity: [f32; 3],
+    pub detonation_position: [f32; 3],
+}
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct SubtickMove {
     pub when: f32,
@@ -158,6 +235,7 @@ impl Default for Cs2RecHeader {
 pub struct Cs2Rec {
     pub header: Cs2RecHeader,
     pub ticks: Vec<ReplayTick>,
+    pub projectiles: Vec<ReplayProjectile>,
     pub subticks: Vec<SubtickMove>,
 }
 
@@ -172,6 +250,19 @@ pub struct ParsedDemo {
     pub bomb_beginplant_ticks: Vec<i32>,
     pub bomb_planted_ticks: Vec<i32>,
     pub rows: Vec<ParsedPlayerTick>,
+    pub projectiles: Vec<ParsedProjectile>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct ParsedProjectile {
+    pub tick: i32,
+    pub steam_id: u64,
+    pub name: String,
+    pub grenade_type: String,
+    pub kind: ProjectileKind,
+    pub initial_position: [f32; 3],
+    pub initial_velocity: [f32; 3],
+    pub detonation_position: [f32; 3],
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

@@ -6,7 +6,7 @@ use std::path::Path;
 mod demoparser_impl {
     use super::*;
     use crate::io_error;
-    use crate::model::{ParsedPlayerTick, SubtickMove};
+    use crate::model::{ParsedPlayerTick, ParsedProjectile, ProjectileKind, SubtickMove};
     use ahash::AHashMap;
     use parser::first_pass::parser_settings::{rm_user_friendly_names, ParserInputs};
     use parser::parse_demo::{Parser, ParsingMode};
@@ -208,6 +208,7 @@ mod demoparser_impl {
         bomb_beginplant_ticks.dedup();
         bomb_planted_ticks.sort_unstable();
         bomb_planted_ticks.dedup();
+        let projectiles = parse_projectiles(&bytes)?;
 
         Ok(ParsedDemo {
             path: path.display().to_string(),
@@ -219,7 +220,136 @@ mod demoparser_impl {
             bomb_beginplant_ticks,
             bomb_planted_ticks,
             rows,
+            projectiles,
         })
+    }
+
+    fn parse_projectiles(bytes: &[u8]) -> Result<Vec<ParsedProjectile>> {
+        let wanted_props = vec![
+            "Grenade.m_vInitialPosition",
+            "Grenade.m_vInitialVelocity",
+            "Grenade.m_vSmokeDetonationPos",
+            "Grenade.m_nBounces",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+
+        let real_props =
+            rm_user_friendly_names(&wanted_props).map_err(|e| Error::Parser(format!("{e:?}")))?;
+        let mut real_name_to_og_name = AHashMap::default();
+        for (real, friendly) in real_props.iter().zip(&wanted_props) {
+            real_name_to_og_name.insert(real.clone(), friendly.clone());
+        }
+
+        let huf = create_huffman_lookup_table();
+        let settings = ParserInputs {
+            real_name_to_og_name,
+            wanted_players: vec![],
+            wanted_player_props: real_props,
+            wanted_other_props: vec![],
+            wanted_prop_states: AHashMap::default(),
+            wanted_ticks: vec![],
+            wanted_events: vec![],
+            parse_ents: true,
+            parse_projectiles: true,
+            parse_grenades: false,
+            only_header: false,
+            only_convars: false,
+            huffman_lookup_table: &huf,
+            order_by_steamid: false,
+            list_props: false,
+            fallback_bytes: None,
+        };
+        let mut parser = Parser::new(settings, ParsingMode::Normal);
+        let output = parser
+            .parse_demo(bytes)
+            .map_err(|e| Error::Parser(format!("{e:?}")))?;
+
+        let columns = output_columns(&output);
+        let len = columns.values().map(|c| c.len()).max().unwrap_or_default();
+        let mut grouped: AHashMap<ProjectileKey, ParsedProjectile> = AHashMap::default();
+        for idx in 0..len {
+            let steam_id = get_u64(&columns, "steamid", idx).unwrap_or_default();
+            if steam_id == 0 {
+                continue;
+            }
+            let tick = get_i32(&columns, "tick", idx).unwrap_or_default();
+            let grenade_type = get_string(&columns, "grenade_type", idx).unwrap_or_default();
+            let initial_position = match get_vec3(&columns, "Grenade.m_vInitialPosition", idx) {
+                Some(value) if vec3_is_meaningful(value) => value,
+                _ => continue,
+            };
+            let initial_velocity = match get_vec3(&columns, "Grenade.m_vInitialVelocity", idx) {
+                Some(value) if vec3_is_meaningful(value) => value,
+                _ => continue,
+            };
+            let detonation_position =
+                get_vec3(&columns, "Grenade.m_vSmokeDetonationPos", idx).unwrap_or_default();
+            let key =
+                ProjectileKey::new(steam_id, &grenade_type, initial_position, initial_velocity);
+            let entry = grouped.entry(key).or_insert_with(|| ParsedProjectile {
+                tick,
+                steam_id,
+                name: get_string(&columns, "name", idx).unwrap_or_default(),
+                kind: ProjectileKind::from_grenade_type(&grenade_type),
+                grenade_type,
+                initial_position,
+                initial_velocity,
+                detonation_position: [0.0, 0.0, 0.0],
+            });
+            if tick < entry.tick {
+                entry.tick = tick;
+            }
+            if vec3_is_meaningful(detonation_position) {
+                entry.detonation_position = detonation_position;
+            }
+        }
+
+        let mut projectiles = grouped.into_values().collect::<Vec<_>>();
+        projectiles.sort_by_key(|projectile| (projectile.tick, projectile.steam_id));
+        Ok(projectiles)
+    }
+
+    fn output_columns<'a>(
+        output: &'a parser::parse_demo::DemoOutput,
+    ) -> AHashMap<String, &'a PropColumn> {
+        let mut columns = AHashMap::default();
+        for info in &output.prop_controller.prop_infos {
+            if let Some(column) = output.df.get(&info.id) {
+                columns.insert(info.prop_friendly_name.clone(), column);
+            }
+        }
+        columns
+    }
+
+    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+    struct ProjectileKey {
+        steam_id: u64,
+        grenade_type: String,
+        initial_position: [u32; 3],
+        initial_velocity: [u32; 3],
+    }
+
+    impl ProjectileKey {
+        fn new(
+            steam_id: u64,
+            grenade_type: &str,
+            initial_position: [f32; 3],
+            initial_velocity: [f32; 3],
+        ) -> Self {
+            Self {
+                steam_id,
+                grenade_type: grenade_type.to_string(),
+                initial_position: initial_position.map(f32::to_bits),
+                initial_velocity: initial_velocity.map(f32::to_bits),
+            }
+        }
+    }
+
+    fn vec3_is_meaningful(value: [f32; 3]) -> bool {
+        value.iter().all(|component| component.is_finite())
+            && value.iter().any(|component| component.abs() > f32::EPSILON)
     }
 
     fn event_ticks(events: &[parser::second_pass::game_events::GameEvent], name: &str) -> Vec<i32> {

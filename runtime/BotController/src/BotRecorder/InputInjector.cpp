@@ -287,6 +287,8 @@ namespace BotController
                         if (out[i].analogLeft != 0.0f)
                             m->set_analog_left_delta(out[i].analogLeft);
                     }
+
+                    MotionRecorder::OnReplayCommandPre(slot, services);
                 }
             }
 

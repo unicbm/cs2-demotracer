@@ -473,6 +473,7 @@ mod tests {
             bomb_beginplant_ticks: Vec::new(),
             bomb_planted_ticks: Vec::new(),
             rows: vec![row(1, 0, 2, 1), row(1, 640, 3, 2)],
+            projectiles: Vec::new(),
         };
         let analysis = analyze_demo(&parsed, AnalysisOptions::default());
         assert_eq!(analysis.rounds[0].status, RoundStatus::Suspicious);
@@ -497,6 +498,7 @@ mod tests {
             bomb_beginplant_ticks: Vec::new(),
             bomb_planted_ticks: Vec::new(),
             rows: vec![frozen],
+            projectiles: Vec::new(),
         };
 
         let analysis = analyze_demo(&parsed, AnalysisOptions::default());
@@ -543,6 +545,7 @@ mod tests {
             bomb_beginplant_ticks: Vec::new(),
             bomb_planted_ticks: Vec::new(),
             rows,
+            projectiles: Vec::new(),
         };
 
         let analysis = analyze_demo(&parsed, AnalysisOptions::default());
@@ -572,6 +575,7 @@ mod tests {
             bomb_beginplant_ticks: Vec::new(),
             bomb_planted_ticks: Vec::new(),
             rows,
+            projectiles: Vec::new(),
         };
 
         let analysis = analyze_demo(&parsed, AnalysisOptions::default());
@@ -608,6 +612,7 @@ mod tests {
             bomb_beginplant_ticks: Vec::new(),
             bomb_planted_ticks: Vec::new(),
             rows,
+            projectiles: Vec::new(),
         };
 
         let analysis = analyze_demo(&parsed, AnalysisOptions::default());
@@ -644,6 +649,7 @@ mod tests {
             bomb_beginplant_ticks: Vec::new(),
             bomb_planted_ticks: Vec::new(),
             rows,
+            projectiles: Vec::new(),
         };
 
         let analysis = analyze_demo(&parsed, AnalysisOptions::default());

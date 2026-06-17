@@ -4,6 +4,7 @@ using CounterStrikeSharp.API.Core.Attributes.Registration;
 using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Modules.Memory;
 using CounterStrikeSharp.API.Modules.Utils;
+using System.Globalization;
 using System.IO.Compression;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
@@ -21,13 +22,89 @@ public sealed class DemoTracerPlugin : BasePlugin
 
     private static readonly byte[] RecMagic =
     [
-        (byte)'C', (byte)'S', (byte)'2', (byte)'B',
-        (byte)'M', (byte)'R', (byte)'E', (byte)'C'
+        (byte)'C', (byte)'S', (byte)'D', (byte)'T',
+        (byte)'R', (byte)'R', (byte)'E', (byte)'C'
     ];
     private const float HandoffGraceSeconds = 0.25f;
     private const float BulletHandoffMatchSeconds = 0.25f;
     private const int BulletHandoffMinDamage = 10;
+    private const int ProjectileAlignMatchAttempts = 8;
+    private const int ProjectileAlignPostMatchWrites = 1;
     private const int MaxPlayerSlots = 64;
+    private static readonly string[] UtilityTraceColumns =
+    [
+        "kind",
+        "time",
+        "slot",
+        "player",
+        "steam_id",
+        "replay_cursor",
+        "replay_total",
+        "weapon_def",
+        "live_weapon",
+        "live_x",
+        "live_y",
+        "live_z",
+        "live_vx",
+        "live_vy",
+        "live_vz",
+        "live_pitch",
+        "live_yaw",
+        "replay_pre_x",
+        "replay_pre_y",
+        "replay_pre_z",
+        "replay_pre_vx",
+        "replay_pre_vy",
+        "replay_pre_vz",
+        "replay_pre_pitch",
+        "replay_pre_yaw",
+        "replay_buttons",
+        "replay_buttons1",
+        "replay_buttons2",
+        "replay_post_x",
+        "replay_post_y",
+        "replay_post_z",
+        "replay_post_vx",
+        "replay_post_vy",
+        "replay_post_vz",
+        "stash_set",
+        "stash_time",
+        "stash_x",
+        "stash_y",
+        "stash_z",
+        "stash_vx",
+        "stash_vy",
+        "stash_vz",
+        "stash_pitch",
+        "stash_yaw",
+        "projectile_index",
+        "projectile_name",
+        "projectile_x",
+        "projectile_y",
+        "projectile_z",
+        "projectile_abs_vx",
+        "projectile_abs_vy",
+        "projectile_abs_vz",
+        "projectile_est_vx",
+        "projectile_est_vy",
+        "projectile_est_vz",
+        "projectile_init_x",
+        "projectile_init_y",
+        "projectile_init_z",
+        "projectile_init_vx",
+        "projectile_init_vy",
+        "projectile_init_vz",
+        "projectile_smoke_det_x",
+        "projectile_smoke_det_y",
+        "projectile_smoke_det_z",
+        "projectile_bounces",
+        "projectile_is_live",
+        "event_entity",
+        "event_x",
+        "event_y",
+        "event_z",
+        "message"
+    ];
 
     private readonly List<int> _loadedSlots = new();
     private readonly Dictionary<int, LoadedReplay> _loadedReplays = new();
@@ -35,13 +112,19 @@ public sealed class DemoTracerPlugin : BasePlugin
     private readonly Dictionary<int, int> _lastReplayWeaponDef = new();
     private readonly Dictionary<int, int> _lastLockedWeaponTarget = new();
     private readonly Dictionary<int, PendingWeaponAlign> _pendingWeaponAlign = new();
+    private readonly Dictionary<int, int> _projectileAlignNextBySlot = new();
+    private readonly Dictionary<uint, PendingProjectileAlign> _pendingProjectileAlign = new();
     private readonly HashSet<int> _rebuiltInventorySlots = new();
     private readonly HashSet<int> _loadoutSyncedSlots = new();
     private readonly HashSet<int> _lastPlayingSlots = new();
     private readonly Dictionary<int, float> _replayStartedAt = new();
     private readonly Dictionary<int, PendingBulletHit> _pendingBulletHits = new();
     private readonly Dictionary<int, PendingBulletDamage> _pendingBulletDamages = new();
+    private readonly Dictionary<uint, UtilityProjectileTrace> _utilityTraceProjectiles = new();
     private readonly BotHiderMemoryProbe _botHiderProbe = new();
+    private StreamWriter? _utilityTraceWriter;
+    private string _utilityTracePath = string.Empty;
+    private bool _utilityTraceEnabled;
 
     private bool _armed;
     private bool _armedLoop;
@@ -59,6 +142,7 @@ public sealed class DemoTracerPlugin : BasePlugin
     private int _poolRoundIndex;
     private readonly HashSet<string> _poolUsedCandidates = new();
     private bool _weaponAlignEnabled = true;
+    private bool _projectileAlignEnabled = true;
     private bool _weaponAlignFrameQueued;
     private HandoffMode _handoffMode = HandoffMode.DeathOrContact;
     private bool _handoffAllSlots;
@@ -68,6 +152,8 @@ public sealed class DemoTracerPlugin : BasePlugin
     public override void Load(bool hotReload)
     {
         RegisterListener<Listeners.OnTick>(OnTick);
+        RegisterListener<Listeners.OnEntitySpawned>(OnEntitySpawned);
+        RegisterListener<Listeners.OnEntityDeleted>(OnEntityDeleted);
         ConfigureNativeSafetyOffsets();
         Server.PrintToConsole("dtr: CSS control plugin loaded");
     }
@@ -75,6 +161,7 @@ public sealed class DemoTracerPlugin : BasePlugin
     public override void Unload(bool hotReload)
     {
         StopAndUnloadLoaded();
+        StopUtilityTrace();
         BotControllerNative.ClearAllBuyPlans();
         _botHiderProbe.Dispose();
     }
@@ -227,6 +314,20 @@ public sealed class DemoTracerPlugin : BasePlugin
         }
 
         command.ReplyToCommand($"dtr: weapon_align={_weaponAlignEnabled}");
+    }
+
+    [ConsoleCommand("dtr_projectile_align", "dtr_projectile_align <0|1>")]
+    public void ProjectileAlignCommand(CCSPlayerController? player, CommandInfo command)
+    {
+        if (command.ArgCount >= 2)
+            _projectileAlignEnabled = command.GetArg(1) != "0";
+        if (!_projectileAlignEnabled)
+        {
+            _projectileAlignNextBySlot.Clear();
+            _pendingProjectileAlign.Clear();
+        }
+
+        command.ReplyToCommand($"dtr: projectile_align={_projectileAlignEnabled}");
     }
 
     [ConsoleCommand("dtr_handoff", "dtr_handoff <off|death|contact|death_or_contact> [all|slot]")]
@@ -412,6 +513,8 @@ public sealed class DemoTracerPlugin : BasePlugin
         _lastReplayWeaponDef.Clear();
         _lastLockedWeaponTarget.Clear();
         _pendingWeaponAlign.Clear();
+        _projectileAlignNextBySlot.Clear();
+        _pendingProjectileAlign.Clear();
         _rebuiltInventorySlots.Clear();
         _lastPlayingSlots.Clear();
         _replayStartedAt.Clear();
@@ -478,7 +581,39 @@ public sealed class DemoTracerPlugin : BasePlugin
             ? $" pool_next={_poolRoundIndex}"
             : string.Empty;
         command.ReplyToCommand(
-            $"dtr: abi={BotControllerNative.AbiVersion} slot={slot} playing={state.Playing} cursor={state.Cursor} total={state.Total} handoff={FormatHandoffMode(_handoffMode)} scope={(_handoffAllSlots ? "all" : "slot")} partial={_partialReplayEnabled} identity={ReplayIdentityModeName()}{sequence}{pool}");
+            $"dtr: abi={BotControllerNative.AbiVersion} slot={slot} playing={state.Playing} cursor={state.Cursor} total={state.Total} handoff={FormatHandoffMode(_handoffMode)} scope={(_handoffAllSlots ? "all" : "slot")} partial={_partialReplayEnabled} identity={ReplayIdentityModeName()} projectile_align={_projectileAlignEnabled}{sequence}{pool}");
+    }
+
+    [ConsoleCommand("dtr_util_trace", "dtr_util_trace <0|1> [path]")]
+    public void UtilityTraceCommand(CCSPlayerController? player, CommandInfo command)
+    {
+        if (command.ArgCount < 2)
+        {
+            command.ReplyToCommand(
+                _utilityTraceEnabled
+                    ? $"dtr: utility trace on path=\"{_utilityTracePath}\""
+                    : "usage: dtr_util_trace <0|1> [path]");
+            return;
+        }
+
+        if (command.GetArg(1) == "0")
+        {
+            var path = _utilityTracePath;
+            StopUtilityTrace();
+            command.ReplyToCommand(string.IsNullOrEmpty(path)
+                ? "dtr: utility trace off"
+                : $"dtr: utility trace off path=\"{path}\"");
+            return;
+        }
+
+        var requestedPath = command.ArgCount >= 3 ? command.GetArg(2) : string.Empty;
+        if (!StartUtilityTrace(requestedPath, out var message))
+        {
+            command.ReplyToCommand($"dtr: utility trace failed: {message}");
+            return;
+        }
+
+        command.ReplyToCommand($"dtr: utility trace on path=\"{message}\"");
     }
 
     [GameEventHandler]
@@ -523,6 +658,33 @@ public sealed class DemoTracerPlugin : BasePlugin
             if (triggerSlot >= 0)
                 HandoffActiveReplays($"player_death_slot{triggerSlot}", triggerSlot);
         }
+
+        return HookResult.Continue;
+    }
+
+    [GameEventHandler]
+    public HookResult OnGrenadeThrown(EventGrenadeThrown @event, GameEventInfo info)
+    {
+        if (_utilityTraceEnabled)
+            TraceGrenadeThrown(@event);
+
+        return HookResult.Continue;
+    }
+
+    [GameEventHandler]
+    public HookResult OnSmokegrenadeDetonate(EventSmokegrenadeDetonate @event, GameEventInfo info)
+    {
+        if (_utilityTraceEnabled)
+            TraceSmokeDetonate(@event);
+
+        return HookResult.Continue;
+    }
+
+    [GameEventHandler]
+    public HookResult OnSmokegrenadeExpired(EventSmokegrenadeExpired @event, GameEventInfo info)
+    {
+        if (_utilityTraceEnabled)
+            TraceSmokeExpired(@event);
 
         return HookResult.Continue;
     }
@@ -583,6 +745,11 @@ public sealed class DemoTracerPlugin : BasePlugin
 
     private void OnTick()
     {
+        ProcessPendingProjectileAlign();
+
+        if (_utilityTraceEnabled)
+            TraceUtilityTick();
+
         if (_loadedSlots.Count == 0)
             return;
 
@@ -622,6 +789,619 @@ public sealed class DemoTracerPlugin : BasePlugin
             ApplyReplayWeaponPreset(slot, tick.WeaponDefIndex, allowSlotReplacement: true, force: false);
         }
     }
+
+    private void OnEntitySpawned(CEntityInstance entity)
+    {
+        if (!IsSmokeProjectile(entity))
+            return;
+
+        try
+        {
+            var projectile = new CSmokeGrenadeProjectile(entity.Handle);
+            if (!projectile.IsValid)
+                return;
+            TrackProjectileAlignCandidate(projectile);
+            if (_utilityTraceEnabled)
+            {
+                _utilityTraceProjectiles[projectile.Index] =
+                    new UtilityProjectileTrace(projectile.Index, entity.Handle, projectile.DesignerName);
+                TraceProjectileEvent("projectile_spawned", projectile, null);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (_utilityTraceEnabled)
+                TraceUtilityMessage("projectile_spawn_failed", ex.Message);
+        }
+    }
+
+    private void TrackProjectileAlignCandidate(CSmokeGrenadeProjectile projectile)
+    {
+        if (!_projectileAlignEnabled)
+            return;
+
+        var pending = new PendingProjectileAlign(projectile.Index, projectile.Handle)
+        {
+            MatchAttemptsRemaining = ProjectileAlignMatchAttempts,
+            WritesRemaining = 0
+        };
+        _pendingProjectileAlign[projectile.Index] = pending;
+
+        TryResolveAndApplyProjectileAlign(projectile, pending);
+    }
+
+    private void ProcessPendingProjectileAlign()
+    {
+        if (_pendingProjectileAlign.Count == 0)
+            return;
+
+        foreach (var entry in _pendingProjectileAlign.ToArray().OrderBy(item => item.Key))
+        {
+            var pending = entry.Value;
+            try
+            {
+                var projectile = new CSmokeGrenadeProjectile(pending.Handle);
+                if (!projectile.IsValid)
+                {
+                    _pendingProjectileAlign.Remove(entry.Key);
+                    continue;
+                }
+
+                if (!pending.Matched)
+                {
+                    if (TryResolveAndApplyProjectileAlign(projectile, pending))
+                        continue;
+
+                    pending.MatchAttemptsRemaining--;
+                    if (pending.MatchAttemptsRemaining <= 0)
+                        _pendingProjectileAlign.Remove(entry.Key);
+                    else
+                        _pendingProjectileAlign[entry.Key] = pending;
+                    continue;
+                }
+
+                ApplyProjectileAlign(projectile, pending.Align);
+                pending.WritesRemaining--;
+                if (pending.WritesRemaining <= 0)
+                    _pendingProjectileAlign.Remove(entry.Key);
+                else
+                    _pendingProjectileAlign[entry.Key] = pending;
+            }
+            catch (Exception ex)
+            {
+                _pendingProjectileAlign.Remove(entry.Key);
+                if (_utilityTraceEnabled)
+                    TraceUtilityMessage("projectile_align_failed", $"index={entry.Key} {ex.Message}");
+            }
+        }
+    }
+
+    private bool TryResolveAndApplyProjectileAlign(
+        CSmokeGrenadeProjectile projectile,
+        PendingProjectileAlign pending)
+    {
+        if (!_projectileAlignEnabled || !TryResolveProjectileAlign(projectile, out var slot, out var eventIndex, out var align))
+            return false;
+
+        ApplyProjectileAlign(projectile, align);
+        _projectileAlignNextBySlot[slot] = eventIndex + 1;
+        pending.Matched = true;
+        pending.Slot = slot;
+        pending.EventIndex = eventIndex;
+        pending.Align = align;
+        pending.WritesRemaining = ProjectileAlignPostMatchWrites;
+        _pendingProjectileAlign[pending.Index] = pending;
+
+        if (_utilityTraceEnabled)
+        {
+            TraceUtilityMessage(
+                "projectile_align",
+                $"slot={slot} event={eventIndex} tick_index={align.TickIndex} projectile={projectile.Index} init_vel=({align.InitialVelocity.X:F3},{align.InitialVelocity.Y:F3},{align.InitialVelocity.Z:F3})");
+        }
+        return true;
+    }
+
+    private bool TryResolveProjectileAlign(
+        CSmokeGrenadeProjectile projectile,
+        out int slot,
+        out int eventIndex,
+        out ReplayProjectileEvent align)
+    {
+        slot = -1;
+        eventIndex = -1;
+        align = default;
+
+        if (!TryGetProjectileThrowerSlot(projectile, out slot))
+            return false;
+        if (!_loadedReplays.TryGetValue(slot, out var replay) || replay.Projectiles.Length == 0)
+            return false;
+
+        var state = BotControllerNative.GetReplayState(slot);
+        if (!state.Playing)
+            return false;
+
+        var next = _projectileAlignNextBySlot.TryGetValue(slot, out var value) ? value : 0;
+        eventIndex = FindProjectileAlignEvent(replay.Projectiles, next, state.Cursor, ReplayProjectileKind.Smoke);
+        if (eventIndex < 0)
+            return false;
+
+        align = replay.Projectiles[eventIndex];
+        return true;
+    }
+
+    private static void ApplyProjectileAlign(CSmokeGrenadeProjectile projectile, ReplayProjectileEvent align)
+    {
+        SetVector(projectile.InitialPosition, align.InitialPosition);
+        SetVector(projectile.InitialVelocity, align.InitialVelocity);
+        SetVector(projectile.AbsOrigin, align.InitialPosition);
+        SetVector(projectile.AbsVelocity, align.InitialVelocity);
+    }
+
+    private static int FindProjectileAlignEvent(
+        IReadOnlyList<ReplayProjectileEvent> events,
+        int start,
+        int cursor,
+        ReplayProjectileKind kind)
+    {
+        const int MaxCursorDistance = 96;
+        var best = -1;
+        var bestDistance = int.MaxValue;
+        for (var i = Math.Max(start, 0); i < events.Count; i++)
+        {
+            var candidate = events[i];
+            if (candidate.Kind != kind)
+                continue;
+
+            var diff = Math.Abs((int)candidate.TickIndex - cursor);
+            if (diff < bestDistance)
+            {
+                best = i;
+                bestDistance = diff;
+            }
+            if ((int)candidate.TickIndex > cursor + MaxCursorDistance)
+                break;
+        }
+
+        return bestDistance <= MaxCursorDistance ? best : -1;
+    }
+
+    private static bool TryGetProjectileThrowerSlot(CSmokeGrenadeProjectile projectile, out int slot)
+    {
+        slot = -1;
+        var thrower = projectile.Thrower.Value;
+        if (thrower is not { IsValid: true })
+            return false;
+
+        foreach (var player in FindTeamPlayers())
+        {
+            var pawn = player.PlayerPawn.Value;
+            if (pawn is { IsValid: true } && pawn.Handle == thrower.Handle)
+            {
+                slot = player.Slot;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static void SetVector(Vector? vector, ReplayVector3 value)
+    {
+        if (vector == null)
+            return;
+        vector.X = value.X;
+        vector.Y = value.Y;
+        vector.Z = value.Z;
+    }
+
+    private void OnEntityDeleted(CEntityInstance entity)
+    {
+        _pendingProjectileAlign.Remove(entity.Index);
+
+        if (!_utilityTraceEnabled)
+            return;
+
+        var index = entity.Index;
+        if (!_utilityTraceProjectiles.TryGetValue(index, out var tracked))
+            return;
+
+        try
+        {
+            var projectile = new CSmokeGrenadeProjectile(tracked.Handle);
+            TraceProjectileEvent("projectile_deleted", projectile, tracked);
+        }
+        catch
+        {
+            TraceWrite(RowFields(
+                ("kind", "projectile_deleted"),
+                ("time", TimeField()),
+                ("projectile_index", index),
+                ("projectile_name", tracked.DesignerName)
+            ));
+        }
+        _utilityTraceProjectiles.Remove(index);
+    }
+
+    private bool StartUtilityTrace(string requestedPath, out string message)
+    {
+        StopUtilityTrace();
+        _utilityTraceProjectiles.Clear();
+
+        try
+        {
+            var path = string.IsNullOrWhiteSpace(requestedPath)
+                ? DefaultUtilityTracePath()
+                : requestedPath;
+            path = Path.GetFullPath(path);
+            var parent = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(parent))
+                Directory.CreateDirectory(parent);
+
+            _utilityTraceWriter = new StreamWriter(path, append: false);
+            _utilityTraceWriter.WriteLine(Row(UtilityTraceColumns));
+            _utilityTraceWriter.Flush();
+            _utilityTracePath = path;
+            _utilityTraceEnabled = true;
+            message = path;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            StopUtilityTrace();
+            message = ex.Message;
+            return false;
+        }
+    }
+
+    private void StopUtilityTrace()
+    {
+        _utilityTraceEnabled = false;
+        _utilityTraceProjectiles.Clear();
+        _utilityTraceWriter?.Flush();
+        _utilityTraceWriter?.Dispose();
+        _utilityTraceWriter = null;
+    }
+
+    private string DefaultUtilityTracePath()
+    {
+        var dir = Path.GetDirectoryName(ModulePath);
+        if (string.IsNullOrWhiteSpace(dir))
+            dir = AppContext.BaseDirectory;
+        var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+        return Path.Combine(dir, $"dtr_util_trace_{stamp}.csv");
+    }
+
+    private void TraceUtilityTick()
+    {
+        foreach (var slot in _loadedSlots.ToArray())
+        {
+            try
+            {
+                TraceReplaySlotTick(slot);
+            }
+            catch (Exception ex)
+            {
+                TraceUtilityMessage("slot_tick_failed", $"slot={slot} {ex.Message}");
+            }
+        }
+
+        foreach (var tracked in _utilityTraceProjectiles.Values.ToArray())
+        {
+            try
+            {
+                var projectile = new CSmokeGrenadeProjectile(tracked.Handle);
+                if (!projectile.IsValid)
+                {
+                    _utilityTraceProjectiles.Remove(tracked.Index);
+                    continue;
+                }
+                TraceProjectileEvent("projectile_tick", projectile, tracked);
+            }
+            catch (Exception ex)
+            {
+                _utilityTraceProjectiles.Remove(tracked.Index);
+                TraceUtilityMessage("projectile_tick_failed", $"index={tracked.Index} {ex.Message}");
+            }
+        }
+
+        _utilityTraceWriter?.Flush();
+    }
+
+    private void TraceReplaySlotTick(int slot)
+    {
+        var state = BotControllerNative.GetReplayState(slot);
+        var hasTick = BotControllerNative.TryGetReplayTick(slot, out var tick);
+        var bot = Utilities.GetPlayerFromSlot(slot);
+        var pawn = bot?.PlayerPawn.Value;
+        var liveOrigin = SafeVector(() => pawn?.AbsOrigin);
+        var liveVelocity = SafeVector(() => pawn?.AbsVelocity);
+        var liveAngles = SafeQAngle(() => pawn?.EyeAngles);
+        var stashPosition = SafeVector(() => pawn?.StashedGrenadeThrowPosition);
+        var stashVelocity = SafeVector(() => pawn?.StashedVelocity);
+        var stashAngles = SafeQAngle(() => pawn?.StashedShootAngles);
+        var stashSet = SafeObject(() => pawn?.GrenadeParametersStashed.ToString());
+        var stashTime = SafeObject(() => pawn?.GrenadeParameterStashTime);
+
+        TraceWrite(RowFields(
+            ("kind", "slot_tick"),
+            ("time", TimeField()),
+            ("slot", slot),
+            ("player", bot?.PlayerName ?? ""),
+            ("steam_id", bot?.SteamID ?? 0UL),
+            ("replay_cursor", state.Cursor),
+            ("replay_total", state.Total),
+            ("weapon_def", hasTick ? tick.WeaponDefIndex : null),
+            ("live_weapon", ActiveWeaponName(pawn)),
+            ("live_x", liveOrigin.X),
+            ("live_y", liveOrigin.Y),
+            ("live_z", liveOrigin.Z),
+            ("live_vx", liveVelocity.X),
+            ("live_vy", liveVelocity.Y),
+            ("live_vz", liveVelocity.Z),
+            ("live_pitch", liveAngles.X),
+            ("live_yaw", liveAngles.Y),
+            ("replay_pre_x", hasTick ? tick.Pre.OriginX : null),
+            ("replay_pre_y", hasTick ? tick.Pre.OriginY : null),
+            ("replay_pre_z", hasTick ? tick.Pre.OriginZ : null),
+            ("replay_pre_vx", hasTick ? tick.Pre.VelX : null),
+            ("replay_pre_vy", hasTick ? tick.Pre.VelY : null),
+            ("replay_pre_vz", hasTick ? tick.Pre.VelZ : null),
+            ("replay_pre_pitch", hasTick ? tick.Pre.Pitch : null),
+            ("replay_pre_yaw", hasTick ? tick.Pre.Yaw : null),
+            ("replay_buttons", hasTick ? Hex(tick.Pre.Buttons) : null),
+            ("replay_buttons1", hasTick ? Hex(tick.Pre.Buttons1) : null),
+            ("replay_buttons2", hasTick ? Hex(tick.Pre.Buttons2) : null),
+            ("replay_post_x", hasTick ? tick.Post.OriginX : null),
+            ("replay_post_y", hasTick ? tick.Post.OriginY : null),
+            ("replay_post_z", hasTick ? tick.Post.OriginZ : null),
+            ("replay_post_vx", hasTick ? tick.Post.VelX : null),
+            ("replay_post_vy", hasTick ? tick.Post.VelY : null),
+            ("replay_post_vz", hasTick ? tick.Post.VelZ : null),
+            ("stash_set", stashSet),
+            ("stash_time", stashTime),
+            ("stash_x", stashPosition.X),
+            ("stash_y", stashPosition.Y),
+            ("stash_z", stashPosition.Z),
+            ("stash_vx", stashVelocity.X),
+            ("stash_vy", stashVelocity.Y),
+            ("stash_vz", stashVelocity.Z),
+            ("stash_pitch", stashAngles.X),
+            ("stash_yaw", stashAngles.Y)
+        ));
+    }
+
+    private void TraceGrenadeThrown(EventGrenadeThrown @event)
+    {
+        var slot = @event.Userid?.Slot ?? -1;
+        var pawn = @event.Userid?.PlayerPawn.Value;
+        var stashPosition = SafeVector(() => pawn?.StashedGrenadeThrowPosition);
+        var stashVelocity = SafeVector(() => pawn?.StashedVelocity);
+        var stashAngles = SafeQAngle(() => pawn?.StashedShootAngles);
+        TraceWrite(RowFields(
+            ("kind", "grenade_thrown"),
+            ("time", TimeField()),
+            ("slot", slot),
+            ("player", @event.Userid?.PlayerName ?? ""),
+            ("steam_id", @event.Userid?.SteamID ?? 0UL),
+            ("live_weapon", @event.Weapon),
+            ("stash_set", SafeObject(() => pawn?.GrenadeParametersStashed.ToString())),
+            ("stash_time", SafeObject(() => pawn?.GrenadeParameterStashTime)),
+            ("stash_x", stashPosition.X),
+            ("stash_y", stashPosition.Y),
+            ("stash_z", stashPosition.Z),
+            ("stash_vx", stashVelocity.X),
+            ("stash_vy", stashVelocity.Y),
+            ("stash_vz", stashVelocity.Z),
+            ("stash_pitch", stashAngles.X),
+            ("stash_yaw", stashAngles.Y)
+        ));
+    }
+
+    private void TraceSmokeDetonate(EventSmokegrenadeDetonate @event)
+    {
+        TraceWrite(RowFields(
+            ("kind", "smoke_detonate"),
+            ("time", TimeField()),
+            ("slot", @event.Userid?.Slot ?? -1),
+            ("player", @event.Userid?.PlayerName ?? ""),
+            ("steam_id", @event.Userid?.SteamID ?? 0UL),
+            ("event_entity", @event.Entityid),
+            ("event_x", @event.X),
+            ("event_y", @event.Y),
+            ("event_z", @event.Z)
+        ));
+    }
+
+    private void TraceSmokeExpired(EventSmokegrenadeExpired @event)
+    {
+        TraceWrite(RowFields(
+            ("kind", "smoke_expired"),
+            ("time", TimeField()),
+            ("slot", @event.Userid?.Slot ?? -1),
+            ("player", @event.Userid?.PlayerName ?? ""),
+            ("steam_id", @event.Userid?.SteamID ?? 0UL),
+            ("event_entity", @event.Entityid),
+            ("event_x", @event.X),
+            ("event_y", @event.Y),
+            ("event_z", @event.Z)
+        ));
+    }
+
+    private void TraceProjectileEvent(
+        string kind,
+        CSmokeGrenadeProjectile projectile,
+        UtilityProjectileTrace? tracked)
+    {
+        var time = Server.CurrentTime;
+        var origin = SafeVector(() => projectile.AbsOrigin);
+        var absVelocity = SafeVector(() => projectile.AbsVelocity);
+        var initialPosition = SafeVector(() => projectile.InitialPosition);
+        var initialVelocity = SafeVector(() => projectile.InitialVelocity);
+        var smokeDetonationPosition = SafeVector(() => projectile.SmokeDetonationPos);
+        var estimate = tracked?.EstimateVelocity(origin, time) ?? TraceVector.Empty;
+        tracked?.Update(origin, time);
+
+        TraceWrite(RowFields(
+            ("kind", kind),
+            ("time", TimeField()),
+            ("projectile_index", projectile.Index),
+            ("projectile_name", projectile.DesignerName),
+            ("projectile_x", origin.X),
+            ("projectile_y", origin.Y),
+            ("projectile_z", origin.Z),
+            ("projectile_abs_vx", absVelocity.X),
+            ("projectile_abs_vy", absVelocity.Y),
+            ("projectile_abs_vz", absVelocity.Z),
+            ("projectile_est_vx", estimate.X),
+            ("projectile_est_vy", estimate.Y),
+            ("projectile_est_vz", estimate.Z),
+            ("projectile_init_x", initialPosition.X),
+            ("projectile_init_y", initialPosition.Y),
+            ("projectile_init_z", initialPosition.Z),
+            ("projectile_init_vx", initialVelocity.X),
+            ("projectile_init_vy", initialVelocity.Y),
+            ("projectile_init_vz", initialVelocity.Z),
+            ("projectile_smoke_det_x", smokeDetonationPosition.X),
+            ("projectile_smoke_det_y", smokeDetonationPosition.Y),
+            ("projectile_smoke_det_z", smokeDetonationPosition.Z),
+            ("projectile_bounces", SafeObject(() => projectile.Bounces)),
+            ("projectile_is_live", SafeObject(() => projectile.IsLive))
+        ));
+    }
+
+    private void TraceUtilityMessage(string kind, string message)
+    {
+        TraceWrite(RowFields(
+            ("kind", kind),
+            ("time", TimeField()),
+            ("message", message)
+        ));
+    }
+
+    private void TraceWrite(string line)
+    {
+        if (!_utilityTraceEnabled || _utilityTraceWriter == null)
+            return;
+        try
+        {
+            _utilityTraceWriter.WriteLine(line);
+        }
+        catch (Exception ex)
+        {
+            _utilityTraceEnabled = false;
+            Server.PrintToConsole($"dtr: utility trace disabled after write failure: {ex.Message}");
+        }
+    }
+
+    private static bool IsSmokeProjectile(CEntityInstance entity)
+    {
+        if (!entity.IsValid)
+            return false;
+        return entity.DesignerName.Contains("smokegrenade_projectile", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ActiveWeaponName(CCSPlayerPawn? pawn)
+    {
+        try
+        {
+            var weapon = pawn?.WeaponServices?.ActiveWeapon.Value;
+            return weapon is { IsValid: true } ? weapon.DesignerName : "";
+        }
+        catch
+        {
+            return "";
+        }
+    }
+
+    private static object? SafeObject(Func<object?> read)
+    {
+        try
+        {
+            return read();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static TraceVector SafeVector(Func<Vector?> read)
+    {
+        try
+        {
+            var value = read();
+            return value == null
+                ? TraceVector.Empty
+                : new TraceVector(value.X, value.Y, value.Z);
+        }
+        catch
+        {
+            return TraceVector.Empty;
+        }
+    }
+
+    private static TraceVector SafeQAngle(Func<QAngle?> read)
+    {
+        try
+        {
+            var value = read();
+            return value == null
+                ? TraceVector.Empty
+                : new TraceVector(value.X, value.Y, value.Z);
+        }
+        catch
+        {
+            return TraceVector.Empty;
+        }
+    }
+
+    private static string TimeField()
+        => F(Server.CurrentTime);
+
+    private static string Hex(ulong value)
+        => "0x" + value.ToString("X", CultureInfo.InvariantCulture);
+
+    private static string Row(params object?[] fields)
+    {
+        var output = new string[UtilityTraceColumns.Length];
+        for (var i = 0; i < output.Length; i++)
+            output[i] = CsvField(i < fields.Length ? fields[i] : null);
+        return string.Join(",", output);
+    }
+
+    private static string RowFields(params (string Column, object? Value)[] fields)
+    {
+        var output = new object?[UtilityTraceColumns.Length];
+        foreach (var (column, value) in fields)
+        {
+            var index = Array.IndexOf(UtilityTraceColumns, column);
+            if (index >= 0)
+                output[index] = value;
+        }
+        return Row(output);
+    }
+
+    private static string CsvField(object? value)
+    {
+        var text = value switch
+        {
+            null => "",
+            string s => s,
+            float f => F(f),
+            double d => d.ToString("0.#####", CultureInfo.InvariantCulture),
+            bool b => b ? "1" : "0",
+            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+            _ => value.ToString() ?? ""
+        };
+        if (text.Contains('"'))
+            text = text.Replace("\"", "\"\"");
+        return text.IndexOfAny([',', '"', '\r', '\n']) >= 0
+            ? $"\"{text}\""
+            : text;
+    }
+
+    private static string F(float value)
+        => value.ToString("0.#####", CultureInfo.InvariantCulture);
 
     private bool PrepareNextSequenceRound(string reason)
     {
@@ -1095,6 +1875,8 @@ public sealed class DemoTracerPlugin : BasePlugin
         _lastReplayWeaponDef.Clear();
         _lastLockedWeaponTarget.Clear();
         _pendingWeaponAlign.Clear();
+        _projectileAlignNextBySlot.Clear();
+        _pendingProjectileAlign.Clear();
         _rebuiltInventorySlots.Clear();
         _loadoutSyncedSlots.Clear();
         _lastPlayingSlots.Clear();
@@ -1110,6 +1892,7 @@ public sealed class DemoTracerPlugin : BasePlugin
     {
         _lastPlayingSlots.Add(slot);
         _replayStartedAt[slot] = Server.CurrentTime;
+        _projectileAlignNextBySlot[slot] = 0;
     }
 
     private void ReleaseReplaySlot(int slot, string reason)
@@ -1120,6 +1903,7 @@ public sealed class DemoTracerPlugin : BasePlugin
         _lastReplayWeaponDef.Remove(slot);
         _lastLockedWeaponTarget.Remove(slot);
         _pendingWeaponAlign.Remove(slot);
+        _projectileAlignNextBySlot.Remove(slot);
         _rebuiltInventorySlots.Remove(slot);
         _loadoutSyncedSlots.Remove(slot);
         _pendingBulletHits.Remove(slot);
@@ -1383,6 +2167,7 @@ public sealed class DemoTracerPlugin : BasePlugin
         ReplayLoadoutSnapshot? loadout = null)
     {
         TryReadWeaponPlan(path, out var scannedFirstDef, out var scannedPreloadDefs);
+        _ = BotControllerNative.TryReadReplayProjectiles(path, out var projectiles);
         var firstDef = NormalizeWeaponDefIndex(manifestFirstWeaponDefIndex);
         if (!IsKnownWeaponDefIndex(firstDef))
             firstDef = scannedFirstDef;
@@ -1399,10 +2184,12 @@ public sealed class DemoTracerPlugin : BasePlugin
             firstDef,
             preloadDefs,
             hasLoadout,
-            NormalizeReplayLoadout(loadout ?? new ReplayLoadoutSnapshot()));
+            NormalizeReplayLoadout(loadout ?? new ReplayLoadoutSnapshot()),
+            projectiles.ToArray());
         _lastEnsuredWeaponDef.Remove(slot);
         _lastReplayWeaponDef.Remove(slot);
         _lastLockedWeaponTarget.Remove(slot);
+        _projectileAlignNextBySlot[slot] = 0;
         _rebuiltInventorySlots.Remove(slot);
         _loadoutSyncedSlots.Remove(slot);
     }
@@ -1718,10 +2505,14 @@ public sealed class DemoTracerPlugin : BasePlugin
             return;
 
         var target = GetReplayLockTarget(normalized);
-        if (target > 0 &&
-            (force ||
-             !_lastLockedWeaponTarget.TryGetValue(slot, out var lastTarget) ||
-             lastTarget != target))
+        if (target <= 0)
+        {
+            if (_lastLockedWeaponTarget.Remove(slot))
+                BotControllerNative.UnlockWeaponSlot(slot);
+        }
+        else if (force ||
+                 !_lastLockedWeaponTarget.TryGetValue(slot, out var lastTarget) ||
+                 lastTarget != target)
         {
             if (BotControllerNative.LockWeaponSlot(slot, target))
                 _lastLockedWeaponTarget[slot] = target;
@@ -1979,7 +2770,6 @@ public sealed class DemoTracerPlugin : BasePlugin
             ReplayWeaponSlot.Primary => 1,
             ReplayWeaponSlot.Secondary => 2,
             ReplayWeaponSlot.Knife or ReplayWeaponSlot.Taser => 3,
-            ReplayWeaponSlot.Utility => 4,
             ReplayWeaponSlot.C4 => 5,
             _ => 0
         };
@@ -2210,7 +3000,7 @@ public sealed class DemoTracerPlugin : BasePlugin
                 return false;
 
             var version = reader.ReadUInt32();
-            if (version != BotControllerNative.RecFormatVersion)
+            if (version is < BotControllerNative.MinRecFormatVersion or > BotControllerNative.RecFormatVersion)
                 return false;
 
             _ = reader.ReadSingle(); // tickrate
@@ -2220,6 +3010,9 @@ public sealed class DemoTracerPlugin : BasePlugin
             _ = reader.ReadUInt64(); // steamid
             var tickCount = CheckedRecCount(reader.ReadUInt32());
             var subtickCount = CheckedRecCount(reader.ReadUInt32());
+            var projectileCount = version >= 4
+                ? CheckedRecCount(reader.ReadUInt32())
+                : 0;
             if (tickCount == 0)
                 return false;
 
@@ -2231,7 +3024,7 @@ public sealed class DemoTracerPlugin : BasePlugin
                 return false;
             var bodyUncompressedLength = CheckedRecLength(reader.ReadUInt64());
             var bodyCompressedLength = CheckedRecLength(reader.ReadUInt64());
-            var expectedBodyLength = ExpectedRecBodyLength(tickCount, subtickCount);
+            var expectedBodyLength = ExpectedRecBodyLength(tickCount, subtickCount, projectileCount);
             if (bodyUncompressedLength != expectedBodyLength)
                 return false;
 
@@ -2283,12 +3076,13 @@ public sealed class DemoTracerPlugin : BasePlugin
         return (int)value;
     }
 
-    private static int ExpectedRecBodyLength(int tickCount, int subtickCount)
+    private static int ExpectedRecBodyLength(int tickCount, int subtickCount, int projectileCount)
     {
         var snapshotCount = tickCount == 0 ? 0 : checked(tickCount + 1);
         return checked(
             snapshotCount * BotControllerNative.MovementSnapshotByteSize +
             tickCount * 8 +
+            projectileCount * 48 +
             subtickCount * 28);
     }
 
@@ -2562,7 +3356,8 @@ public sealed class DemoTracerPlugin : BasePlugin
         int FirstWeaponDefIndex,
         int[] PreloadWeaponDefIndices,
         bool HasLoadout,
-        ReplayLoadoutSnapshot Loadout);
+        ReplayLoadoutSnapshot Loadout,
+        ReplayProjectileEvent[] Projectiles);
 
     private readonly record struct ReplayAssignment(ManifestFile File, CCSPlayerController Bot);
 
@@ -2573,6 +3368,64 @@ public sealed class DemoTracerPlugin : BasePlugin
     private readonly record struct PendingBulletDamage(int AttackerSlot, int Damage, float Time);
 
     private readonly record struct TeamEconomySnapshot(uint EquipmentValue, string Class);
+
+    private sealed class PendingProjectileAlign(uint index, IntPtr handle)
+    {
+        public uint Index { get; } = index;
+        public IntPtr Handle { get; } = handle;
+        public ReplayProjectileEvent Align { get; set; }
+        public int Slot { get; set; } = -1;
+        public int EventIndex { get; set; } = -1;
+        public int MatchAttemptsRemaining { get; set; }
+        public int WritesRemaining { get; set; }
+        public bool Matched { get; set; }
+    }
+
+    private readonly record struct TraceVector(float? X, float? Y, float? Z)
+    {
+        public static TraceVector Empty => new(null, null, null);
+    }
+
+    private sealed class UtilityProjectileTrace(uint index, IntPtr handle, string designerName)
+    {
+        private bool _hasLastPosition;
+        private TraceVector _lastPosition = TraceVector.Empty;
+        private float _lastTime;
+
+        public uint Index { get; } = index;
+        public IntPtr Handle { get; } = handle;
+        public string DesignerName { get; } = designerName;
+
+        public TraceVector EstimateVelocity(TraceVector position, float time)
+        {
+            if (!_hasLastPosition ||
+                !position.X.HasValue ||
+                !position.Y.HasValue ||
+                !position.Z.HasValue ||
+                !_lastPosition.X.HasValue ||
+                !_lastPosition.Y.HasValue ||
+                !_lastPosition.Z.HasValue)
+            {
+                return TraceVector.Empty;
+            }
+
+            var dt = time - _lastTime;
+            if (dt <= 0.0f)
+                return TraceVector.Empty;
+
+            return new TraceVector(
+                (position.X.Value - _lastPosition.X.Value) / dt,
+                (position.Y.Value - _lastPosition.Y.Value) / dt,
+                (position.Z.Value - _lastPosition.Z.Value) / dt);
+        }
+
+        public void Update(TraceVector position, float time)
+        {
+            _lastPosition = position;
+            _lastTime = time;
+            _hasLastPosition = position.X.HasValue && position.Y.HasValue && position.Z.HasValue;
+        }
+    }
 
     private enum ReplayWeaponSlot
     {

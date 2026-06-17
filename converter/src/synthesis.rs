@@ -1,5 +1,9 @@
-use crate::model::{Cs2Rec, Cs2RecHeader, ParsedPlayerTick, ReplayTick, SubtickMode, SubtickMove};
+use crate::model::{
+    Cs2Rec, Cs2RecHeader, ParsedPlayerTick, ParsedProjectile, ReplayProjectile, ReplayTick,
+    SubtickMode, SubtickMove,
+};
 use crate::{Error, Result};
+use std::collections::BTreeMap;
 
 pub const MAX_SUBTICKS_PER_TICK: usize = 36;
 
@@ -37,12 +41,20 @@ pub fn synthesize_player_rec(
     tick_rate: f32,
     round: u32,
 ) -> Result<Cs2Rec> {
-    synthesize_player_rec_with_options(rows, map, tick_rate, round, SynthesisOptions::default())
-        .map(|(rec, _stats)| rec)
+    synthesize_player_rec_with_options(
+        rows,
+        &[],
+        map,
+        tick_rate,
+        round,
+        SynthesisOptions::default(),
+    )
+    .map(|(rec, _stats)| rec)
 }
 
 pub fn synthesize_player_rec_with_options(
     rows: &[ParsedPlayerTick],
+    projectiles: &[ParsedProjectile],
     map: &str,
     tick_rate: f32,
     round: u32,
@@ -70,6 +82,7 @@ pub fn synthesize_player_rec_with_options(
             num_subtick,
         });
     }
+    let replay_projectiles = synthesize_projectiles(rows, projectiles, ticks.len());
 
     Ok((
         Cs2Rec {
@@ -84,10 +97,45 @@ pub fn synthesize_player_rec_with_options(
                 flags: 0,
             },
             ticks,
+            projectiles: replay_projectiles,
             subticks,
         },
         stats,
     ))
+}
+
+fn synthesize_projectiles(
+    rows: &[ParsedPlayerTick],
+    projectiles: &[ParsedProjectile],
+    tick_count: usize,
+) -> Vec<ReplayProjectile> {
+    if rows.is_empty() || tick_count == 0 || projectiles.is_empty() {
+        return Vec::new();
+    }
+
+    let steam_id = rows[0].steam_id;
+    let mut tick_to_index = BTreeMap::new();
+    for (index, row) in rows.iter().take(tick_count).enumerate() {
+        tick_to_index.entry(row.tick).or_insert(index as u32);
+    }
+
+    let mut out = projectiles
+        .iter()
+        .filter(|projectile| projectile.steam_id == steam_id)
+        .filter_map(|projectile| {
+            let tick_index = *tick_to_index.get(&projectile.tick)?;
+            Some(ReplayProjectile {
+                tick_index,
+                kind: projectile.kind,
+                weapon_def_index: projectile.kind.weapon_def_index(),
+                initial_position: projectile.initial_position,
+                initial_velocity: projectile.initial_velocity,
+                detonation_position: projectile.detonation_position,
+            })
+        })
+        .collect::<Vec<_>>();
+    out.sort_by_key(|projectile| projectile.tick_index);
+    out
 }
 
 fn sanitize_subticks(
@@ -242,6 +290,7 @@ mod tests {
 
         let (rec, stats) = synthesize_player_rec_with_options(
             &[r0, r1, r2],
+            &[],
             "de_nuke",
             64.0,
             1,
@@ -269,6 +318,7 @@ mod tests {
         let r1 = row(11, 7);
         let (rec, stats) = synthesize_player_rec_with_options(
             &[r0, r1],
+            &[],
             "de_nuke",
             64.0,
             1,

@@ -139,6 +139,7 @@ pub fn export_demo(parsed: &ParsedDemo, options: &ConvertOptions) -> Result<Conv
             }
             let (rec, stats) = synthesize_player_rec_with_options(
                 &player_rows,
+                &parsed.projectiles,
                 &parsed.map,
                 parsed.tick_rate,
                 round.round,

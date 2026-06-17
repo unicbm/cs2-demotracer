@@ -990,6 +990,55 @@ namespace BotController
             *reinterpret_cast<uint8_t *>(sv + tg::kServices_DesiresDuck) = s.desiresDuck;
         }
 
+        // PlayerRunCommand (pre): weapon firing and grenade throws can consume
+        // pawn state before ProcessMovement runs, so seed the live pawn here too.
+        void OnReplayCommandPre(int slot, void *services)
+        {
+            if (!ValidSlot(slot) || !services)
+                return;
+            ReplayState &p = g_rep[slot];
+            if (!p.playing.load(std::memory_order_acquire))
+                return;
+
+            ReplayTick t{};
+            {
+                std::lock_guard<std::mutex> lk(p.mu);
+                int total = static_cast<int>(p.ticks.size());
+                int cur = p.cursor.load(std::memory_order_relaxed);
+                if (cur < 0 || cur >= total)
+                    return;
+                t = p.ticks[cur];
+            }
+
+            auto *sv = reinterpret_cast<char *>(services);
+            WriteVelocityToPawn(services, t.pre);
+            WriteMovementServiceState(services, t.pre);
+
+            void *pawn = *reinterpret_cast<void **>(sv + tg::kServices_Pawn);
+            if (pawn)
+            {
+                auto *pp = reinterpret_cast<char *>(pawn);
+                *reinterpret_cast<uint8_t *>(pp + tg::kEnt_MoveType) = t.pre.moveType;
+                *reinterpret_cast<uint8_t *>(pp + tg::kEnt_ActualMoveType) = t.pre.actualMoveType;
+                void *node = *reinterpret_cast<void **>(pp + tg::kEnt_GameSceneNode);
+                if (node)
+                {
+                    auto *n = reinterpret_cast<char *>(node);
+                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 0) = t.pre.originX;
+                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 4) = t.pre.originY;
+                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 8) = t.pre.originZ;
+                }
+
+                MovementSnapshot cmdView{};
+                if (ReplayCommandViewSnapshot(slot, cmdView))
+                {
+                    BotControllerHooks::ApplyReplayEyeAngles(pawn, cmdView.pitch, cmdView.yaw);
+                    WriteRawViewAnglesToPawn(pp, cmdView.pitch, cmdView.yaw);
+                    WriteReplayViewHistory(services, pp, cmdView.pitch, cmdView.yaw);
+                }
+            }
+        }
+
         // ProcessMovement (pre): seed CMoveData + pawn + moveType with pre state.
         void OnReplayPre(int slot, void *services, void *moveData)
         {
