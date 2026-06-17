@@ -15,6 +15,16 @@ mod demoparser_impl {
     use std::fs;
 
     pub fn read_demo(path: &Path) -> Result<ParsedDemo> {
+        let bytes = fs::read(path).map_err(|e| io_error(path, e))?;
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("demo")
+            .to_string();
+        read_demo_bytes(&bytes, &stem, &path.display().to_string())
+    }
+
+    pub fn read_demo_bytes(bytes: &[u8], stem: &str, display_path: &str) -> Result<ParsedDemo> {
         let wanted_props = vec![
             "X",
             "Y",
@@ -60,19 +70,27 @@ mod demoparser_impl {
 
         let real_props =
             rm_user_friendly_names(&wanted_props).map_err(|e| Error::Parser(format!("{e:?}")))?;
+        let wanted_other_props = vec!["team_rounds_total", "team_name", "team_clan_name"]
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        let real_other_props = rm_user_friendly_names(&wanted_other_props)
+            .map_err(|e| Error::Parser(format!("{e:?}")))?;
         let mut real_name_to_og_name = AHashMap::default();
         for (real, friendly) in real_props.iter().zip(&wanted_props) {
             real_name_to_og_name.insert(real.clone(), friendly.clone());
         }
+        for (real, friendly) in real_other_props.iter().zip(&wanted_other_props) {
+            real_name_to_og_name.insert(real.clone(), friendly.clone());
+        }
 
-        let bytes = fs::read(path).map_err(|e| io_error(path, e))?;
-        let demo_sha256 = crate::demo_id::sha256_hex(&bytes);
+        let demo_sha256 = crate::demo_id::sha256_hex(bytes);
         let huf = create_huffman_lookup_table();
         let settings = ParserInputs {
             real_name_to_og_name,
             wanted_players: vec![],
             wanted_player_props: real_props,
-            wanted_other_props: vec![],
+            wanted_other_props: real_other_props,
             wanted_prop_states: AHashMap::default(),
             wanted_ticks: vec![],
             wanted_events: vec![
@@ -90,9 +108,14 @@ mod demoparser_impl {
             list_props: false,
             fallback_bytes: None,
         };
-        let mut parser = Parser::new(settings, ParsingMode::Normal);
+        let parsing_mode = if cfg!(target_family = "wasm") {
+            ParsingMode::ForceSingleThreaded
+        } else {
+            ParsingMode::Normal
+        };
+        let mut parser = Parser::new(settings, parsing_mode);
         let output = parser
-            .parse_demo(&bytes)
+            .parse_demo(bytes)
             .map_err(|e| Error::Parser(format!("{e:?}")))?;
 
         let header = output.header.unwrap_or_default();
@@ -100,11 +123,6 @@ mod demoparser_impl {
             .get("map_name")
             .cloned()
             .unwrap_or_else(|| "unknown".to_string());
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("demo")
-            .to_string();
 
         let mut columns: AHashMap<String, &PropColumn> = AHashMap::default();
         for info in &output.prop_controller.prop_infos {
@@ -189,6 +207,9 @@ mod demoparser_impl {
                 ),
                 subtick_moves,
                 subtick_button_truncated,
+                team_rounds_total: get_u32(&columns, "team_rounds_total", idx),
+                team_name: get_string(&columns, "team_name", idx),
+                team_clan_name: get_string(&columns, "team_clan_name", idx),
             });
         }
         rows.sort_by_key(|row| (row.round, row.tick, row.steam_id));
@@ -208,11 +229,11 @@ mod demoparser_impl {
         bomb_beginplant_ticks.dedup();
         bomb_planted_ticks.sort_unstable();
         bomb_planted_ticks.dedup();
-        let projectiles = parse_projectiles(&bytes)?;
+        let projectiles = parse_projectiles(bytes)?;
 
         Ok(ParsedDemo {
-            path: path.display().to_string(),
-            stem,
+            path: display_path.to_string(),
+            stem: stem.to_string(),
             demo_sha256,
             map,
             tick_rate,
@@ -261,7 +282,12 @@ mod demoparser_impl {
             list_props: false,
             fallback_bytes: None,
         };
-        let mut parser = Parser::new(settings, ParsingMode::Normal);
+        let parsing_mode = if cfg!(target_family = "wasm") {
+            ParsingMode::ForceSingleThreaded
+        } else {
+            ParsingMode::Normal
+        };
+        let mut parser = Parser::new(settings, parsing_mode);
         let output = parser
             .parse_demo(bytes)
             .map_err(|e| Error::Parser(format!("{e:?}")))?;
@@ -501,8 +527,15 @@ mod demoparser_impl {
 
 #[cfg(feature = "demoparser")]
 pub use demoparser_impl::read_demo;
+#[cfg(feature = "demoparser")]
+pub use demoparser_impl::read_demo_bytes;
 
 #[cfg(not(feature = "demoparser"))]
 pub fn read_demo(_path: &Path) -> Result<ParsedDemo> {
+    Err(Error::FeatureDisabled("demoparser"))
+}
+
+#[cfg(not(feature = "demoparser"))]
+pub fn read_demo_bytes(_bytes: &[u8], _stem: &str, _display_path: &str) -> Result<ParsedDemo> {
     Err(Error::FeatureDisabled("demoparser"))
 }

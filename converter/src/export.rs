@@ -4,7 +4,7 @@ use crate::model::{
     ReplayLoadout, Side, SubtickMode, TeamEconomy, DEMOTRACER_ABI, DTR_FORMAT_VERSION,
 };
 use crate::quality::{analyze_demo, AnalysisOptions};
-use crate::rec_writer::write_rec_file;
+use crate::rec_writer::write_rec;
 use crate::synthesis::{synthesize_player_rec_with_options, SynthesisOptions, SynthesisStats};
 use crate::{io_error, Error, Result};
 use serde::{Deserialize, Serialize};
@@ -24,6 +24,31 @@ pub struct ConvertOptions {
     pub analysis: AnalysisOptions,
 }
 
+#[derive(Clone, Debug)]
+pub struct ConvertMemoryOptions {
+    pub output_stem: Option<String>,
+    pub side: Side,
+    pub selected_rounds: Option<BTreeSet<u32>>,
+    pub include_suspicious: bool,
+    pub cut_before_bomb_plant: bool,
+    pub subtick_mode: SubtickMode,
+    pub analysis: AnalysisOptions,
+}
+
+impl From<&ConvertOptions> for ConvertMemoryOptions {
+    fn from(options: &ConvertOptions) -> Self {
+        Self {
+            output_stem: options.output_stem.clone(),
+            side: options.side,
+            selected_rounds: options.selected_rounds.clone(),
+            include_suspicious: options.include_suspicious,
+            cut_before_bomb_plant: options.cut_before_bomb_plant,
+            subtick_mode: options.subtick_mode,
+            analysis: options.analysis,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ConversionReport {
     pub root: PathBuf,
@@ -32,14 +57,41 @@ pub struct ConversionReport {
     pub manifest: ConversionManifest,
 }
 
-pub fn export_demo(parsed: &ParsedDemo, options: &ConvertOptions) -> Result<ConversionReport> {
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConversionArtifactKind {
+    Dtr,
+    Manifest,
+    Log,
+}
+
+#[derive(Clone, Debug)]
+pub struct ConversionArtifact {
+    pub path: String,
+    pub bytes: Vec<u8>,
+    pub kind: ConversionArtifactKind,
+    pub round: Option<u32>,
+    pub steam_id: Option<u64>,
+}
+
+#[derive(Clone, Debug)]
+pub struct MemoryConversionReport {
+    pub demo_id: String,
+    pub files_written: usize,
+    pub manifest: ConversionManifest,
+    pub log: String,
+    pub artifacts: Vec<ConversionArtifact>,
+}
+
+pub fn export_demo_to_memory(
+    parsed: &ParsedDemo,
+    options: &ConvertMemoryOptions,
+) -> Result<MemoryConversionReport> {
     let analysis = analyze_demo(parsed, options.analysis);
     let output_stem = options
         .output_stem
         .clone()
         .unwrap_or_else(|| demo_id(&parsed.stem, &parsed.demo_sha256));
-    let root = options.output_dir.join(&output_stem);
-    fs::create_dir_all(&root).map_err(|e| io_error(&root, e))?;
 
     let mut manifest = ConversionManifest {
         demo_path: parsed.path.clone(),
@@ -53,6 +105,7 @@ pub fn export_demo(parsed: &ParsedDemo, options: &ConvertOptions) -> Result<Conv
         files: Vec::new(),
     };
     let mut log = Vec::new();
+    let mut artifacts = Vec::new();
     let mut subtick_stats = SynthesisStats::default();
     log.push(format!(
         "demo={} id={} sha256={} map={} tick_rate={:.3}",
@@ -157,13 +210,11 @@ pub fn export_demo(parsed: &ParsedDemo, options: &ConvertOptions) -> Result<Conv
             let rel_path = Path::new(&format!("round{:02}", round.round))
                 .join(team_dir)
                 .join(format!("{}_{}.dtr", steam_id, slugify(&player_name)));
-            let full_path = root.join(&rel_path);
-            if let Some(parent) = full_path.parent() {
-                fs::create_dir_all(parent).map_err(|e| io_error(parent, e))?;
-            }
-            write_rec_file(&full_path, &rec)?;
+            let mut bytes = Vec::new();
+            write_rec(&mut bytes, &rec)?;
+            let path = rel_path.to_string_lossy().replace('\\', "/");
             manifest.files.push(ConvertedFile {
-                path: rel_path.to_string_lossy().replace('\\', "/"),
+                path: path.clone(),
                 round: round.round,
                 side: team_dir.to_string(),
                 steam_id,
@@ -173,6 +224,13 @@ pub fn export_demo(parsed: &ParsedDemo, options: &ConvertOptions) -> Result<Conv
                 first_weapon_def_index: first_weapon_def_index(&rec),
                 preload_weapon_def_indices: preload_weapon_def_indices(&player_rows, &rec),
                 loadout: replay_loadout(&player_rows[0]),
+            });
+            artifacts.push(ConversionArtifact {
+                path,
+                bytes,
+                kind: ConversionArtifactKind::Dtr,
+                round: Some(round.round),
+                steam_id: Some(steam_id),
             });
         }
 
@@ -198,11 +256,8 @@ pub fn export_demo(parsed: &ParsedDemo, options: &ConvertOptions) -> Result<Conv
         }
     }
 
-    let manifest_path = root.join("manifest.json");
     let manifest_json = serde_json::to_string_pretty(&manifest)?;
-    fs::write(&manifest_path, manifest_json).map_err(|e| io_error(&manifest_path, e))?;
 
-    let log_path = root.join("conversion.log");
     log.push(format!("files_written={}", manifest.files.len()));
     log.push(format!(
         "subticks mode={} source={} written={} ticks_with_source={} ticks_with_written={} dropped_invalid={} dropped_overflow={} truncated_buttons={}",
@@ -215,13 +270,49 @@ pub fn export_demo(parsed: &ParsedDemo, options: &ConvertOptions) -> Result<Conv
         subtick_stats.dropped_overflow_subticks,
         subtick_stats.truncated_button_subticks
     ));
-    fs::write(&log_path, log.join("\n")).map_err(|e| io_error(&log_path, e))?;
+    let log = log.join("\n");
+    artifacts.push(ConversionArtifact {
+        path: "manifest.json".to_string(),
+        bytes: manifest_json.into_bytes(),
+        kind: ConversionArtifactKind::Manifest,
+        round: None,
+        steam_id: None,
+    });
+    artifacts.push(ConversionArtifact {
+        path: "conversion.log".to_string(),
+        bytes: log.as_bytes().to_vec(),
+        kind: ConversionArtifactKind::Log,
+        round: None,
+        steam_id: None,
+    });
 
-    Ok(ConversionReport {
-        root,
-        manifest_path,
+    Ok(MemoryConversionReport {
+        demo_id: output_stem,
         files_written: manifest.files.len(),
         manifest,
+        log,
+        artifacts,
+    })
+}
+
+pub fn export_demo(parsed: &ParsedDemo, options: &ConvertOptions) -> Result<ConversionReport> {
+    let memory = export_demo_to_memory(parsed, &ConvertMemoryOptions::from(options))?;
+    let root = options.output_dir.join(&memory.demo_id);
+    fs::create_dir_all(&root).map_err(|e| io_error(&root, e))?;
+
+    for artifact in &memory.artifacts {
+        let path = root.join(&artifact.path);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| io_error(parent, e))?;
+        }
+        fs::write(&path, &artifact.bytes).map_err(|e| io_error(&path, e))?;
+    }
+
+    Ok(ConversionReport {
+        root: root.clone(),
+        manifest_path: root.join("manifest.json"),
+        files_written: memory.files_written,
+        manifest: memory.manifest,
     })
 }
 
@@ -522,7 +613,8 @@ pub fn parse_round_list(value: &str) -> Result<BTreeSet<u32>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Cs2Rec, ReplayTick};
+    use crate::model::{Cs2Rec, ParsedDemo, ReplayTick};
+    use crate::rec_writer::read_rec;
 
     #[test]
     fn preload_weapon_defs_are_normalized_and_deduped() {
@@ -582,5 +674,128 @@ mod tests {
         assert_eq!(loadout.armor_value, 87);
         assert!(loadout.has_helmet);
         assert!(loadout.has_defuser);
+    }
+
+    #[test]
+    fn memory_export_matches_filesystem_export_surface() {
+        let parsed = sample_demo();
+        let selected_rounds = Some(BTreeSet::from([1]));
+        let memory_options = ConvertMemoryOptions {
+            output_stem: Some("sample-demo".to_string()),
+            side: Side::Both,
+            selected_rounds: selected_rounds.clone(),
+            include_suspicious: true,
+            cut_before_bomb_plant: true,
+            subtick_mode: SubtickMode::Auto,
+            analysis: AnalysisOptions::default(),
+        };
+
+        let memory = export_demo_to_memory(&parsed, &memory_options).unwrap();
+
+        assert_eq!(memory.demo_id, "sample-demo");
+        assert_eq!(memory.files_written, 1);
+        assert!(memory
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.path == "manifest.json"));
+        assert!(memory
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.path == "conversion.log"));
+        assert!(memory.log.contains("files_written=1"));
+
+        let dtr = memory
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.kind == ConversionArtifactKind::Dtr)
+            .unwrap();
+        assert_eq!(dtr.path, "round01/t/76561198000000001_alpha.dtr");
+        let parsed_rec = read_rec(&mut &dtr.bytes[..]).unwrap();
+        assert_eq!(parsed_rec.header.round, 1);
+        assert_eq!(parsed_rec.ticks.len(), 1);
+
+        let temp = tempfile::tempdir().unwrap();
+        let filesystem = export_demo(
+            &parsed,
+            &ConvertOptions {
+                output_dir: temp.path().to_path_buf(),
+                output_stem: Some("sample-demo".to_string()),
+                side: Side::Both,
+                selected_rounds,
+                include_suspicious: true,
+                cut_before_bomb_plant: true,
+                subtick_mode: SubtickMode::Auto,
+                analysis: AnalysisOptions::default(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&filesystem.manifest).unwrap(),
+            serde_json::to_value(&memory.manifest).unwrap()
+        );
+        let disk_dtr = std::fs::read(filesystem.root.join(&dtr.path)).unwrap();
+        assert_eq!(disk_dtr, dtr.bytes);
+        assert!(filesystem.manifest_path.exists());
+        assert!(filesystem.root.join("conversion.log").exists());
+    }
+
+    fn sample_demo() -> ParsedDemo {
+        ParsedDemo {
+            path: "<demo.dem>".to_string(),
+            stem: "demo".to_string(),
+            demo_sha256: "00".repeat(32),
+            map: "de_mirage".to_string(),
+            tick_rate: 64.0,
+            round_freeze_end_ticks: Vec::new(),
+            bomb_beginplant_ticks: Vec::new(),
+            bomb_planted_ticks: Vec::new(),
+            rows: vec![sample_row(100), sample_row(164)],
+            projectiles: Vec::new(),
+        }
+    }
+
+    fn sample_row(tick: i32) -> ParsedPlayerTick {
+        ParsedPlayerTick {
+            tick,
+            steam_id: 76561198000000001,
+            name: "alpha".to_string(),
+            team_num: 2,
+            is_alive: true,
+            round: 1,
+            round_in_progress: true,
+            is_freeze_period: false,
+            game_time: Some(tick as f32 / 64.0),
+            origin: [tick as f32, 1.0, 2.0],
+            velocity: [1.0, 0.0, 0.0],
+            pitch: 3.0,
+            yaw: 4.0,
+            buttons: 1,
+            buttonstate1: 1,
+            buttonstate2: 0,
+            buttonstate3: 0,
+            item_def_idx: 7,
+            inventory_as_ids: vec![7],
+            armor_value: 100,
+            has_helmet: true,
+            has_defuser: false,
+            round_start_equip_value: 2_700,
+            equipment_value_total: 2_700,
+            money_saved_total: 800,
+            cash_spent_this_round: 0,
+            entity_flags: 1,
+            move_type: 2,
+            duck_amount: None,
+            duck_speed: None,
+            ladder_normal: None,
+            ducked: None,
+            ducking: None,
+            desires_duck: None,
+            subtick_moves: Vec::new(),
+            subtick_button_truncated: 0,
+            team_rounds_total: None,
+            team_name: None,
+            team_clan_name: None,
+        }
     }
 }

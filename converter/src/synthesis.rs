@@ -241,6 +241,9 @@ mod tests {
             desires_duck: None,
             subtick_moves: Vec::new(),
             subtick_button_truncated: 0,
+            team_rounds_total: None,
+            team_name: None,
+            team_clan_name: None,
         }
     }
 

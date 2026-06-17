@@ -7,7 +7,7 @@ edition = "2021"
 bitter = "0.7.0"
 prost = "0.13.3"
 snap = "1.1.0"
-ahash = "0.8.3"
+ahash = { version = "0.8.3", default-features = false, features = ["std", "no-rng"] }
 regex = "1.7.3"
 phf = "0.11.1"
 phf_macros = "0.11.1"
@@ -20,7 +20,6 @@ serde = { version = "1.0.164", features = ["derive"] }
 libc = "0.2.147"
 rayon = "1.7.0"
 proc-macro2 = "1.0.69"
-rand = "0.8.5"
 bytes = "1.5.0"
 
 [dependencies.csgoproto]

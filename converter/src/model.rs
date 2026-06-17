@@ -303,6 +303,9 @@ pub struct ParsedPlayerTick {
     pub desires_duck: Option<bool>,
     pub subtick_moves: Vec<SubtickMove>,
     pub subtick_button_truncated: usize,
+    pub team_rounds_total: Option<u32>,
+    pub team_name: Option<String>,
+    pub team_clan_name: Option<String>,
 }
 
 impl ParsedPlayerTick {

@@ -6,21 +6,28 @@ license = "GPL-3.0-only"
 publish = false
 
 [workspace]
+members = ["wasm"]
 
 [features]
-default = ["demoparser"]
+default = ["cli", "demoparser"]
+cli = ["dep:clap", "dep:dialoguer"]
 demoparser = ["dep:ahash", "dep:parser"]
-gui = ["dep:eframe", "dep:rfd"]
+gui = ["cli", "dep:eframe", "dep:rfd"]
 
 [lib]
 name = "cs2_demotracer"
 path = "src/lib.rs"
 
+[[bin]]
+name = "cs2-demotracer"
+path = "src/main.rs"
+required-features = ["cli"]
+
 [dependencies]
-ahash = { version = "0.8", optional = true }
+ahash = { version = "0.8", optional = true, default-features = false, features = ["std", "no-rng"] }
 brotli = "8.0.3"
-clap = { version = "4.5", features = ["derive"] }
-dialoguer = "0.11"
+clap = { version = "4.5", features = ["derive"], optional = true }
+dialoguer = { version = "0.11", optional = true }
 eframe = { version = "0.27", optional = true }
 rfd = { version = "0.14", optional = true }
 serde = { version = "1", features = ["derive"] }
@@ -31,3 +38,6 @@ thiserror = "1"
 [dependencies.parser]
 path = "../third_party/demoparser/src/parser"
 optional = true
+
+[dev-dependencies]
+tempfile = "3"
