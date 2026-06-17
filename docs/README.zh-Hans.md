@@ -39,7 +39,7 @@ bot 会回放从 CS2 demo 转换出的移动、视角、开火和武器状态；
 
 转换器本身是独立 CLI exe。只有把 `.dtr` 放进 CS2 本地服务器播放时，才需要插件。
 
-如果你只是想测试插件播放效果，可以使用这个已经预先转换好的 Mirage 样例包：[`samples/cs2-demotracer-sample-spirit-vs-falcons-m2-mirage-full.zip`](../samples/cs2-demotracer-sample-spirit-vs-falcons-m2-mirage-full.zip)。解压后直接用里面的 `manifest.json` 播放即可。
+如果你只是想测试插件播放效果，可以从 Release assets 下载这个已经预先转换好的 Mirage 样例包：[`cs2-demotracer-sample-spirit-vs-falcons-m2-mirage-full.zip`](https://github.com/unicbm/cs2-demotracer/releases/download/v0.1.0/cs2-demotracer-sample-spirit-vs-falcons-m2-mirage-full.zip)。解压后直接用里面的 `manifest.json` 播放即可。
 
 ## 转换单个 demo
 
