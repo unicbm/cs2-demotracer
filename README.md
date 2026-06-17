@@ -190,14 +190,15 @@ Repository layout:
 - `docs/`: extra docs.
 - `third_party/`: vendored third-party source and upstream license files.
 
-## Credits
+## Dependencies And Credits
 
-Thanks to:
+The main upstream projects are:
 
-- [XBribo/CS2-Bot-Controller](https://github.com/XBribo/CS2-Bot-Controller) / CS2-Bot-Locker, GPL-3.0: CS2 bot hooks, replay, recording, input injection, and weapon-locking ideas. This project uses the BotController runtime architecture.
-- [XBribo/CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider), GPL-3.0: optional BotHider interoperability for managed bot detection plus name and SteamID64 alignment during replay identity handoff.
-- [LaihoE/demoparser](https://github.com/LaihoE/demoparser), MIT: Rust CS2 demo parser used by the converter. The vendored source under `third_party/demoparser` keeps its upstream license and README files.
-- [csgowiki/minidemo-encoder](https://github.com/csgowiki/minidemo-encoder), MIT: inspiration for the historical `.dem -> replay file` tooling workflow. No Go source from that project is copied here.
-- The Metamod:Source and CounterStrikeSharp communities for CS2 plugin infrastructure.
+- [XBribo/CS2-Bot-Controller](https://github.com/XBribo/CS2-Bot-Controller), GPL-3.0: BotController runtime architecture, bot replay hooks, recording, input injection, and weapon locking.
+- [XBribo/CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider), GPL-3.0: optional BotHider integration for BotHider-managed bot detection, display-name alignment, and SteamID64 alignment.
+- [LaihoE/demoparser](https://github.com/LaihoE/demoparser), MIT: Rust CS2 demo parser used by the converter. Vendored under `third_party/demoparser` with upstream license and README files preserved.
+- [csgowiki/minidemo-encoder](https://github.com/csgowiki/minidemo-encoder), MIT: historical `.dem -> replay file` workflow inspiration. No Go source from this project is copied.
+- [alliedmodders/metamod-source](https://github.com/alliedmodders/metamod-source): Metamod:Source plugin infrastructure used by the runtime.
+- [roflmuffin/CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp): CounterStrikeSharp plugin API used by the C# control plugin.
 
 CS2 DemoTracer's own code is licensed under GPL-3.0-only. Vendored third-party source keeps its upstream license files in `third_party/`.
