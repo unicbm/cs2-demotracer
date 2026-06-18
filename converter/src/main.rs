@@ -1,12 +1,15 @@
 use clap::{Parser, Subcommand};
+use cs2_demotracer::api::{
+    build_nade_library_with_progress, export_nade_clips_from_demo_path, NadeClipExportRequest,
+    NadeContextOptions, NadeDedupeOptions, NadeLibraryExportRequest,
+};
 use cs2_demotracer::demo_reader::read_demo;
 use cs2_demotracer::export::{export_demo, parse_round_list, ConvertOptions};
 use cs2_demotracer::model::{Side, SubtickMode};
 use cs2_demotracer::nade_export::{
-    export_nade_clips, NadeExportOptions, DEFAULT_OPENING_SECONDS, DEFAULT_POST_ROLL_SECONDS,
-    DEFAULT_PRE_ROLL_SECONDS,
+    DEFAULT_OPENING_SECONDS, DEFAULT_POST_ROLL_SECONDS, DEFAULT_PRE_ROLL_SECONDS,
 };
-use cs2_demotracer::nade_library::{build_nade_library, BuildNadeLibraryOptions};
+use cs2_demotracer::nade_library::print_nade_library_progress;
 use cs2_demotracer::pool::{build_round_pool, BuildPoolOptions};
 use cs2_demotracer::quality::{analyze_demo, AnalysisOptions};
 use cs2_demotracer::rec_writer::read_rec_file;
@@ -269,21 +272,20 @@ fn run() -> cs2_demotracer::Result<()> {
             post_roll,
             opening_seconds,
         } => {
-            let parsed = read_demo(&demo)?;
             let selected_rounds = rounds.as_deref().map(parse_round_list).transpose()?;
-            let report = export_nade_clips(
-                &parsed,
-                &NadeExportOptions {
-                    output_dir: output,
-                    output_stem: None,
-                    side,
-                    selected_rounds,
+            let report = export_nade_clips_from_demo_path(&NadeClipExportRequest {
+                demo_path: Some(demo),
+                output_dir: output,
+                output_stem: None,
+                side,
+                selected_rounds,
+                context: NadeContextOptions {
                     pre_roll_seconds: pre_roll,
                     post_roll_seconds: post_roll,
                     opening_seconds,
-                    subtick_mode: SubtickMode::Auto,
                 },
-            )?;
+                subtick_mode: SubtickMode::Auto,
+            })?;
             println!(
                 "wrote {} nade clips under {} (skipped {})",
                 report.clips_written,
@@ -309,24 +311,31 @@ fn run() -> cs2_demotracer::Result<()> {
             dedupe_yaw_degrees,
             dedupe_velocity_units,
         } => {
-            let report = build_nade_library(&BuildNadeLibraryOptions {
-                demo_dir,
-                output_dir: output,
-                recursive,
-                jobs,
-                max_demos,
-                reuse_roots,
-                aggregate_only,
-                side,
-                pre_roll_seconds: pre_roll,
-                post_roll_seconds: post_roll,
-                opening_seconds,
-                subtick_mode: SubtickMode::Auto,
-                dedupe: !no_dedupe,
-                dedupe_origin_units,
-                dedupe_yaw_degrees,
-                dedupe_velocity_units,
-            })?;
+            let report = build_nade_library_with_progress(
+                &NadeLibraryExportRequest {
+                    demo_dir,
+                    output_dir: output,
+                    recursive,
+                    jobs,
+                    max_demos,
+                    reuse_roots,
+                    aggregate_only,
+                    side,
+                    context: NadeContextOptions {
+                        pre_roll_seconds: pre_roll,
+                        post_roll_seconds: post_roll,
+                        opening_seconds,
+                    },
+                    subtick_mode: SubtickMode::Auto,
+                    dedupe: NadeDedupeOptions {
+                        enabled: !no_dedupe,
+                        origin_units: dedupe_origin_units,
+                        yaw_degrees: dedupe_yaw_degrees,
+                        velocity_units: dedupe_velocity_units,
+                    },
+                },
+                |event| print_nade_library_progress(&event),
+            )?;
             println!(
                 "nade library demos={} converted={} reused={} existing={} failures={} maps={} source_clips={} clips={} root={}",
                 report.demos_done,

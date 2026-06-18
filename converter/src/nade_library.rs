@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
-const LIBRARY_MANIFEST_FORMAT_VERSION: u32 = 1;
+pub const LIBRARY_MANIFEST_FORMAT_VERSION: u32 = 1;
 const MANIFEST_BROTLI_BUFFER_SIZE: usize = 4096;
 const MANIFEST_BROTLI_QUALITY: u32 = 6;
 const MANIFEST_BROTLI_LGWIN: u32 = 22;
@@ -74,25 +74,25 @@ pub struct NadeLibraryMapSummary {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct AggregatedMapManifest {
-    format_version: u32,
-    abi: i32,
-    dtr_format_version: u32,
-    map: String,
-    coordinate_mode: String,
-    demo_count: usize,
-    source_clip_count: usize,
-    clip_count: usize,
-    dedupe: NadeLibraryDedupeManifest,
-    clips: Vec<NadeClip>,
+pub struct NadeMapManifest {
+    pub format_version: u32,
+    pub abi: i32,
+    pub dtr_format_version: u32,
+    pub map: String,
+    pub coordinate_mode: String,
+    pub demo_count: usize,
+    pub source_clip_count: usize,
+    pub clip_count: usize,
+    pub dedupe: NadeLibraryDedupeManifest,
+    pub clips: Vec<NadeClip>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct NadeLibraryDedupeManifest {
-    enabled: bool,
-    origin_units: f32,
-    yaw_degrees: f32,
-    velocity_units: f32,
+pub struct NadeLibraryDedupeManifest {
+    pub enabled: bool,
+    pub origin_units: f32,
+    pub yaw_degrees: f32,
+    pub velocity_units: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -141,7 +141,86 @@ enum DemoTaskResult {
     },
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum NadeLibraryProgress {
+    Started {
+        demos: usize,
+        queued: usize,
+        known_existing: usize,
+        reuse_roots: usize,
+        jobs: usize,
+    },
+    Demo {
+        total: usize,
+        done: usize,
+        worker_index: Option<usize>,
+        status: NadeLibraryDemoStatus,
+    },
+    AggregateOnly {
+        maps_written: usize,
+        demos: usize,
+        source_clips: usize,
+        clips: usize,
+    },
+    Aggregated {
+        maps_written: usize,
+        source_clips: usize,
+        clips: usize,
+        result_clips: usize,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum NadeLibraryDemoStatus {
+    Converted {
+        demo_id: String,
+        map: String,
+        clips: usize,
+        skipped: usize,
+        elapsed_seconds: f32,
+    },
+    Reused {
+        demo_id: String,
+        map: String,
+        clips: usize,
+        elapsed_seconds: f32,
+    },
+    SkippedExisting {
+        demo_id: String,
+        map: String,
+        clips: usize,
+    },
+    Failed {
+        path: PathBuf,
+        error: String,
+        elapsed_seconds: f32,
+    },
+}
+
 pub fn build_nade_library(options: &BuildNadeLibraryOptions) -> Result<BuildNadeLibraryReport> {
+    build_nade_library_with_progress(options, |event| print_nade_library_progress(&event))
+}
+
+pub fn build_nade_library_quiet(
+    options: &BuildNadeLibraryOptions,
+) -> Result<BuildNadeLibraryReport> {
+    build_nade_library_inner(options, None)
+}
+
+pub fn build_nade_library_with_progress<F>(
+    options: &BuildNadeLibraryOptions,
+    mut progress: F,
+) -> Result<BuildNadeLibraryReport>
+where
+    F: FnMut(NadeLibraryProgress),
+{
+    build_nade_library_inner(options, Some(&mut progress))
+}
+
+fn build_nade_library_inner(
+    options: &BuildNadeLibraryOptions,
+    mut progress: Option<&mut dyn FnMut(NadeLibraryProgress)>,
+) -> Result<BuildNadeLibraryReport> {
     validate_options(options)?;
     fs::create_dir_all(&options.output_dir).map_err(|e| io_error(&options.output_dir, e))?;
     let demos_root = options.output_dir.join("demos");
@@ -152,8 +231,14 @@ pub fn build_nade_library(options: &BuildNadeLibraryOptions) -> Result<BuildNade
         let (maps_written, source_clips, clips) =
             rebuild_map_manifests(&options.output_dir, &dedupe_options)?;
         let demo_count = scan_existing_exports(&demos_root)?.len();
-        println!(
-            "nade-library: aggregate-only maps={maps_written} demos={demo_count} source_clips={source_clips} clips={clips}"
+        emit_progress(
+            &mut progress,
+            NadeLibraryProgress::AggregateOnly {
+                maps_written,
+                demos: demo_count,
+                source_clips,
+                clips,
+            },
         );
         return Ok(BuildNadeLibraryReport {
             root: options.output_dir.clone(),
@@ -183,15 +268,16 @@ pub fn build_nade_library(options: &BuildNadeLibraryOptions) -> Result<BuildNade
         .into_iter()
         .map(|demo_path| DemoTask { demo_path })
         .collect::<Vec<_>>();
-    println!(
-        "nade-library: demos={} queued={} known_existing={} reuse_roots={} jobs={}",
-        total,
-        tasks.len(),
-        existing_exports.len(),
-        options.reuse_roots.len(),
-        options.jobs
+    emit_progress(
+        &mut progress,
+        NadeLibraryProgress::Started {
+            demos: total,
+            queued: tasks.len(),
+            known_existing: existing_exports.len(),
+            reuse_roots: options.reuse_roots.len(),
+            jobs: options.jobs,
+        },
     );
-    let _ = std::io::stdout().flush();
 
     let queue = Arc::new(Mutex::new(VecDeque::from(tasks)));
     let existing_exports = Arc::new(existing_exports);
@@ -245,15 +331,28 @@ pub fn build_nade_library(options: &BuildNadeLibraryOptions) -> Result<BuildNade
             }
             DemoTaskResult::Failed { .. } => failures += 1,
         }
-        print_progress_line(total, demos_done, Some(worker_index), &result);
+        emit_progress(
+            &mut progress,
+            NadeLibraryProgress::Demo {
+                total,
+                done: demos_done,
+                worker_index: Some(worker_index),
+                status: NadeLibraryDemoStatus::from_task_result(&result),
+            },
+        );
     }
 
     let dedupe_options = DedupeOptions::from_build_options(&options);
     let (maps_written, source_clips, clips) =
         rebuild_map_manifests(&options.output_dir, &dedupe_options)?;
-    println!(
-        "nade-library: aggregate maps={} source_clips={} clips={} result_clips={}",
-        maps_written, source_clips, clips, clips_from_results
+    emit_progress(
+        &mut progress,
+        NadeLibraryProgress::Aggregated {
+            maps_written,
+            source_clips,
+            clips,
+            result_clips: clips_from_results,
+        },
     );
 
     Ok(BuildNadeLibraryReport {
@@ -268,6 +367,15 @@ pub fn build_nade_library(options: &BuildNadeLibraryOptions) -> Result<BuildNade
         source_clips,
         clips,
     })
+}
+
+fn emit_progress(
+    progress: &mut Option<&mut dyn FnMut(NadeLibraryProgress)>,
+    event: NadeLibraryProgress,
+) {
+    if let Some(callback) = progress.as_deref_mut() {
+        callback(event);
+    }
 }
 
 fn process_demo_task(
@@ -396,7 +504,7 @@ fn rebuild_map_manifests(
             clips = dedupe_clips(clips, dedupe_options);
         }
         total_clips += clips.len();
-        let map_manifest = AggregatedMapManifest {
+        let map_manifest = NadeMapManifest {
             format_version: NADE_MANIFEST_FORMAT_VERSION,
             abi: DEMOTRACER_ABI,
             dtr_format_version: DTR_FORMAT_VERSION,
@@ -440,6 +548,55 @@ fn rebuild_map_manifests(
     fs::write(&json_path, json.as_bytes()).map_err(|e| io_error(&json_path, e))?;
     write_brotli_file(&root.join("nade_library.json.br"), json.as_bytes())?;
     Ok((library.maps.len(), total_source_clips, total_clips))
+}
+
+impl NadeLibraryDemoStatus {
+    fn from_task_result(result: &DemoTaskResult) -> Self {
+        match result {
+            DemoTaskResult::Converted {
+                demo_id,
+                map,
+                clips,
+                skipped,
+                elapsed,
+            } => Self::Converted {
+                demo_id: demo_id.clone(),
+                map: map.clone(),
+                clips: *clips,
+                skipped: *skipped,
+                elapsed_seconds: elapsed.as_secs_f32(),
+            },
+            DemoTaskResult::Reused {
+                demo_id,
+                map,
+                clips,
+                elapsed,
+            } => Self::Reused {
+                demo_id: demo_id.clone(),
+                map: map.clone(),
+                clips: *clips,
+                elapsed_seconds: elapsed.as_secs_f32(),
+            },
+            DemoTaskResult::SkippedExisting {
+                demo_id,
+                map,
+                clips,
+            } => Self::SkippedExisting {
+                demo_id: demo_id.clone(),
+                map: map.clone(),
+                clips: *clips,
+            },
+            DemoTaskResult::Failed {
+                path,
+                error,
+                elapsed,
+            } => Self::Failed {
+                path: path.clone(),
+                error: error.clone(),
+                elapsed_seconds: elapsed.as_secs_f32(),
+            },
+        }
+    }
 }
 
 impl DedupeOptions {
@@ -594,51 +751,80 @@ fn copy_export_root(source: &Path, target: &Path) -> Result<()> {
     Ok(())
 }
 
-fn print_progress_line(
-    total: usize,
-    done: usize,
-    worker_index: Option<usize>,
-    result: &DemoTaskResult,
-) {
-    let worker = worker_index
-        .map(|index| format!("w{index}"))
-        .unwrap_or_else(|| "--".to_string());
-    match result {
-        DemoTaskResult::Converted {
-            demo_id,
-            map,
-            clips,
-            skipped,
-            elapsed,
+pub fn print_nade_library_progress(event: &NadeLibraryProgress) {
+    match event {
+        NadeLibraryProgress::Started {
+            demos,
+            queued,
+            known_existing,
+            reuse_roots,
+            jobs,
         } => println!(
-            "[{done}/{total}] {worker} converted map={map} demo={demo_id} clips={clips} skipped={skipped} time={:.1}s",
-            elapsed.as_secs_f32()
+            "nade-library: demos={demos} queued={queued} known_existing={known_existing} reuse_roots={reuse_roots} jobs={jobs}"
         ),
-        DemoTaskResult::Reused {
-            demo_id,
-            map,
-            clips,
-            elapsed,
-        } => println!(
-            "[{done}/{total}] {worker} reused map={map} demo={demo_id} clips={clips} time={:.1}s",
-            elapsed.as_secs_f32()
-        ),
-        DemoTaskResult::SkippedExisting {
-            demo_id,
-            map,
+        NadeLibraryProgress::AggregateOnly {
+            maps_written,
+            demos,
+            source_clips,
             clips,
         } => println!(
-            "[{done}/{total}] {worker} existing map={map} demo={demo_id} clips={clips}"
+            "nade-library: aggregate-only maps={maps_written} demos={demos} source_clips={source_clips} clips={clips}"
         ),
-        DemoTaskResult::Failed {
-            path,
-            error,
-            elapsed,
+        NadeLibraryProgress::Aggregated {
+            maps_written,
+            source_clips,
+            clips,
+            result_clips,
         } => println!(
-            "[{done}/{total}] {worker} failed demo={} time={:.1}s error={error}",
-            path.display(),
-            elapsed.as_secs_f32()
+            "nade-library: aggregate maps={maps_written} source_clips={source_clips} clips={clips} result_clips={result_clips}"
         ),
+        NadeLibraryProgress::Demo {
+            total,
+            done,
+            worker_index,
+            status,
+        } => {
+            let worker = worker_index
+                .map(|index| format!("w{index}"))
+                .unwrap_or_else(|| "--".to_string());
+            match status {
+                NadeLibraryDemoStatus::Converted {
+                    demo_id,
+                    map,
+                    clips,
+                    skipped,
+                    elapsed_seconds,
+                } => println!(
+                    "[{done}/{total}] {worker} converted map={map} demo={demo_id} clips={clips} skipped={skipped} time={:.1}s",
+                    elapsed_seconds
+                ),
+                NadeLibraryDemoStatus::Reused {
+                    demo_id,
+                    map,
+                    clips,
+                    elapsed_seconds,
+                } => println!(
+                    "[{done}/{total}] {worker} reused map={map} demo={demo_id} clips={clips} time={:.1}s",
+                    elapsed_seconds
+                ),
+                NadeLibraryDemoStatus::SkippedExisting {
+                    demo_id,
+                    map,
+                    clips,
+                } => println!(
+                    "[{done}/{total}] {worker} existing map={map} demo={demo_id} clips={clips}"
+                ),
+                NadeLibraryDemoStatus::Failed {
+                    path,
+                    error,
+                    elapsed_seconds,
+                } => println!(
+                    "[{done}/{total}] {worker} failed demo={} time={:.1}s error={error}",
+                    path.display(),
+                    elapsed_seconds
+                ),
+            }
+        }
     }
     let _ = std::io::stdout().flush();
 }

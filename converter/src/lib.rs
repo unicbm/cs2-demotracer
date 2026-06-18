@@ -1,3 +1,4 @@
+pub mod api;
 pub mod browser_analysis;
 pub mod demo_id;
 pub mod demo_reader;
