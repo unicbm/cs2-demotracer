@@ -52,7 +52,9 @@ bot 会回放从 CS2 demo 转换出的移动、视角、开火和武器状态；
 
 ## 你需要准备什么
 
-- Windows x64，用来运行打包好的转换器。
+- Windows x64，用来运行主要打包好的转换器。
+- Linux x64 release asset 目前是实验性的：发布包是在本地 WSL Ubuntu 22.04
+  中构建并做基础 smoke test，尚未单独验证纯 Linux 发行版环境。
 - 如果从源码构建转换器，需要 Rust。
 - 如果要在游戏里播放，需要本地 CS2 服务器、Metamod 和 CounterStrikeSharp。
 
@@ -232,7 +234,8 @@ dtr_stop_all
 
 ## 当前限制
 
-- 目前主要面向 Windows x64 本地 CS2 环境。
+- 目前主要面向 Windows x64 本地 CS2 环境。Linux x64 converter binary 是
+  WSL Ubuntu 构建产物，在纯 Linux 环境下仍需要额外验证。
 - 需要同一张地图，并且服务器里要有足够的 bot。
 - `.dtr` 是无损压缩的 BotController 兼容 replay 格式，并包含用于烟雾弹对齐的 demo 原始投掷物元数据；离线 subtick 和完整 usercmd 还会继续补。
 - 某些武器和皮肤/默认手枪配置在 CS2 里比较麻烦，目前优先保证不崩服和基本行为正确。
