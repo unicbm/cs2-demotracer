@@ -5,6 +5,8 @@ namespace DemoTracer;
 
 public sealed partial class DemoTracerPlugin
 {
+    private const int RoundPoolManifestFormatVersion = 1;
+
     private static bool TryReadManifest(
         string manifestPath,
         out ConversionManifest manifest,
@@ -235,7 +237,52 @@ public sealed partial class DemoTracerPlugin
     private static void ValidateRoundPoolManifest(RoundPoolManifest manifest)
     {
         manifest.Candidates ??= new List<RoundPoolCandidate>();
+        if (manifest.FormatVersion != RoundPoolManifestFormatVersion)
+        {
+            throw new InvalidDataException(
+                $"pool manifest format_version {manifest.FormatVersion} unsupported; expected {RoundPoolManifestFormatVersion}");
+        }
+
         ValidateManifestAbi(manifest.Abi);
+        for (var i = 0; i < manifest.Candidates.Count; i++)
+            ValidateRoundPoolCandidate(manifest.Candidates[i], i);
+    }
+
+    private static void ValidateRoundPoolCandidate(RoundPoolCandidate? candidate, int index)
+    {
+        if (candidate == null)
+            throw new InvalidDataException($"pool candidate {index} is null");
+        if (string.IsNullOrWhiteSpace(candidate.Manifest))
+            throw new InvalidDataException($"pool candidate {index} manifest is required");
+        if (candidate.SourceRound < 0)
+            throw new InvalidDataException($"pool candidate {index} source_round must be non-negative");
+        if (candidate.Files <= 0)
+            throw new InvalidDataException($"pool candidate {index} files must be positive");
+        if (candidate.TEconomy == null)
+            throw new InvalidDataException($"pool candidate {index} t_economy is required");
+        if (candidate.CtEconomy == null)
+            throw new InvalidDataException($"pool candidate {index} ct_economy is required");
+
+        ValidatePoolTeamEconomy(candidate.TEconomy, index, "t_economy", "t");
+        ValidatePoolTeamEconomy(candidate.CtEconomy, index, "ct_economy", "ct");
+    }
+
+    private static void ValidatePoolTeamEconomy(
+        PoolTeamEconomy economy,
+        int candidateIndex,
+        string fieldName,
+        string expectedSide)
+    {
+        if (!string.IsNullOrWhiteSpace(economy.Side) &&
+            !economy.Side.Equals(expectedSide, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException(
+                $"pool candidate {candidateIndex} {fieldName}.side must be {expectedSide}");
+        }
+        if (economy.Players < 0)
+            throw new InvalidDataException($"pool candidate {candidateIndex} {fieldName}.players must be non-negative");
+        if (string.IsNullOrWhiteSpace(economy.Class))
+            throw new InvalidDataException($"pool candidate {candidateIndex} {fieldName}.class is required");
     }
 
     private static ConversionManifest ReadManifest(string manifestPath)
