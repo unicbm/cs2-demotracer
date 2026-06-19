@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
-pub const DEMOTRACER_ABI: i32 = 12;
+pub const DEMOTRACER_ABI: i32 = 15;
 pub const DTR_FORMAT_VERSION: u32 = 5;
 
 pub fn public_demo_path(path: &str) -> String {

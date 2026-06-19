@@ -52,6 +52,7 @@ public sealed class DemoTracerPlugin : BasePlugin
     private const int NadeClipStartReadyRetries = 6;
     private const float NadeCycleDefaultGapSeconds = 1.5f;
     private const float NadeCycleMaxGapSeconds = 30.0f;
+    private const int MinManifestAbiVersion = 12;
     private const int MaxPlayerSlots = 64;
     private const int ReplayStartHealth = 100;
     private const string FreezeTimeConVarName = "mp_freezetime";
@@ -5401,6 +5402,7 @@ public sealed class DemoTracerPlugin : BasePlugin
     private static void ValidateConversionManifest(ConversionManifest manifest)
     {
         manifest.Files ??= new List<ManifestFile>();
+        ValidateManifestAbi(manifest.Abi);
         var formatVersion = manifest.EffectiveDtrFormatVersion;
         if (formatVersion == 0)
             return;
@@ -5411,6 +5413,18 @@ public sealed class DemoTracerPlugin : BasePlugin
         {
             throw new InvalidDataException(
                 $"manifest format_version {formatVersion} unsupported; expected {minVersion}..{maxVersion}");
+        }
+    }
+
+    private static void ValidateManifestAbi(int abi)
+    {
+        if (abi == 0)
+            return;
+
+        if (abi < MinManifestAbiVersion || abi > BotControllerNative.ExpectedAbiVersion)
+        {
+            throw new InvalidDataException(
+                $"manifest abi {abi} unsupported; expected {MinManifestAbiVersion}..{BotControllerNative.ExpectedAbiVersion}");
         }
     }
 
@@ -5650,6 +5664,7 @@ public sealed class DemoTracerPlugin : BasePlugin
                                PropertyNameCaseInsensitive = true
                            })
                        ?? throw new InvalidOperationException("pool manifest JSON is empty");
+            ValidateRoundPoolManifest(manifest);
             return true;
         }
         catch (FileNotFoundException)
@@ -5667,6 +5682,12 @@ public sealed class DemoTracerPlugin : BasePlugin
             error = ex.Message;
             return false;
         }
+    }
+
+    private static void ValidateRoundPoolManifest(RoundPoolManifest manifest)
+    {
+        manifest.Candidates ??= new List<RoundPoolCandidate>();
+        ValidateManifestAbi(manifest.Abi);
     }
 
     private static ConversionManifest ReadManifest(string manifestPath)
