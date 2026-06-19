@@ -1,7 +1,9 @@
 use crate::demo_id::{demo_id, unique_demo_id};
 use crate::demo_reader::read_demo;
 use crate::export::{export_demo, ConvertOptions};
-use crate::model::{RoundPoolCandidate, RoundPoolManifest, Side, SubtickMode, DEMOTRACER_ABI};
+use crate::model::{
+    public_demo_path, RoundPoolCandidate, RoundPoolManifest, Side, SubtickMode, DEMOTRACER_ABI,
+};
 use crate::quality::AnalysisOptions;
 use crate::{io_error, Result};
 use serde::{Deserialize, Serialize};
@@ -91,7 +93,7 @@ pub fn build_round_pool(options: &BuildPoolOptions) -> Result<BuildPoolReport> {
                     pool.candidates.push(RoundPoolCandidate {
                         manifest: manifest_rel.clone(),
                         demo_stem: parsed.stem.clone(),
-                        demo_path: parsed.path.clone(),
+                        demo_path: public_demo_path(&parsed.path),
                         source_round: round.round,
                         pistol_round: round.pistol_round,
                         t_economy: round.t_economy.clone(),

@@ -1,5 +1,5 @@
 use crate::model::ParsedPlayerTick;
-use crate::model::{DemoAnalysis, ParsedDemo, RoundStatus, RoundSummary};
+use crate::model::{public_demo_path, DemoAnalysis, ParsedDemo, RoundStatus, RoundSummary};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug)]
@@ -113,7 +113,7 @@ pub fn analyze_demo(parsed: &ParsedDemo, options: AnalysisOptions) -> DemoAnalys
     }
 
     DemoAnalysis {
-        demo_path: parsed.path.clone(),
+        demo_path: public_demo_path(&parsed.path),
         demo_stem: parsed.stem.clone(),
         map: parsed.map.clone(),
         tick_rate: parsed.tick_rate,

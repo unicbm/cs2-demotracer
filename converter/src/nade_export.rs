@@ -1,8 +1,9 @@
 use crate::demo_id::{demo_id, sha256_hex};
 use crate::export::{first_weapon_def_index, preload_weapon_def_indices, replay_loadout};
 use crate::model::{
-    ParsedDemo, ParsedPlayerTick, ParsedProjectile, ProjectileEffectSource, ProjectileKind,
-    ReplayLoadout, ReplayProjectile, Side, SubtickMode, DEMOTRACER_ABI, DTR_FORMAT_VERSION,
+    public_demo_path, ParsedDemo, ParsedPlayerTick, ParsedProjectile, ProjectileEffectSource,
+    ProjectileKind, ReplayLoadout, ReplayProjectile, Side, SubtickMode, DEMOTRACER_ABI,
+    DTR_FORMAT_VERSION,
 };
 use crate::rec_writer::write_rec_file;
 use crate::synthesis::{synthesize_player_rec_with_options, SynthesisOptions, SynthesisStats};
@@ -173,7 +174,7 @@ pub fn export_nade_clips(
     let round_bounds = round_bounds(parsed);
     let mut manifest = NadeManifest {
         format_version: NADE_MANIFEST_FORMAT_VERSION,
-        demo_path: parsed.path.clone(),
+        demo_path: public_demo_path(&parsed.path),
         demo_id: output_stem,
         demo_sha256: parsed.demo_sha256.clone(),
         map: parsed.map.clone(),

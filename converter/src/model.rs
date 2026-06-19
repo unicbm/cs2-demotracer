@@ -5,6 +5,15 @@ use std::str::FromStr;
 pub const DEMOTRACER_ABI: i32 = 12;
 pub const DTR_FORMAT_VERSION: u32 = 5;
 
+pub fn public_demo_path(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    normalized
+        .rsplit('/')
+        .find(|part| !part.is_empty())
+        .unwrap_or("demo.dem")
+        .to_string()
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Side {
@@ -397,6 +406,14 @@ impl ParsedPlayerTick {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn public_demo_path_strips_local_directories() {
+        assert_eq!(public_demo_path(r"C:\demos\match.dem"), "match.dem");
+        assert_eq!(public_demo_path("/home/user/demos/match.dem"), "match.dem");
+        assert_eq!(public_demo_path("match.dem"), "match.dem");
+        assert_eq!(public_demo_path(""), "demo.dem");
+    }
 
     #[test]
     fn snapshot_preserves_real_duck_and_ladder_fields() {

@@ -1,7 +1,8 @@
 use crate::demo_id::demo_id;
 use crate::model::{
-    ConversionManifest, ConvertedFile, ConvertedRound, EconomyClass, ParsedDemo, ParsedPlayerTick,
-    ReplayLoadout, Side, SubtickMode, TeamEconomy, DEMOTRACER_ABI, DTR_FORMAT_VERSION,
+    public_demo_path, ConversionManifest, ConvertedFile, ConvertedRound, EconomyClass, ParsedDemo,
+    ParsedPlayerTick, ReplayLoadout, Side, SubtickMode, TeamEconomy, DEMOTRACER_ABI,
+    DTR_FORMAT_VERSION,
 };
 use crate::quality::{analyze_demo, AnalysisOptions};
 use crate::rec_writer::write_rec;
@@ -100,7 +101,7 @@ pub fn export_demo_to_memory(
         .unwrap_or_else(|| demo_id(&parsed.stem, &parsed.demo_sha256));
 
     let mut manifest = ConversionManifest {
-        demo_path: parsed.path.clone(),
+        demo_path: public_demo_path(&parsed.path),
         demo_id: output_stem.clone(),
         demo_sha256: parsed.demo_sha256.clone(),
         map: parsed.map.clone(),
