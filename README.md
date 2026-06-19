@@ -198,9 +198,8 @@ This layout is `92` bytes with `Pack=4`.
 ## Requirements
 
 - Windows x64 for the primary packaged converter.
-- Linux x64 release assets are experimental. The published Linux binary is built
-  and smoke-tested on local WSL Ubuntu 22.04; native Linux distributions are not
-  separately verified yet.
+- Linux may work when built from source, but packaged Linux binaries are not a
+  maintained release target yet.
 - Rust only if building the converter from source.
 - A local CS2 server with Metamod and CounterStrikeSharp if you want in-game playback.
 
@@ -409,8 +408,8 @@ For normal use, export the recommended rounds only.
 
 ## Current Limitations
 
-- Windows x64 local CS2 is the primary target. Linux x64 converter binaries are
-  WSL Ubuntu build artifacts and may need extra validation on native Linux.
+- Windows x64 local CS2 is the primary target. Linux may work from source, but
+  Linux converter/runtime packages are not currently maintained release targets.
 - The server should run the same map and have enough bots.
 - `.dtr` uses a lossless compressed BotController-compatible replay format with demo-derived projectile metadata for runtime utility alignment. Full offline subtick/usercmd reconstruction is future work.
 - Some weapon/loadout details are still limited by CS2 slot behavior, especially default pistols.

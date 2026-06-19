@@ -12,7 +12,9 @@ through any bot.
 
 It exposes both in-game console commands and a C-ABI surface for
 CounterStrikeSharp, so a plugin can record, transfer, and replay motion with a
-few P/Invoke calls. Win64 and Linux (linuxsteamrt64) are both supported.
+few P/Invoke calls. The maintained DemoTracer runtime target is Win64. Linux
+build scaffolding exists, but the bundled gamedata still has unresolved Linux
+signatures/offsets, so Linux runtime packages are not supported yet.
 
 ------------------------------------------------------------------------
 
@@ -56,7 +58,6 @@ Typical flow: lock the source slot if needed → `StartRecord` → move → `Sto
 The build stages a ready-to-copy `addons/` tree under `build/package/`.
 
 - `BotController.dll` → `csgo/addons/BotController/bin/win64/`
-  (`.so` → `linuxsteamrt64/` on Linux)
 - `gamedata.json` → `csgo/addons/BotController/`
 - `BotController.vdf`  → `csgo/addons/metamod/`
 
