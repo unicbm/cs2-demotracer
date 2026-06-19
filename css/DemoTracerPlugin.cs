@@ -2973,6 +2973,7 @@ public sealed class DemoTracerPlugin : BasePlugin
 
     private LoadRoundResult LoadRound(string manifestPath, int round)
     {
+        var replayStateReplaced = false;
         try
         {
             if (!TryReadManifest(manifestPath, out var manifest, out var readError))
@@ -3011,11 +3012,12 @@ public sealed class DemoTracerPlugin : BasePlugin
             var skippedCt = allCtFiles.Count - ctAssignments.Count;
 
             StopAndUnloadLoaded();
+            replayStateReplaced = true;
             var loaded = new List<string>();
             if (!LoadSide(tAssignments, manifestDir, loaded, out var loadError))
-                return LoadRoundResult.Fail($"dtr: failed while loading round {round}: {loadError}");
+                return FailLoadRoundAfterPartialLoad(round, loadError);
             if (!LoadSide(ctAssignments, manifestDir, loaded, out loadError))
-                return LoadRoundResult.Fail($"dtr: failed while loading round {round}: {loadError}");
+                return FailLoadRoundAfterPartialLoad(round, loadError);
 
             var partial = skippedT > 0 || skippedCt > 0
                 ? $" partial replay skipped T={skippedT}/CT={skippedCt}"
@@ -3024,8 +3026,16 @@ public sealed class DemoTracerPlugin : BasePlugin
         }
         catch (Exception ex)
         {
+            if (replayStateReplaced)
+                StopAndUnloadLoaded();
             return LoadRoundResult.Fail($"dtr: load round failed: {ex.Message}");
         }
+    }
+
+    private LoadRoundResult FailLoadRoundAfterPartialLoad(int round, string error)
+    {
+        StopAndUnloadLoaded();
+        return LoadRoundResult.Fail($"dtr: failed while loading round {round}: {error}");
     }
 
     private bool LoadSide(
