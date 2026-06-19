@@ -79,6 +79,9 @@ namespace BotController
             std::atomic<uint64_t> replayTickReads{0};
             std::atomic<uint64_t> subtickRebuilds{0};
             std::atomic<uint64_t> subticksAdded{0};
+            std::atomic<uint64_t> replayCommandFrameReads{0};
+            std::atomic<uint64_t> subtickClears{0};
+            std::atomic<uint64_t> subtickNoopSkips{0};
         };
 
         static ReplayPerfState g_perf;
@@ -334,6 +337,15 @@ namespace BotController
             case ReplayPerfCounter::SubticksAdded:
                 g_perf.subticksAdded.fetch_add(amount, std::memory_order_relaxed);
                 break;
+            case ReplayPerfCounter::ReplayCommandFrameRead:
+                g_perf.replayCommandFrameReads.fetch_add(amount, std::memory_order_relaxed);
+                break;
+            case ReplayPerfCounter::SubtickClear:
+                g_perf.subtickClears.fetch_add(amount, std::memory_order_relaxed);
+                break;
+            case ReplayPerfCounter::SubtickNoopSkip:
+                g_perf.subtickNoopSkips.fetch_add(amount, std::memory_order_relaxed);
+                break;
             }
         }
 
@@ -359,6 +371,9 @@ namespace BotController
             g_perf.replayTickReads.store(0, std::memory_order_relaxed);
             g_perf.subtickRebuilds.store(0, std::memory_order_relaxed);
             g_perf.subticksAdded.store(0, std::memory_order_relaxed);
+            g_perf.replayCommandFrameReads.store(0, std::memory_order_relaxed);
+            g_perf.subtickClears.store(0, std::memory_order_relaxed);
+            g_perf.subtickNoopSkips.store(0, std::memory_order_relaxed);
         }
 
         ReplayPerfCounters GetReplayPerfCounters()
@@ -374,6 +389,9 @@ namespace BotController
                 g_perf.replayTickReads.load(std::memory_order_relaxed),
                 g_perf.subtickRebuilds.load(std::memory_order_relaxed),
                 g_perf.subticksAdded.load(std::memory_order_relaxed),
+                g_perf.replayCommandFrameReads.load(std::memory_order_relaxed),
+                g_perf.subtickClears.load(std::memory_order_relaxed),
+                g_perf.subtickNoopSkips.load(std::memory_order_relaxed),
             };
         }
 
@@ -772,6 +790,37 @@ namespace BotController
             return &p.ticks[static_cast<size_t>(cur)];
         }
 
+        static MovementSnapshot ReplayCommandViewForTick(ReplayState &p,
+                                                         int cur,
+                                                         int total,
+                                                         const ReplayTick &tick)
+        {
+            const ReplayCommandViewMode mode = ActiveReplayCommandViewMode();
+            if (mode == ReplayCommandViewMode::Post)
+                return tick.post;
+            if (mode == ReplayCommandViewMode::NextPre)
+                return (cur + 1 < total) ? p.ticks[static_cast<size_t>(cur + 1)].pre : tick.post;
+            return tick.pre;
+        }
+
+        static int ReplayWeaponSelectForDef(int slot, int recordedDef)
+        {
+            if (recordedDef < 0 || !WeaponLockerHooks::WeaponHooksReady())
+                return -1;
+
+            void *ws = WeaponLockerHooks::WsForSlot(slot);
+            if (!ws)
+                return -1;
+
+            if (WeaponLockerHooks::ActiveWeaponDef(ws) == recordedDef)
+                return -1;
+
+            void *weapon = WeaponLockerHooks::FindWeaponByDef(ws, recordedDef);
+            if (!weapon)
+                return -1;
+            return WeaponLockerHooks::WeaponEntIndex(weapon);
+        }
+
         bool LoadReplay(int slot, const ReplayTick *ticks, int tickCount,
                         const SubtickMove *subs, int subCount)
         {
@@ -848,6 +897,40 @@ namespace BotController
             return static_cast<int>(p.ticks.size());
         }
 
+        bool GetReplaySlotState(int slot, ReplaySlotState &out)
+        {
+            out = ReplaySlotState{0, -1, 0, -1, -1, 0};
+            if (!ValidSlot(slot))
+                return false;
+
+            ReplayState &p = g_rep[slot];
+            const bool playing = p.playing.load(std::memory_order_acquire);
+            if (!playing)
+            {
+                std::lock_guard<std::mutex> lk(p.mu);
+                out.total = static_cast<int32_t>(p.ticks.size());
+                return true;
+            }
+
+            const int total = static_cast<int>(p.ticks.size());
+            const int cursor = p.cursor.load(std::memory_order_relaxed);
+            out.playing = 1;
+            out.cursor = cursor;
+            out.total = total;
+
+            int idx = cursor - 1;
+            if (idx < 0)
+                idx = 0;
+            if (idx < 0 || idx >= total)
+                return true;
+
+            const ReplayTick &tick = p.ticks[static_cast<size_t>(idx)];
+            out.currentTickIndex = idx;
+            out.weaponDefIndex = tick.weaponDefIndex;
+            out.numSubtick = static_cast<int32_t>(tick.numSubtick);
+            return true;
+        }
+
         bool ReplayTickForSimulation(int slot, ReplayTick &out)
         {
             if (!ValidSlot(slot))
@@ -864,6 +947,55 @@ namespace BotController
             return true;
         }
 
+        bool ReplayCommandFrameForSimulation(int slot, ReplayCommandFrame &out)
+        {
+            out = ReplayCommandFrame{};
+            if (!ValidSlot(slot))
+                return false;
+            ReplayState &p = g_rep[slot];
+            if (!p.playing.load(std::memory_order_acquire))
+                return false;
+
+            int cur = -1;
+            int total = 0;
+            const ReplayTick *tick = CurrentReplayTickPtr(p, cur, total);
+            if (!tick)
+                return false;
+
+            const MovementSnapshot &pre = tick->pre;
+            uint64_t b0 = pre.buttons;
+            uint64_t b1 = pre.buttons1;
+            uint64_t b2 = pre.buttons2;
+            if (b1 == 0 && b2 == 0)
+            {
+                uint64_t heldPrev = (cur > 0) ? p.ticks[static_cast<size_t>(cur - 1)].pre.buttons : 0;
+                b1 = b0 & ~heldPrev;
+                b2 = heldPrev & ~b0;
+            }
+
+            const SubtickMove *subticks = nullptr;
+            int subtickCount = 0;
+            if (cur >= 0 &&
+                static_cast<size_t>(cur + 1) < p.subOffset.size())
+            {
+                const uint32_t begin = p.subOffset[static_cast<size_t>(cur)];
+                const uint32_t end = p.subOffset[static_cast<size_t>(cur + 1)];
+                subtickCount = static_cast<int>(end - begin);
+                subticks = subtickCount > 0 ? &p.subs[static_cast<size_t>(begin)] : nullptr;
+            }
+
+            out.tick = tick;
+            out.subticks = subticks;
+            out.subtickCount = subtickCount;
+            out.weaponSelect = ReplayWeaponSelectForDef(slot, tick->weaponDefIndex);
+            out.commandView = ReplayCommandViewForTick(p, cur, total, *tick);
+            out.buttons0 = b0;
+            out.buttons1 = b1;
+            out.buttons2 = b2;
+            AddReplayPerf(ReplayPerfCounter::ReplayCommandFrameRead);
+            return true;
+        }
+
         bool ReplayCommandViewSnapshot(int slot, MovementSnapshot &out)
         {
             if (!ValidSlot(slot))
@@ -876,20 +1008,7 @@ namespace BotController
             const ReplayTick *tick = CurrentReplayTickPtr(p, cur, total);
             if (!tick)
                 return false;
-
-            const ReplayCommandViewMode mode = ActiveReplayCommandViewMode();
-            if (mode == ReplayCommandViewMode::Post)
-            {
-                out = tick->post;
-                return true;
-            }
-            if (mode == ReplayCommandViewMode::NextPre)
-            {
-                out = (cur + 1 < total) ? p.ticks[static_cast<size_t>(cur + 1)].pre : tick->post;
-                return true;
-            }
-
-            out = tick->pre;
+            out = ReplayCommandViewForTick(p, cur, total, *tick);
             return true;
         }
 
@@ -1028,7 +1147,7 @@ namespace BotController
         // Entity index for cmd.weaponselect this replay tick
         int CurrentReplayWeaponSelect(int slot)
         {
-            if (!ValidSlot(slot) || !WeaponLockerHooks::WeaponHooksReady())
+            if (!ValidSlot(slot))
                 return -1;
 
             // Recorded def for the tick about to be simulated
@@ -1044,21 +1163,7 @@ namespace BotController
                     return -1;
                 recordedDef = tick->weaponDefIndex;
             }
-            if (recordedDef < 0)
-                return -1;
-
-            void *ws = WeaponLockerHooks::WsForSlot(slot);
-            if (!ws)
-                return -1;
-
-            // Already holding the recorded weapon -> no switch
-            if (WeaponLockerHooks::ActiveWeaponDef(ws) == recordedDef)
-                return -1;
-
-            void *weapon = WeaponLockerHooks::FindWeaponByDef(ws, recordedDef);
-            if (!weapon)
-                return -1;
-            return WeaponLockerHooks::WeaponEntIndex(weapon);
+            return ReplayWeaponSelectForDef(slot, recordedDef);
         }
 
         static void WriteRawViewAnglesToPawn(char *p, float pitch, float yaw)
@@ -1292,33 +1397,41 @@ namespace BotController
             const ReplayTick *t = CurrentReplayTickPtr(p, cur, total);
             if (!t)
                 return;
+            const MovementSnapshot commandView =
+                ReplayCommandViewForTick(p, cur, total, *t);
 
+            OnReplayCommandPre(slot, services, *t, commandView);
+        }
+
+        void OnReplayCommandPre(int slot, void *services, const ReplayTick &t,
+                                const MovementSnapshot &commandView)
+        {
+            if (!ValidSlot(slot) || !services)
+                return;
             auto *sv = reinterpret_cast<char *>(services);
-            WriteVelocityToPawn(services, t->pre);
-            WriteMovementServiceState(services, t->pre);
+            WriteVelocityToPawn(services, t.pre);
+            WriteMovementServiceState(services, t.pre);
 
             void *pawn = *reinterpret_cast<void **>(sv + tg::kServices_Pawn);
             if (pawn)
             {
                 auto *pp = reinterpret_cast<char *>(pawn);
-                *reinterpret_cast<uint8_t *>(pp + tg::kEnt_MoveType) = t->pre.moveType;
-                *reinterpret_cast<uint8_t *>(pp + tg::kEnt_ActualMoveType) = t->pre.actualMoveType;
+                *reinterpret_cast<uint8_t *>(pp + tg::kEnt_MoveType) = t.pre.moveType;
+                *reinterpret_cast<uint8_t *>(pp + tg::kEnt_ActualMoveType) = t.pre.actualMoveType;
                 void *node = *reinterpret_cast<void **>(pp + tg::kEnt_GameSceneNode);
                 if (node)
                 {
                     auto *n = reinterpret_cast<char *>(node);
-                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 0) = t->pre.originX;
-                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 4) = t->pre.originY;
-                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 8) = t->pre.originZ;
+                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 0) = t.pre.originX;
+                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 4) = t.pre.originY;
+                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 8) = t.pre.originZ;
                 }
 
-                MovementSnapshot cmdView{};
-                if (ReplayCommandViewSnapshot(slot, cmdView))
-                {
-                    BotControllerHooks::ApplyReplayEyeAngles(pawn, cmdView.pitch, cmdView.yaw);
-                    WriteRawViewAnglesToPawn(pp, cmdView.pitch, cmdView.yaw);
-                    WriteReplayViewHistory(services, pp, cmdView.pitch, cmdView.yaw);
-                }
+                BotControllerHooks::ApplyReplayEyeAngles(
+                    pawn, commandView.pitch, commandView.yaw);
+                WriteRawViewAnglesToPawn(pp, commandView.pitch, commandView.yaw);
+                WriteReplayViewHistory(
+                    services, pp, commandView.pitch, commandView.yaw);
             }
         }
 

@@ -35,7 +35,7 @@ extern "C" __declspec(dllexport) int BotController_IsLocked(int slot, int kind)
 
 extern "C" __declspec(dllexport) int BotController_GetVersion()
 {
-    return 12;
+    return 13;
 }
 
 extern "C" __declspec(dllexport) int BotController_SetControllerControllingBotOffset(int offset)
@@ -203,6 +203,16 @@ extern "C" __declspec(dllexport) int BotController_GetReplayCursor(int slot)
 extern "C" __declspec(dllexport) int BotController_GetReplayTotal(int slot)
 {
     return BotController::MotionRecorder::ReplayTotal(slot);
+}
+
+// Combined replay state for CSS hot paths. Returns 0 on success.
+extern "C" __declspec(dllexport) int BotController_GetReplaySlotState(
+    int slot,
+    BotController::MotionRecorder::ReplaySlotState *out)
+{
+    if (!out)
+        return -1;
+    return BotController::MotionRecorder::GetReplaySlotState(slot, *out) ? 0 : -1;
 }
 
 // Copy the tick currently being replayed (for C# to drive weapon/fire).

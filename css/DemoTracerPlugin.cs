@@ -988,9 +988,8 @@ public sealed class DemoTracerPlugin : BasePlugin
             return;
         }
 
-        var playerControllers = FindPlayerControllers();
-        var teamPlayers = FindTeamPlayers(playerControllers);
-        UpdateReplayPovMask(playerControllers);
+        var playerSnapshot = BuildTickPlayerSnapshot();
+        UpdateReplayPovMask(playerSnapshot);
 
         foreach (var slot in _loadedSlots.ToArray())
         {
@@ -1006,7 +1005,7 @@ public sealed class DemoTracerPlugin : BasePlugin
                 continue;
             }
 
-            if (!IsReplaySlotStillSafe(slot, playerControllers))
+            if (!IsReplaySlotStillSafe(slot, playerSnapshot))
             {
                 BotControllerNative.StopReplay(slot);
                 ReleaseReplaySlot(slot, "unsafe_replay_target");
@@ -1019,16 +1018,13 @@ public sealed class DemoTracerPlugin : BasePlugin
                 MarkReplayStarted(slot);
 
             if (HandoffIncludesContact(_handoffMode) && ReplayHasPassedHandoffGrace(slot) &&
-                ReplayBotHasContact(slot, teamPlayers, out var contactReason, out _))
+                ReplayBotHasContact(slot, playerSnapshot, out var contactReason, out _))
             {
                 HandoffActiveReplays($"enemy_contact_{contactReason}_slot{slot}", slot);
                 continue;
             }
 
             if (!_weaponAlignEnabled)
-                continue;
-            var hasReplayTick = BotControllerNative.TryGetReplayTick(slot, out var tick);
-            if (!hasReplayTick)
                 continue;
 
             if (_loadedReplays.TryGetValue(slot, out var replay) && replay.UtilityOnly)
@@ -1037,16 +1033,26 @@ public sealed class DemoTracerPlugin : BasePlugin
                 continue;
             }
 
-            ApplyReplayWeaponPreset(slot, tick.WeaponDefIndex, allowSlotReplacement: true, force: false);
+            var weaponDefIndex = NormalizeWeaponDefIndex(state.WeaponDefIndex);
+            if (weaponDefIndex < 0)
+            {
+                _lastReplayWeaponDef.Remove(slot);
+                continue;
+            }
+            if (_lastReplayWeaponDef.TryGetValue(slot, out var lastDef) &&
+                lastDef == weaponDefIndex)
+                continue;
+
+            ApplyReplayWeaponPreset(slot, weaponDefIndex, allowSlotReplacement: true, force: false);
         }
     }
 
-    private void UpdateReplayPovMask(IReadOnlyList<CCSPlayerController> playerControllers)
+    private void UpdateReplayPovMask(TickPlayerSnapshot playerSnapshot)
     {
-        SetReplayPovMask(BuildReplayPovMask(playerControllers));
+        SetReplayPovMask(BuildReplayPovMask(playerSnapshot));
     }
 
-    private ulong BuildReplayPovMask(IReadOnlyList<CCSPlayerController> playerControllers)
+    private ulong BuildReplayPovMask(TickPlayerSnapshot playerSnapshot)
     {
         if (_loadedSlots.Count == 0 || _lastPlayingSlots.Count == 0)
             return 0;
@@ -1057,8 +1063,8 @@ public sealed class DemoTracerPlugin : BasePlugin
             if (slot is < 0 or >= MaxPlayerSlots || !_lastPlayingSlots.Contains(slot))
                 continue;
 
-            var replayController = Utilities.GetPlayerFromSlot(slot);
-            if (replayController is not { IsValid: true })
+            if (!playerSnapshot.TryGetSlot(slot, out var replayController) ||
+                replayController is not { IsValid: true })
                 continue;
             if (replayController.PlayerPawn is not { IsValid: true, Value.IsValid: true } replayPawn)
                 continue;
@@ -1070,7 +1076,7 @@ public sealed class DemoTracerPlugin : BasePlugin
             return 0;
 
         ulong mask = 0;
-        foreach (var controller in playerControllers)
+        foreach (var controller in playerSnapshot.Controllers)
         {
             if (controller is not { IsValid: true })
                 continue;
@@ -4164,6 +4170,47 @@ public sealed class DemoTracerPlugin : BasePlugin
         return output.ToArray();
     }
 
+    private static TickPlayerSnapshot BuildTickPlayerSnapshot()
+    {
+        var controllers = FindPlayerControllers();
+        return new TickPlayerSnapshot(controllers, FindTeamPlayers(controllers));
+    }
+
+    private sealed class TickPlayerSnapshot
+    {
+        private readonly Dictionary<int, CCSPlayerController> _bySlot = new();
+
+        public TickPlayerSnapshot(
+            IReadOnlyList<CCSPlayerController> controllers,
+            IReadOnlyList<CCSPlayerController> teamPlayers)
+        {
+            Controllers = controllers;
+            TeamPlayers = teamPlayers;
+
+            foreach (var controller in controllers)
+            {
+                if (controller is not { IsValid: true } || controller.Slot < 0)
+                    continue;
+                _bySlot.TryAdd(controller.Slot, controller);
+            }
+        }
+
+        public IReadOnlyList<CCSPlayerController> Controllers { get; }
+        public IReadOnlyList<CCSPlayerController> TeamPlayers { get; }
+
+        public bool TryGetSlot(int slot, out CCSPlayerController player)
+        {
+            if (_bySlot.TryGetValue(slot, out var value))
+            {
+                player = value;
+                return true;
+            }
+
+            player = null!;
+            return false;
+        }
+    }
+
     private List<CCSPlayerController> FindReplayTargets()
     {
         var players = FindTeamPlayers();
@@ -4190,6 +4237,13 @@ public sealed class DemoTracerPlugin : BasePlugin
     {
         var player = Utilities.GetPlayerFromSlot(slot);
         return player is { IsValid: true } && IsReplayTargetBot(player, playerControllers);
+    }
+
+    private bool IsReplaySlotStillSafe(int slot, TickPlayerSnapshot playerSnapshot)
+    {
+        return playerSnapshot.TryGetSlot(slot, out var player) &&
+               player is { IsValid: true } &&
+               IsReplayTargetBot(player, playerSnapshot.Controllers);
     }
 
     private static bool IsReplayControllerSafe(CCSPlayerController player)
@@ -4296,6 +4350,34 @@ public sealed class DemoTracerPlugin : BasePlugin
         return false;
     }
 
+    private static bool ReplayBotSeesEnemy(
+        int slot,
+        TickPlayerSnapshot playerSnapshot,
+        out string contactReason,
+        out int contactSlot)
+    {
+        contactReason = string.Empty;
+        contactSlot = -1;
+        if (!playerSnapshot.TryGetSlot(slot, out var bot) || !HasLivePawn(bot))
+            return false;
+
+        foreach (var enemy in playerSnapshot.TeamPlayers)
+        {
+            if (enemy.Slot == bot.Slot ||
+                enemy.Team == bot.Team ||
+                !HasLivePawn(enemy))
+                continue;
+
+            if (PlayerSeesTarget(bot, enemy, out contactReason))
+            {
+                contactSlot = enemy.Slot;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private bool ReplayBotHasContact(
         int slot,
         IReadOnlyList<CCSPlayerController> teamPlayers,
@@ -4307,6 +4389,23 @@ public sealed class DemoTracerPlugin : BasePlugin
 
         if (_handoffThreat360Enabled &&
             ReplayBotHasNearby360Threat(slot, teamPlayers, out contactReason, out contactSlot))
+            return true;
+
+        contactSlot = -1;
+        return false;
+    }
+
+    private bool ReplayBotHasContact(
+        int slot,
+        TickPlayerSnapshot playerSnapshot,
+        out string contactReason,
+        out int contactSlot)
+    {
+        if (ReplayBotSeesEnemy(slot, playerSnapshot, out contactReason, out contactSlot))
+            return true;
+
+        if (_handoffThreat360Enabled &&
+            ReplayBotHasNearby360Threat(slot, playerSnapshot, out contactReason, out contactSlot))
             return true;
 
         contactSlot = -1;
@@ -4391,11 +4490,102 @@ public sealed class DemoTracerPlugin : BasePlugin
         return true;
     }
 
+    private bool ReplayBotHasNearby360Threat(
+        int slot,
+        TickPlayerSnapshot playerSnapshot,
+        out string contactReason,
+        out int contactSlot)
+    {
+        contactReason = string.Empty;
+        contactSlot = -1;
+        if (!playerSnapshot.TryGetSlot(slot, out var bot) ||
+            !HasLivePawn(bot) ||
+            !TryGetPawnOrigin(bot, out var botOrigin))
+        {
+            _pendingThreat360.Remove(slot);
+            return false;
+        }
+
+        var rangeSq = _handoffThreat360Range * _handoffThreat360Range;
+        var bestEnemySlot = -1;
+        var bestDistanceSq = float.MaxValue;
+
+        foreach (var enemy in playerSnapshot.TeamPlayers)
+        {
+            if (enemy.Slot == bot.Slot ||
+                enemy.Team == bot.Team ||
+                !HasLivePawn(enemy) ||
+                !IsHandoff360ThreatActor(enemy, playerSnapshot) ||
+                !TryGetPawnOrigin(enemy, out var enemyOrigin))
+                continue;
+
+            var dz = MathF.Abs(enemyOrigin.Z - botOrigin.Z);
+            if (dz > HandoffThreat360MaxVerticalDelta)
+                continue;
+
+            var dx = enemyOrigin.X - botOrigin.X;
+            var dy = enemyOrigin.Y - botOrigin.Y;
+            var distanceSq = dx * dx + dy * dy;
+            if (distanceSq > rangeSq || distanceSq >= bestDistanceSq)
+                continue;
+            if (_handoffThreat360LosEnabled && !HasHandoff360LineOfSight(bot, enemy))
+                continue;
+
+            bestEnemySlot = enemy.Slot;
+            bestDistanceSq = distanceSq;
+        }
+
+        if (bestEnemySlot < 0)
+        {
+            _pendingThreat360.Remove(slot);
+            return false;
+        }
+
+        var distance = MathF.Sqrt(bestDistanceSq);
+        if (distance <= MathF.Min(HandoffThreat360ImmediateRange, _handoffThreat360Range))
+        {
+            _pendingThreat360.Remove(slot);
+            contactReason = FormatThreat360Reason(bestEnemySlot, distance, immediate: true);
+            contactSlot = bestEnemySlot;
+            return true;
+        }
+
+        var now = Server.CurrentTime;
+        if (!_pendingThreat360.TryGetValue(slot, out var pending) ||
+            pending.EnemySlot != bestEnemySlot)
+        {
+            _pendingThreat360[slot] = new PendingThreat360(bestEnemySlot, now);
+            return false;
+        }
+
+        if (now - pending.FirstSeenAt < HandoffThreat360HoldSeconds)
+            return false;
+
+        _pendingThreat360.Remove(slot);
+        contactReason = FormatThreat360Reason(bestEnemySlot, distance, immediate: false);
+        contactSlot = bestEnemySlot;
+        return true;
+    }
+
     private bool IsHandoff360ThreatActor(CCSPlayerController enemy)
     {
         if (enemy is not { IsValid: true } || enemy.Slot < 0)
             return false;
         if (_loadedSlots.Contains(enemy.Slot) || IsReplaySlotPlaying(enemy.Slot))
+            return false;
+        if (_botHiderProbe.IsManagedBot(enemy.Slot))
+            return false;
+        var controllingBot = TryGetControllingBotState(enemy, out var controlsBot) && controlsBot;
+        return !enemy.IsBot || controllingBot;
+    }
+
+    private bool IsHandoff360ThreatActor(
+        CCSPlayerController enemy,
+        TickPlayerSnapshot playerSnapshot)
+    {
+        if (enemy is not { IsValid: true } || enemy.Slot < 0)
+            return false;
+        if (_loadedSlots.Contains(enemy.Slot) || _lastPlayingSlots.Contains(enemy.Slot))
             return false;
         if (_botHiderProbe.IsManagedBot(enemy.Slot))
             return false;

@@ -98,6 +98,9 @@ namespace BotController
             ReplayTickRead = 7,
             SubtickRebuild = 8,
             SubticksAdded = 9,
+            ReplayCommandFrameRead = 10,
+            SubtickClear = 11,
+            SubtickNoopSkip = 12,
         };
 
         struct ReplayPerfCounters
@@ -112,6 +115,31 @@ namespace BotController
             uint64_t replayTickReads;
             uint64_t subtickRebuilds;
             uint64_t subticksAdded;
+            uint64_t replayCommandFrameReads;
+            uint64_t subtickClears;
+            uint64_t subtickNoopSkips;
+        };
+
+        struct ReplaySlotState
+        {
+            int32_t playing;
+            int32_t cursor;
+            int32_t total;
+            int32_t currentTickIndex;
+            int32_t weaponDefIndex;
+            int32_t numSubtick;
+        };
+
+        struct ReplayCommandFrame
+        {
+            const ReplayTick *tick;
+            const SubtickMove *subticks;
+            int32_t subtickCount;
+            int32_t weaponSelect;
+            MovementSnapshot commandView;
+            uint64_t buttons0;
+            uint64_t buttons1;
+            uint64_t buttons2;
         };
 
         void SetReplaySnapMode(ReplaySnapMode mode);
@@ -167,9 +195,11 @@ namespace BotController
         bool IsReplaying(int slot);
         int ReplayCursor(int slot); // current tick index, <0 if idle
         int ReplayTotal(int slot);  // loaded tick count
+        bool GetReplaySlotState(int slot, ReplaySlotState &out);
 
         // Current tick being applied this server tick
         bool ReplayTickForSimulation(int slot, ReplayTick &out);
+        bool ReplayCommandFrameForSimulation(int slot, ReplayCommandFrame &out);
         // Snapshot to use as injected CBaseUserCmdPB.viewangles for this tick.
         bool ReplayCommandViewSnapshot(int slot, MovementSnapshot &out);
         // Snapshot to return from replay-owned eye-angle getters. This uses
@@ -189,6 +219,8 @@ namespace BotController
         // PlayerRunCommand (pre): seed pawn/service state before weapon input
         // consumes view/origin/velocity for shots and grenade throws.
         void OnReplayCommandPre(int slot, void *services);
+        void OnReplayCommandPre(int slot, void *services, const ReplayTick &tick,
+                                const MovementSnapshot &commandView);
 
         // Switch a bot to the weapon with this def index.
         bool SwitchBotWeaponByDef(int slot, int defIndex);

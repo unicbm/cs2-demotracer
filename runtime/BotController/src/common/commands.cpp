@@ -505,15 +505,18 @@ CON_COMMAND_F(bc_perf,
         (unsigned long long)perf.physicsSimulateHooks);
     Commands::PrintToCaller(
         context,
-        "[BC] replay: tick_reads=%llu sync_view=%llu server_view_writes=%llu virtual_query=%llu\n",
+        "[BC] replay: tick_reads=%llu command_frames=%llu sync_view=%llu server_view_writes=%llu virtual_query=%llu\n",
         (unsigned long long)perf.replayTickReads,
+        (unsigned long long)perf.replayCommandFrameReads,
         (unsigned long long)perf.syncReplayViewCalls,
         (unsigned long long)perf.serverViewWrites,
         (unsigned long long)perf.virtualQueryCalls);
     Commands::PrintToCaller(
         context,
-        "[BC] subtick_pb: rebuilds=%llu subticks_added=%llu\n",
+        "[BC] subtick_pb: rebuilds=%llu clears=%llu noop_skips=%llu subticks_added=%llu\n",
         (unsigned long long)perf.subtickRebuilds,
+        (unsigned long long)perf.subtickClears,
+        (unsigned long long)perf.subtickNoopSkips,
         (unsigned long long)perf.subticksAdded);
 }
 

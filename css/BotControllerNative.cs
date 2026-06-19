@@ -5,7 +5,7 @@ namespace DemoTracer;
 
 internal static class BotControllerNative
 {
-    public const int ExpectedAbiVersion = 12;
+    public const int ExpectedAbiVersion = 13;
     public const uint RecFormatVersion = 4;
     public const uint MinRecFormatVersion = 3;
     public const int MovementSnapshotByteSize = 92;
@@ -60,6 +60,11 @@ internal static class BotControllerNative
 
     [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
     private static extern int BotController_GetReplayTotal(int slot);
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_GetReplaySlotState(
+        int slot,
+        out NativeReplaySlotState state);
 
     [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
     private static extern int BotController_GetReplayTick(int slot, out NativeReplayTick tick);
@@ -202,9 +207,26 @@ internal static class BotControllerNative
 
     public static ReplayState GetReplayState(int slot)
     {
+        try
+        {
+            if (BotController_GetReplaySlotState(slot, out var state) == 0)
+            {
+                return new ReplayState(
+                    state.Cursor,
+                    state.Total,
+                    state.Playing != 0,
+                    state.CurrentTickIndex,
+                    state.WeaponDefIndex,
+                    state.NumSubtick);
+            }
+        }
+        catch
+        {
+        }
+
         var cursor = BotController_GetReplayCursor(slot);
         var total = BotController_GetReplayTotal(slot);
-        return new ReplayState(cursor, total, cursor >= 0);
+        return new ReplayState(cursor, total, cursor >= 0, -1, -1, 0);
     }
 
     public static bool TryGetReplayTick(int slot, out NativeReplayTick tick)
@@ -507,7 +529,24 @@ internal static class BotControllerNative
         NativeSubtickMove[] Subticks);
 }
 
-internal readonly record struct ReplayState(int Cursor, int Total, bool Playing);
+internal readonly record struct ReplayState(
+    int Cursor,
+    int Total,
+    bool Playing,
+    int CurrentTickIndex,
+    int WeaponDefIndex,
+    int NumSubtick);
+
+[StructLayout(LayoutKind.Sequential, Pack = 4)]
+internal struct NativeReplaySlotState
+{
+    public int Playing;
+    public int Cursor;
+    public int Total;
+    public int CurrentTickIndex;
+    public int WeaponDefIndex;
+    public int NumSubtick;
+}
 
 internal enum ReplayProjectileKind : byte
 {

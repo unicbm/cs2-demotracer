@@ -250,57 +250,66 @@ namespace BotController
 
                 if (replaying)
                 {
-                    uint64_t b0 = 0, b1 = 0, b2 = 0;
-                    if (MotionRecorder::CurrentReplayInputButtons(slot, b0, b1, b2))
+                    MotionRecorder::ReplayCommandFrame frame{};
+                    if (MotionRecorder::ReplayCommandFrameForSimulation(slot, frame))
                     {
                         CInButtonStatePB *bp = base->mutable_buttons_pb();
-                        bp->set_buttonstate1(b0);
-                        bp->set_buttonstate2(b1);
-                        bp->set_buttonstate3(b2);
-                        pc->buttonstates.m_pButtonStates[0] = b0;
-                        pc->buttonstates.m_pButtonStates[1] = b1;
-                        pc->buttonstates.m_pButtonStates[2] = b2;
-                    }
+                        bp->set_buttonstate1(frame.buttons0);
+                        bp->set_buttonstate2(frame.buttons1);
+                        bp->set_buttonstate3(frame.buttons2);
+                        pc->buttonstates.m_pButtonStates[0] = frame.buttons0;
+                        pc->buttonstates.m_pButtonStates[1] = frame.buttons1;
+                        pc->buttonstates.m_pButtonStates[2] = frame.buttons2;
 
-                    MovementSnapshot cmdView{};
-                    if (MotionRecorder::ReplayCommandViewSnapshot(slot, cmdView))
-                    {
                         CMsgQAngle *view = base->mutable_viewangles();
-                        view->set_x(cmdView.pitch);
-                        view->set_y(NormalizeDeg(cmdView.yaw));
+                        view->set_x(frame.commandView.pitch);
+                        view->set_y(NormalizeDeg(frame.commandView.yaw));
                         view->set_z(0.0f);
+
+                        if (frame.weaponSelect >= 0)
+                            base->set_weaponselect(frame.weaponSelect);
+
+                        if (frame.subtickCount <= 0)
+                        {
+                            if (base->subtick_moves_size() > 0)
+                            {
+                                base->clear_subtick_moves();
+                                MotionRecorder::AddReplayPerf(MotionRecorder::ReplayPerfCounter::SubtickClear);
+                            }
+                            else
+                            {
+                                MotionRecorder::AddReplayPerf(MotionRecorder::ReplayPerfCounter::SubtickNoopSkip);
+                            }
+                        }
+                        else
+                        {
+                            base->clear_subtick_moves();
+                            MotionRecorder::AddReplayPerf(MotionRecorder::ReplayPerfCounter::SubtickClear);
+                            MotionRecorder::AddReplayPerf(MotionRecorder::ReplayPerfCounter::SubtickRebuild);
+                            const bool injectViewDeltas = ReplaySubtickViewDeltas();
+                            for (int i = 0; i < frame.subtickCount; ++i)
+                            {
+                                const SubtickMove &subtick = frame.subticks[i];
+                                CSubtickMoveStep *m = base->add_subtick_moves();
+                                MotionRecorder::AddReplayPerf(MotionRecorder::ReplayPerfCounter::SubticksAdded);
+                                m->set_when(subtick.when);
+                                m->set_button(subtick.button);
+                                if (subtick.button != 0) // digital press/release
+                                    m->set_pressed(subtick.pressed != 0.0f);
+                                if (injectViewDeltas && subtick.pitchDelta != 0.0f)
+                                    m->set_pitch_delta(subtick.pitchDelta);
+                                if (injectViewDeltas && subtick.yawDelta != 0.0f)
+                                    m->set_yaw_delta(subtick.yawDelta);
+                                if (subtick.analogForward != 0.0f)
+                                    m->set_analog_forward_delta(subtick.analogForward);
+                                if (subtick.analogLeft != 0.0f)
+                                    m->set_analog_left_delta(subtick.analogLeft);
+                            }
+                        }
+
+                        MotionRecorder::OnReplayCommandPre(
+                            slot, services, *frame.tick, frame.commandView);
                     }
-
-                    int wsel = MotionRecorder::CurrentReplayWeaponSelect(slot);
-                    if (wsel >= 0)
-                        base->set_weaponselect(wsel);
-
-                    // Replace the command's subtick_moves with the recorded set for this tick
-                    SubtickMove out[MotionRecorder::kMaxSubtickPerTick];
-                    int n = MotionRecorder::CurrentReplaySubticks(
-                        slot, out, MotionRecorder::kMaxSubtickPerTick);
-                    base->clear_subtick_moves();
-                    MotionRecorder::AddReplayPerf(MotionRecorder::ReplayPerfCounter::SubtickRebuild);
-                    const bool injectViewDeltas = ReplaySubtickViewDeltas();
-                    for (int i = 0; i < n; ++i)
-                    {
-                        CSubtickMoveStep *m = base->add_subtick_moves();
-                        MotionRecorder::AddReplayPerf(MotionRecorder::ReplayPerfCounter::SubticksAdded);
-                        m->set_when(out[i].when);
-                        m->set_button(out[i].button);
-                        if (out[i].button != 0) // digital press/release
-                            m->set_pressed(out[i].pressed != 0.0f);
-                        if (injectViewDeltas && out[i].pitchDelta != 0.0f)
-                            m->set_pitch_delta(out[i].pitchDelta);
-                        if (injectViewDeltas && out[i].yawDelta != 0.0f)
-                            m->set_yaw_delta(out[i].yawDelta);
-                        if (out[i].analogForward != 0.0f)
-                            m->set_analog_forward_delta(out[i].analogForward);
-                        if (out[i].analogLeft != 0.0f)
-                            m->set_analog_left_delta(out[i].analogLeft);
-                    }
-
-                    MotionRecorder::OnReplayCommandPre(slot, services);
                 }
             }
 
