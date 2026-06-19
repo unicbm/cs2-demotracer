@@ -304,6 +304,25 @@ mod tests {
         }
     }
 
+    fn projectile(
+        tick: i32,
+        steam_id: u64,
+        kind: crate::model::ProjectileKind,
+    ) -> ParsedProjectile {
+        ParsedProjectile {
+            tick,
+            steam_id,
+            name: "p".to_string(),
+            grenade_type: format!("{kind:?}"),
+            kind,
+            weapon_def_index: kind.weapon_def_index(),
+            initial_position: [tick as f32, 1.0, 2.0],
+            initial_velocity: [3.0, tick as f32, 4.0],
+            detonation_position: [5.0, 6.0, tick as f32],
+            ..ParsedProjectile::default()
+        }
+    }
+
     #[test]
     fn synthesis_uses_adjacent_rows_as_pre_post() {
         let rec = synthesize_player_rec(&[row(10, 7), row(11, 7), row(12, 9)], "de_nuke", 64.0, 1)
@@ -380,5 +399,42 @@ mod tests {
         assert_eq!(rec.ticks[0].num_subtick, 0);
         assert!(rec.subticks.is_empty());
         assert_eq!(stats, SynthesisStats::default());
+    }
+
+    #[test]
+    fn synthesis_projectile_refs_match_owned_projectiles() {
+        let rows = [row(10, 7), row(11, 7), row(12, 7), row(13, 7)];
+        let projectiles = [
+            projectile(12, 42, crate::model::ProjectileKind::Smoke),
+            projectile(10, 42, crate::model::ProjectileKind::Flash),
+            projectile(11, 99, crate::model::ProjectileKind::He),
+            projectile(13, 42, crate::model::ProjectileKind::Molotov),
+        ];
+        let projectile_refs = projectiles.iter().collect::<Vec<_>>();
+
+        let (owned_rec, owned_stats) = synthesize_player_rec_with_options(
+            &rows,
+            &projectiles,
+            "de_nuke",
+            64.0,
+            1,
+            SynthesisOptions::default(),
+        )
+        .unwrap();
+        let (borrowed_rec, borrowed_stats) = synthesize_player_rec_with_projectile_refs(
+            &rows,
+            &projectile_refs,
+            "de_nuke",
+            64.0,
+            1,
+            SynthesisOptions::default(),
+        )
+        .unwrap();
+
+        assert_eq!(borrowed_rec.projectiles, owned_rec.projectiles);
+        assert_eq!(borrowed_stats, owned_stats);
+        assert_eq!(borrowed_rec.projectiles.len(), 2);
+        assert_eq!(borrowed_rec.projectiles[0].tick_index, 0);
+        assert_eq!(borrowed_rec.projectiles[1].tick_index, 2);
     }
 }
