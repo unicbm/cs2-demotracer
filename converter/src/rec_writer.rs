@@ -33,6 +33,9 @@ pub fn write_rec<W: Write>(writer: &mut W, rec: &Cs2Rec) -> Result<()> {
     validate_subtick_count(rec)?;
     validate_play_start_tick(rec.ticks.len(), rec.header.play_start_tick_index)?;
     validate_snapshot_chain(rec)?;
+    let tick_count = checked_u32_count("tick count", rec.ticks.len())?;
+    let subtick_count = checked_u32_count("subtick count", rec.subticks.len())?;
+    let projectile_count = checked_u32_count("projectile count", rec.projectiles.len())?;
     let body = build_body(rec)?;
     let compressed = compress_body(&body)?;
 
@@ -45,9 +48,9 @@ pub fn write_rec<W: Write>(writer: &mut W, rec: &Cs2Rec) -> Result<()> {
     write_u8(writer, rec.header.side)?;
     write_u32(writer, rec.header.flags)?;
     write_u64(writer, rec.header.steam_id)?;
-    write_u32(writer, rec.ticks.len() as u32)?;
-    write_u32(writer, rec.subticks.len() as u32)?;
-    write_u32(writer, rec.projectiles.len() as u32)?;
+    write_u32(writer, tick_count)?;
+    write_u32(writer, subtick_count)?;
+    write_u32(writer, projectile_count)?;
     write_u32(writer, rec.header.play_start_tick_index)?;
     write_string(writer, &rec.header.map)?;
     write_string(writer, &rec.header.player_name)?;
@@ -305,6 +308,10 @@ fn expected_body_len(
 
 fn checked_len(value: u64, name: &str) -> Result<usize> {
     usize::try_from(value).map_err(|_| Error::InvalidRec(format!("{name} too large: {value}")))
+}
+
+fn checked_u32_count(name: &str, value: usize) -> Result<u32> {
+    u32::try_from(value).map_err(|_| Error::InvalidRec(format!("{name} too large: {value}")))
 }
 
 fn write_snapshot<W: Write>(writer: &mut W, snapshot: &MovementSnapshot) -> Result<()> {
@@ -726,6 +733,20 @@ mod tests {
         assert!(err
             .to_string()
             .contains("discontinuous snapshot chain between ticks 0 and 1"));
+    }
+
+    #[test]
+    fn rec_writer_rejects_count_overflow() {
+        assert_eq!(
+            checked_u32_count("tick count", u32::MAX as usize).unwrap(),
+            u32::MAX
+        );
+
+        let Ok(too_large) = usize::try_from(u64::from(u32::MAX) + 1) else {
+            return;
+        };
+        let err = checked_u32_count("tick count", too_large).unwrap_err();
+        assert!(err.to_string().contains("tick count too large"));
     }
 
     #[test]
