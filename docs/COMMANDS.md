@@ -297,6 +297,16 @@ Contact implementation:
 
 ## Diagnostics
 
+### `dtr_doctor [manifest.json|pool_manifest.json]`
+
+Prints a compact health check: native ABI compatibility, current map/time,
+freeze-time ConVar, bot counts, BotHider-managed slots, safe replay targets,
+loaded/playing replay counts, alignment settings, handoff mode, RayTrace status,
+and optional manifest or pool-manifest summary.
+
+Use this first when playback does not start, starts with fewer slots than
+expected, or a sample pack is being checked on a new server.
+
 ### `dtr_bots`
 
 Prints team players, strict bot status, BotHider-managed status, native

@@ -1145,6 +1145,77 @@ public sealed class DemoTracerPlugin : BasePlugin
             $"[DTR OK] DemoTracer expected_abi={BotControllerNative.ExpectedAbiVersion} runtime_abi={BotControllerNative.AbiVersion} compatible={BotControllerNative.IsCompatible}");
     }
 
+    [ConsoleCommand("dtr_doctor", "dtr_doctor [manifest.json|pool_manifest.json]")]
+    public void DoctorCommand(CCSPlayerController? player, CommandInfo command)
+    {
+        TryReadFreezeTimeConVar(out var freezeTime, out var freezeReason);
+        var players = FindTeamPlayers();
+        var tPlayers = players.Count(candidate => candidate.Team == CsTeam.Terrorist);
+        var ctPlayers = players.Count(candidate => candidate.Team == CsTeam.CounterTerrorist);
+        var strictBots = players.Count(candidate => candidate.IsBot);
+        var managedBots = players.Count(candidate => _botHiderProbe.IsManagedBot(candidate.Slot));
+        var replayTargets = FindReplayTargets();
+        var loadedPlaying = _loadedSlots.Count(slot => BotControllerNative.GetReplayState(slot).Playing);
+
+        command.ReplyToCommand(
+            $"[DTR DOCTOR] runtime expected_abi={BotControllerNative.ExpectedAbiVersion} runtime_abi={BotControllerNative.AbiVersion} compatible={BotControllerNative.IsCompatible}");
+        command.ReplyToCommand(
+            $"[DTR DOCTOR] server map={CurrentMapName()} time={Server.CurrentTime.ToString("F2", CultureInfo.InvariantCulture)} mp_freezetime={(float.IsFinite(freezeTime) ? freezeTime.ToString("F2", CultureInfo.InvariantCulture) : "unknown")} {(string.IsNullOrEmpty(freezeReason) ? "" : freezeReason)}");
+        command.ReplyToCommand(
+            $"[DTR DOCTOR] bots players T={tPlayers}/CT={ctPlayers} strict_bots={strictBots} bot_hider_managed={managedBots} safe_replay_targets={replayTargets.Count}");
+        command.ReplyToCommand(
+            $"[DTR DOCTOR] replay loaded={_loadedSlots.Count} playing={loadedPlaying} identity={ReplayIdentityModeName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} partial={FormatOnOff(_partialReplayEnabled)} raytrace={_rayTraceLosProbe.ProbeStatus}");
+
+        if (command.ArgCount >= 2)
+            ReplyDoctorManifest(command, command.GetArg(1));
+    }
+
+    private static string CurrentMapName()
+    {
+        try
+        {
+            return Server.MapName;
+        }
+        catch
+        {
+            return "unknown";
+        }
+    }
+
+    private static void ReplyDoctorManifest(CommandInfo command, string manifestPath)
+    {
+        if (TryReadManifest(manifestPath, out var manifest, out var readError))
+        {
+            var rounds = manifest.Files
+                .Select(file => file.Round)
+                .Distinct()
+                .Order()
+                .ToArray();
+            command.ReplyToCommand(
+                $"[DTR DOCTOR] manifest type=round path=\"{manifestPath}\" map={manifest.Map} abi={manifest.Abi} dtr_format={manifest.EffectiveDtrFormatVersion} files={manifest.Files.Count} rounds={FormatRoundList(rounds)}");
+            return;
+        }
+
+        if (TryReadPoolManifest(manifestPath, out var pool, out var poolError))
+        {
+            command.ReplyToCommand(
+                $"[DTR DOCTOR] manifest type=pool path=\"{manifestPath}\" map={pool.Map} abi={pool.Abi} format={pool.FormatVersion} candidates={pool.Candidates.Count}");
+            return;
+        }
+
+        command.ReplyToCommand(
+            $"[DTR DOCTOR] manifest path=\"{manifestPath}\" read_failed round=\"{readError}\" pool=\"{poolError}\"");
+    }
+
+    private static string FormatRoundList(IReadOnlyList<int> rounds)
+    {
+        if (rounds.Count == 0)
+            return "none";
+        if (rounds.Count <= 16)
+            return string.Join(",", rounds);
+        return $"{string.Join(",", rounds.Take(16))},... ({rounds.Count})";
+    }
+
     [ConsoleCommand("dtr_util_trace", "dtr_util_trace <0|1> [path]")]
     public void UtilityTraceCommand(CCSPlayerController? player, CommandInfo command)
     {
