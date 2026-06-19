@@ -345,6 +345,8 @@ Useful checks:
 
 ```text
 bc_status
+bc_replay_pov spectated
+bc_perf 1
 dtr_status 0
 dtr_bots
 ```

@@ -1,4 +1,4 @@
-// P/Invoke wrapper for BotController.dll (ABI 11). Check IsCompatible() before use.
+// P/Invoke wrapper for BotController.dll (ABI 12). Check IsCompatible() before use.
 // Main-thread only.
 
 using System.Runtime.InteropServices;
@@ -79,7 +79,7 @@ namespace BotControllerApi
     // Thin static binding over the native exports. No orchestration here.
     public static class BotController
     {
-        private const int ExpectedAbiVersion = 11;
+        private const int ExpectedAbiVersion = 12;
 
         // Sentinel weapon def meaning "any knife"
         public const int KnifeDef = 9001;
@@ -98,6 +98,9 @@ namespace BotControllerApi
 
         [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
         private static extern int BotController_GetVersion();
+
+        [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int BotController_SetReplayPovMask(ulong mask);
 
         [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
         private static extern int BotController_StartRecord(int slot);
@@ -248,6 +251,10 @@ namespace BotControllerApi
         public static int ReplayTotal(int slot) => BotController_GetReplayTotal(slot);
 
         public static bool IsReplaying(int slot) => BotController_GetReplayCursor(slot) >= 0;
+
+        // Bit n means replay slot n is currently watched in first-person.
+        public static bool SetReplayPovMask(ulong mask)
+            => BotController_SetReplayPovMask(mask) == 0;
 
         // The tick currently being replayed on this slot, for driving weapon/fire
         // C#-side. Returns false if the slot isn't replaying.

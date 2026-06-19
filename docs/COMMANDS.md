@@ -31,6 +31,7 @@ it off.
 | `dtr_partial` | `1` | Allow replay with fewer bots than manifest players. |
 | `dtr_replay_identity` | `0` | Do not write BotHider name/SteamID unless explicitly enabled. |
 | `dtr_util_trace` | `0` | Utility CSV trace disabled. |
+| `bc_replay_pov` | `spectated` | Publish expensive native first-person POV updates only for replay bots watched in-eye. |
 
 ## Sequence Playback
 
@@ -294,3 +295,25 @@ for normal playback.
 This command comes from the native `BotController` runtime, not the CSS
 DemoTracer plugin. It is still useful because it prints hook status, replay
 hook counters, lock counts, and buy-plan status.
+
+### `bc_replay_pov [off|spectated|always]`
+
+Controls native first-person replay POV publishing.
+
+- `spectated` is the default. DemoTracer sends a per-slot mask for human
+  spectators currently watching a replay bot in first person.
+- `always` restores the older behavior where every replay bot publishes server
+  view-angle changes every tick.
+- `off` disables this POV publishing path for maximum runtime performance.
+
+Movement replay, weapon switching, projectile alignment, and handoff behavior
+do not depend on this setting.
+
+### `bc_perf [0|1|reset]`
+
+Toggles, resets, and prints native replay performance counters.
+
+Use it when testing 10-bot playback. With `bc_replay_pov spectated` and nobody
+watching a replay bot in first person, server-view writes and `VirtualQuery`
+counts should stay near zero. With one in-eye spectator, they should scale like
+one bot per tick instead of every loaded replay bot.

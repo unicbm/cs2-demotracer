@@ -35,12 +35,18 @@ extern "C" __declspec(dllexport) int BotController_IsLocked(int slot, int kind)
 
 extern "C" __declspec(dllexport) int BotController_GetVersion()
 {
-    return 11;
+    return 12;
 }
 
 extern "C" __declspec(dllexport) int BotController_SetControllerControllingBotOffset(int offset)
 {
     return BotController::InputInjector::SetControllerControllingBotOffset(offset) ? 0 : -1;
+}
+
+extern "C" __declspec(dllexport) int BotController_SetReplayPovMask(uint64_t mask)
+{
+    BotController::MotionRecorder::SetReplayPovMask(mask);
+    return 0;
 }
 
 // ---- Bot buy plans ----

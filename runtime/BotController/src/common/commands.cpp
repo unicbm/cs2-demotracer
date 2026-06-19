@@ -191,6 +191,28 @@ namespace BotController
             }
             return false;
         }
+
+        static bool ParseReplayPovMode(const char *s, MotionRecorder::ReplayPovMode &out)
+        {
+            if (!s)
+                return false;
+            if (std::strcmp(s, "off") == 0 || std::strcmp(s, "0") == 0)
+            {
+                out = MotionRecorder::ReplayPovMode::Off;
+                return true;
+            }
+            if (std::strcmp(s, "spectated") == 0 || std::strcmp(s, "spec") == 0)
+            {
+                out = MotionRecorder::ReplayPovMode::Spectated;
+                return true;
+            }
+            if (std::strcmp(s, "always") == 0 || std::strcmp(s, "1") == 0)
+            {
+                out = MotionRecorder::ReplayPovMode::Always;
+                return true;
+            }
+            return false;
+        }
     }
 }
 
@@ -385,6 +407,29 @@ CON_COMMAND_F(bc_replay_cmd_view,
                                 MotionRecorder::GetReplayCommandViewMode()));
 }
 
+CON_COMMAND_F(bc_replay_pov,
+              "bc_replay_pov [off|spectated|always]  Set first-person replay POV publishing mode.",
+              FCVAR_NONE)
+{
+    using namespace BotController;
+
+    if (args.ArgC() >= 2)
+    {
+        MotionRecorder::ReplayPovMode mode;
+        if (!Commands::ParseReplayPovMode(args.Arg(1), mode))
+        {
+            Commands::PrintToCaller(context,
+                                    "usage: bc_replay_pov [off|spectated|always]\n");
+            return;
+        }
+        MotionRecorder::SetReplayPovMode(mode);
+    }
+
+    Commands::PrintToCaller(context, "[BC] replay_pov=%s\n",
+                            MotionRecorder::ReplayPovModeName(
+                                MotionRecorder::GetReplayPovMode()));
+}
+
 CON_COMMAND_F(bc_subtick_view_delta,
               "bc_subtick_view_delta <0|1>  Toggle replay subtick pitch/yaw delta injection.",
               FCVAR_NONE)
@@ -413,6 +458,63 @@ CON_COMMAND_F(bc_subtick_view_delta,
 
     Commands::PrintToCaller(context, "[BC] subtick_view_delta=%s\n",
                             InputInjector::ReplaySubtickViewDeltas() ? "on" : "off");
+}
+
+CON_COMMAND_F(bc_perf,
+              "bc_perf [0|1|reset]  Toggle, reset, and print replay performance counters.",
+              FCVAR_NONE)
+{
+    using namespace BotController;
+
+    if (args.ArgC() >= 2)
+    {
+        if (std::strcmp(args.Arg(1), "1") == 0 ||
+            std::strcmp(args.Arg(1), "on") == 0)
+        {
+            MotionRecorder::SetReplayPerfEnabled(true);
+        }
+        else if (std::strcmp(args.Arg(1), "0") == 0 ||
+                 std::strcmp(args.Arg(1), "off") == 0)
+        {
+            MotionRecorder::SetReplayPerfEnabled(false);
+        }
+        else if (std::strcmp(args.Arg(1), "reset") == 0)
+        {
+            MotionRecorder::ResetReplayPerfCounters();
+        }
+        else
+        {
+            Commands::PrintToCaller(context,
+                                    "usage: bc_perf [0|1|reset]\n");
+            return;
+        }
+    }
+
+    const MotionRecorder::ReplayPerfCounters perf =
+        MotionRecorder::GetReplayPerfCounters();
+    Commands::PrintToCaller(context, "[BC] perf=%s replay_pov=%s\n",
+                            MotionRecorder::ReplayPerfEnabled() ? "on" : "off",
+                            MotionRecorder::ReplayPovModeName(
+                                MotionRecorder::GetReplayPovMode()));
+    Commands::PrintToCaller(
+        context,
+        "[BC] hooks: process=%llu finish=%llu usercmd=%llu physics=%llu\n",
+        (unsigned long long)perf.processMovementHooks,
+        (unsigned long long)perf.finishMoveHooks,
+        (unsigned long long)perf.playerRunCommandHooks,
+        (unsigned long long)perf.physicsSimulateHooks);
+    Commands::PrintToCaller(
+        context,
+        "[BC] replay: tick_reads=%llu sync_view=%llu server_view_writes=%llu virtual_query=%llu\n",
+        (unsigned long long)perf.replayTickReads,
+        (unsigned long long)perf.syncReplayViewCalls,
+        (unsigned long long)perf.serverViewWrites,
+        (unsigned long long)perf.virtualQueryCalls);
+    Commands::PrintToCaller(
+        context,
+        "[BC] subtick_pb: rebuilds=%llu subticks_added=%llu\n",
+        (unsigned long long)perf.subtickRebuilds,
+        (unsigned long long)perf.subticksAdded);
 }
 
 CON_COMMAND_F(bc_status,
@@ -462,6 +564,10 @@ CON_COMMAND_F(bc_status,
                             "[BC] replay_cmd_view: %s\n",
                             MotionRecorder::ReplayCommandViewModeName(
                                 MotionRecorder::GetReplayCommandViewMode()));
+    Commands::PrintToCaller(context,
+                            "[BC] replay_pov: %s\n",
+                            MotionRecorder::ReplayPovModeName(
+                                MotionRecorder::GetReplayPovMode()));
     Commands::PrintToCaller(context,
                             "[BC] subtick_view_delta: %s\n",
                             InputInjector::ReplaySubtickViewDeltas() ? "on" : "off");

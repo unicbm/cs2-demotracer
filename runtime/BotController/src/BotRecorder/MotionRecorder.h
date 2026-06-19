@@ -79,6 +79,41 @@ namespace BotController
             NextPre = 2, // base usercmd view = next tick pre, falling back to current post
         };
 
+        enum class ReplayPovMode : int
+        {
+            Off = 0,       // never publish replay-owned first-person server-view changes
+            Spectated = 1, // publish only slots marked by the CSS observer mask
+            Always = 2,    // legacy behavior: publish every replay slot every tick
+        };
+
+        enum class ReplayPerfCounter : int
+        {
+            ProcessMovementHook = 0,
+            FinishMoveHook = 1,
+            PlayerRunCommandHook = 2,
+            PhysicsSimulateHook = 3,
+            SyncReplayView = 4,
+            ServerViewWrite = 5,
+            VirtualQuery = 6,
+            ReplayTickRead = 7,
+            SubtickRebuild = 8,
+            SubticksAdded = 9,
+        };
+
+        struct ReplayPerfCounters
+        {
+            uint64_t processMovementHooks;
+            uint64_t finishMoveHooks;
+            uint64_t playerRunCommandHooks;
+            uint64_t physicsSimulateHooks;
+            uint64_t syncReplayViewCalls;
+            uint64_t serverViewWrites;
+            uint64_t virtualQueryCalls;
+            uint64_t replayTickReads;
+            uint64_t subtickRebuilds;
+            uint64_t subticksAdded;
+        };
+
         void SetReplaySnapMode(ReplaySnapMode mode);
         ReplaySnapMode GetReplaySnapMode();
         const char *ReplaySnapModeName(ReplaySnapMode mode);
@@ -88,7 +123,16 @@ namespace BotController
         void SetReplayCommandViewMode(ReplayCommandViewMode mode);
         ReplayCommandViewMode GetReplayCommandViewMode();
         const char *ReplayCommandViewModeName(ReplayCommandViewMode mode);
+        void SetReplayPovMode(ReplayPovMode mode);
+        ReplayPovMode GetReplayPovMode();
+        const char *ReplayPovModeName(ReplayPovMode mode);
+        void SetReplayPovMask(uint64_t mask);
         bool ReplayViewAllowsEngineSetEyeAngles();
+        void SetReplayPerfEnabled(bool enabled);
+        bool ReplayPerfEnabled();
+        void ResetReplayPerfCounters();
+        ReplayPerfCounters GetReplayPerfCounters();
+        void AddReplayPerf(ReplayPerfCounter counter, uint64_t amount = 1);
 
         // ---- recording ----
         bool StartRecord(int slot); // clears old buffer, begins capture

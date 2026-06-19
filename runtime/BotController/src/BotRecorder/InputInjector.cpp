@@ -143,6 +143,7 @@ namespace BotController
 
         static void BC_FASTCALL HookedProcessMovement(void *services, void *moveData)
         {
+            MotionRecorder::AddReplayPerf(MotionRecorder::ReplayPerfCounter::ProcessMovementHook);
             g_hookCalls.fetch_add(1, std::memory_order_relaxed);
             int slot = ServicesToSlot(services);
             g_lastSlot.store(slot, std::memory_order_relaxed);
@@ -182,6 +183,7 @@ namespace BotController
         static void BC_FASTCALL HookedFinishMove(void *services, void *cmd,
                                                 void *moveData)
         {
+            MotionRecorder::AddReplayPerf(MotionRecorder::ReplayPerfCounter::FinishMoveHook);
             int slot = ServicesToSlot(services);
             bool replaying = ReplayActiveAndSafe(slot);
 
@@ -205,6 +207,7 @@ namespace BotController
 
         static void BC_FASTCALL HookedPlayerRunCommand(void *services, void *cmd)
         {
+            MotionRecorder::AddReplayPerf(MotionRecorder::ReplayPerfCounter::PlayerRunCommandHook);
             int slot = ServicesToSlot(services);
             bool recording = slot >= 0 && slot < kMaxSlots &&
                              MotionRecorder::IsRecording(slot);
@@ -270,10 +273,12 @@ namespace BotController
                     int n = MotionRecorder::CurrentReplaySubticks(
                         slot, out, MotionRecorder::kMaxSubtickPerTick);
                     base->clear_subtick_moves();
+                    MotionRecorder::AddReplayPerf(MotionRecorder::ReplayPerfCounter::SubtickRebuild);
                     const bool injectViewDeltas = ReplaySubtickViewDeltas();
                     for (int i = 0; i < n; ++i)
                     {
                         CSubtickMoveStep *m = base->add_subtick_moves();
+                        MotionRecorder::AddReplayPerf(MotionRecorder::ReplayPerfCounter::SubticksAdded);
                         m->set_when(out[i].when);
                         m->set_button(out[i].button);
                         if (out[i].button != 0) // digital press/release
@@ -300,6 +305,7 @@ namespace BotController
 
         static void BC_FASTCALL HookedPhysicsSimulate(void *controller)
         {
+            MotionRecorder::AddReplayPerf(MotionRecorder::ReplayPerfCounter::PhysicsSimulateHook);
             int slot = ControllerToSlot(controller);
             void *services = (slot >= 0 && slot < kMaxSlots)
                                  ? g_slotServices[slot].load(std::memory_order_acquire)

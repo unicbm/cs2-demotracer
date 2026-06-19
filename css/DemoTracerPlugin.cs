@@ -146,6 +146,7 @@ public sealed class DemoTracerPlugin : BasePlugin
     private StreamWriter? _utilityTraceWriter;
     private string _utilityTracePath = string.Empty;
     private bool _utilityTraceEnabled;
+    private ulong _lastReplayPovMask = ulong.MaxValue;
 
     private bool _armed;
     private bool _armedLoop;
@@ -672,6 +673,7 @@ public sealed class DemoTracerPlugin : BasePlugin
         _replayStartedAt.Clear();
         _pendingBulletHits.Clear();
         _pendingBulletDamages.Clear();
+        SetReplayPovMask(0);
         command.ReplyToCommand($"dtr: stopped {_loadedSlots.Count} loaded slots");
     }
 
@@ -905,7 +907,14 @@ public sealed class DemoTracerPlugin : BasePlugin
             TraceUtilityTick();
 
         if (_loadedSlots.Count == 0)
+        {
+            SetReplayPovMask(0);
             return;
+        }
+
+        var playerControllers = FindPlayerControllers();
+        var teamPlayers = FindTeamPlayers(playerControllers);
+        UpdateReplayPovMask(playerControllers);
 
         foreach (var slot in _loadedSlots.ToArray())
         {
@@ -921,7 +930,7 @@ public sealed class DemoTracerPlugin : BasePlugin
                 continue;
             }
 
-            if (!IsReplaySlotStillSafe(slot))
+            if (!IsReplaySlotStillSafe(slot, playerControllers))
             {
                 BotControllerNative.StopReplay(slot);
                 ReleaseReplaySlot(slot, "unsafe_replay_target");
@@ -934,7 +943,7 @@ public sealed class DemoTracerPlugin : BasePlugin
                 MarkReplayStarted(slot);
 
             if (HandoffIncludesContact(_handoffMode) && ReplayHasPassedHandoffGrace(slot) &&
-                ReplayBotSeesEnemy(slot, out var contactReason))
+                ReplayBotSeesEnemy(slot, teamPlayers, out var contactReason))
             {
                 HandoffActiveReplays($"enemy_contact_{contactReason}_slot{slot}", slot);
                 continue;
@@ -954,6 +963,93 @@ public sealed class DemoTracerPlugin : BasePlugin
 
             ApplyReplayWeaponPreset(slot, tick.WeaponDefIndex, allowSlotReplacement: true, force: false);
         }
+    }
+
+    private void UpdateReplayPovMask(IReadOnlyList<CCSPlayerController> playerControllers)
+    {
+        SetReplayPovMask(BuildReplayPovMask(playerControllers));
+    }
+
+    private ulong BuildReplayPovMask(IReadOnlyList<CCSPlayerController> playerControllers)
+    {
+        if (_loadedSlots.Count == 0 || _lastPlayingSlots.Count == 0)
+            return 0;
+
+        var replayPawnSlots = new Dictionary<uint, int>();
+        foreach (var slot in _loadedSlots)
+        {
+            if (slot is < 0 or >= MaxPlayerSlots || !_lastPlayingSlots.Contains(slot))
+                continue;
+
+            var replayController = Utilities.GetPlayerFromSlot(slot);
+            if (replayController is not { IsValid: true })
+                continue;
+            if (replayController.PlayerPawn is not { IsValid: true, Value.IsValid: true } replayPawn)
+                continue;
+
+            replayPawnSlots[replayPawn.Value.Index] = slot;
+        }
+
+        if (replayPawnSlots.Count == 0)
+            return 0;
+
+        ulong mask = 0;
+        foreach (var controller in playerControllers)
+        {
+            if (controller is not { IsValid: true })
+                continue;
+            if (controller.IsBot || _botHiderProbe.IsManagedBot(controller.Slot))
+                continue;
+            if (!TryGetInEyeObserverTargetIndex(controller, out var targetIndex))
+                continue;
+            if (replayPawnSlots.TryGetValue(targetIndex, out var targetSlot))
+                mask |= 1UL << targetSlot;
+        }
+
+        return mask;
+    }
+
+    private static bool TryGetInEyeObserverTargetIndex(CCSPlayerController controller, out uint targetIndex)
+    {
+        targetIndex = 0;
+        try
+        {
+            CPlayer_ObserverServices? observerServices = null;
+            if (controller.ObserverPawn is { IsValid: true, Value.IsValid: true } observerPawn)
+                observerServices = observerPawn.Value.ObserverServices;
+            else if (controller.PlayerPawn is { IsValid: true, Value.IsValid: true } playerPawn)
+                observerServices = playerPawn.Value.ObserverServices;
+
+            if (observerServices == null ||
+                observerServices.ObserverMode != (byte)ObserverMode_t.OBS_MODE_IN_EYE)
+                return false;
+            if (observerServices.ObserverTarget is not { IsValid: true, Value.IsValid: true } target)
+                return false;
+
+            targetIndex = target.Value.Index;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void SetReplayPovMask(ulong mask)
+    {
+        if (mask == _lastReplayPovMask)
+            return;
+
+        _ = BotControllerNative.SetReplayPovMask(mask);
+        _lastReplayPovMask = mask;
+    }
+
+    private void ClearReplayPovSlot(int slot)
+    {
+        if (slot is < 0 or >= MaxPlayerSlots || _lastReplayPovMask == ulong.MaxValue)
+            return;
+
+        SetReplayPovMask(_lastReplayPovMask & ~(1UL << slot));
     }
 
     private void OnEntitySpawned(CEntityInstance entity)
@@ -2609,6 +2705,7 @@ public sealed class DemoTracerPlugin : BasePlugin
         _armed = false;
         _sequencePrepared = false;
         _sequencePreparedRound = -1;
+        SetReplayPovMask(0);
     }
 
     private void MarkReplayStarted(int slot)
@@ -2638,6 +2735,7 @@ public sealed class DemoTracerPlugin : BasePlugin
         BotControllerNative.UnlockReplayControl(slot);
         BotControllerNative.UnlockWeaponSlot(slot);
         ResetBotBrainForHandoff(slot);
+        ClearReplayPovSlot(slot);
         var quiet = _quietReplaySlots.Remove(slot);
         if (!quiet)
             Server.PrintToConsole($"dtr: released slot={slot} reason={reason}");
@@ -3931,15 +4029,24 @@ public sealed class DemoTracerPlugin : BasePlugin
 
     private bool IsReplayTargetBot(CCSPlayerController player)
     {
-        if (!IsReplayControllerSafe(player) || IsReplayPawnTakenByController(player))
+        return IsReplayTargetBot(player, null);
+    }
+
+    private bool IsReplayTargetBot(
+        CCSPlayerController player,
+        IReadOnlyList<CCSPlayerController>? playerControllers)
+    {
+        if (!IsReplayControllerSafe(player) || IsReplayPawnTakenByController(player, playerControllers))
             return false;
         return player.IsBot || _botHiderProbe.IsManagedBot(player.Slot);
     }
 
-    private bool IsReplaySlotStillSafe(int slot)
+    private bool IsReplaySlotStillSafe(
+        int slot,
+        IReadOnlyList<CCSPlayerController>? playerControllers = null)
     {
         var player = Utilities.GetPlayerFromSlot(slot);
-        return player is { IsValid: true } && IsReplayTargetBot(player);
+        return player is { IsValid: true } && IsReplayTargetBot(player, playerControllers);
     }
 
     private static bool IsReplayControllerSafe(CCSPlayerController player)
@@ -3964,13 +4071,16 @@ public sealed class DemoTracerPlugin : BasePlugin
         }
     }
 
-    private static bool IsReplayPawnTakenByController(CCSPlayerController replayTarget)
+    private static bool IsReplayPawnTakenByController(
+        CCSPlayerController replayTarget,
+        IReadOnlyList<CCSPlayerController>? playerControllers = null)
     {
         if (replayTarget.PlayerPawn is not { IsValid: true, Value.IsValid: true } replayPawn)
             return true;
 
         var replayPawnIndex = replayPawn.Value.Index;
-        foreach (var controller in Utilities.FindAllEntitiesByDesignerName<CCSPlayerController>("cs_player_controller"))
+        var controllers = playerControllers ?? FindPlayerControllers();
+        foreach (var controller in controllers)
         {
             if (controller is not { IsValid: true } || controller.Slot == replayTarget.Slot)
                 continue;
@@ -3989,10 +4099,18 @@ public sealed class DemoTracerPlugin : BasePlugin
         return false;
     }
 
-    private static List<CCSPlayerController> FindTeamPlayers()
+    private static List<CCSPlayerController> FindPlayerControllers()
     {
         return Utilities
             .FindAllEntitiesByDesignerName<CCSPlayerController>("cs_player_controller")
+            .Where(player => player.IsValid)
+            .ToList();
+    }
+
+    private static List<CCSPlayerController> FindTeamPlayers(
+        IReadOnlyList<CCSPlayerController>? playerControllers = null)
+    {
+        return (playerControllers ?? FindPlayerControllers())
             .Where(player => player.IsValid &&
                              (player.Team == CsTeam.Terrorist || player.Team == CsTeam.CounterTerrorist) &&
                              player.PlayerPawn is { IsValid: true, Value.IsValid: true })
@@ -4003,12 +4121,20 @@ public sealed class DemoTracerPlugin : BasePlugin
 
     private static bool ReplayBotSeesEnemy(int slot, out string contactReason)
     {
+        return ReplayBotSeesEnemy(slot, FindTeamPlayers(), out contactReason);
+    }
+
+    private static bool ReplayBotSeesEnemy(
+        int slot,
+        IReadOnlyList<CCSPlayerController> teamPlayers,
+        out string contactReason)
+    {
         contactReason = string.Empty;
         var bot = Utilities.GetPlayerFromSlot(slot);
         if (bot is not { IsValid: true } || !bot.PawnIsAlive)
             return false;
 
-        foreach (var enemy in FindTeamPlayers())
+        foreach (var enemy in teamPlayers)
         {
             if (enemy.Slot == bot.Slot ||
                 enemy.Team == bot.Team ||

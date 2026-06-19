@@ -29,6 +29,7 @@ dtr_run_manifest "<输出目录>\<demo-id>\manifest.json" 0
 | `dtr_partial` | `1` | bot 数量不足时允许部分 replay。 |
 | `dtr_replay_identity` | `0` | 默认不写 BotHider 名字/SteamID。 |
 | `dtr_util_trace` | `0` | 默认不写 utility CSV trace。 |
+| `bc_replay_pov` | `spectated` | 只给正在被第一人称观察的 replay bot 发布昂贵的 native POV 更新。 |
 
 ## 顺序播放
 
@@ -261,3 +262,22 @@ trace 包含 slot replay cursor、live/replay 位置和速度、武器状态、g
 
 这个指令来自 native `BotController` runtime，不是 CSS `DemoTracer` 插件。但它很有用，
 因为会输出 hook 状态、replay hook 计数、锁数量和 buy-plan 状态。
+
+### `bc_replay_pov [off|spectated|always]`
+
+控制 native 第一人称 replay POV 发布。
+
+- `spectated` 是默认值。DemoTracer 会把当前正在第一人称观察 replay bot 的 human
+  spectator 转成 per-slot mask 传给 native。
+- `always` 恢复旧行为：每个 replay bot 每 tick 都发布 server view-angle changes。
+- `off` 关闭这条 POV 发布路径，性能最好。
+
+移动 replay、武器切换、投掷物对齐和 handoff 行为不依赖这个设置。
+
+### `bc_perf [0|1|reset]`
+
+开启、关闭、重置并打印 native replay 性能计数器。
+
+测试 10 bot playback 时使用它。`bc_replay_pov spectated` 且没人第一人称观察 replay
+bot 时，server-view writes 和 `VirtualQuery` 计数应该接近 0；只有一个第一人称观察者时，
+它们应该接近每 tick 一个 bot，而不是每个 loaded replay bot。

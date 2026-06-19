@@ -53,6 +53,8 @@ namespace BotController
         static std::atomic<int> g_replaySnapMode{static_cast<int>(ReplaySnapMode::Hard)};
         static std::atomic<int> g_replayViewMode{static_cast<int>(ReplayViewMode::PostOnly)};
         static std::atomic<int> g_replayCmdViewMode{static_cast<int>(ReplayCommandViewMode::Pre)};
+        static std::atomic<int> g_replayPovMode{static_cast<int>(ReplayPovMode::Spectated)};
+        static std::atomic<uint64_t> g_replayPovMask{0};
         static std::array<uint32_t, kMaxSlots> g_serverViewChangeIndex = [] {
             std::array<uint32_t, kMaxSlots> values{};
             values.fill(0);
@@ -63,6 +65,23 @@ namespace BotController
             values.fill(-1);
             return values;
         }();
+
+        struct ReplayPerfState
+        {
+            std::atomic<bool> enabled{false};
+            std::atomic<uint64_t> processMovementHooks{0};
+            std::atomic<uint64_t> finishMoveHooks{0};
+            std::atomic<uint64_t> playerRunCommandHooks{0};
+            std::atomic<uint64_t> physicsSimulateHooks{0};
+            std::atomic<uint64_t> syncReplayViewCalls{0};
+            std::atomic<uint64_t> serverViewWrites{0};
+            std::atomic<uint64_t> virtualQueryCalls{0};
+            std::atomic<uint64_t> replayTickReads{0};
+            std::atomic<uint64_t> subtickRebuilds{0};
+            std::atomic<uint64_t> subticksAdded{0};
+        };
+
+        static ReplayPerfState g_perf;
 
         static constexpr float kSoftSnapDistance = 64.0f;
         static constexpr float kSoftSnapVerticalDistance = 48.0f;
@@ -138,6 +157,110 @@ namespace BotController
             }
         }
 
+        static ReplayPovMode ActiveReplayPovMode()
+        {
+            switch (g_replayPovMode.load(std::memory_order_relaxed))
+            {
+            case static_cast<int>(ReplayPovMode::Off):
+                return ReplayPovMode::Off;
+            case static_cast<int>(ReplayPovMode::Always):
+                return ReplayPovMode::Always;
+            default:
+                return ReplayPovMode::Spectated;
+            }
+        }
+
+        static bool ShouldPublishReplayPov(int slot)
+        {
+            const ReplayPovMode mode = ActiveReplayPovMode();
+            if (mode == ReplayPovMode::Always)
+                return true;
+            if (mode == ReplayPovMode::Off || !ValidSlot(slot))
+                return false;
+            return (g_replayPovMask.load(std::memory_order_relaxed) &
+                    (uint64_t{1} << static_cast<unsigned>(slot))) != 0;
+        }
+
+        void AddReplayPerf(ReplayPerfCounter counter, uint64_t amount)
+        {
+            if (amount == 0 || !g_perf.enabled.load(std::memory_order_relaxed))
+                return;
+
+            switch (counter)
+            {
+            case ReplayPerfCounter::ProcessMovementHook:
+                g_perf.processMovementHooks.fetch_add(amount, std::memory_order_relaxed);
+                break;
+            case ReplayPerfCounter::FinishMoveHook:
+                g_perf.finishMoveHooks.fetch_add(amount, std::memory_order_relaxed);
+                break;
+            case ReplayPerfCounter::PlayerRunCommandHook:
+                g_perf.playerRunCommandHooks.fetch_add(amount, std::memory_order_relaxed);
+                break;
+            case ReplayPerfCounter::PhysicsSimulateHook:
+                g_perf.physicsSimulateHooks.fetch_add(amount, std::memory_order_relaxed);
+                break;
+            case ReplayPerfCounter::SyncReplayView:
+                g_perf.syncReplayViewCalls.fetch_add(amount, std::memory_order_relaxed);
+                break;
+            case ReplayPerfCounter::ServerViewWrite:
+                g_perf.serverViewWrites.fetch_add(amount, std::memory_order_relaxed);
+                break;
+            case ReplayPerfCounter::VirtualQuery:
+                g_perf.virtualQueryCalls.fetch_add(amount, std::memory_order_relaxed);
+                break;
+            case ReplayPerfCounter::ReplayTickRead:
+                g_perf.replayTickReads.fetch_add(amount, std::memory_order_relaxed);
+                break;
+            case ReplayPerfCounter::SubtickRebuild:
+                g_perf.subtickRebuilds.fetch_add(amount, std::memory_order_relaxed);
+                break;
+            case ReplayPerfCounter::SubticksAdded:
+                g_perf.subticksAdded.fetch_add(amount, std::memory_order_relaxed);
+                break;
+            }
+        }
+
+        void SetReplayPerfEnabled(bool enabled)
+        {
+            g_perf.enabled.store(enabled, std::memory_order_relaxed);
+        }
+
+        bool ReplayPerfEnabled()
+        {
+            return g_perf.enabled.load(std::memory_order_relaxed);
+        }
+
+        void ResetReplayPerfCounters()
+        {
+            g_perf.processMovementHooks.store(0, std::memory_order_relaxed);
+            g_perf.finishMoveHooks.store(0, std::memory_order_relaxed);
+            g_perf.playerRunCommandHooks.store(0, std::memory_order_relaxed);
+            g_perf.physicsSimulateHooks.store(0, std::memory_order_relaxed);
+            g_perf.syncReplayViewCalls.store(0, std::memory_order_relaxed);
+            g_perf.serverViewWrites.store(0, std::memory_order_relaxed);
+            g_perf.virtualQueryCalls.store(0, std::memory_order_relaxed);
+            g_perf.replayTickReads.store(0, std::memory_order_relaxed);
+            g_perf.subtickRebuilds.store(0, std::memory_order_relaxed);
+            g_perf.subticksAdded.store(0, std::memory_order_relaxed);
+        }
+
+        ReplayPerfCounters GetReplayPerfCounters()
+        {
+            return ReplayPerfCounters{
+                g_perf.processMovementHooks.load(std::memory_order_relaxed),
+                g_perf.finishMoveHooks.load(std::memory_order_relaxed),
+                g_perf.playerRunCommandHooks.load(std::memory_order_relaxed),
+                g_perf.physicsSimulateHooks.load(std::memory_order_relaxed),
+                g_perf.syncReplayViewCalls.load(std::memory_order_relaxed),
+                g_perf.serverViewWrites.load(std::memory_order_relaxed),
+                g_perf.virtualQueryCalls.load(std::memory_order_relaxed),
+                g_perf.replayTickReads.load(std::memory_order_relaxed),
+                g_perf.subtickRebuilds.load(std::memory_order_relaxed),
+                g_perf.subticksAdded.load(std::memory_order_relaxed),
+            };
+        }
+
         const char *ReplaySnapModeName(ReplaySnapMode mode)
         {
             switch (mode)
@@ -208,6 +331,35 @@ namespace BotController
         ReplayCommandViewMode GetReplayCommandViewMode()
         {
             return ActiveReplayCommandViewMode();
+        }
+
+        const char *ReplayPovModeName(ReplayPovMode mode)
+        {
+            switch (mode)
+            {
+            case ReplayPovMode::Off:
+                return "off";
+            case ReplayPovMode::Spectated:
+                return "spectated";
+            case ReplayPovMode::Always:
+                return "always";
+            }
+            return "spectated";
+        }
+
+        void SetReplayPovMode(ReplayPovMode mode)
+        {
+            g_replayPovMode.store(static_cast<int>(mode), std::memory_order_relaxed);
+        }
+
+        ReplayPovMode GetReplayPovMode()
+        {
+            return ActiveReplayPovMode();
+        }
+
+        void SetReplayPovMask(uint64_t mask)
+        {
+            g_replayPovMask.store(mask, std::memory_order_relaxed);
         }
 
         bool ReplayViewAllowsEngineSetEyeAngles()
@@ -494,6 +646,16 @@ namespace BotController
             p.subOffset[p.ticks.size()] = acc;
         }
 
+        static const ReplayTick *CurrentReplayTickPtr(ReplayState &p, int &cur, int &total)
+        {
+            total = static_cast<int>(p.ticks.size());
+            cur = p.cursor.load(std::memory_order_relaxed);
+            if (cur < 0 || cur >= total)
+                return nullptr;
+            AddReplayPerf(ReplayPerfCounter::ReplayTickRead);
+            return &p.ticks[static_cast<size_t>(cur)];
+        }
+
         bool LoadReplay(int slot, const ReplayTick *ticks, int tickCount,
                         const SubtickMove *subs, int subCount)
         {
@@ -575,12 +737,12 @@ namespace BotController
             ReplayState &p = g_rep[slot];
             if (!p.playing.load(std::memory_order_acquire))
                 return false;
-            std::lock_guard<std::mutex> lk(p.mu);
-            int total = static_cast<int>(p.ticks.size());
-            int cur = p.cursor.load(std::memory_order_relaxed);
-            if (cur < 0 || cur >= total)
+            int cur = -1;
+            int total = 0;
+            const ReplayTick *tick = CurrentReplayTickPtr(p, cur, total);
+            if (!tick)
                 return false;
-            out = p.ticks[cur];
+            out = *tick;
             return true;
         }
 
@@ -591,25 +753,25 @@ namespace BotController
             ReplayState &p = g_rep[slot];
             if (!p.playing.load(std::memory_order_acquire))
                 return false;
-            std::lock_guard<std::mutex> lk(p.mu);
-            int total = static_cast<int>(p.ticks.size());
-            int cur = p.cursor.load(std::memory_order_relaxed);
-            if (cur < 0 || cur >= total)
+            int cur = -1;
+            int total = 0;
+            const ReplayTick *tick = CurrentReplayTickPtr(p, cur, total);
+            if (!tick)
                 return false;
 
             const ReplayCommandViewMode mode = ActiveReplayCommandViewMode();
             if (mode == ReplayCommandViewMode::Post)
             {
-                out = p.ticks[cur].post;
+                out = tick->post;
                 return true;
             }
             if (mode == ReplayCommandViewMode::NextPre)
             {
-                out = (cur + 1 < total) ? p.ticks[cur + 1].pre : p.ticks[cur].post;
+                out = (cur + 1 < total) ? p.ticks[static_cast<size_t>(cur + 1)].pre : tick->post;
                 return true;
             }
 
-            out = p.ticks[cur].pre;
+            out = tick->pre;
             return true;
         }
 
@@ -620,7 +782,6 @@ namespace BotController
             ReplayState &p = g_rep[slot];
             if (!p.playing.load(std::memory_order_acquire))
                 return false;
-            std::lock_guard<std::mutex> lk(p.mu);
             int total = static_cast<int>(p.ticks.size());
             if (total <= 0)
                 return false;
@@ -646,7 +807,8 @@ namespace BotController
             if (idx < 0 || idx >= total)
                 return false;
 
-            out = p.ticks[idx].post;
+            AddReplayPerf(ReplayPerfCounter::ReplayTickRead);
+            out = p.ticks[static_cast<size_t>(idx)].post;
             return true;
         }
 
@@ -659,14 +821,14 @@ namespace BotController
             ReplayState &p = g_rep[slot];
             if (!p.playing.load(std::memory_order_acquire))
                 return false;
-            std::lock_guard<std::mutex> lk(p.mu);
             int total = static_cast<int>(p.ticks.size());
             int idx = p.cursor.load(std::memory_order_relaxed) - 1;
             if (idx < 0)
                 idx = 0;
             if (idx >= total)
                 return false;
-            out = p.ticks[idx];
+            AddReplayPerf(ReplayPerfCounter::ReplayTickRead);
+            out = p.ticks[static_cast<size_t>(idx)];
             return true;
         }
 
@@ -677,18 +839,17 @@ namespace BotController
             ReplayState &p = g_rep[slot];
             if (!p.playing.load(std::memory_order_acquire))
                 return -1;
-            std::lock_guard<std::mutex> lk(p.mu);
             int total = static_cast<int>(p.ticks.size());
             int idx = p.cursor.load(std::memory_order_relaxed);
             if (idx < 0 || idx >= total)
                 return -1;
-            uint32_t begin = p.subOffset[idx];
-            uint32_t end = p.subOffset[idx + 1];
+            uint32_t begin = p.subOffset[static_cast<size_t>(idx)];
+            uint32_t end = p.subOffset[static_cast<size_t>(idx + 1)];
             int n = static_cast<int>(end - begin);
             if (n > maxOut)
                 n = maxOut;
             for (int i = 0; i < n; ++i)
-                out[i] = p.subs[begin + i];
+                out[i] = p.subs[static_cast<size_t>(begin + i)];
             return n;
         }
 
@@ -700,12 +861,12 @@ namespace BotController
             ReplayState &p = g_rep[slot];
             if (!p.playing.load(std::memory_order_acquire))
                 return false;
-            std::lock_guard<std::mutex> lk(p.mu);
-            int total = static_cast<int>(p.ticks.size());
-            int cur = p.cursor.load(std::memory_order_relaxed);
-            if (cur < 0 || cur >= total)
+            int cur = -1;
+            int total = 0;
+            const ReplayTick *tick = CurrentReplayTickPtr(p, cur, total);
+            if (!tick)
                 return false;
-            const MovementSnapshot &pre = p.ticks[cur].pre;
+            const MovementSnapshot &pre = tick->pre;
             b0 = pre.buttons;
             b1 = pre.buttons1;
             b2 = pre.buttons2;
@@ -713,7 +874,7 @@ namespace BotController
             {
                 // Older offline records only stored the held mask. Keep them
                 // playable by synthesizing edge masks from adjacent ticks.
-                uint64_t heldPrev = (cur > 0) ? p.ticks[cur - 1].pre.buttons : 0;
+                uint64_t heldPrev = (cur > 0) ? p.ticks[static_cast<size_t>(cur - 1)].pre.buttons : 0;
                 b1 = b0 & ~heldPrev;
                 b2 = heldPrev & ~b0;
             }
@@ -758,12 +919,12 @@ namespace BotController
                 ReplayState &p = g_rep[slot];
                 if (!p.playing.load(std::memory_order_acquire))
                     return -1;
-                std::lock_guard<std::mutex> lk(p.mu);
-                int total = static_cast<int>(p.ticks.size());
-                int cur = p.cursor.load(std::memory_order_relaxed);
-                if (cur < 0 || cur >= total)
+                int cur = -1;
+                int total = 0;
+                const ReplayTick *tick = CurrentReplayTickPtr(p, cur, total);
+                if (!tick)
                     return -1;
-                recordedDef = p.ticks[cur].weaponDefIndex;
+                recordedDef = tick->weaponDefIndex;
             }
             if (recordedDef < 0)
                 return -1;
@@ -812,6 +973,7 @@ namespace BotController
                 return false;
 
             MEMORY_BASIC_INFORMATION mbi{};
+            AddReplayPerf(ReplayPerfCounter::VirtualQuery);
             if (VirtualQuery(ptr, &mbi, sizeof(mbi)) == 0)
                 return false;
             if (mbi.State != MEM_COMMIT)
@@ -943,9 +1105,16 @@ namespace BotController
             BotControllerHooks::ApplyReplayEyeAngles(pawn, s.pitch, s.yaw);
             WriteRawViewAnglesToPawn(p, s.pitch, s.yaw);
             WriteReplayViewHistory(services, p, s.pitch, s.yaw);
-            int serverViewElement = -1;
-            WriteServerViewAngleChange(p, slot, s, &serverViewElement);
-            MarkReplayViewNetworkChanged(pawn, serverViewElement);
+            AddReplayPerf(ReplayPerfCounter::SyncReplayView);
+            if (ShouldPublishReplayPov(slot))
+            {
+                int serverViewElement = -1;
+                if (WriteServerViewAngleChange(p, slot, s, &serverViewElement))
+                {
+                    AddReplayPerf(ReplayPerfCounter::ServerViewWrite);
+                    MarkReplayViewNetworkChanged(pawn, serverViewElement);
+                }
+            }
             return true;
         }
 
@@ -1000,33 +1169,29 @@ namespace BotController
             if (!p.playing.load(std::memory_order_acquire))
                 return;
 
-            ReplayTick t{};
-            {
-                std::lock_guard<std::mutex> lk(p.mu);
-                int total = static_cast<int>(p.ticks.size());
-                int cur = p.cursor.load(std::memory_order_relaxed);
-                if (cur < 0 || cur >= total)
-                    return;
-                t = p.ticks[cur];
-            }
+            int cur = -1;
+            int total = 0;
+            const ReplayTick *t = CurrentReplayTickPtr(p, cur, total);
+            if (!t)
+                return;
 
             auto *sv = reinterpret_cast<char *>(services);
-            WriteVelocityToPawn(services, t.pre);
-            WriteMovementServiceState(services, t.pre);
+            WriteVelocityToPawn(services, t->pre);
+            WriteMovementServiceState(services, t->pre);
 
             void *pawn = *reinterpret_cast<void **>(sv + tg::kServices_Pawn);
             if (pawn)
             {
                 auto *pp = reinterpret_cast<char *>(pawn);
-                *reinterpret_cast<uint8_t *>(pp + tg::kEnt_MoveType) = t.pre.moveType;
-                *reinterpret_cast<uint8_t *>(pp + tg::kEnt_ActualMoveType) = t.pre.actualMoveType;
+                *reinterpret_cast<uint8_t *>(pp + tg::kEnt_MoveType) = t->pre.moveType;
+                *reinterpret_cast<uint8_t *>(pp + tg::kEnt_ActualMoveType) = t->pre.actualMoveType;
                 void *node = *reinterpret_cast<void **>(pp + tg::kEnt_GameSceneNode);
                 if (node)
                 {
                     auto *n = reinterpret_cast<char *>(node);
-                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 0) = t.pre.originX;
-                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 4) = t.pre.originY;
-                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 8) = t.pre.originZ;
+                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 0) = t->pre.originX;
+                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 4) = t->pre.originY;
+                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 8) = t->pre.originZ;
                 }
 
                 MovementSnapshot cmdView{};
@@ -1047,47 +1212,42 @@ namespace BotController
             ReplayState &p = g_rep[slot];
             if (!p.playing.load(std::memory_order_acquire))
                 return;
-            ReplayTick t{};
-            {
-                std::lock_guard<std::mutex> lk(p.mu);
-                int total = static_cast<int>(p.ticks.size());
-                int cur = p.cursor.load(std::memory_order_relaxed);
-                if (cur >= total)
-                    return; // commit handler will stop/loop
-                t = p.ticks[cur];
-            }
-            const int cursor = ReplayCursor(slot);
+            int cursor = -1;
+            int total = 0;
+            const ReplayTick *t = CurrentReplayTickPtr(p, cursor, total);
+            if (!t)
+                return; // commit handler will stop/loop
             const ReplaySnapMode snapMode = ActiveReplaySnapMode();
             const bool snapMovement =
-                ShouldApplyMovementSnap(snapMode, cursor, services, t.pre);
+                ShouldApplyMovementSnap(snapMode, cursor, services, t->pre);
 
             if (snapMovement)
             {
-                WriteMoveData(moveData, t.pre);
-                WriteVelocityToPawn(services, t.pre);
-                WriteMovementServiceState(services, t.pre);
+                WriteMoveData(moveData, t->pre);
+                WriteVelocityToPawn(services, t->pre);
+                WriteMovementServiceState(services, t->pre);
             }
             if (ShouldDirectWritePreView())
-                SyncReplayView(slot, services, t.pre);
+                SyncReplayView(slot, services, t->pre);
             auto *sv = reinterpret_cast<char *>(services);
             // Feed recorded buttons so the engine's Duck()/ladder logic runs
-            *reinterpret_cast<uint64_t *>(sv + tg::kServices_Buttons) = t.pre.buttons;
-            *reinterpret_cast<uint64_t *>(sv + tg::kServices_Buttons1) = t.pre.buttons1;
-            *reinterpret_cast<uint64_t *>(sv + tg::kServices_Buttons2) = t.pre.buttons2;
+            *reinterpret_cast<uint64_t *>(sv + tg::kServices_Buttons) = t->pre.buttons;
+            *reinterpret_cast<uint64_t *>(sv + tg::kServices_Buttons1) = t->pre.buttons1;
+            *reinterpret_cast<uint64_t *>(sv + tg::kServices_Buttons2) = t->pre.buttons2;
             if (snapMovement)
             {
                 void *pawn = *reinterpret_cast<void **>(sv + tg::kServices_Pawn);
                 if (pawn)
                 {
                     auto *pp = reinterpret_cast<char *>(pawn);
-                    *reinterpret_cast<uint8_t *>(pp + tg::kEnt_MoveType) = t.pre.moveType;
+                    *reinterpret_cast<uint8_t *>(pp + tg::kEnt_MoveType) = t->pre.moveType;
                     void *node = *reinterpret_cast<void **>(pp + tg::kEnt_GameSceneNode);
                     if (node)
                     {
                         auto *n = reinterpret_cast<char *>(node);
-                        *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 0) = t.pre.originX;
-                        *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 4) = t.pre.originY;
-                        *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 8) = t.pre.originZ;
+                        *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 0) = t->pre.originX;
+                        *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 4) = t->pre.originY;
+                        *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 8) = t->pre.originZ;
                     }
                 }
             }
@@ -1104,22 +1264,18 @@ namespace BotController
                 return;
             if (ActiveReplaySnapMode() != ReplaySnapMode::Hard)
                 return;
-            ReplayTick t{};
-            {
-                std::lock_guard<std::mutex> lk(p.mu);
-                int total = static_cast<int>(p.ticks.size());
-                int cur = p.cursor.load(std::memory_order_relaxed);
-                if (cur >= total)
-                    return;
-                t = p.ticks[cur];
-            }
+            int cur = -1;
+            int total = 0;
+            const ReplayTick *t = CurrentReplayTickPtr(p, cur, total);
+            if (!t)
+                return;
             auto *m = reinterpret_cast<char *>(moveData);
-            *reinterpret_cast<float *>(m + tg::kMove_AbsOrigin + 0) = t.post.originX;
-            *reinterpret_cast<float *>(m + tg::kMove_AbsOrigin + 4) = t.post.originY;
-            *reinterpret_cast<float *>(m + tg::kMove_AbsOrigin + 8) = t.post.originZ;
-            *reinterpret_cast<float *>(m + tg::kMove_Velocity + 0) = t.post.velX;
-            *reinterpret_cast<float *>(m + tg::kMove_Velocity + 4) = t.post.velY;
-            *reinterpret_cast<float *>(m + tg::kMove_Velocity + 8) = t.post.velZ;
+            *reinterpret_cast<float *>(m + tg::kMove_AbsOrigin + 0) = t->post.originX;
+            *reinterpret_cast<float *>(m + tg::kMove_AbsOrigin + 4) = t->post.originY;
+            *reinterpret_cast<float *>(m + tg::kMove_AbsOrigin + 8) = t->post.originZ;
+            *reinterpret_cast<float *>(m + tg::kMove_Velocity + 0) = t->post.velX;
+            *reinterpret_cast<float *>(m + tg::kMove_Velocity + 4) = t->post.velY;
+            *reinterpret_cast<float *>(m + tg::kMove_Velocity + 8) = t->post.velZ;
 
             // Force engine to resync the entity origin from MoveData
             auto *sv = reinterpret_cast<char *>(services);
@@ -1131,10 +1287,10 @@ namespace BotController
                 if (node)
                 {
                     auto *n = reinterpret_cast<char *>(node);
-                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 0) = t.post.originX;
-                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 4) = t.post.originY;
+                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 0) = t->post.originX;
+                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 4) = t->post.originY;
                     *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 8) =
-                        t.post.originZ + kFinishMoveResyncNudgeZ;
+                        t->post.originZ + kFinishMoveResyncNudgeZ;
                 }
             }
         }
@@ -1153,18 +1309,13 @@ namespace BotController
             if (!ShouldDirectWritePostView())
                 return;
 
-            ReplayTick t{};
             int cur = -1;
-            {
-                std::lock_guard<std::mutex> lk(p.mu);
-                int total = static_cast<int>(p.ticks.size());
-                cur = p.cursor.load(std::memory_order_relaxed);
-                if (cur < 0 || cur >= total)
-                    return;
-                t = p.ticks[cur];
-            }
+            int total = 0;
+            const ReplayTick *t = CurrentReplayTickPtr(p, cur, total);
+            if (!t)
+                return;
 
-            SyncReplayView(slot, services, t.post);
+            SyncReplayView(slot, services, t->post);
             g_lastFinalViewCursor[slot] = cur;
         }
 
@@ -1177,12 +1328,16 @@ namespace BotController
             if (!p.playing.load(std::memory_order_acquire))
                 return;
 
-            ReplayTick t{};
-            int cur, total;
+            int cur = p.cursor.load(std::memory_order_relaxed);
+            int total = static_cast<int>(p.ticks.size());
+            const ReplayTick *t = nullptr;
+            if (cur >= 0 && cur < total)
             {
-                std::lock_guard<std::mutex> lk(p.mu);
-                total = static_cast<int>(p.ticks.size());
-                cur = p.cursor.load(std::memory_order_relaxed);
+                AddReplayPerf(ReplayPerfCounter::ReplayTickRead);
+                t = &p.ticks[static_cast<size_t>(cur)];
+            }
+            else
+            {
                 if (cur >= total)
                 {
                     if (p.loop.load(std::memory_order_relaxed) && total > 0)
@@ -1196,7 +1351,7 @@ namespace BotController
                     p.playing.store(false, std::memory_order_release);
                     return;
                 }
-                t = p.ticks[cur];
+                return;
             }
 
             auto *sv = reinterpret_cast<char *>(services);
@@ -1208,21 +1363,21 @@ namespace BotController
                 if (pawn)
                 {
                     auto *pp = reinterpret_cast<char *>(pawn);
-                    *reinterpret_cast<uint8_t *>(pp + tg::kEnt_MoveType) = t.post.moveType;
-                    *reinterpret_cast<uint8_t *>(pp + tg::kEnt_ActualMoveType) = t.post.actualMoveType;
+                    *reinterpret_cast<uint8_t *>(pp + tg::kEnt_MoveType) = t->post.moveType;
+                    *reinterpret_cast<uint8_t *>(pp + tg::kEnt_ActualMoveType) = t->post.actualMoveType;
                     // Merge ground + ducking bits from the recording, keep the rest live.
                     uint32_t live = *reinterpret_cast<uint32_t *>(pp + tg::kEnt_Flags);
                     uint32_t mask = tg::kFL_OnGround | tg::kFL_Ducking;
-                    live = (live & ~mask) | (t.post.entityFlags & mask);
+                    live = (live & ~mask) | (t->post.entityFlags & mask);
                     *reinterpret_cast<uint32_t *>(pp + tg::kEnt_Flags) = live;
                 }
             }
             if (ShouldDirectWritePostView() && g_lastFinalViewCursor[slot] != cur)
-                SyncReplayView(slot, services, t.post);
+                SyncReplayView(slot, services, t->post);
 
             if (hardSnap)
             {
-                WriteMovementServiceState(services, t.post);
+                WriteMovementServiceState(services, t->post);
             }
 
             p.cursor.store(cur + 1, std::memory_order_relaxed);
@@ -1254,6 +1409,7 @@ namespace BotController
                 g_lastFinalViewCursor[i] = -1;
                 g_serverViewChangeIndex[i] = 0;
             }
+            g_replayPovMask.store(0, std::memory_order_relaxed);
         }
     }
 }

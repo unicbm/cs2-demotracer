@@ -82,6 +82,8 @@ them into the package tree automatically.
 bc_lock <all|aim|jump|weapon> <slot> [slot1..slot5]
 bc_unlock <all|aim|jump|weapon> <slot>
 bc_unlock_all <all|aim|jump|weapon>
+bc_replay_pov [off|spectated|always]
+bc_perf [0|1|reset]
 bc_status
 ```
 
@@ -93,6 +95,8 @@ bc_lock jump 1               # bot 1 can no longer jump
 bc_lock all 1                # full freeze (use this before replay)
 bc_lock weapon 1 slot3       # force bot 1 to knife
 bc_unlock_all weapon         # clear every weapon lock
+bc_replay_pov spectated      # publish replay POV only for watched bots
+bc_perf 1                    # enable and print replay perf counters
 bc_status                    # print hook status + every per-slot lock
 ```
 
@@ -107,7 +111,7 @@ Drop `scripts/BotController.NativeApi.cs` into your project.
 ```csharp
 using BotControllerApi;
 
-if (!BotController.IsCompatible()) return;   // requires ABI 11
+if (!BotController.IsCompatible()) return;   // requires ABI 12
 ```
 
 ### Locks
@@ -139,6 +143,7 @@ BotController.StartReplay(botSlot, loop: false);
 // Or pull the buffers out, persist them, and load later
 var (ticks, subs) = BotController.GetRecordedMotion(srcSlot);
 BotController.LoadReplay(botSlot, ticks, subs);
+BotController.SetReplayPovMask(1UL << botSlot); // publish first-person POV for this replay slot
 
 // Drive weapon/fire from the tick being replayed
 if (BotController.TryGetReplayTick(botSlot, out var tick))

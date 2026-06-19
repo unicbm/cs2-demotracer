@@ -5,7 +5,7 @@ namespace DemoTracer;
 
 internal static class BotControllerNative
 {
-    public const int ExpectedAbiVersion = 11;
+    public const int ExpectedAbiVersion = 12;
     public const uint RecFormatVersion = 4;
     public const uint MinRecFormatVersion = 3;
     public const int MovementSnapshotByteSize = 92;
@@ -37,6 +37,9 @@ internal static class BotControllerNative
 
     [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
     private static extern int BotController_SetControllerControllingBotOffset(int offset);
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_SetReplayPovMask(ulong mask);
 
     [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
     private static extern int BotController_LoadReplay(
@@ -108,6 +111,18 @@ internal static class BotControllerNative
         try
         {
             return BotController_SetControllerControllingBotOffset(offset) == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public static bool SetReplayPovMask(ulong mask)
+    {
+        try
+        {
+            return BotController_SetReplayPovMask(mask) == 0;
         }
         catch
         {
