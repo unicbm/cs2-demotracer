@@ -30,9 +30,11 @@ or legacy CS:GO paths.
   manifest/pool generation, validation, and the wizard.
 - `runtime/BotController/`: Metamod runtime hooks, replay buffers, movement and
   input injection, weapon/buy control, and native C ABI exports.
-- `css/`: CounterStrikeSharp plugin, `dtr_` commands, manifest loading, bot
-  assignment, replay sequencing, BotHider identity handoff, loadout alignment,
-  projectile alignment, and user-facing status.
+- `css/DemoTracer/`: CounterStrikeSharp plugin, `dtr_` commands, manifest
+  loading, bot assignment, replay sequencing, BotHider identity handoff, loadout
+  alignment, projectile alignment, and user-facing status.
+- `css/DemoTracerApi/`: CounterStrikeSharp API contract exposed to companion
+  plugins.
 - `docs/`: user-facing usage, command, and localized supplemental docs. The
   `.dtr` format contract lives in the root `README.md`.
 - `third_party/`: vendored source and attribution. Keep vendor changes minimal.
@@ -93,7 +95,7 @@ cargo test
 For CSS changes:
 
 ```powershell
-dotnet build css\DemoTracer.csproj -c Release
+dotnet build css\DemoTracer\DemoTracer.csproj -c Release
 ```
 
 For converter release builds:

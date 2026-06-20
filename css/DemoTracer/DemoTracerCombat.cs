@@ -1,12 +1,170 @@
-using CounterStrikeSharp.API;
+using CounterStrikeSharp.API.Core.Attributes.Registration;
+using CounterStrikeSharp.API.Core.Capabilities;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Utils;
+using CounterStrikeSharp.API;
 using System.Globalization;
+using System.Reflection;
 
 namespace DemoTracer;
 
 public sealed partial class DemoTracerPlugin
 {
+    private void HandoffActiveReplays(string reason, int triggerSlot = -1)
+    {
+        if (triggerSlot < 0 && !_handoffAllSlots)
+            return;
+
+        var stopped = 0;
+        var slots = (!_handoffAllSlots && triggerSlot >= 0)
+            ? [triggerSlot]
+            : _loadedSlots.ToArray();
+        foreach (var slot in slots)
+        {
+            if (!BotControllerNative.GetReplayState(slot).Playing)
+                continue;
+
+            BotControllerNative.StopReplay(slot);
+            ReleaseReplaySlot(slot, reason);
+            stopped++;
+
+            if (!_handoffAllSlots)
+                break;
+        }
+
+        if (stopped > 0)
+            Server.PrintToConsole($"dtr: handoff stopped {stopped} replay slot(s), reason={reason}");
+    }
+
+    private int GetDeathHandoffSlot(EventPlayerDeath @event)
+    {
+        if (@event.Userid is { IsValid: true } victim && IsReplaySlotPlaying(victim.Slot))
+            return victim.Slot;
+        if (@event.Attacker is { IsValid: true } attacker && IsReplaySlotPlaying(attacker.Slot))
+            return attacker.Slot;
+        return -1;
+    }
+
+    private bool TryGetEnemyBulletHandoffPair(
+        CCSPlayerController? attacker,
+        CCSPlayerController? victim,
+        out int victimSlot,
+        out int attackerSlot)
+    {
+        victimSlot = -1;
+        attackerSlot = -1;
+
+        if (attacker is not { IsValid: true } ||
+            victim is not { IsValid: true } ||
+            attacker.Slot == victim.Slot ||
+            attacker.Team == victim.Team ||
+            !victim.PawnIsAlive ||
+            !attacker.PawnIsAlive)
+            return false;
+
+        if (!IsReplaySlotPlaying(victim.Slot) || !ReplayHasPassedHandoffGrace(victim.Slot))
+            return false;
+
+        victimSlot = victim.Slot;
+        attackerSlot = attacker.Slot;
+        return true;
+    }
+
+    private bool TryHandoffBulletDamagedReplay(int victimSlot, int attackerSlot, int damage)
+    {
+        if (damage < BulletHandoffMinDamage ||
+            !IsReplaySlotPlaying(victimSlot) ||
+            !ReplayHasPassedHandoffGrace(victimSlot))
+            return false;
+
+        HandoffActiveReplays(
+            $"bullet_damage_slot{victimSlot}_attacker{attackerSlot}_dmg{damage}",
+            victimSlot);
+        return true;
+    }
+
+    private void PruneExpiredBulletHandoffState()
+    {
+        if (_pendingBulletHits.Count == 0 && _pendingBulletDamages.Count == 0)
+            return;
+
+        foreach (var (slot, hit) in _pendingBulletHits.ToArray())
+        {
+            if (!IsFreshBulletHandoffEvent(hit.Time))
+                _pendingBulletHits.Remove(slot);
+        }
+
+        foreach (var (slot, damage) in _pendingBulletDamages.ToArray())
+        {
+            if (!IsFreshBulletHandoffEvent(damage.Time))
+                _pendingBulletDamages.Remove(slot);
+        }
+    }
+
+    private static bool IsFreshBulletHandoffEvent(float eventTime)
+        => Server.CurrentTime - eventTime <= BulletHandoffMatchSeconds;
+
+    private static bool IsReplaySlotPlaying(int slot)
+    {
+        return slot >= 0 && BotControllerNative.GetReplayState(slot).Playing;
+    }
+
+    private bool ReplayHasPassedHandoffGrace(int slot)
+    {
+        return !_replayStartedAt.TryGetValue(slot, out var startedAt) ||
+               Server.CurrentTime - startedAt >= HandoffGraceSeconds;
+    }
+
+    private static void ResetBotBrainForHandoff(int slot)
+    {
+        var player = Utilities.GetPlayerFromSlot(slot);
+        if (player is not { IsValid: true } ||
+            player.PlayerPawn is not { IsValid: true, Value.IsValid: true })
+            return;
+
+        var pawn = player.PlayerPawn.Value;
+        var bot = pawn.Bot;
+        if (bot == null)
+            return;
+
+        ref bool isAttacking = ref bot.IsAttacking;
+        isAttacking = false;
+
+        ref bool isCrouching = ref bot.IsCrouching;
+        isCrouching = false;
+
+        ref bool eyeAnglesUnderPathFinderControl = ref bot.EyeAnglesUnderPathFinderControl;
+        eyeAnglesUnderPathFinderControl = false;
+
+        ref float fireWeaponTimestamp = ref bot.FireWeaponTimestamp;
+        fireWeaponTimestamp = 0f;
+
+        ref float inhibitLookAroundTimestamp = ref bot.InhibitLookAroundTimestamp;
+        inhibitLookAroundTimestamp = 0f;
+
+        ref int checkedHidingSpotCount = ref bot.CheckedHidingSpotCount;
+        checkedHidingSpotCount = 0;
+
+        ref float lookAroundStateTimestamp = ref bot.LookAroundStateTimestamp;
+        lookAroundStateTimestamp = 0f;
+
+        var ignoreEnemiesTimer = bot.IgnoreEnemiesTimer;
+        ref float ignoreDuration = ref ignoreEnemiesTimer.Duration;
+        ignoreDuration = 0f;
+        ref float ignoreTimestamp = ref ignoreEnemiesTimer.Timestamp;
+        ignoreTimestamp = 0f;
+        ref float ignoreTimescale = ref ignoreEnemiesTimer.Timescale;
+        ignoreTimescale = 1f;
+
+        var panicTimer = bot.PanicTimer;
+        ref float panicDuration = ref panicTimer.Duration;
+        panicDuration = 0f;
+        ref float panicTimestamp = ref panicTimer.Timestamp;
+        panicTimestamp = 0f;
+        ref float panicTimescale = ref panicTimer.Timescale;
+        panicTimescale = 1f;
+    }
+
     private static bool ReplayBotSeesEnemy(int slot, out string contactReason)
     {
         return ReplayBotSeesEnemy(slot, FindTeamPlayers(), out contactReason, out _);
@@ -390,5 +548,184 @@ public sealed partial class DemoTracerPlugin
         }
 
         return false;
+    }
+
+    private sealed class RayTraceLosProbe
+    {
+        private const string CapabilityName = "raytrace:craytraceinterface";
+        private const string ApiAssemblyName = "RayTraceApi";
+        private const string RayTraceInterfaceTypeName = "RayTraceAPI.CRayTraceInterface";
+        private const string TraceOptionsTypeName = "RayTraceAPI.TraceOptions";
+        private const string TraceResultTypeName = "RayTraceAPI.TraceResult";
+        private const string InteractionLayersTypeName = "RayTraceAPI.InteractionLayers";
+
+        private bool _initialized;
+        private object? _capability;
+        private object? _traceOptions;
+        private MethodInfo? _getMethod;
+        private MethodInfo? _traceEndShapeMethod;
+        private FieldInfo? _fractionField;
+        private string _status = "unresolved";
+        private DateTime _nextInitAttemptAt = DateTime.MinValue;
+
+        public string Status
+        {
+            get
+            {
+                EnsureInitialized();
+                return _status;
+            }
+        }
+
+        public string ProbeStatus
+        {
+            get
+            {
+                _ = TryGetRayTrace(out _);
+                return _status;
+            }
+        }
+
+        public bool TryIsWorldLineClear(Vector start, Vector end, out bool clear)
+        {
+            clear = false;
+            if (!TryGetRayTrace(out var rayTrace))
+                return false;
+
+            try
+            {
+                var args = new object?[] { start, end, null, _traceOptions, null };
+                var hit = _traceEndShapeMethod!.Invoke(rayTrace, args) is true;
+                if (!hit)
+                {
+                    clear = true;
+                    _status = "available";
+                    return true;
+                }
+
+                var result = args[4];
+                if (result == null)
+                {
+                    _status = "bad_result";
+                    return false;
+                }
+
+                var fraction = Convert.ToSingle(_fractionField!.GetValue(result), CultureInfo.InvariantCulture);
+                clear = fraction >= 0.999f;
+                _status = "available";
+                return true;
+            }
+            catch
+            {
+                _status = "invoke_error";
+                return false;
+            }
+        }
+
+        private bool TryGetRayTrace(out object rayTrace)
+        {
+            rayTrace = null!;
+            EnsureInitialized();
+            if (_capability == null || _getMethod == null)
+                return false;
+
+            try
+            {
+                var value = _getMethod.Invoke(_capability, null);
+                if (value == null)
+                {
+                    _status = "no_provider";
+                    return false;
+                }
+
+                rayTrace = value;
+                return true;
+            }
+            catch
+            {
+                _status = "get_error";
+                return false;
+            }
+        }
+
+        private void EnsureInitialized()
+        {
+            if (_initialized)
+                return;
+            if (DateTime.UtcNow < _nextInitAttemptAt)
+                return;
+            _initialized = true;
+
+            try
+            {
+                var interfaceType = ResolveRayTraceType(RayTraceInterfaceTypeName);
+                var optionsType = ResolveRayTraceType(TraceOptionsTypeName);
+                var resultType = ResolveRayTraceType(TraceResultTypeName);
+                var layersType = ResolveRayTraceType(InteractionLayersTypeName);
+                if (interfaceType == null || optionsType == null || resultType == null || layersType == null)
+                {
+                    _status = "api_missing";
+                    RetryInitializeLater();
+                    return;
+                }
+
+                var capabilityType = typeof(PluginCapability<>).MakeGenericType(interfaceType);
+                _capability = Activator.CreateInstance(capabilityType, CapabilityName);
+                _getMethod = capabilityType.GetMethod("Get", BindingFlags.Public | BindingFlags.Instance);
+                _traceEndShapeMethod = interfaceType
+                    .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                    .FirstOrDefault(method => method.Name == "TraceEndShape" && method.GetParameters().Length == 5);
+                _fractionField = resultType.GetField("Fraction", BindingFlags.Public | BindingFlags.Instance);
+                _traceOptions = Activator.CreateInstance(optionsType);
+                var interactsWith = optionsType.GetField("InteractsWith", BindingFlags.Public | BindingFlags.Instance);
+                if (_traceOptions != null && interactsWith != null)
+                {
+                    var worldOnly = Enum.Parse(layersType, "MASK_WORLD_ONLY");
+                    interactsWith.SetValue(_traceOptions, Convert.ToUInt64(worldOnly, CultureInfo.InvariantCulture));
+                }
+
+                if (_capability == null ||
+                    _getMethod == null ||
+                    _traceEndShapeMethod == null ||
+                    _fractionField == null ||
+                    _traceOptions == null)
+                {
+                    _status = "api_incomplete";
+                    return;
+                }
+
+                _status = "ready";
+            }
+            catch
+            {
+                _status = "init_error";
+                RetryInitializeLater();
+            }
+        }
+
+        private void RetryInitializeLater()
+        {
+            _initialized = false;
+            _nextInitAttemptAt = DateTime.UtcNow.AddSeconds(1.0);
+        }
+
+        private static Type? ResolveRayTraceType(string fullName)
+        {
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                var existing = assembly.GetType(fullName, throwOnError: false);
+                if (existing != null)
+                    return existing;
+            }
+
+            try
+            {
+                return Assembly.Load(new AssemblyName(ApiAssemblyName)).GetType(fullName, throwOnError: false);
+            }
+            catch
+            {
+                return Type.GetType($"{fullName}, {ApiAssemblyName}", throwOnError: false);
+            }
+        }
     }
 }

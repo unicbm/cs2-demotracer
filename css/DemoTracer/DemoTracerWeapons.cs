@@ -1,3 +1,4 @@
+
 namespace DemoTracer;
 
 public sealed partial class DemoTracerPlugin

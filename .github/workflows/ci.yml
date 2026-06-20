@@ -35,7 +35,7 @@ jobs:
         run: cargo test --locked
 
       - name: Build CSS plugin
-        run: dotnet build css\DemoTracer.csproj -c Release
+        run: dotnet build css\DemoTracer\DemoTracer.csproj -c Release
 
       - name: Check public-source hygiene
         shell: pwsh

@@ -278,7 +278,8 @@ cargo run --release -- wizard
 
 - `converter/`：Rust CLI、本地 Rust API、prompt-style 向导转换器和 Demo2Nade 导出代码。
 - `runtime/BotController/`：CS2 Metamod runtime。
-- `css/`：CounterStrikeSharp 控制插件。
+- `css/DemoTracer/`：CounterStrikeSharp 控制插件。
+- `css/DemoTracerApi/`：给其他 CounterStrikeSharp 插件引用的 API 契约。
 - `docs/`：格式和使用补充说明。
 - `examples/`：Python 和 Node.js 的 CLI 集成示例。
 - `third_party/`：保留的第三方源码和上游许可文件。

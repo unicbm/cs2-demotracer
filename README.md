@@ -434,7 +434,8 @@ Repository layout:
 
 - `converter/`: Rust CLI, local Rust API, prompt-style wizard converter, and Demo2Nade export code.
 - `runtime/BotController/`: CS2 Metamod runtime.
-- `css/`: CounterStrikeSharp control plugin.
+- `css/DemoTracer/`: CounterStrikeSharp control plugin.
+- `css/DemoTracerApi/`: API contract for companion CounterStrikeSharp plugins.
 - `docs/`: extra docs.
 - `examples/`: Python and Node.js CLI integration examples.
 - `third_party/`: vendored third-party source and upstream license files.
