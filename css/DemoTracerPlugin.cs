@@ -1597,6 +1597,12 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             var file = assignment.File;
             var bot = assignment.Bot;
             var slot = bot.Slot;
+            if (!IsReplaySlotStillSafe(slot))
+            {
+                error = $"{file.Side}:slot{slot}:{file.PlayerName} target is no longer a safe bot";
+                return false;
+            }
+
             var recPath = Path.IsPathRooted(file.Path)
                 ? file.Path
                 : Path.GetFullPath(Path.Combine(manifestDir, file.Path.Replace('/', Path.DirectorySeparatorChar)));
