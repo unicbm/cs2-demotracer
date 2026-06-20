@@ -1,4 +1,4 @@
-use crate::demo_id::demo_id;
+use crate::demo_id::output_demo_id;
 use crate::model::{
     public_demo_path, ConversionManifest, ConvertedFile, ConvertedRound, EconomyClass, ParsedDemo,
     ParsedPlayerTick, ParsedProjectile, ReplayLoadout, Side, SubtickMode, TeamEconomy,
@@ -95,10 +95,11 @@ pub fn export_demo_to_memory(
 ) -> Result<MemoryConversionReport> {
     validate_freeze_preroll_seconds(options.freeze_preroll_seconds)?;
     let analysis = analyze_demo(parsed, options.analysis);
-    let output_stem = options
-        .output_stem
-        .clone()
-        .unwrap_or_else(|| demo_id(&parsed.stem, &parsed.demo_sha256));
+    let output_stem = output_demo_id(
+        &parsed.stem,
+        &parsed.demo_sha256,
+        options.output_stem.as_deref(),
+    )?;
 
     let mut manifest = ConversionManifest {
         demo_path: public_demo_path(&parsed.path),
@@ -842,6 +843,27 @@ mod tests {
         assert_eq!(disk_dtr, dtr.bytes);
         assert!(filesystem.manifest_path.exists());
         assert!(filesystem.root.join("conversion.log").exists());
+    }
+
+    #[test]
+    fn export_rejects_escaping_output_stem() {
+        let parsed = sample_demo();
+        let err = export_demo_to_memory(
+            &parsed,
+            &ConvertMemoryOptions {
+                output_stem: Some("../escape".to_string()),
+                side: Side::Both,
+                selected_rounds: Some(BTreeSet::from([1])),
+                include_suspicious: true,
+                cut_before_bomb_plant: true,
+                subtick_mode: SubtickMode::Auto,
+                freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
+                analysis: AnalysisOptions::default(),
+            },
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("output_stem"));
     }
 
     #[test]

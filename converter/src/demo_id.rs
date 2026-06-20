@@ -1,3 +1,4 @@
+use crate::{Error, Result};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fmt::Write;
@@ -19,6 +20,32 @@ pub fn demo_id(stem: &str, demo_sha256: &str) -> String {
         slugify_demo_stem(stem),
         short_demo_hash(demo_sha256)
     )
+}
+
+pub fn output_demo_id(stem: &str, demo_sha256: &str, output_stem: Option<&str>) -> Result<String> {
+    match output_stem {
+        Some(value) => validate_output_stem(value).map(str::to_string),
+        None => Ok(demo_id(stem, demo_sha256)),
+    }
+}
+
+fn validate_output_stem(value: &str) -> Result<&str> {
+    if value.is_empty() || value == "." || value == ".." {
+        return Err(invalid_output_stem(value));
+    }
+    if value
+        .chars()
+        .any(|ch| !(ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '.'))
+    {
+        return Err(invalid_output_stem(value));
+    }
+    Ok(value)
+}
+
+fn invalid_output_stem(value: &str) -> Error {
+    Error::InvalidDemo(format!(
+        "output_stem must be a portable path segment using only ASCII letters, digits, '-', '_' or '.', got {value:?}"
+    ))
 }
 
 pub fn unique_demo_id(base_id: &str, used_ids: &mut BTreeSet<String>) -> String {
@@ -89,6 +116,38 @@ mod tests {
         assert_eq!(
             unique_demo_id("demo-abcdef123456", &mut used),
             "demo-abcdef123456-2"
+        );
+    }
+
+    #[test]
+    fn output_demo_id_rejects_path_segments() {
+        let hash = sha256_hex(b"demo bytes");
+
+        for value in [
+            "",
+            ".",
+            "..",
+            "../escape",
+            r"..\escape",
+            "nested/demo",
+            "a b",
+        ] {
+            let err = output_demo_id("match", &hash, Some(value)).unwrap_err();
+            assert!(err.to_string().contains("output_stem"));
+        }
+    }
+
+    #[test]
+    fn output_demo_id_allows_portable_segments() {
+        let hash = sha256_hex(b"demo bytes");
+
+        assert_eq!(
+            output_demo_id("match", &hash, Some("match_01-demo.v2")).unwrap(),
+            "match_01-demo.v2"
+        );
+        assert_eq!(
+            output_demo_id("match", &hash, None).unwrap(),
+            demo_id("match", &hash)
         );
     }
 }

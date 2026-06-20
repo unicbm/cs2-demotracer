@@ -1,4 +1,4 @@
-use crate::demo_id::{demo_id, sha256_hex};
+use crate::demo_id::{output_demo_id, sha256_hex};
 use crate::export::{first_weapon_def_index, preload_weapon_def_indices_from_refs, replay_loadout};
 use crate::model::{
     public_demo_path, ParsedDemo, ParsedPlayerTick, ParsedProjectile, ProjectileEffectSource,
@@ -164,10 +164,11 @@ pub fn export_nade_clips(
     options: &NadeExportOptions,
 ) -> Result<NadeExportReport> {
     validate_options(options)?;
-    let output_stem = options
-        .output_stem
-        .clone()
-        .unwrap_or_else(|| demo_id(&parsed.stem, &parsed.demo_sha256));
+    let output_stem = output_demo_id(
+        &parsed.stem,
+        &parsed.demo_sha256,
+        options.output_stem.as_deref(),
+    )?;
     let root = options.output_dir.join(&output_stem);
     fs::create_dir_all(&root).map_err(|e| io_error(&root, e))?;
 
@@ -803,6 +804,18 @@ mod tests {
         assert!(report.manifest_path.exists());
         assert!(report.root.join("nade_manifest.json.br").exists());
         assert!(report.root.join("nade_conversion.log").exists());
+    }
+
+    #[test]
+    fn nade_export_rejects_escaping_output_stem() {
+        let parsed = sample_demo(vec![sample_projectile(164, [10.0, 20.0, 30.0])]);
+        let temp = tempfile::tempdir().unwrap();
+        let mut options = test_options(temp.path());
+        options.output_stem = Some("../escape".to_string());
+
+        let err = export_nade_clips(&parsed, &options).unwrap_err();
+
+        assert!(err.to_string().contains("output_stem"));
     }
 
     #[test]
