@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 pub fn validate_dtr_path(input: &Path) -> cs2_demotracer::Result<usize> {
     validate_public_artifacts(input)?;
     let mut count = 0_usize;
-    for path in collect_dtr_files(&input.to_path_buf())? {
+    for path in collect_dtr_files(input)? {
         let rec = read_rec_file(&path)?;
         if rec.ticks.is_empty() {
             return Err(cs2_demotracer::Error::InvalidRec(format!(
@@ -25,7 +25,7 @@ pub fn validate_dtr_path(input: &Path) -> cs2_demotracer::Result<usize> {
     Ok(count)
 }
 
-fn collect_dtr_files(root: &PathBuf) -> cs2_demotracer::Result<Vec<PathBuf>> {
+fn collect_dtr_files(root: &Path) -> cs2_demotracer::Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     collect_recursively(root, &mut out)?;
     Ok(out)
@@ -240,10 +240,10 @@ fn is_local_demo_path(value: &str) -> bool {
     value.contains('\\') || value.contains('/') || value.contains(':')
 }
 
-fn collect_recursively(path: &PathBuf, out: &mut Vec<PathBuf>) -> cs2_demotracer::Result<()> {
+fn collect_recursively(path: &Path, out: &mut Vec<PathBuf>) -> cs2_demotracer::Result<()> {
     if path.is_file() {
         if path.extension().and_then(|e| e.to_str()) == Some("dtr") {
-            out.push(path.clone());
+            out.push(path.to_path_buf());
         }
         return Ok(());
     }
