@@ -148,9 +148,9 @@ fn validate_manifest_artifact_paths(
     match value {
         serde_json::Value::Object(map) => {
             for (key, value) in map {
-                if is_manifest_artifact_path_key(key) {
+                if let Some(kind) = manifest_artifact_kind(key) {
                     if let Some(text) = value.as_str() {
-                        validate_manifest_artifact_path(pack_root, manifest_path, key, text)?;
+                        validate_manifest_artifact_path(pack_root, manifest_path, key, kind, text)?;
                     }
                 }
                 validate_manifest_artifact_paths(pack_root, manifest_path, value)?;
@@ -166,14 +166,25 @@ fn validate_manifest_artifact_paths(
     Ok(())
 }
 
-fn is_manifest_artifact_path_key(key: &str) -> bool {
-    key == "path" || key == "manifest"
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ManifestArtifactKind {
+    Dtr,
+    ManifestJson,
+}
+
+fn manifest_artifact_kind(key: &str) -> Option<ManifestArtifactKind> {
+    match key {
+        "path" => Some(ManifestArtifactKind::Dtr),
+        "manifest" => Some(ManifestArtifactKind::ManifestJson),
+        _ => None,
+    }
 }
 
 fn validate_manifest_artifact_path(
     pack_root: &Path,
     manifest_path: &Path,
     key: &str,
+    kind: ManifestArtifactKind,
     value: &str,
 ) -> cs2_demotracer::Result<()> {
     if value.trim().is_empty() {
@@ -201,6 +212,7 @@ fn validate_manifest_artifact_path(
             value
         )));
     }
+    validate_manifest_artifact_extension(manifest_path, key, kind, value, &full)?;
     if !full.exists() {
         return Err(cs2_demotracer::Error::InvalidDemo(format!(
             "{} contains missing {key} target {:?}",
@@ -209,6 +221,42 @@ fn validate_manifest_artifact_path(
         )));
     }
     Ok(())
+}
+
+fn validate_manifest_artifact_extension(
+    manifest_path: &Path,
+    key: &str,
+    kind: ManifestArtifactKind,
+    value: &str,
+    full: &Path,
+) -> cs2_demotracer::Result<()> {
+    match kind {
+        ManifestArtifactKind::Dtr => {
+            if !has_dtr_extension(full) {
+                return Err(cs2_demotracer::Error::InvalidDemo(format!(
+                    "{} contains {key} target with unsupported extension {:?}: expected .dtr",
+                    manifest_path.display(),
+                    value
+                )));
+            }
+        }
+        ManifestArtifactKind::ManifestJson => {
+            if !is_manifest_json(full) {
+                return Err(cs2_demotracer::Error::InvalidDemo(format!(
+                    "{} contains {key} target with unsupported extension {:?}: expected .json or .json.br",
+                    manifest_path.display(),
+                    value
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn has_dtr_extension(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("dtr"))
 }
 
 fn is_absolute_manifest_artifact_path(value: &str) -> bool {
@@ -380,6 +428,44 @@ mod tests {
         let err = validate_manifest_artifact_paths(pack, &manifest_path, &manifest).unwrap_err();
 
         assert!(err.to_string().contains("missing path target"));
+    }
+
+    #[test]
+    fn manifest_hygiene_rejects_path_artifacts_with_non_dtr_extensions() {
+        let temp = tempfile::tempdir().unwrap();
+        let pack = temp.path();
+        let target = pack.join("round01/t/not-a-replay.txt");
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::write(&target, b"not a replay").unwrap();
+        let manifest_path = pack.join("manifest.json");
+        let manifest = json!({
+            "files": [
+                { "path": "round01/t/not-a-replay.txt" }
+            ]
+        });
+
+        let err = validate_manifest_artifact_paths(pack, &manifest_path, &manifest).unwrap_err();
+
+        assert!(err.to_string().contains("expected .dtr"));
+    }
+
+    #[test]
+    fn manifest_hygiene_rejects_manifest_artifacts_with_non_json_extensions() {
+        let temp = tempfile::tempdir().unwrap();
+        let pack = temp.path();
+        let target = pack.join("maps/de_mirage/readme.txt");
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::write(&target, b"not a manifest").unwrap();
+        let manifest_path = pack.join("nade_library.json");
+        let manifest = json!({
+            "maps": [
+                { "manifest": "maps/de_mirage/readme.txt" }
+            ]
+        });
+
+        let err = validate_manifest_artifact_paths(pack, &manifest_path, &manifest).unwrap_err();
+
+        assert!(err.to_string().contains("expected .json or .json.br"));
     }
 
     #[test]
