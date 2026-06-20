@@ -230,10 +230,6 @@ dtr_go_at "<输出目录>\<demo-id>\manifest.json" 33 bomb
 .moment "<输出目录>\<demo-id>\manifest.json" 33 magixx
 ```
 
-当前 manifest 的 bomb moment 会 restart 到 2 秒 freeze 准备状态，使用 anchor snapshot
-恢复 alive/dead、HP、loadout、active weapon 和 planted C4 位置；真人玩家死亡后会重置回
-同一个准备状态。anchor 时已死亡的多余 bot 会在播放前 kick。
-
 plant 后锚点需要转换时加 `--full-round`；普通转换默认会在 C4 开始安放前截断，
 用于开局路线 replay。
 

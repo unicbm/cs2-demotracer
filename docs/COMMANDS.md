@@ -88,10 +88,9 @@ Use `.replay stop` to stop DemoTracer replay state.
 
 ### `dtr_moment <manifest.json> <source_round> <bomb|seconds|bomb+seconds> <player_name|steamid> [human_slot] [loop:0|1]`
 
-Starts an interactive challenge moment. DemoTracer restarts the server round
-with a 2s freeze time, places the selected human player as the chosen demo
-player, loads only the other players alive at the anchor onto replay bots, and
-starts those bots from the same anchor on `round_freeze_end`.
+Starts an interactive moment: the selected human player is placed at the chosen
+demo player's replay snapshot, while other players still alive at that anchor
+are loaded onto replay bots and started from the same point.
 
 When run by a player, `human_slot` is omitted. When run from the server console,
 pass the human slot after the demo player selector.
@@ -106,15 +105,9 @@ Chat shortcut:
 .moment "<output-dir>\<demo-id>\manifest.json" 33 magixx
 ```
 
-With manifests exported by current converters, bomb anchors include an anchor
-snapshot. Moment playback uses that snapshot for alive/dead filtering, HP,
-loadout, armor/helmet/kit, active weapon def, and planted-C4 placement. Extra
-bot targets that are dead at the anchor are kicked during freeze time. Moment
-mode suppresses normal contact/death handoff so replay bots keep following the
-historical line until they die, finish, or become unsafe. If the human moment
-player dies, DemoTracer resets the same moment back to the 2s freeze setup.
-Older manifests without anchor snapshots fall back to replay position/view/
-velocity and round-start loadout.
+Moment v1 uses replay position/view/velocity, round loadout, armor/helmet/kit,
+and active weapon def. Exact anchor HP, used utility, ammo, and planted C4 state
+are not yet full game-state snapshots.
 
 ## Sequence Playback
 

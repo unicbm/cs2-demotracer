@@ -131,7 +131,6 @@ public sealed partial class DemoTracerPlugin
             return;
         }
 
-        StopMomentChallenge("sequence_plan", restoreFreezeTime: true);
         StopAndUnloadLoaded();
         _sequenceManifestPath = manifestPath;
         _sequenceRounds = rounds;
@@ -182,7 +181,6 @@ public sealed partial class DemoTracerPlugin
         }
 
         var loop = command.ArgCount > argOffset + 2 && command.GetArg(argOffset + 2) != "0";
-        StopMomentChallenge("single_round_plan", restoreFreezeTime: true);
         StopAndUnloadLoaded();
         _sequenceActive = false;
         _sequencePrepared = false;
@@ -323,7 +321,6 @@ public sealed partial class DemoTracerPlugin
         if (!TryResolveReplayStartAnchor(anchor, reply, commandName, manifest, round, out var secondsAfterLive))
             return;
 
-        StopMomentChallenge("single_round_at_plan", restoreFreezeTime: true);
         StopAndUnloadLoaded();
         _sequenceActive = false;
         _sequencePrepared = false;
@@ -635,7 +632,6 @@ public sealed partial class DemoTracerPlugin
             return;
         }
 
-        StopMomentChallenge("pool_plan", restoreFreezeTime: true);
         StopAndUnloadLoaded();
         _sequenceActive = false;
         _sequencePrepared = false;

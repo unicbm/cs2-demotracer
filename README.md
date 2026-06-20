@@ -384,11 +384,6 @@ To play the same post-plant position yourself as one demo player:
 .moment "<output-dir>\<demo-id>\manifest.json" 33 magixx
 ```
 
-For current manifests, bomb moments restart into a 2s freeze setup, use anchor
-snapshots for alive/dead state, HP, loadout, active weapon, and planted-C4
-placement, then reset to the same setup when the human player dies. Extra
-dead-at-anchor bots are kicked before playback.
-
 Post-plant anchors require full-round conversion with `--full-round`; the normal
 converter output stops before the C4 plant for opening-route replay.
 

@@ -294,17 +294,8 @@ pub struct ParsedDemo {
     pub round_freeze_end_ticks: Vec<i32>,
     pub bomb_beginplant_ticks: Vec<i32>,
     pub bomb_planted_ticks: Vec<i32>,
-    pub bomb_plants: Vec<ParsedBombPlant>,
     pub rows: Vec<ParsedPlayerTick>,
     pub projectiles: Vec<ParsedProjectile>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-pub struct ParsedBombPlant {
-    pub tick: i32,
-    pub steam_id: Option<u64>,
-    pub site: Option<i32>,
-    pub position: Option<[f32; 3]>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -331,7 +322,6 @@ pub struct ParsedPlayerTick {
     pub name: String,
     pub team_num: u8,
     pub is_alive: bool,
-    pub health: u32,
     pub round: u32,
     pub round_in_progress: bool,
     pub is_freeze_period: bool,
@@ -543,57 +533,7 @@ pub struct ConvertedRound {
     pub cut_reason: Option<String>,
     pub t_economy: TeamEconomy,
     pub ct_economy: TeamEconomy,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub bomb_planted_snapshot: Option<RoundAnchorSnapshot>,
     pub files: usize,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct RoundAnchorSnapshot {
-    pub tick: i32,
-    pub seconds_after_live: f32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub bomb: Option<RoundBombSnapshot>,
-    pub players: Vec<RoundPlayerSnapshot>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct RoundBombSnapshot {
-    pub tick: i32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub planter_steam_id: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub site: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub position: Option<[f32; 3]>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct RoundPlayerSnapshot {
-    pub steam_id: u64,
-    pub player_name: String,
-    pub side: String,
-    pub team_num: u8,
-    pub tick: i32,
-    pub is_alive: bool,
-    pub health: u32,
-    pub active_weapon_def_index: i32,
-    pub loadout: ReplayLoadout,
-    pub origin: [f32; 3],
-    pub velocity: [f32; 3],
-    pub pitch: f32,
-    pub yaw: f32,
-    pub entity_flags: u32,
-    pub move_type: u8,
-    pub buttons: u64,
-    pub buttons1: u64,
-    pub buttons2: u64,
-    pub duck_amount: Option<f32>,
-    pub duck_speed: Option<f32>,
-    pub ladder_normal: Option<[f32; 3]>,
-    pub ducked: Option<bool>,
-    pub ducking: Option<bool>,
-    pub desires_duck: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

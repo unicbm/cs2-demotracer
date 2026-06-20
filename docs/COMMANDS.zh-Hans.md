@@ -81,9 +81,8 @@ round hint，用于经济/手枪局匹配，不是 manifest source round。
 
 ### `dtr_moment <manifest.json> <source_round> <bomb|seconds|bomb+seconds> <player_name|steamid> [human_slot] [loop:0|1]`
 
-启动一个可交互挑战 moment：DemoTracer 会 restart 当前服务器回合，设置 2 秒 freeze
-time，把指定真人玩家作为目标 demo 选手放到 anchor snapshot；其他在该 anchor 仍存活的
-选手会加载到 replay bot，并在 `round_freeze_end` 从同一个点开始。
+启动一个可交互 moment：把指定真人玩家放到某个 demo 选手在 anchor tick 的 replay
+snapshot；其他在该 anchor 仍可播放的选手会加载到 replay bot，并从同一个点开始。
 
 如果命令由玩家自己执行，不需要 `human_slot`。如果从服务器控制台执行，需要在 demo
 选手 selector 后面传入真人 slot。
@@ -98,13 +97,9 @@ dtr_moment "<输出目录>\<demo-id>\manifest.json" 33 bomb magixx
 .moment "<输出目录>\<demo-id>\manifest.json" 33 magixx
 ```
 
-使用当前 converter 导出的 manifest 时，bomb anchor 会带 anchor snapshot。Moment
-会用这个 snapshot 处理 alive/dead 过滤、HP、loadout、护甲/头盔/kit、active weapon
-def，以及 planted C4 的放置；anchor 时已死亡的多余 bot 会在 freeze time 中 kick。
-Moment 模式会压制普通 replay 的 contact/death handoff，让 replay bot 继续沿历史轨道
-行动，直到死亡、回放结束或 slot 变得不安全。真人 moment 玩家死亡后，DemoTracer 会把
-同一个 moment 重置回 2 秒 freeze 准备状态。旧 manifest 没有 anchor snapshot 时，会回退
-到 replay 位置/视角/速度和回合起始 loadout。
+Moment v1 会使用 replay 位置/视角/速度、回合 loadout、护甲/头盔/kit 和 active
+weapon def。anchor 时刻的真实 HP、已消耗道具、弹药和已安装 C4 实体状态还不是完整
+game-state snapshot。
 
 ## 顺序播放
 

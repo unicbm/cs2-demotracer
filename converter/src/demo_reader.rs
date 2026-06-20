@@ -7,8 +7,7 @@ mod demoparser_impl {
     use super::*;
     use crate::io_error;
     use crate::model::{
-        ParsedBombPlant, ParsedPlayerTick, ParsedProjectile, ProjectileEffectSource,
-        ProjectileKind, SubtickMove,
+        ParsedPlayerTick, ParsedProjectile, ProjectileEffectSource, ProjectileKind, SubtickMove,
     };
     use ahash::AHashMap;
     use parser::first_pass::parser_settings::{rm_user_friendly_names, ParserInputs};
@@ -53,7 +52,6 @@ mod demoparser_impl {
             "cash_spent_this_round",
             "team_num",
             "is_alive",
-            "health",
             "is_airborne",
             "move_type",
             "CCSPlayerPawn.m_fFlags",
@@ -158,7 +156,6 @@ mod demoparser_impl {
                 name: get_string(&columns, "name", idx).unwrap_or_default(),
                 team_num,
                 is_alive: get_bool(&columns, "is_alive", idx).unwrap_or(false),
-                health: get_u32(&columns, "health", idx).unwrap_or_default(),
                 round,
                 round_in_progress: get_bool(&columns, "round_in_progress", idx).unwrap_or(false),
                 is_freeze_period: get_bool(&columns, "is_freeze_period", idx).unwrap_or(false),
@@ -233,13 +230,10 @@ mod demoparser_impl {
         round_freeze_end_ticks.dedup();
         let mut bomb_beginplant_ticks = event_ticks(&output.game_events, "bomb_beginplant");
         let mut bomb_planted_ticks = event_ticks(&output.game_events, "bomb_planted");
-        let mut bomb_plants = bomb_plant_events(&output.game_events);
         bomb_beginplant_ticks.sort_unstable();
         bomb_beginplant_ticks.dedup();
         bomb_planted_ticks.sort_unstable();
         bomb_planted_ticks.dedup();
-        bomb_plants.sort_by_key(|plant| plant.tick);
-        bomb_plants.dedup_by_key(|plant| plant.tick);
         let projectiles = parse_projectiles(bytes, tick_rate, &output.game_events)?;
 
         Ok(ParsedDemo {
@@ -251,7 +245,6 @@ mod demoparser_impl {
             round_freeze_end_ticks,
             bomb_beginplant_ticks,
             bomb_planted_ticks,
-            bomb_plants,
             rows,
             projectiles,
         })
@@ -668,20 +661,6 @@ mod demoparser_impl {
             .iter()
             .filter(|event| event.name == name)
             .map(|event| event.tick)
-            .collect()
-    }
-
-    fn bomb_plant_events(events: &[parser::second_pass::game_events::GameEvent]) -> Vec<ParsedBombPlant> {
-        events
-            .iter()
-            .filter(|event| event.name == "bomb_planted")
-            .map(|event| ParsedBombPlant {
-                tick: event.tick,
-                steam_id: event_steam_id(event),
-                site: event_field_i32(event, "site")
-                    .or_else(|| event_field_i32(event, "site_index")),
-                position: event_vec3(event),
-            })
             .collect()
     }
 

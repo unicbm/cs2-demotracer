@@ -1,8 +1,8 @@
 use crate::demo_id::output_demo_id;
 use crate::model::{
     public_demo_path, ConversionManifest, ConvertedFile, ConvertedRound, EconomyClass, ParsedDemo,
-    ParsedPlayerTick, ParsedProjectile, ReplayLoadout, RoundAnchorSnapshot, RoundBombSnapshot,
-    RoundPlayerSnapshot, Side, SubtickMode, TeamEconomy, DEMOTRACER_ABI, DTR_FORMAT_VERSION,
+    ParsedPlayerTick, ParsedProjectile, ReplayLoadout, Side, SubtickMode, TeamEconomy,
+    DEMOTRACER_ABI, DTR_FORMAT_VERSION,
 };
 use crate::quality::{analyze_demo, AnalysisOptions};
 use crate::rec_writer::write_rec;
@@ -259,9 +259,6 @@ pub fn export_demo_to_memory(
             } else {
                 0.0
             };
-            let bomb_planted_snapshot = bomb_planted_tick.map(|tick| {
-                round_anchor_snapshot(parsed, round_rows, tick, round.start_tick)
-            });
             manifest.rounds.push(ConvertedRound {
                 round: round.round,
                 recording_start_tick,
@@ -276,7 +273,6 @@ pub fn export_demo_to_memory(
                 cut_reason,
                 t_economy,
                 ct_economy,
-                bomb_planted_snapshot,
                 files,
             });
         }
@@ -503,138 +499,6 @@ fn team_economy(
         cash_spent_this_round,
         class,
     }
-}
-
-fn round_anchor_snapshot(
-    parsed: &ParsedDemo,
-    round_rows: &[&ParsedPlayerTick],
-    anchor_tick: i32,
-    live_start_tick: i32,
-) -> RoundAnchorSnapshot {
-    let mut by_player: BTreeMap<u64, Vec<&ParsedPlayerTick>> = BTreeMap::new();
-    for &row in round_rows {
-        if row.steam_id == 0 || !matches!(row.team_num, 2 | 3) {
-            continue;
-        }
-        by_player.entry(row.steam_id).or_default().push(row);
-    }
-
-    let mut players = Vec::new();
-    for (steam_id, mut rows) in by_player {
-        rows.sort_by_key(|row| row.tick);
-        if let Some(row) = anchor_row_for_player(&rows, anchor_tick) {
-            let movement = row.snapshot();
-            players.push(RoundPlayerSnapshot {
-                steam_id,
-                player_name: if row.name.is_empty() {
-                    steam_id.to_string()
-                } else {
-                    row.name.clone()
-                },
-                side: Side::team_dir(row.team_num).to_string(),
-                team_num: row.team_num,
-                tick: row.tick,
-                is_alive: row.is_alive,
-                health: if row.is_alive { row.health } else { 0 },
-                active_weapon_def_index: normalize_weapon_def_index(row.item_def_idx),
-                loadout: replay_loadout(row),
-                origin: row.origin,
-                velocity: row.velocity,
-                pitch: row.pitch,
-                yaw: row.yaw,
-                entity_flags: movement.entity_flags,
-                move_type: movement.move_type,
-                buttons: movement.buttons,
-                buttons1: movement.buttons1,
-                buttons2: movement.buttons2,
-                duck_amount: row.duck_amount,
-                duck_speed: row.duck_speed,
-                ladder_normal: row.ladder_normal,
-                ducked: row.ducked,
-                ducking: row.ducking,
-                desires_duck: row.desires_duck,
-            });
-        }
-    }
-
-    let seconds_after_live = if parsed.tick_rate > 0.0 {
-        ticks_to_seconds(anchor_tick - live_start_tick, parsed.tick_rate)
-    } else {
-        0.0
-    };
-    RoundAnchorSnapshot {
-        tick: anchor_tick,
-        seconds_after_live,
-        bomb: Some(round_bomb_snapshot(parsed, round_rows, anchor_tick)),
-        players,
-    }
-}
-
-fn anchor_row_for_player<'a>(
-    rows: &'a [&'a ParsedPlayerTick],
-    anchor_tick: i32,
-) -> Option<&'a ParsedPlayerTick> {
-    rows.iter()
-        .rev()
-        .copied()
-        .find(|row| row.tick <= anchor_tick)
-        .or_else(|| rows.first().copied())
-}
-
-fn round_bomb_snapshot(
-    parsed: &ParsedDemo,
-    round_rows: &[&ParsedPlayerTick],
-    anchor_tick: i32,
-) -> RoundBombSnapshot {
-    let event = parsed
-        .bomb_plants
-        .iter()
-        .find(|plant| plant.tick == anchor_tick);
-    let planter_steam_id = event.and_then(|plant| plant.steam_id);
-    let position = event
-        .and_then(|plant| plant.position)
-        .or_else(|| planter_steam_id.and_then(|steam_id| player_origin_at(round_rows, steam_id, anchor_tick)))
-        .or_else(|| c4_carrier_origin_before_anchor(round_rows, anchor_tick));
-
-    RoundBombSnapshot {
-        tick: anchor_tick,
-        planter_steam_id,
-        site: event.and_then(|plant| plant.site),
-        position,
-    }
-}
-
-fn player_origin_at(
-    round_rows: &[&ParsedPlayerTick],
-    steam_id: u64,
-    anchor_tick: i32,
-) -> Option<[f32; 3]> {
-    let mut rows = round_rows
-        .iter()
-        .copied()
-        .filter(|row| row.steam_id == steam_id)
-        .collect::<Vec<_>>();
-    rows.sort_by_key(|row| row.tick);
-    anchor_row_for_player(&rows, anchor_tick).map(|row| row.origin)
-}
-
-fn c4_carrier_origin_before_anchor(
-    round_rows: &[&ParsedPlayerTick],
-    anchor_tick: i32,
-) -> Option<[f32; 3]> {
-    round_rows
-        .iter()
-        .copied()
-        .filter(|row| row.tick <= anchor_tick && row.team_num == 2)
-        .filter(|row| {
-            normalize_weapon_def_index(row.item_def_idx) == 49
-                || row
-                    .inventory_as_ids
-                    .iter()
-                    .any(|def| normalize_weapon_def_index(*def) == 49)
-        })
-        .max_by_key(|row| row.tick)
-        .map(|row| row.origin)
 }
 
 fn classify_economy(players: usize, team_equipment_value: u32, pistol_round: bool) -> EconomyClass {
@@ -1132,7 +996,6 @@ mod tests {
             round_freeze_end_ticks: Vec::new(),
             bomb_beginplant_ticks: Vec::new(),
             bomb_planted_ticks: Vec::new(),
-            bomb_plants: Vec::new(),
             rows: vec![sample_row(100), sample_row(164)],
             projectiles: Vec::new(),
         }
@@ -1145,7 +1008,6 @@ mod tests {
             name: "alpha".to_string(),
             team_num: 2,
             is_alive: true,
-            health: 100,
             round: 1,
             round_in_progress: true,
             is_freeze_period: false,
