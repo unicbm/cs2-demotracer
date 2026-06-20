@@ -707,6 +707,12 @@ fn validate_dtr_path(input: &Path) -> cs2_demotracer::Result<usize> {
         }
         count += 1;
     }
+    if count == 0 {
+        return Err(cs2_demotracer::Error::InvalidDemo(format!(
+            "no .dtr files found under {}",
+            input.display()
+        )));
+    }
     Ok(count)
 }
 
@@ -981,6 +987,15 @@ mod tests {
         let err = validate_public_artifacts(temp.path()).unwrap_err();
 
         assert!(err.to_string().contains("debug trace/data dump"));
+    }
+
+    #[test]
+    fn validate_rejects_inputs_without_dtr_files() {
+        let temp = tempfile::tempdir().unwrap();
+
+        let err = validate_dtr_path(temp.path()).unwrap_err();
+
+        assert!(err.to_string().contains("no .dtr files"));
     }
 
     #[test]
