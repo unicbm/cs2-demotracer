@@ -8,7 +8,7 @@ namespace DemoTracer;
 
 public sealed partial class DemoTracerPlugin
 {
-    [ConsoleCommand("dtr_moment", "dtr_moment <manifest.json> <source_round> <bomb|seconds|bomb+seconds> <player_name|steamid> [human_slot] [loop:0|1]")]
+    [ConsoleCommand("dtr_moment", "experimental mid-round human replacement: dtr_moment <manifest.json> <source_round> <bomb|seconds|bomb+seconds> <player_name|steamid> [human_slot] [loop:0|1]")]
     public void MomentCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (!CheckAbi(command))
@@ -46,7 +46,7 @@ public sealed partial class DemoTracerPlugin
 
         if (tokens.Count == 1 || tokens[1].Equals("help", StringComparison.OrdinalIgnoreCase))
         {
-            Reply("usage: .moment \"<manifest.json>\" <source_round> <player_name|steamid> [bomb|seconds|bomb+seconds] [loop:0|1]");
+            Reply("experimental: .moment \"<manifest.json>\" <source_round> <player_name|steamid> [bomb|seconds|bomb+seconds] [loop:0|1]");
             Reply("usage: .moment stop");
             return;
         }
@@ -60,7 +60,7 @@ public sealed partial class DemoTracerPlugin
 
         if (tokens.Count < 4)
         {
-            Reply("usage: .moment \"<manifest.json>\" <source_round> <player_name|steamid> [bomb|seconds|bomb+seconds] [loop:0|1]");
+            Reply("experimental: .moment \"<manifest.json>\" <source_round> <player_name|steamid> [bomb|seconds|bomb+seconds] [loop:0|1]");
             return;
         }
 
@@ -109,6 +109,7 @@ public sealed partial class DemoTracerPlugin
         }
         if (!TryResolveReplayStartAnchor(anchor, reply, "dtr_moment", manifest, round, out var secondsAfterLive))
             return;
+        reply("[DTR WARN] Moment starts from a mid-round snapshot and is experimental. Round-start replay is the supported path; physics, animation, and C4 state may diverge.");
 
         var manifestDir = Path.GetDirectoryName(Path.GetFullPath(manifestPath)) ?? ".";
         var roundFiles = manifest.Files

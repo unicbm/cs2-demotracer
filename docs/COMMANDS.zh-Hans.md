@@ -50,12 +50,15 @@ armed plan，再执行 `mp_restartgame 1`，确保接住新的 `round_start`。
 
 ### `dtr_go_at <manifest.json> <source_round> <seconds_after_live|bomb|bomb+seconds> [loop:0|1]`
 
-校验并 armed 单个 demo source round，从指定 live-round 时间点开始播放，然后执行
-`mp_restartgame 1`。
+实验/诊断命令。它会校验并 armed 单个 demo source round，从指定 live-round 时间点
+开始播放，然后执行 `mp_restartgame 1`。
 
 `bomb` 表示使用 `manifest.json` 里记录的 C4 安装完成事件；`bomb+2.5` 表示从安装
 完成后 2.5 秒开始。纯数字表示 live round 开始后的秒数。plant 后回放需要 `.dtr`
 本身包含 plant 后 tick，所以转换时要加 `--full-round`。
+
+当前支持边界是从回合开始播放。中途 tick 起点可能缺少前半回合模拟出来的物理、动画
+和已安装 C4 状态。
 
 `dtr_arm_at` 参数相同，但不主动 restart，只等待下一个自然 `round_start`。
 
@@ -66,14 +69,17 @@ round hint，用于经济/手枪局匹配，不是 manifest source round。
 
 ## 聊天快捷入口
 
-### `.replay "<manifest.json>" <source_round> [bomb|seconds|bomb+seconds] [loop:0|1]`
+### `.replay "<manifest.json>" <source_round> [loop:0|1]`
 
-玩家可以直接在聊天框输入，方便本地快速测试。它等价于 `dtr_go_at`，会自动
-`mp_restartgame 1`。start anchor 默认是 `bomb`，所以最短形式是：
+玩家可以直接在聊天框输入，方便本地快速测试。不传 anchor 时，它会从回合开始播放并
+自动 `mp_restartgame 1`：
 
 ```text
 .replay "<输出目录>\<demo-id>\manifest.json" 33
 ```
+
+如果要做实验性的中途起点诊断，可以显式传 anchor：
+`.replay "<manifest.json>" <source_round> <seconds_after_live|bomb|bomb+seconds>`。
 
 用 `.replay stop` 停止 DemoTracer replay 状态。
 
@@ -81,8 +87,9 @@ round hint，用于经济/手枪局匹配，不是 manifest source round。
 
 ### `dtr_moment <manifest.json> <source_round> <bomb|seconds|bomb+seconds> <player_name|steamid> [human_slot] [loop:0|1]`
 
-启动一个可交互 moment：把指定真人玩家放到某个 demo 选手在 anchor tick 的 replay
+实验性的可交互 moment：把指定真人玩家放到某个 demo 选手在 anchor tick 的 replay
 snapshot；其他在该 anchor 仍可播放的选手会加载到 replay bot，并从同一个点开始。
+和其他中途 tick 起点一样，它目前不是保真回放的支持路径。
 
 如果命令由玩家自己执行，不需要 `human_slot`。如果从服务器控制台执行，需要在 demo
 选手 selector 后面传入真人 slot。
@@ -98,8 +105,8 @@ dtr_moment "<输出目录>\<demo-id>\manifest.json" 33 bomb magixx
 ```
 
 Moment v1 会使用 replay 位置/视角/速度、回合 loadout、护甲/头盔/kit 和 active
-weapon def。anchor 时刻的真实 HP、已消耗道具、弹药和已安装 C4 实体状态还不是完整
-game-state snapshot。
+weapon def。anchor 时刻的真实 HP、已消耗道具、弹药、物理连续性和已安装 C4 实体状态
+还不是完整 game-state snapshot。
 
 ## 顺序播放
 

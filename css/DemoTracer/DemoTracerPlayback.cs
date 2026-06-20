@@ -26,11 +26,11 @@ public sealed partial class DemoTracerPlugin
     public void RoundRestartCommand(CCSPlayerController? player, CommandInfo command)
         => ArmSingleRound(command, "dtr_round_restart", restart: true);
 
-    [ConsoleCommand("dtr_go_at", "dtr_go_at <manifest.json> <source_round> <seconds_after_live|bomb|bomb+seconds> [loop:0|1]")]
+    [ConsoleCommand("dtr_go_at", "experimental mid-round start: dtr_go_at <manifest.json> <source_round> <seconds_after_live|bomb|bomb+seconds> [loop:0|1]")]
     public void GoAtCommand(CCSPlayerController? player, CommandInfo command)
         => ArmSingleRoundAt(command, "dtr_go_at", restart: true);
 
-    [ConsoleCommand("dtr_arm_at", "dtr_arm_at <manifest.json> <source_round> <seconds_after_live|bomb|bomb+seconds> [loop:0|1]")]
+    [ConsoleCommand("dtr_arm_at", "experimental mid-round start: dtr_arm_at <manifest.json> <source_round> <seconds_after_live|bomb|bomb+seconds> [loop:0|1]")]
     public void ArmAtCommand(CCSPlayerController? player, CommandInfo command)
         => ArmSingleRoundAt(command, "dtr_arm_at", restart: false);
 
@@ -161,26 +161,48 @@ public sealed partial class DemoTracerPlugin
         bool restart,
         int argOffset = 1)
     {
-        if (!CheckAbi(command))
-            return;
         if (!TryParseRoundArgs(command, commandName, out var manifestPath, out var round, argOffset))
             return;
 
+        var loop = command.ArgCount > argOffset + 2 && command.GetArg(argOffset + 2) != "0";
+        PlanSingleRound(
+            commandName,
+            manifestPath,
+            round,
+            loop,
+            restart,
+            message => command.ReplyToCommand(message));
+    }
+
+    private void PlanSingleRound(
+        string commandName,
+        string manifestPath,
+        int round,
+        bool loop,
+        bool restart,
+        Action<string> reply)
+    {
+        if (!BotControllerNative.IsCompatible)
+        {
+            reply($"dtr: ABI mismatch, runtime={BotControllerNative.AbiVersion}, expected={BotControllerNative.ExpectedAbiVersion}");
+            return;
+        }
         if (!TryReadManifest(manifestPath, out var manifest, out var readError))
         {
-            command.ReplyToCommand($"[DTR ERR] failed to read manifest: {readError}");
+            reply($"[DTR ERR] failed to read manifest: {readError}");
             return;
         }
-        if (!CheckManifestMap(command, manifest.Map, manifestPath))
+        if (!CurrentMapMatchesManifest(manifest.Map, out var currentMap))
+        {
+            reply($"[DTR ERR] map mismatch: server=\"{currentMap}\" manifest=\"{manifest.Map}\" path=\"{manifestPath}\"");
             return;
-
+        }
         if (!ManifestContainsSourceRound(manifest, round, out var validateError))
         {
-            command.ReplyToCommand(validateError);
+            reply(validateError);
             return;
         }
 
-        var loop = command.ArgCount > argOffset + 2 && command.GetArg(argOffset + 2) != "0";
         StopAndUnloadLoaded();
         _sequenceActive = false;
         _sequencePrepared = false;
@@ -194,12 +216,12 @@ public sealed partial class DemoTracerPlugin
         _armedSourceRound = round;
         _armedStartSecondsAfterLive = null;
         _armedLabel = $"source_round={round} manifest={manifestPath}";
-        command.ReplyToCommand(
+        reply(
             restart
                 ? $"[DTR OK] Planned SINGLE ROUND. manifest=\"{manifestPath}\"; source_round={round}; restart=now."
                 : $"[DTR OK] Armed SINGLE ROUND. manifest=\"{manifestPath}\"; source_round={round}; waiting for next round_start.");
-        command.ReplyToCommand("[DTR OK] This plan will not advance to later manifest rounds.");
-        IssueRestartIfRequested(command, restart);
+        reply("[DTR OK] This plan will not advance to later manifest rounds.");
+        IssueRestartIfRequested(restart, reply);
     }
 
     private void ArmSingleRoundAt(
@@ -339,7 +361,8 @@ public sealed partial class DemoTracerPlugin
             restart
                 ? $"[DTR OK] replay round={round} start=+{secondsAfterLive.ToString("0.###", CultureInfo.InvariantCulture)}s restart=now"
                 : $"[DTR OK] replay armed round={round} start=+{secondsAfterLive.ToString("0.###", CultureInfo.InvariantCulture)}s");
-        reply("[DTR OK] Use full-round converter output for post-plant anchors.");
+        reply("[DTR WARN] Mid-round starts are experimental diagnostics. Round-start replay is the supported path; physics, animation, and C4 state may diverge.");
+        reply("[DTR HINT] Use dtr_round_restart or .replay without an anchor for stable round-start replay.");
         IssueRestartIfRequested(restart, reply);
     }
 
@@ -370,7 +393,8 @@ public sealed partial class DemoTracerPlugin
 
         if (tokens.Count == 1 || tokens[1].Equals("help", StringComparison.OrdinalIgnoreCase))
         {
-            Reply("usage: .replay \"<manifest.json>\" <source_round> [bomb|seconds|bomb+seconds] [loop:0|1]");
+            Reply("usage: .replay \"<manifest.json>\" <source_round> [loop:0|1]");
+            Reply("experimental: .replay \"<manifest.json>\" <source_round> <seconds_after_live|bomb|bomb+seconds> [loop:0|1]");
             Reply("usage: .replay stop");
             return;
         }
@@ -384,7 +408,7 @@ public sealed partial class DemoTracerPlugin
 
         if (tokens.Count < 3)
         {
-            Reply("usage: .replay \"<manifest.json>\" <source_round> [bomb|seconds|bomb+seconds] [loop:0|1]");
+            Reply("usage: .replay \"<manifest.json>\" <source_round> [loop:0|1]");
             return;
         }
 
@@ -395,9 +419,16 @@ public sealed partial class DemoTracerPlugin
             return;
         }
 
-        var anchor = tokens.Count > 3 ? tokens[3] : "bomb";
-        var loop = tokens.Count > 4 && ParseLoopArgument(tokens[4]);
-        PlanSingleRoundAt(".replay", manifestPath, round, anchor, loop, restart: true, Reply);
+        if (tokens.Count > 3 && !IsLoopArgumentToken(tokens[3]))
+        {
+            var anchor = tokens[3];
+            var loop = tokens.Count > 4 && ParseLoopArgument(tokens[4]);
+            PlanSingleRoundAt(".replay", manifestPath, round, anchor, loop, restart: true, Reply);
+            return;
+        }
+
+        var roundStartLoop = tokens.Count > 3 && ParseLoopArgument(tokens[3]);
+        PlanSingleRound(".replay", manifestPath, round, roundStartLoop, restart: true, Reply);
     }
 
     private static void ReplyToReplayChat(CCSPlayerController? player, string message)
@@ -479,6 +510,9 @@ public sealed partial class DemoTracerPlugin
                !normalized.Equals("false", StringComparison.OrdinalIgnoreCase) &&
                !normalized.Equals("no", StringComparison.OrdinalIgnoreCase);
     }
+
+    private static bool IsLoopArgumentToken(string value)
+        => value.Trim().StartsWith("loop:", StringComparison.OrdinalIgnoreCase);
 
     private bool PrepareNextSequenceRound(string reason)
     {

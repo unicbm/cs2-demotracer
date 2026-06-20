@@ -212,26 +212,16 @@ dtr_go seq "<输出目录>\<demo-id>\manifest.json" 0
 dtr_go round "<输出目录>\<demo-id>\manifest.json" 12
 ```
 
-如果要重置本地 round，并从某个 source round 的 C4 安装完成后开始：
-
-```text
-dtr_go_at "<输出目录>\<demo-id>\manifest.json" 33 bomb
-```
-
-玩家也可以直接在聊天框用快捷入口：
+玩家也可以直接在聊天框用快捷入口，从回合开始播放：
 
 ```text
 .replay "<输出目录>\<demo-id>\manifest.json" 33
 ```
 
-如果想自己代入某个 demo 选手打这个 post-plant：
-
-```text
-.moment "<输出目录>\<demo-id>\manifest.json" 33 magixx
-```
-
-plant 后锚点需要转换时加 `--full-round`；普通转换默认会在 C4 开始安放前截断，
-用于开局路线 replay。
+回合开始 replay 是当前支持边界。`dtr_go_at ... bomb` 和 `.moment` 这类中途
+tick 起点只作为实验/诊断入口：它们可能缺少前半回合模拟出来的物理、动画和已安装
+C4 状态。plant 后诊断需要转换时加 `--full-round`；普通转换默认会在 C4 开始安放前
+截断，用于开局路线 replay。
 
 如果使用 Mirage 回合池：
 

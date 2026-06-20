@@ -366,26 +366,18 @@ To play only one source round:
 dtr_go round "<output-dir>\<demo-id>\manifest.json" 12
 ```
 
-To reset the local round and start one source round from the completed C4 plant:
-
-```text
-dtr_go_at "<output-dir>\<demo-id>\manifest.json" 33 bomb
-```
-
-Players can use the chat shortcut for the same flow:
+Players can use the chat shortcut for the same round-start flow:
 
 ```text
 .replay "<output-dir>\<demo-id>\manifest.json" 33
 ```
 
-To play the same post-plant position yourself as one demo player:
-
-```text
-.moment "<output-dir>\<demo-id>\manifest.json" 33 magixx
-```
-
-Post-plant anchors require full-round conversion with `--full-round`; the normal
-converter output stops before the C4 plant for opening-route replay.
+Round-start replay is the supported playback path. Mid-round starts such as
+`dtr_go_at ... bomb` and `.moment` are experimental diagnostics only: they can
+miss physics, animation, and planted-C4 state that normally exists only after
+the game simulates the earlier part of the round. Post-plant diagnostics require
+full-round conversion with `--full-round`; the normal converter output stops
+before the C4 plant for opening-route replay.
 
 For a Mirage pool:
 
