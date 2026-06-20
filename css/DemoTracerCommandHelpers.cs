@@ -33,6 +33,37 @@ public sealed partial class DemoTracerPlugin
         }
     }
 
+    private static bool CheckManifestMap(CommandInfo command, string manifestMap, string manifestPath)
+    {
+        if (CurrentMapMatchesManifest(manifestMap, out var currentMap))
+            return true;
+
+        command.ReplyToCommand(
+            $"[DTR ERR] map mismatch: server=\"{currentMap}\" manifest=\"{manifestMap}\" path=\"{manifestPath}\"");
+        return false;
+    }
+
+    private static bool CurrentMapMatchesManifest(string manifestMap, out string currentMap)
+    {
+        currentMap = CurrentMapName();
+        if (string.IsNullOrWhiteSpace(manifestMap) ||
+            string.IsNullOrWhiteSpace(currentMap) ||
+            currentMap.Equals("unknown", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return NormalizeMapName(currentMap).Equals(NormalizeMapName(manifestMap), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeMapName(string value)
+    {
+        var normalized = value.Trim().ToLowerInvariant();
+        return normalized.StartsWith("de_", StringComparison.Ordinal)
+            ? normalized[3..]
+            : normalized;
+    }
+
     private static string FormatRoundList(IReadOnlyList<int> rounds)
     {
         if (rounds.Count == 0)

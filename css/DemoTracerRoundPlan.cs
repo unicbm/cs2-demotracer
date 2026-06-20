@@ -96,6 +96,8 @@ public sealed partial class DemoTracerPlugin
             command.ReplyToCommand($"dtr: failed to read manifest: {readError}");
             return;
         }
+        if (!CheckManifestMap(command, manifest.Map, manifestPath))
+            return;
 
         var rounds = manifest.Files
             .Select(file => file.Round)
@@ -152,7 +154,15 @@ public sealed partial class DemoTracerPlugin
         if (!TryParseRoundArgs(command, commandName, out var manifestPath, out var round, argOffset))
             return;
 
-        if (!ManifestContainsSourceRound(manifestPath, round, out var validateError))
+        if (!TryReadManifest(manifestPath, out var manifest, out var readError))
+        {
+            command.ReplyToCommand($"[DTR ERR] failed to read manifest: {readError}");
+            return;
+        }
+        if (!CheckManifestMap(command, manifest.Map, manifestPath))
+            return;
+
+        if (!ManifestContainsSourceRound(manifest, round, out var validateError))
         {
             command.ReplyToCommand(validateError);
             return;

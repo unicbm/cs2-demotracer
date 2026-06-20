@@ -47,6 +47,8 @@ public sealed partial class DemoTracerPlugin
             command.ReplyToCommand($"dtr: failed to read pool manifest: {readError}");
             return;
         }
+        if (!CheckManifestMap(command, pool.Map, poolPath))
+            return;
 
         var startRound = 0;
         if (command.ArgCount > argOffset + 1 &&

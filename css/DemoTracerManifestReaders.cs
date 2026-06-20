@@ -79,6 +79,15 @@ public sealed partial class DemoTracerPlugin
             return false;
         }
 
+        return ManifestContainsSourceRound(manifest, sourceRound, out error);
+    }
+
+    private static bool ManifestContainsSourceRound(
+        ConversionManifest manifest,
+        int sourceRound,
+        out string error)
+    {
+        error = string.Empty;
         var rounds = manifest.Files
             .Select(file => file.Round)
             .Distinct()

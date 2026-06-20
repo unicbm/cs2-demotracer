@@ -1819,6 +1819,11 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         {
             if (!TryReadManifest(manifestPath, out var manifest, out var readError))
                 return LoadRoundResult.Fail($"dtr: failed to read manifest: {readError}");
+            if (!CurrentMapMatchesManifest(manifest.Map, out var currentMap))
+            {
+                return LoadRoundResult.Fail(
+                    $"dtr: map mismatch, server=\"{currentMap}\" manifest=\"{manifest.Map}\" path=\"{manifestPath}\"");
+            }
 
             var manifestDir = Path.GetDirectoryName(Path.GetFullPath(manifestPath)) ?? ".";
             var roundFiles = manifest.Files
