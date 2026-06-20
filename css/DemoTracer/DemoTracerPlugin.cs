@@ -819,9 +819,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 break;
 
             case "bomb_drop":
-                if (!ReplayEventBelongsToSlot(replayEvent.ActorSteamId, replay.SteamId))
-                    return;
-                DropReplayItemToWorld(slot, replayEvent, isBomb: true);
+                // C4 is a unique objective entity. Mid-replay DropActiveWeapon on C4 can
+                // leave CS2 in an invalid bomb state, so runtime C4 transfer stays record-only.
                 break;
 
             case "item_pickup":
@@ -832,10 +831,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 break;
 
             case "bomb_pickup":
-                if (!ReplayEventBelongsToSlot(replayEvent.TargetSteamId, replay.SteamId) &&
-                    !ReplayEventBelongsToSlot(replayEvent.ActorSteamId, replay.SteamId))
-                    return;
-                EnsureReplayEventItem(slot, replayEvent, isBomb: true);
+                // Initial C4 ownership is aligned before replay start. Do not clone or move C4
+                // during live replay ticks.
                 break;
         }
     }
