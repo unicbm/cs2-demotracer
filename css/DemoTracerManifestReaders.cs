@@ -300,7 +300,7 @@ public sealed partial class DemoTracerPlugin
                 manifestPath,
                 json,
                 "pool manifest");
-            ValidateRoundPoolManifest(manifest);
+            ValidateRoundPoolManifest(manifestPath, manifest);
             return true;
         }
         catch (FileNotFoundException)
@@ -348,7 +348,7 @@ public sealed partial class DemoTracerPlugin
             throw new InvalidDataException($"nade clip {clip.ClipId} path is required");
     }
 
-    private static void ValidateRoundPoolManifest(RoundPoolManifest manifest)
+    private static void ValidateRoundPoolManifest(string manifestPath, RoundPoolManifest manifest)
     {
         manifest.Candidates ??= new List<RoundPoolCandidate>();
         if (manifest.FormatVersion != RoundPoolManifestFormatVersion)
@@ -356,18 +356,33 @@ public sealed partial class DemoTracerPlugin
             throw new InvalidDataException(
                 $"pool manifest format_version {manifest.FormatVersion} unsupported; expected {RoundPoolManifestFormatVersion}");
         }
+        if (string.IsNullOrWhiteSpace(manifest.Map))
+            throw new InvalidDataException("pool manifest map is required");
 
         ValidateManifestAbi(manifest.Abi);
+        var poolDir = Path.GetDirectoryName(Path.GetFullPath(manifestPath)) ?? ".";
+        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (var i = 0; i < manifest.Candidates.Count; i++)
-            ValidateRoundPoolCandidate(manifest.Candidates[i], i);
+            ValidateRoundPoolCandidate(manifest.Candidates[i], i, poolDir, candidates);
     }
 
-    private static void ValidateRoundPoolCandidate(RoundPoolCandidate? candidate, int index)
+    private static void ValidateRoundPoolCandidate(
+        RoundPoolCandidate? candidate,
+        int index,
+        string poolDir,
+        HashSet<string> candidates)
     {
         if (candidate == null)
             throw new InvalidDataException($"pool candidate {index} is null");
         if (string.IsNullOrWhiteSpace(candidate.Manifest))
             throw new InvalidDataException($"pool candidate {index} manifest is required");
+        if (!candidate.Manifest.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"pool candidate {index} manifest must point to .json: {candidate.Manifest}");
+        if (!TryResolveChildPathUnderRoot(poolDir, candidate.Manifest, out _, out var pathError))
+            throw new InvalidDataException($"pool candidate {index} {pathError}");
+        var candidateKey = $"{candidate.Manifest}|{candidate.SourceRound}";
+        if (!candidates.Add(candidateKey))
+            throw new InvalidDataException($"duplicate pool candidate manifest/source_round: {candidate.Manifest} r{candidate.SourceRound}");
         if (candidate.SourceRound < 0)
             throw new InvalidDataException($"pool candidate {index} source_round must be non-negative");
         if (candidate.Files <= 0)
