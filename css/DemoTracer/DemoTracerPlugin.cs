@@ -813,9 +813,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         switch (kind)
         {
             case "item_drop":
-                if (!ReplayEventBelongsToSlot(replayEvent.ActorSteamId, replay.SteamId))
-                    return;
-                DropReplayItemToWorld(slot, replayEvent, isBomb: false);
+                // Live replay ticks must not mutate inventory/entities. Keep item events
+                // as metadata until replay-safe transfer machinery exists.
                 break;
 
             case "bomb_drop":
@@ -825,9 +824,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
             case "item_pickup":
             case "item_transfer":
-                if (!ReplayEventBelongsToSlot(replayEvent.TargetSteamId, replay.SteamId))
-                    return;
-                EnsureReplayEventItem(slot, replayEvent, isBomb: false);
+                // Record-only for stability; GiveNamedItem during replay ticks can race CS2
+                // weapon/projectile state and crash without a managed exception.
                 break;
 
             case "bomb_pickup":
