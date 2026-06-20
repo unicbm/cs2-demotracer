@@ -19,7 +19,7 @@ public sealed partial class DemoTracerPlugin
         try
         {
             manifest = ReadManifest(manifestPath);
-            ValidateConversionManifest(manifest);
+            ValidateConversionManifest(manifestPath, manifest);
             return true;
         }
         catch (FileNotFoundException)
@@ -39,7 +39,7 @@ public sealed partial class DemoTracerPlugin
         }
     }
 
-    private static void ValidateConversionManifest(ConversionManifest manifest)
+    private static void ValidateConversionManifest(string manifestPath, ConversionManifest manifest)
     {
         manifest.Files ??= new List<ManifestFile>();
         ValidateManifestAbi(manifest.Abi);
@@ -59,11 +59,16 @@ public sealed partial class DemoTracerPlugin
         }
 
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var manifestDir = Path.GetDirectoryName(Path.GetFullPath(manifestPath)) ?? ".";
         for (var i = 0; i < manifest.Files.Count; i++)
-            ValidateManifestFile(manifest.Files[i], i, paths);
+            ValidateManifestFile(manifest.Files[i], i, manifestDir, paths);
     }
 
-    private static void ValidateManifestFile(ManifestFile? file, int index, HashSet<string> paths)
+    private static void ValidateManifestFile(
+        ManifestFile? file,
+        int index,
+        string manifestDir,
+        HashSet<string> paths)
     {
         if (file == null)
             throw new InvalidDataException($"manifest file {index} is null");
@@ -71,7 +76,9 @@ public sealed partial class DemoTracerPlugin
             throw new InvalidDataException($"manifest file {index} path is required");
         if (!file.Path.EndsWith(".dtr", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException($"manifest file {index} path must point to .dtr: {file.Path}");
-        if (!paths.Add(file.Path))
+        if (!TryResolveChildPathUnderRoot(manifestDir, file.Path, out var fullPath, out var pathError))
+            throw new InvalidDataException($"manifest file {index} {pathError}");
+        if (!paths.Add(fullPath))
             throw new InvalidDataException($"duplicate manifest file path: {file.Path}");
         if (string.IsNullOrWhiteSpace(file.Side) ||
             !file.Side.Equals("t", StringComparison.OrdinalIgnoreCase) &&
