@@ -898,6 +898,13 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (currentCount >= targetCount)
             return;
 
+        if (isBomb)
+        {
+            Server.PrintToConsole(
+                $"dtr: hifi bomb pickup skipped slot={slot} tick={replayEvent.Tick}: refusing to clone C4");
+            return;
+        }
+
         var missing = targetCount - currentCount;
         for (var i = 0; i < missing; i++)
         {
