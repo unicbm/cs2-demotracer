@@ -204,6 +204,46 @@ internal static class BotControllerNative
         }
     }
 
+    public static bool TryReadReplayTickAt(
+        string path,
+        float secondsAfterLive,
+        out NativeReplayTick tick,
+        out ReplayFileMetadata metadata,
+        out uint startIndex,
+        out string error)
+    {
+        tick = default;
+        metadata = ReplayFileMetadata.Empty;
+        startIndex = 0;
+        error = string.Empty;
+        try
+        {
+            var replay = ReadReplayFile(path);
+            metadata = BuildReplayMetadata(replay);
+            if (replay.TickRate <= 0.0f)
+            {
+                error = "replay tickrate is invalid";
+                return false;
+            }
+
+            var offsetTicks = (uint)MathF.Round(secondsAfterLive * replay.TickRate);
+            startIndex = replay.PlayStartTickIndex + offsetTicks;
+            if (startIndex >= replay.Ticks.Length)
+            {
+                error = $"start tick {startIndex} is outside replay ticks={replay.Ticks.Length}";
+                return false;
+            }
+
+            tick = replay.Ticks[startIndex];
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+    }
+
     public static bool UnloadReplay(int slot)
     {
         if (!ValidSlot(slot))

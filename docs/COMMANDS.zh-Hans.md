@@ -77,6 +77,30 @@ round hint，用于经济/手枪局匹配，不是 manifest source round。
 
 用 `.replay stop` 停止 DemoTracer replay 状态。
 
+## Moment 回放
+
+### `dtr_moment <manifest.json> <source_round> <bomb|seconds|bomb+seconds> <player_name|steamid> [human_slot] [loop:0|1]`
+
+启动一个可交互 moment：把指定真人玩家放到某个 demo 选手在 anchor tick 的 replay
+snapshot；其他在该 anchor 仍可播放的选手会加载到 replay bot，并从同一个点开始。
+
+如果命令由玩家自己执行，不需要 `human_slot`。如果从服务器控制台执行，需要在 demo
+选手 selector 后面传入真人 slot。
+
+```text
+dtr_moment "<输出目录>\<demo-id>\manifest.json" 33 bomb magixx
+```
+
+聊天快捷入口：
+
+```text
+.moment "<输出目录>\<demo-id>\manifest.json" 33 magixx
+```
+
+Moment v1 会使用 replay 位置/视角/速度、回合 loadout、护甲/头盔/kit 和 active
+weapon def。anchor 时刻的真实 HP、已消耗道具、弹药和已安装 C4 实体状态还不是完整
+game-state snapshot。
+
 ## 顺序播放
 
 ### `dtr_arm seq <manifest.json> [from_source_round]`

@@ -224,6 +224,12 @@ dtr_go_at "<输出目录>\<demo-id>\manifest.json" 33 bomb
 .replay "<输出目录>\<demo-id>\manifest.json" 33
 ```
 
+如果想自己代入某个 demo 选手打这个 post-plant：
+
+```text
+.moment "<输出目录>\<demo-id>\manifest.json" 33 magixx
+```
+
 plant 后锚点需要转换时加 `--full-round`；普通转换默认会在 C4 开始安放前截断，
 用于开局路线 replay。
 

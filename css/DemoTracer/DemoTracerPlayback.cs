@@ -346,11 +346,22 @@ public sealed partial class DemoTracerPlugin
     private HookResult OnChatCommand(CCSPlayerController? player, CommandInfo command)
     {
         var tokens = ReplayChatTokens(command);
-        if (tokens.Count == 0 || !tokens[0].Equals(".replay", StringComparison.OrdinalIgnoreCase))
+        if (tokens.Count == 0)
             return HookResult.Continue;
 
-        RunReplayChatCommand(player, tokens);
-        return HookResult.Handled;
+        if (tokens[0].Equals(".replay", StringComparison.OrdinalIgnoreCase))
+        {
+            RunReplayChatCommand(player, tokens);
+            return HookResult.Handled;
+        }
+
+        if (tokens[0].Equals(".moment", StringComparison.OrdinalIgnoreCase))
+        {
+            RunMomentChatCommand(player, tokens);
+            return HookResult.Handled;
+        }
+
+        return HookResult.Continue;
     }
 
     private void RunReplayChatCommand(CCSPlayerController? player, IReadOnlyList<string> tokens)
@@ -409,7 +420,9 @@ public sealed partial class DemoTracerPlugin
         for (var i = 1; i < command.ArgCount; i++)
             args.Add(StripOuterQuotes(command.GetArg(i)));
 
-        if (args.Count > 1 && args[0].Equals(".replay", StringComparison.OrdinalIgnoreCase))
+        if (args.Count > 1 &&
+            (args[0].Equals(".replay", StringComparison.OrdinalIgnoreCase) ||
+             args[0].Equals(".moment", StringComparison.OrdinalIgnoreCase)))
             return args;
 
         return SplitChatCommandText(StripOuterQuotes(string.Join(" ", args)));

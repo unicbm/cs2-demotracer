@@ -84,6 +84,31 @@ short form is:
 
 Use `.replay stop` to stop DemoTracer replay state.
 
+## Moment Playback
+
+### `dtr_moment <manifest.json> <source_round> <bomb|seconds|bomb+seconds> <player_name|steamid> [human_slot] [loop:0|1]`
+
+Starts an interactive moment: the selected human player is placed at the chosen
+demo player's replay snapshot, while other players still alive at that anchor
+are loaded onto replay bots and started from the same point.
+
+When run by a player, `human_slot` is omitted. When run from the server console,
+pass the human slot after the demo player selector.
+
+```text
+dtr_moment "<output-dir>\<demo-id>\manifest.json" 33 bomb magixx
+```
+
+Chat shortcut:
+
+```text
+.moment "<output-dir>\<demo-id>\manifest.json" 33 magixx
+```
+
+Moment v1 uses replay position/view/velocity, round loadout, armor/helmet/kit,
+and active weapon def. Exact anchor HP, used utility, ammo, and planted C4 state
+are not yet full game-state snapshots.
+
 ## Sequence Playback
 
 ### `dtr_arm seq <manifest.json> [from_source_round]`

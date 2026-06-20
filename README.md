@@ -378,6 +378,12 @@ Players can use the chat shortcut for the same flow:
 .replay "<output-dir>\<demo-id>\manifest.json" 33
 ```
 
+To play the same post-plant position yourself as one demo player:
+
+```text
+.moment "<output-dir>\<demo-id>\manifest.json" 33 magixx
+```
+
 Post-plant anchors require full-round conversion with `--full-round`; the normal
 converter output stops before the C4 plant for opening-route replay.
 
