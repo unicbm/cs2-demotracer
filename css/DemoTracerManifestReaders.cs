@@ -256,7 +256,7 @@ public sealed partial class DemoTracerPlugin
         if (TryResolveRelativePathUnderRoot(manifestDir, manifestDir, childPath, out fullPath, out error))
             return true;
 
-        if (TryGetNadeLibraryRoot(manifestDir, out var libraryRoot) &&
+        if (TryGetNadeLibraryRoot(manifestPath, manifestDir, out var libraryRoot) &&
             TryResolveRelativePathUnderRoot(libraryRoot, manifestDir, childPath, out fullPath, out _))
         {
             error = string.Empty;
@@ -311,9 +311,12 @@ public sealed partial class DemoTracerPlugin
         return true;
     }
 
-    private static bool TryGetNadeLibraryRoot(string manifestDir, out string libraryRoot)
+    private static bool TryGetNadeLibraryRoot(string manifestPath, string manifestDir, out string libraryRoot)
     {
         libraryRoot = string.Empty;
+        if (!IsNadeManifestFileName(Path.GetFileName(manifestPath)))
+            return false;
+
         var mapDir = Path.GetFullPath(manifestDir);
         var mapsDir = Path.GetDirectoryName(mapDir);
         if (mapsDir == null ||
@@ -325,6 +328,10 @@ public sealed partial class DemoTracerPlugin
         libraryRoot = Path.GetDirectoryName(mapsDir) ?? string.Empty;
         return !string.IsNullOrWhiteSpace(libraryRoot);
     }
+
+    private static bool IsNadeManifestFileName(string? name)
+        => string.Equals(name, "nade_manifest.json", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(name, "nade_manifest.json.br", StringComparison.OrdinalIgnoreCase);
 
     private static bool TryReadPoolManifest(
         string manifestPath,
