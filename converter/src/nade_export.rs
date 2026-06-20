@@ -1,12 +1,12 @@
 use crate::demo_id::{demo_id, sha256_hex};
-use crate::export::{first_weapon_def_index, preload_weapon_def_indices, replay_loadout};
+use crate::export::{first_weapon_def_index, preload_weapon_def_indices_from_refs, replay_loadout};
 use crate::model::{
     public_demo_path, ParsedDemo, ParsedPlayerTick, ParsedProjectile, ProjectileEffectSource,
     ProjectileKind, ReplayLoadout, ReplayProjectile, Side, SubtickMode, DEMOTRACER_ABI,
     DTR_FORMAT_VERSION,
 };
 use crate::rec_writer::write_rec_file;
-use crate::synthesis::{synthesize_player_rec_with_options, SynthesisOptions, SynthesisStats};
+use crate::synthesis::{synthesize_player_rec_with_row_refs, SynthesisOptions, SynthesisStats};
 use crate::{io_error, Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -324,7 +324,6 @@ fn build_clip(
                 && row.tick <= clip_end_tick
                 && row.is_alive
         })
-        .cloned()
         .collect::<Vec<_>>();
     player_rows.sort_by_key(|row| row.tick);
     player_rows.dedup_by_key(|row| row.tick);
@@ -335,7 +334,7 @@ fn build_clip(
         )));
     }
 
-    let (mut rec, stats) = synthesize_player_rec_with_options(
+    let (mut rec, stats) = synthesize_player_rec_with_row_refs(
         &player_rows,
         &[],
         &parsed.map,
@@ -430,8 +429,8 @@ fn build_clip(
         projectile_effect_source: projectile.effect_source,
         projectile_effect_confidence: projectile.effect_confidence,
         first_weapon_def_index: first_weapon_def_index(&rec),
-        preload_weapon_def_indices: preload_weapon_def_indices(&player_rows, &rec),
-        loadout: replay_loadout(&player_rows[0]),
+        preload_weapon_def_indices: preload_weapon_def_indices_from_refs(&player_rows, &rec),
+        loadout: replay_loadout(player_rows[0]),
         timing,
         source_context: NadeSourceContext {
             source_tick_rate: parsed.tick_rate,
@@ -638,7 +637,7 @@ fn find_release_row<'a>(
         })
 }
 
-fn release_tick_index(rows: &[ParsedPlayerTick], throw_tick: i32) -> u32 {
+fn release_tick_index(rows: &[&ParsedPlayerTick], throw_tick: i32) -> u32 {
     let tick_count = rows.len().saturating_sub(1);
     if tick_count == 0 {
         return 0;

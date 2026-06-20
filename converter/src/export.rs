@@ -559,14 +559,7 @@ pub(crate) fn first_weapon_def_index(rec: &crate::model::Cs2Rec) -> i32 {
         .unwrap_or(-1)
 }
 
-pub(crate) fn preload_weapon_def_indices(
-    rows: &[ParsedPlayerTick],
-    rec: &crate::model::Cs2Rec,
-) -> Vec<i32> {
-    preload_weapon_def_indices_from_iter(rows.iter(), rec)
-}
-
-fn preload_weapon_def_indices_from_refs(
+pub(crate) fn preload_weapon_def_indices_from_refs(
     rows: &[&ParsedPlayerTick],
     rec: &crate::model::Cs2Rec,
 ) -> Vec<i32> {
@@ -761,7 +754,11 @@ mod tests {
             },
         ];
 
-        assert_eq!(preload_weapon_def_indices(&rows, &rec), vec![7, 43, 44, 61]);
+        let row_refs = rows.iter().collect::<Vec<_>>();
+        assert_eq!(
+            preload_weapon_def_indices_from_refs(&row_refs, &rec),
+            vec![7, 43, 44, 61]
+        );
     }
 
     #[test]
