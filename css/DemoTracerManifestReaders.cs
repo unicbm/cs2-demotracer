@@ -43,16 +43,41 @@ public sealed partial class DemoTracerPlugin
     {
         manifest.Files ??= new List<ManifestFile>();
         ValidateManifestAbi(manifest.Abi);
-        var formatVersion = manifest.EffectiveDtrFormatVersion;
-        if (formatVersion == 0)
-            return;
+        if (string.IsNullOrWhiteSpace(manifest.Map))
+            throw new InvalidDataException("manifest map is required");
 
-        var minVersion = (int)BotControllerNative.MinRecFormatVersion;
-        var maxVersion = (int)BotControllerNative.RecFormatVersion;
-        if (formatVersion < minVersion || formatVersion > maxVersion)
+        var formatVersion = manifest.EffectiveDtrFormatVersion;
+        if (formatVersion != 0)
         {
-            throw new InvalidDataException(
-                $"manifest format_version {formatVersion} unsupported; expected {minVersion}..{maxVersion}");
+            var minVersion = (int)BotControllerNative.MinRecFormatVersion;
+            var maxVersion = (int)BotControllerNative.RecFormatVersion;
+            if (formatVersion < minVersion || formatVersion > maxVersion)
+            {
+                throw new InvalidDataException(
+                    $"manifest format_version {formatVersion} unsupported; expected {minVersion}..{maxVersion}");
+            }
+        }
+
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < manifest.Files.Count; i++)
+            ValidateManifestFile(manifest.Files[i], i, paths);
+    }
+
+    private static void ValidateManifestFile(ManifestFile? file, int index, HashSet<string> paths)
+    {
+        if (file == null)
+            throw new InvalidDataException($"manifest file {index} is null");
+        if (string.IsNullOrWhiteSpace(file.Path))
+            throw new InvalidDataException($"manifest file {index} path is required");
+        if (!file.Path.EndsWith(".dtr", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"manifest file {index} path must point to .dtr: {file.Path}");
+        if (!paths.Add(file.Path))
+            throw new InvalidDataException($"duplicate manifest file path: {file.Path}");
+        if (string.IsNullOrWhiteSpace(file.Side) ||
+            !file.Side.Equals("t", StringComparison.OrdinalIgnoreCase) &&
+            !file.Side.Equals("ct", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException($"manifest file {index} side must be t or ct: {file.Side}");
         }
     }
 
