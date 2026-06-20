@@ -1136,6 +1136,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     {
         try
         {
+            ValidateNadeClipFields(manifestPath, clip, string.IsNullOrWhiteSpace(clip.ClipId) ? "<direct>" : clip.ClipId);
             if (!IsReplaySlotStillSafe(slot))
                 return LoadRoundResult.Fail($"dtr: refused to run nade on slot {slot}: not a safe bot target");
 

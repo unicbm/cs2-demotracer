@@ -396,18 +396,23 @@ public sealed partial class DemoTracerPlugin
             throw new InvalidDataException($"nade clip {index} clip_id is required");
         if (!clipIds.Add(clip.ClipId))
             throw new InvalidDataException($"duplicate nade clip_id: {clip.ClipId}");
+        ValidateNadeClipFields(manifestPath, clip, clip.ClipId);
+    }
+
+    private static void ValidateNadeClipFields(string manifestPath, NadeClip clip, string label)
+    {
         if (string.IsNullOrWhiteSpace(clip.Path))
-            throw new InvalidDataException($"nade clip {clip.ClipId} path is required");
+            throw new InvalidDataException($"nade clip {label} path is required");
         if (!clip.Path.EndsWith(".dtr", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException($"nade clip {clip.ClipId} path must point to .dtr: {clip.Path}");
+            throw new InvalidDataException($"nade clip {label} path must point to .dtr: {clip.Path}");
         if (!IsManifestValueOneOf(clip.Side, "t", "ct"))
-            throw new InvalidDataException($"nade clip {clip.ClipId} side must be t or ct: {clip.Side}");
+            throw new InvalidDataException($"nade clip {label} side must be t or ct: {clip.Side}");
         if (!IsManifestValueOneOf(clip.Phase, "opening", "combat", "retake"))
-            throw new InvalidDataException($"nade clip {clip.ClipId} phase is unsupported: {clip.Phase}");
+            throw new InvalidDataException($"nade clip {label} phase is unsupported: {clip.Phase}");
         if (!IsManifestValueOneOf(clip.Kind, "unknown", "smoke", "flash", "he", "molotov", "decoy"))
-            throw new InvalidDataException($"nade clip {clip.ClipId} kind is unsupported: {clip.Kind}");
+            throw new InvalidDataException($"nade clip {label} kind is unsupported: {clip.Kind}");
         if (!TryResolveNadeClipPath(manifestPath, clip.Path, out _, out var pathError))
-            throw new InvalidDataException($"nade clip {clip.ClipId} {pathError}");
+            throw new InvalidDataException($"nade clip {label} {pathError}");
     }
 
     private static bool IsManifestValueOneOf(string? value, params string[] allowed)
