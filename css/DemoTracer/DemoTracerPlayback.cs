@@ -121,6 +121,9 @@ public sealed partial class DemoTracerPlugin
             return;
         }
 
+        if (!CheckReplayStartGates(message => command.ReplyToCommand(message), stopCurrentForOverride: true))
+            return;
+
         StopAndUnloadLoaded();
         _sequenceManifestPath = manifestPath;
         _sequenceRounds = rounds;
@@ -191,6 +194,9 @@ public sealed partial class DemoTracerPlugin
             reply(validateError);
             return;
         }
+
+        if (!CheckReplayStartGates(reply, stopCurrentForOverride: true))
+            return;
 
         StopAndUnloadLoaded();
         _sequenceActive = false;
@@ -379,6 +385,9 @@ public sealed partial class DemoTracerPlugin
             command.ReplyToCommand("dtr: server_round must be a non-negative integer");
             return;
         }
+
+        if (!CheckReplayStartGates(message => command.ReplyToCommand(message), stopCurrentForOverride: true))
+            return;
 
         StopAndUnloadLoaded();
         _sequenceActive = false;
@@ -694,6 +703,8 @@ public sealed partial class DemoTracerPlugin
         if (mode == "loaded")
         {
             var loopLoaded = command.ArgCount >= 3 && command.GetArg(2) != "0";
+            if (!CheckReplayStartGates(message => command.ReplyToCommand(message), stopCurrentForOverride: false))
+                return;
             command.ReplyToCommand("[DTR WARN] dtr_play loaded is manual/debug playback; it bypasses round_start/round_freeze_end lifecycle alignment.");
             command.ReplyToCommand(PlayLoaded(loopLoaded));
             return;
@@ -712,6 +723,8 @@ public sealed partial class DemoTracerPlugin
             command.ReplyToCommand($"dtr: refused to play slot {slot}: not a safe bot target");
             return;
         }
+        if (!CheckReplayStartGates(message => command.ReplyToCommand(message), stopCurrentForOverride: false))
+            return;
 
         var ok = StartReplayForSlot(slot, loop);
         if (ok)

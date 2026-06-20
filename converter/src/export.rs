@@ -1164,7 +1164,7 @@ fn is_known_weapon_def_index(def: i32) -> bool {
 }
 
 fn is_replay_equipment_event_def(def: i32) -> bool {
-    is_known_weapon_def_index(def) && !matches!(def, 42 | 49)
+    matches!(normalize_weapon_def_index(def), 43 | 44 | 45 | 46 | 47 | 48)
 }
 
 fn is_preload_weapon_def_index(def: i32) -> bool {
@@ -1602,6 +1602,27 @@ mod tests {
         }];
 
         let rec = rec_for_steam(&export_memory(parsed), 76561198000000001);
+
+        assert!(rec.high_fidelity.events.iter().all(|event| {
+            !matches!(
+                event.kind,
+                ReplayHifiEventKind::ItemDrop
+                    | ReplayHifiEventKind::ItemPickup
+                    | ReplayHifiEventKind::ItemTransfer
+            )
+        }));
+    }
+
+    #[test]
+    fn primary_weapon_inventory_loss_is_not_item_drop() {
+        let steam_id = 76561198000000001;
+        let mut parsed = sample_demo();
+        parsed.rows = vec![
+            row_with_inventory(100, steam_id, "alpha", vec![7, 45]),
+            row_with_inventory(116, steam_id, "alpha", vec![45]),
+        ];
+
+        let rec = rec_for_steam(&export_memory(parsed), steam_id);
 
         assert!(rec.high_fidelity.events.iter().all(|event| {
             !matches!(

@@ -536,6 +536,13 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     [GameEventHandler]
     public HookResult OnRoundStart(EventRoundStart @event, GameEventInfo info)
     {
+        if ((_sequenceActive || _armed) && IsWarmupPeriod())
+        {
+            Server.PrintToConsole("[DTR ERR] 热身阶段无法进行回放");
+            StopAllState("warmup_block");
+            return HookResult.Continue;
+        }
+
         if (_sequenceActive)
         {
             if (PrepareNextSequenceRound("round_start"))
@@ -554,6 +561,13 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     public HookResult OnRoundFreezeEnd(EventRoundFreezeEnd @event, GameEventInfo info)
     {
         InvalidateFreezePreroll();
+
+        if ((_sequenceActive || _poolActive || _armed) && IsWarmupPeriod())
+        {
+            Server.PrintToConsole("[DTR ERR] 热身阶段无法进行回放");
+            StopAllState("warmup_block");
+            return HookResult.Continue;
+        }
 
         if (_sequenceActive)
         {
@@ -825,10 +839,15 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private static bool ReplayEventBelongsToSlot(ulong? eventSteamId, ulong replaySteamId)
         => !eventSteamId.HasValue || replaySteamId == 0 || eventSteamId.Value == replaySteamId;
 
+    private static bool ShouldExecuteReplayEquipmentEvent(int weaponDefIndex, bool isBomb)
+        => isBomb || IsUtilityWeaponDefIndex(weaponDefIndex);
+
     private void DropReplayItemToWorld(int slot, ReplayHifiEvent replayEvent, bool isBomb)
     {
         var weaponDefIndex = isBomb ? 49 : ReplayEventWeaponDefIndex(replayEvent);
-        if (weaponDefIndex < 0 || !TryGetWeaponClassByDefIndex(weaponDefIndex, out var className))
+        if (weaponDefIndex < 0 ||
+            !ShouldExecuteReplayEquipmentEvent(weaponDefIndex, isBomb) ||
+            !TryGetWeaponClassByDefIndex(weaponDefIndex, out var className))
             return;
 
         var player = Utilities.GetPlayerFromSlot(slot);
@@ -862,7 +881,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private void EnsureReplayEventItem(int slot, ReplayHifiEvent replayEvent, bool isBomb)
     {
         var weaponDefIndex = isBomb ? 49 : ReplayEventWeaponDefIndex(replayEvent);
-        if (weaponDefIndex < 0 || !TryGetWeaponClassByDefIndex(weaponDefIndex, out var className))
+        if (weaponDefIndex < 0 ||
+            !ShouldExecuteReplayEquipmentEvent(weaponDefIndex, isBomb) ||
+            !TryGetWeaponClassByDefIndex(weaponDefIndex, out var className))
             return;
 
         var targetCount = Math.Max(1, replayEvent.TargetCountAfter ?? 1);
@@ -1973,6 +1994,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         ReplayStartAnchor anchor,
         float? freezeTimeSeconds)
     {
+        if (IsWarmupPeriod())
+            return "[DTR ERR] 热身阶段无法进行回放";
+
         var ok = 0;
         foreach (var slot in _loadedSlots)
         {
@@ -2013,6 +2037,12 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         ReplayStartAnchor anchor,
         float? freezeTimeSeconds)
     {
+        if (IsWarmupPeriod())
+        {
+            Server.PrintToConsole("[DTR ERR] 热身阶段无法进行回放");
+            return false;
+        }
+
         var startIndex = 0u;
         if (_loadedReplays.TryGetValue(slot, out var replay))
         {
@@ -2173,6 +2203,23 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
         reason = "game rules freeze phase has no remaining time";
         return false;
+    }
+
+    private static bool IsWarmupPeriod()
+    {
+        try
+        {
+            var proxy = Utilities
+                .FindAllEntitiesByDesignerName<CCSGameRulesProxy>("cs_gamerules")
+                .FirstOrDefault(entity => entity is { IsValid: true });
+            return proxy is { IsValid: true } &&
+                   proxy.GameRules != null &&
+                   proxy.GameRules.WarmupPeriod;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool TryReadFreezeTimeConVar(out float seconds, out string reason)
@@ -2402,6 +2449,47 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 return true;
         }
         return false;
+    }
+
+    private bool HasAnyNativeActiveReplaySlot()
+    {
+        if (HasActiveReplaySlots())
+            return true;
+
+        foreach (var player in FindPlayerControllers())
+        {
+            if (BotControllerNative.GetReplayState(player.Slot).Playing)
+                return true;
+        }
+        return false;
+    }
+
+    private bool CheckReplayStartGates(Action<string> reply, bool stopCurrentForOverride)
+    {
+        if (IsWarmupPeriod())
+        {
+            reply("[DTR ERR] 热身阶段无法进行回放");
+            return false;
+        }
+
+        if (!stopCurrentForOverride || !HasAnyNativeActiveReplaySlot())
+            return true;
+
+        reply("[DTR WARN] 会STOP当前所有DTR并override");
+        var loadedSlots = _loadedSlots.ToHashSet();
+        StopAndUnloadLoaded();
+        StopSequenceState();
+        StopPoolState();
+        foreach (var player in FindPlayerControllers())
+        {
+            var slot = player.Slot;
+            if (loadedSlots.Contains(slot) || !BotControllerNative.GetReplayState(slot).Playing)
+                continue;
+            BotControllerNative.StopReplay(slot);
+            BotControllerNative.UnloadReplay(slot);
+            Server.PrintToConsole($"dtr: stopped native replay slot={slot} reason=override");
+        }
+        return true;
     }
 
     private bool IsQuietReplaySlot(int slot)

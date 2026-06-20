@@ -64,6 +64,8 @@ public sealed partial class DemoTracerPlugin
         var manifestPath = command.GetArg(1);
         var clipId = command.GetArg(2);
         var loop = command.ArgCount >= 5 && command.GetArg(4) != "0";
+        if (!CheckReplayStartGates(message => command.ReplyToCommand(message), stopCurrentForOverride: true))
+            return;
         var result = RunNadeClip(manifestPath, clipId, slot, loop);
         command.ReplyToCommand(result.Message);
     }
@@ -115,6 +117,8 @@ public sealed partial class DemoTracerPlugin
             return;
         }
 
+        if (!CheckReplayStartGates(message => command.ReplyToCommand(message), stopCurrentForOverride: true))
+            return;
         var result = StartNadeCycle(command.GetArg(1), slot, kindFilter, sideFilter, phaseFilter, gapSeconds);
         command.ReplyToCommand(result.Message);
     }
