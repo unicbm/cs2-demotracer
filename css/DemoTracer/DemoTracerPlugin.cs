@@ -1174,12 +1174,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     {
         if (!_projectileAlignEnabled)
             return;
-        if (kind == ReplayProjectileKind.Molotov)
-        {
-            if (_utilityTraceEnabled && _nadeCycle == null)
-                TraceUtilityMessage("projectile_align_skipped", $"projectile={projectile.Index} kind=molotov");
-            return;
-        }
 
         var pending = new PendingProjectileAlign(projectile.Index, projectile.Handle, kind, weaponDefIndex)
         {
