@@ -13,7 +13,7 @@ internal static partial class BotControllerNative
     public const int SubtickMoveByteSize = 28;
     public const int ReplaySlotStateByteSize = 24;
     public const int MaxSlots = 64;
-    public const int DemoTracerApiVersion = 1;
+    public const int DemoTracerApiVersion = 2;
 
     internal const int LockKindAll = 0;
     internal const int LockKindAim = 1;

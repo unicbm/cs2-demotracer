@@ -13,6 +13,7 @@
 # Native runtime builds
 /runtime/BotController/build/
 /runtime/BotController/out/
+/dist/
 *.dll
 *.pdb
 *.lib
