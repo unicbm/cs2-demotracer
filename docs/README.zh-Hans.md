@@ -37,6 +37,11 @@ bot 会回放从 CS2 demo 转换出的移动、视角、开火和武器状态；
 
 简单说：你给它一个 `.dem`，它会分析每个回合，导出压缩 `.dtr` 回放文件。进 CS2 本地服务器后，插件可以按回合让 bot 复刻 demo 里的走位、视角、跳跃、下蹲、开火和基础武器切换。
 
+转换器是原生 Rust CLI。正常转换不需要 Python、Node.js、Conda、virtualenv 或
+游戏服务器插件：下载打包好的 Windows x64 可执行文件，指向 demo，转换后直接
+validate 输出即可。批量转换走本机 CPU/磁盘吞吐；实际速度取决于 demo 长度、存储和
+导出范围。
+
 它也可以用 Demo2Nade 路径导出“单个道具投掷 clip”：围绕 demo 里的投掷 release tick，保留很短的移动/视角上下文，输出 `.dtr` 和 typed manifest，方便本地工具索引、查询和播放真实职业哥道具。
 
 这个项目还在 MVP 阶段，但已经可以做端到端测试。
@@ -57,7 +62,8 @@ bot 会回放从 CS2 demo 转换出的移动、视角、开火和武器状态；
 - 如果从源码构建转换器，需要 Rust。
 - 如果要在游戏里播放，需要本地 CS2 服务器、Metamod 和 CounterStrikeSharp。
 
-转换器本身是独立 CLI exe。只有把 `.dtr` 放进 CS2 本地服务器播放时，才需要插件。
+转换器本身是独立 Rust CLI exe。正常转换不需要 Python 或 Node.js；只有把 `.dtr`
+放进 CS2 本地服务器播放时，才需要插件。
 
 如果你只是想测试插件播放效果，可以从 Release assets 下载这个已经预先转换好的 Mirage 样例包：[`cs2-demotracer-sample-spirit-vs-falcons-m2-mirage-full.zip`](https://github.com/unicbm/cs2-demotracer/releases/download/v0.1.3/cs2-demotracer-sample-spirit-vs-falcons-m2-mirage-full.zip)。解压后直接用里面的 `manifest.json` 播放即可。
 
