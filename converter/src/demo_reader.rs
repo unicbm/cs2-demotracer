@@ -7,8 +7,8 @@ mod demoparser_impl {
     use super::*;
     use crate::io_error;
     use crate::model::{
-        ParsedGameEvent, ParsedPlayerTick, ParsedProjectile, ProjectileEffectSource,
-        ProjectileKind, SubtickMove,
+        ParsedGameEvent, ParsedPlayerTick, ParsedProjectile, ParsedWeaponSticker,
+        ProjectileEffectSource, ProjectileKind, SubtickMove,
     };
     use ahash::AHashMap;
     use parser::first_pass::parser_settings::{rm_user_friendly_names, ParserInputs};
@@ -48,6 +48,7 @@ mod demoparser_impl {
             "weapon_paint_seed",
             "weapon_float",
             "custom_name",
+            "weapon_stickers",
             "glove_item_idx",
             "glove_paint_id",
             "glove_paint_seed",
@@ -206,6 +207,8 @@ mod demoparser_impl {
                 active_weapon_paint_wear: get_f32(&columns, "weapon_float", idx),
                 active_weapon_custom_name: get_string(&columns, "custom_name", idx)
                     .and_then(normalize_custom_name),
+                active_weapon_stickers: get_weapon_stickers(&columns, "weapon_stickers", idx)
+                    .unwrap_or_default(),
                 glove_item_def_index: get_i32(&columns, "glove_item_idx", idx),
                 glove_paint_kit: get_u32(&columns, "glove_paint_id", idx),
                 glove_paint_seed: get_u32(&columns, "glove_paint_seed", idx),
@@ -896,6 +899,40 @@ mod demoparser_impl {
             VarVec::String(v) => v.get(idx).cloned().flatten(),
             _ => None,
         }
+    }
+
+    fn get_weapon_stickers(
+        columns: &AHashMap<String, &PropColumn>,
+        name: &str,
+        idx: usize,
+    ) -> Option<Vec<ParsedWeaponSticker>> {
+        let stickers = match columns.get(name)?.data.as_ref()? {
+            VarVec::Stickers(v) => v.get(idx)?,
+            _ => return None,
+        };
+        let parsed = stickers
+            .iter()
+            .filter_map(|sticker| {
+                let slot = u8::try_from(sticker.slot).ok()?;
+                if slot > 4
+                    || sticker.id == 0
+                    || !sticker.wear.is_finite()
+                    || !(0.0..=1.0).contains(&sticker.wear)
+                    || !sticker.x.is_finite()
+                    || !sticker.y.is_finite()
+                {
+                    return None;
+                }
+                Some(ParsedWeaponSticker {
+                    slot,
+                    sticker_id: sticker.id,
+                    wear: sticker.wear,
+                    offset_x: sticker.x,
+                    offset_y: sticker.y,
+                })
+            })
+            .collect::<Vec<_>>();
+        (!parsed.is_empty()).then_some(parsed)
     }
 
     fn normalize_crosshair_code(value: String) -> Option<String> {

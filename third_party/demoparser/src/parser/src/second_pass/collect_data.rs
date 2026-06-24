@@ -48,6 +48,41 @@ pub struct ProjectileRecord {
     pub grenade_type: Option<String>,
     pub entity_id: Option<i32>,
 }
+
+#[derive(Clone, Copy, Debug, Default)]
+struct StickerState {
+    id: Option<u32>,
+    wear: Option<f32>,
+    offset_x: Option<f32>,
+    offset_y: Option<f32>,
+}
+
+impl StickerState {
+    fn into_sticker(self, slot: u32) -> Option<Sticker> {
+        let id = self.id?;
+        if id == 0 {
+            return None;
+        }
+
+        let name = STICKER_ID_TO_NAME.get(&id)?;
+        let wear = self.wear.unwrap_or(0.0).max(0.0);
+        let x = self.offset_x.unwrap_or(0.0);
+        let y = self.offset_y.unwrap_or(0.0);
+        if !wear.is_finite() || wear > 1.0 || !x.is_finite() || !y.is_finite() {
+            return None;
+        }
+
+        Some(Sticker {
+            slot,
+            id,
+            name: (*name).to_string(),
+            wear,
+            x,
+            y,
+        })
+    }
+}
+
 pub enum CoordinateAxis {
     X,
     Y,
@@ -512,34 +547,56 @@ impl<'a> SecondPassParser<'a> {
     }
 
     pub fn find_stickers(&self, weapon_entity_id: &i32) -> Result<Variant, PropCollectionError> {
-        let mut stickers = vec![];
-        // indicies 0..4 info about skin. 4..24 info about stickers. 5 MAX STICKERS (4 idx per sticker),
-        for idx in (4..25).step_by(4) {
-            let sticker_id_id = WEAPON_SKIN_ID + idx;
-            let sticker_wear_id = WEAPON_SKIN_ID + idx + 1;
-            let sticker_x = WEAPON_SKIN_ID + idx + 2;
-            let sticker_y = WEAPON_SKIN_ID + idx + 3;
-            if let Some(sticker) = self.find_sticker(weapon_entity_id, sticker_id_id, sticker_wear_id, sticker_x, sticker_y) {
-                stickers.push(sticker);
+        let mut states = [
+            StickerState::default(),
+            StickerState::default(),
+            StickerState::default(),
+            StickerState::default(),
+            StickerState::default(),
+        ];
+
+        for idx in 0..64 {
+            let Ok(Variant::U32(definition_index)) =
+                self.get_prop_from_ent(&(WEAPON_ATTRIBUTE_DEF_INDEX_ID + idx), weapon_entity_id)
+            else {
+                continue;
+            };
+            let Ok(Variant::F32(raw_value)) =
+                self.get_prop_from_ent(&(WEAPON_SKIN_ID + idx), weapon_entity_id)
+            else {
+                continue;
+            };
+
+            match definition_index {
+                113 | 117 | 121 | 125 | 129 => {
+                    let slot = ((definition_index - 113) / 4) as usize;
+                    states[slot].id = Some(raw_value.to_bits());
+                }
+                114 | 118 | 122 | 126 | 130 => {
+                    let slot = ((definition_index - 114) / 4) as usize;
+                    states[slot].wear = Some(raw_value);
+                }
+                278..=287 => {
+                    let slot = ((definition_index - 278) / 2) as usize;
+                    if slot >= states.len() {
+                        continue;
+                    }
+                    if (definition_index - 278) % 2 == 0 {
+                        states[slot].offset_x = Some(raw_value);
+                    } else {
+                        states[slot].offset_y = Some(raw_value);
+                    }
+                }
+                _ => {}
             }
         }
-        return Ok(Variant::Stickers(stickers));
-    }
-    fn find_sticker(&self, entity_id: &i32, sticker_id_id: u32, sticker_wear_id: u32, sticker_x: u32, sticker_y: u32) -> Option<Sticker> {
-        let id = self.get_prop_from_ent(&sticker_id_id, entity_id);
-        let wear = self.get_prop_from_ent(&sticker_wear_id, entity_id);
-        let sticker_x = self.get_prop_from_ent(&sticker_x, entity_id);
-        let sticker_y = self.get_prop_from_ent(&sticker_y, entity_id);
-        if let (Ok(Variant::F32(id)), Ok(Variant::F32(wear)), Ok(Variant::F32(sticker_x)), Ok(Variant::F32(sticker_y))) = (id, wear, sticker_x, sticker_y) {
-            return Some(Sticker {
-                id: id.to_bits(),
-                name: STICKER_ID_TO_NAME.get(&id.to_bits()).unwrap_or(&"unknown").to_string(),
-                wear: if wear < 0.0000000 { 0.0 } else { wear },
-                x: sticker_x,
-                y: sticker_y,
-            });
-        }
-        None
+
+        let stickers = states
+            .into_iter()
+            .enumerate()
+            .filter_map(|(slot, state)| state.into_sticker(slot as u32))
+            .collect();
+        Ok(Variant::Stickers(stickers))
     }
     pub fn find_skin_paint_seed(&self, player: &PlayerMetaData) -> Result<Variant, PropCollectionError> {
         if let Some(player_entity_id) = &player.player_entity_id {

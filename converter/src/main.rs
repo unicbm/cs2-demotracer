@@ -66,6 +66,11 @@ enum Command {
         export_cosmetics: bool,
         #[arg(
             long,
+            help = "Also write stable demo-observed weapon sticker metadata into manifest JSON; requires --export-cosmetics and the cosmetic risk confirmations."
+        )]
+        export_stickers: bool,
+        #[arg(
+            long,
             help = "Confirm you understand cosmetic export/alignment may carry Valve Game Server Login Token risk."
         )]
         acknowledge_cosmetic_gslt_risk: bool,
@@ -109,6 +114,11 @@ enum Command {
             help = "Write demo-observed weapon/knife/glove cosmetic metadata into manifest JSON; default is no cosmetic export."
         )]
         export_cosmetics: bool,
+        #[arg(
+            long,
+            help = "Also write stable demo-observed weapon sticker metadata into manifest JSON; requires --export-cosmetics and the cosmetic risk confirmations."
+        )]
+        export_stickers: bool,
         #[arg(
             long,
             help = "Confirm you understand cosmetic export/alignment may carry Valve Game Server Login Token risk."
@@ -279,11 +289,13 @@ fn run() -> cs2_demotracer::Result<()> {
             subticks,
             freeze_preroll_seconds,
             export_cosmetics,
+            export_stickers,
             acknowledge_cosmetic_gslt_risk,
             accept_cosmetic_export_disclaimer,
         } => {
-            let export_cosmetics = validate_cosmetic_export_consent(
+            let (export_cosmetics, export_stickers) = validate_cosmetic_export_consent(
                 export_cosmetics,
+                export_stickers,
                 acknowledge_cosmetic_gslt_risk,
                 accept_cosmetic_export_disclaimer,
             )?;
@@ -301,6 +313,7 @@ fn run() -> cs2_demotracer::Result<()> {
                     subtick_mode: subticks,
                     freeze_preroll_seconds,
                     export_cosmetics,
+                    export_stickers,
                     analysis: AnalysisOptions {
                         max_round_seconds,
                         ..AnalysisOptions::default()
@@ -414,11 +427,13 @@ fn run() -> cs2_demotracer::Result<()> {
             subticks,
             freeze_preroll_seconds,
             export_cosmetics,
+            export_stickers,
             acknowledge_cosmetic_gslt_risk,
             accept_cosmetic_export_disclaimer,
         } => {
-            let export_cosmetics = validate_cosmetic_export_consent(
+            let (export_cosmetics, export_stickers) = validate_cosmetic_export_consent(
                 export_cosmetics,
+                export_stickers,
                 acknowledge_cosmetic_gslt_risk,
                 accept_cosmetic_export_disclaimer,
             )?;
@@ -432,6 +447,7 @@ fn run() -> cs2_demotracer::Result<()> {
                 subtick_mode: subticks,
                 freeze_preroll_seconds,
                 export_cosmetics,
+                export_stickers,
                 analysis: AnalysisOptions {
                     max_round_seconds,
                     ..AnalysisOptions::default()
@@ -548,6 +564,7 @@ fn run_wizard() -> cs2_demotracer::Result<()> {
             subtick_mode,
             freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
             export_cosmetics: false,
+            export_stickers: false,
             analysis: AnalysisOptions::default(),
         },
     )?;
@@ -570,9 +587,16 @@ fn prompt_path(input: &str) -> PathBuf {
 
 fn validate_cosmetic_export_consent(
     export_cosmetics: bool,
+    export_stickers: bool,
     acknowledge_gslt_risk: bool,
     accept_disclaimer: bool,
-) -> cs2_demotracer::Result<bool> {
+) -> cs2_demotracer::Result<(bool, bool)> {
+    if export_stickers && !export_cosmetics {
+        return Err(cs2_demotracer::Error::InvalidDemo(
+            "--export-stickers requires --export-cosmetics".to_string(),
+        ));
+    }
+
     if !export_cosmetics && (acknowledge_gslt_risk || accept_disclaimer) {
         return Err(cs2_demotracer::Error::InvalidDemo(
             "cosmetic export acknowledgement flags require --export-cosmetics".to_string(),
@@ -581,11 +605,11 @@ fn validate_cosmetic_export_consent(
 
     if export_cosmetics && (!acknowledge_gslt_risk || !accept_disclaimer) {
         return Err(cs2_demotracer::Error::InvalidDemo(
-            "--export-cosmetics writes demo-observed weapon/knife/glove cosmetic metadata into manifest JSON and requires both --acknowledge-cosmetic-gslt-risk and --accept-cosmetic-export-disclaimer. Use cosmetic export/alignment only where you have assessed Valve server guideline and GSLT risk.".to_string(),
+            "--export-cosmetics writes demo-observed weapon/knife/glove cosmetic metadata into manifest JSON and requires both --acknowledge-cosmetic-gslt-risk and --accept-cosmetic-export-disclaimer. --export-stickers adds weapon sticker metadata under the same risk gate. Use cosmetic export/alignment only where you have assessed Valve server guideline and GSLT risk.".to_string(),
         ));
     }
 
-    Ok(export_cosmetics)
+    Ok((export_cosmetics, export_stickers))
 }
 
 fn parse_wizard_rounds(
@@ -651,7 +675,7 @@ mod tests {
 
     #[test]
     fn cosmetic_export_requires_both_confirmations() {
-        let err = validate_cosmetic_export_consent(true, true, false).unwrap_err();
+        let err = validate_cosmetic_export_consent(true, false, true, false).unwrap_err();
 
         assert!(err
             .to_string()
@@ -660,14 +684,32 @@ mod tests {
 
     #[test]
     fn cosmetic_export_acknowledgements_require_export_flag() {
-        let err = validate_cosmetic_export_consent(false, true, true).unwrap_err();
+        let err = validate_cosmetic_export_consent(false, false, true, true).unwrap_err();
 
         assert!(err.to_string().contains("--export-cosmetics"));
     }
 
     #[test]
     fn cosmetic_export_accepts_explicit_full_consent() {
-        assert!(validate_cosmetic_export_consent(true, true, true).unwrap());
+        assert_eq!(
+            validate_cosmetic_export_consent(true, false, true, true).unwrap(),
+            (true, false)
+        );
+    }
+
+    #[test]
+    fn sticker_export_requires_cosmetic_export() {
+        let err = validate_cosmetic_export_consent(false, true, false, false).unwrap_err();
+
+        assert!(err.to_string().contains("--export-cosmetics"));
+    }
+
+    #[test]
+    fn sticker_export_accepts_explicit_full_consent() {
+        assert_eq!(
+            validate_cosmetic_export_consent(true, true, true, true).unwrap(),
+            (true, true)
+        );
     }
 }
 

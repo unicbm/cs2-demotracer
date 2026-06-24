@@ -27,6 +27,7 @@ pub enum Variant {
 }
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Sticker {
+    pub slot: u32,
     pub name: String,
     pub wear: f32,
     pub id: u32,

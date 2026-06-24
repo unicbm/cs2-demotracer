@@ -31,6 +31,7 @@ arms it, then issues `mp_restartgame 1` so playback catches a fresh
 | `dtr_weapon_align` | `1` | Align loadout, buy behavior, active weapon, and weapon slot locks. |
 | `dtr_projectile_align` | `1` | Align grenade projectile initial vectors from `.dtr` v4+ data. |
 | `dtr_cosmetic_align` | `0` | Consume opt-in manifest cosmetic evidence and apply weapon skin, knife, and glove cosmetics to replay bots. |
+| `dtr_sticker_align` | `0` | Consume extra opt-in weapon sticker evidence under cosmetic alignment. |
 | `dtr_crosshair_align` | `1` | Apply demo-evidence crosshair codes to human viewers while they watch replay bots in-eye. |
 | `dtr_handoff` | `death_or_contact slot` | Release only the contacted/dead replay slot after contact or death. |
 | `dtr_partial` | `1` | Allow replay with fewer bots than manifest players. |
@@ -270,6 +271,9 @@ Implementation when enabled:
   where the demo exposes it. If
   demoparser exposes glove item def/paint/wear but no glove seed, the converter
   writes deterministic seed `0` for that glove.
+- Weapon stickers are not part of this command alone. They require
+  `--export-stickers` during conversion and `dtr_sticker_align 1` or
+  `dtr_set align stickers on` at runtime.
 - Applies only to safe replay bot slots after weapon/loadout alignment has
   confirmed the replay inventory path.
 - Never picks random cosmetics, never reads a server profile/database, and never
@@ -277,7 +281,7 @@ Implementation when enabled:
 
 Important limits:
 
-- Stickers, charms/keychains, agents, and StatTrak are not applied.
+- Charms/keychains, agents, and StatTrak are not applied.
 - Missing, zero, contradictory, or unsupported demo evidence is skipped.
 - This is a replay-fidelity feature intended for local/private validation.
 - A local listen/practice server may not have the same GSLT exposure as a
@@ -287,6 +291,21 @@ Important limits:
 - On dedicated, community, or public servers, cosmetic/inventory simulation can
   fall under Valve server-operation policy. Use outside private local
   validation is at the operator's own risk.
+
+### `dtr_sticker_align <0|1>`
+
+Enables or disables weapon sticker alignment. It is off by default and has no
+effect unless cosmetic alignment is also enabled and the manifest was exported
+with `--export-stickers` in addition to the cosmetic export risk flags.
+
+Implementation when enabled:
+
+- Applies only stable manifest sticker evidence attached to confirmed replay
+  weapon cosmetics.
+- Supports sticker slot, sticker id, wear, offset x, and offset y.
+- Does not apply rotation, schema, charms/keychains, agents, or StatTrak.
+- Sticker write failures are counted as skipped stickers and do not roll back
+  weapon paint, knife, glove, or custom-name alignment.
 
 ### `dtr_crosshair_align <0|1>`
 

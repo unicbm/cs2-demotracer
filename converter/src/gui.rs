@@ -282,6 +282,7 @@ impl ConverterApp {
             },
             freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
             export_cosmetics: false,
+            export_stickers: false,
             analysis: AnalysisOptions {
                 max_round_seconds: self.max_round_seconds,
                 ..AnalysisOptions::default()

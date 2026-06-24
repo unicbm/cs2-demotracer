@@ -2265,6 +2265,7 @@ mod tests {
                     vec![],
                     vec![],
                     vec![Sticker {
+                        slot: 0,
                         name: "eslcologne2015_signature_taz_foil".to_string(),
                         wear: 0.0,
                         id: 477,
@@ -2281,6 +2282,7 @@ mod tests {
                     vec![],
                     vec![],
                     vec![Sticker {
+                        slot: 0,
                         name: "eslcologne2015_signature_taz_gold".to_string(),
                         wear: 0.0,
                         id: 478,

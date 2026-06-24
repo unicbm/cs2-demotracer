@@ -293,8 +293,14 @@ explicit flags:
 cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>" --export-cosmetics --acknowledge-cosmetic-gslt-risk --accept-cosmetic-export-disclaimer
 ```
 
+Weapon sticker metadata is a separate opt-in on top of cosmetic export:
+
+```powershell
+cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>" --export-cosmetics --export-stickers --acknowledge-cosmetic-gslt-risk --accept-cosmetic-export-disclaimer
+```
+
 `convert-pool` uses the same three flags when you intentionally want cosmetic
-metadata in pool replay manifests.
+metadata in pool replay manifests, and also accepts `--export-stickers`.
 
 The output looks like this:
 
@@ -427,11 +433,17 @@ It has no effect unless the manifest was exported with the explicit cosmetic
 flags above. When evidence exists, it only applies demo-observed weapon paint,
 knife, glove metadata, and stable weapon/knife custom names to safe replay
 bots. It does not randomize cosmetics, does not read profile databases, and
-does not apply stickers, charms, agents, or StatTrak. Bot-only mutation is not
-a policy exemption: if human players can observe, control, possess, inspect, or
-otherwise use bots carrying
+does not apply stickers unless sticker export and `dtr_set align stickers on`
+are also enabled. It never applies charms, agents, or StatTrak. Bot-only
+mutation is not a policy exemption: if human players can observe, control,
+possess, inspect, or otherwise use bots carrying
 simulated cosmetics, treat the server as exposed to cosmetic/inventory policy
 risk.
+
+`dtr_set align stickers on` is an additional default-off sub-mode under
+cosmetic alignment. It requires `dtr_set align cosmetics on` and a manifest
+exported with `--export-stickers`; it applies only stable demo-observed weapon
+sticker slot/id/wear/offset metadata to safe replay bots.
 
 `dtr_set align crosshair on` is on by default. It applies only a
 stable demo-observed `crosshair_code` to a human viewer while they are watching
@@ -502,7 +514,7 @@ For normal use, export the recommended rounds only.
 - The server should run the same map and have enough bots.
 - `.dtr` uses a lossless compressed BotController-compatible replay format with demo-derived projectile metadata, player-scoped high-fidelity events, and inventory snapshots. Full offline usercmd reconstruction is future work.
 - Some weapon/loadout details are still limited by CS2 slot behavior, especially default pistols.
-- CS2 demos can expose cosmetic/econ metadata, including custom names. The converter does not export that metadata by default; cosmetic export requires `--export-cosmetics`, `--acknowledge-cosmetic-gslt-risk`, and `--accept-cosmetic-export-disclaimer`. Runtime cosmetic alignment is also default-off and consumes only manifest evidence. This feature is intended for local/private replay validation. On a local listen/practice server, the usual dedicated-server GSLT surface may not be present, but this is not a guarantee of Valve policy safety. On dedicated, community, or public servers, cosmetic/inventory simulation can fall under Valve's [Game Server Operation Guidelines](https://blog.counter-strike.net/server_guidelines/) and Steam [game server account](https://steamcommunity.com/dev/managegameservers) responsibility. Valve has historically disabled GSLTs for server operators that provided inventory/profile falsification services. Use any cosmetic export or alignment outside private local validation at your own operational risk.
+- CS2 demos can expose cosmetic/econ metadata, including custom names and stickers. The converter does not export that metadata by default; cosmetic export requires `--export-cosmetics`, `--acknowledge-cosmetic-gslt-risk`, and `--accept-cosmetic-export-disclaimer`, and sticker export additionally requires `--export-stickers`. Runtime cosmetic and sticker alignment are also default-off and consume only manifest evidence. This feature is intended for local/private replay validation. On a local listen/practice server, the usual dedicated-server GSLT surface may not be present, but this is not a guarantee of Valve policy safety. On dedicated, community, or public servers, cosmetic/inventory simulation can fall under Valve's [Game Server Operation Guidelines](https://blog.counter-strike.net/server_guidelines/) and Steam [game server account](https://steamcommunity.com/dev/managegameservers) responsibility. Valve has historically disabled GSLTs for server operators that provided inventory/profile falsification services. Use any cosmetic export or alignment outside private local validation at your own operational risk.
 - This is for local servers, research, content creation, and plugin development. It is not intended for matchmaking or cheating.
 
 ## Advanced CLI

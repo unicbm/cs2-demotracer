@@ -47,7 +47,9 @@ demo 观测到的武器 paint、刀具、手套元数据，以及稳定的武器
 cs2-demotracer.exe convert --demo <demo.dem> --output <输出目录> --export-cosmetics --acknowledge-cosmetic-gslt-risk --accept-cosmetic-export-disclaimer
 ```
 
-`convert-pool` 支持同样三个 flag；不传时每个 replay manifest 都保持无饰品字段。
+如果还要导出稳定的武器贴纸 slot/id/wear/offset 元数据，再额外传入
+`--export-stickers`。`convert-pool` 支持同样 flag；不传时每个 replay manifest 都保持
+无饰品字段。
 
 输出目录里最重要的是：
 
@@ -246,7 +248,8 @@ write_rec_file("copy.dtr", &rec)?;
 风险确认 flag 导出，并且里面确实有 `cosmetics` 证据时，它才会生效。生效时
 DemoTracer 也只会把 demo 观测到的武器 paint、刀、手套元数据，以及稳定的武器/刀具
 custom name 应用到安全 replay bot。它不会随机分配饰品，不会读取 profile/database，
-也不会应用贴纸、挂件/charms、探员或 StatTrak。
+也不会应用挂件/charms、探员或 StatTrak。武器贴纸需要额外的 `--export-stickers`
+转换 flag 和 runtime 的 `dtr_set align stickers on`。
 
 这个功能面向本地/私有 replay 验证。listen/practice server 未必有专用服那样的 GSLT
 暴露面，但只写 bot 不是规则豁免；如果真人玩家可以观察、接管或使用这些 bot 物品外观，

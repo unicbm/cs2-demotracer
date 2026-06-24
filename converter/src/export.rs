@@ -4,7 +4,7 @@ use crate::model::{
     HighFidelityMetadata, ParsedDemo, ParsedGameEvent, ParsedPlayerTick, ParsedProjectile,
     ReplayCosmetics, ReplayHifiEvent, ReplayHifiEventKind, ReplayInventoryItemCount,
     ReplayInventorySnapshot, ReplayItemCosmetic, ReplayLoadout, ReplayView, ReplayWeaponCosmetic,
-    Side, SubtickMode, TeamEconomy, DEMOTRACER_ABI, DTR_FORMAT_VERSION,
+    ReplayWeaponSticker, Side, SubtickMode, TeamEconomy, DEMOTRACER_ABI, DTR_FORMAT_VERSION,
 };
 use crate::quality::{analyze_demo, AnalysisOptions};
 use crate::rec_writer::write_rec;
@@ -28,6 +28,7 @@ pub struct ConvertOptions {
     pub subtick_mode: SubtickMode,
     pub freeze_preroll_seconds: f32,
     pub export_cosmetics: bool,
+    pub export_stickers: bool,
     pub analysis: AnalysisOptions,
 }
 
@@ -41,6 +42,7 @@ pub struct ConvertMemoryOptions {
     pub subtick_mode: SubtickMode,
     pub freeze_preroll_seconds: f32,
     pub export_cosmetics: bool,
+    pub export_stickers: bool,
     pub analysis: AnalysisOptions,
 }
 
@@ -55,6 +57,7 @@ impl From<&ConvertOptions> for ConvertMemoryOptions {
             subtick_mode: options.subtick_mode,
             freeze_preroll_seconds: options.freeze_preroll_seconds,
             export_cosmetics: options.export_cosmetics,
+            export_stickers: options.export_stickers,
             analysis: options.analysis,
         }
     }
@@ -259,7 +262,7 @@ pub fn export_demo_to_memory(
                 inventory_snapshot_count: rec.high_fidelity.inventory_snapshots.len(),
                 loadout: replay_loadout(player_rows[0]),
                 cosmetics: if options.export_cosmetics {
-                    replay_cosmetics(&player_rows)
+                    replay_cosmetics(&player_rows, options.export_stickers)
                 } else {
                     None
                 },
@@ -1211,9 +1214,11 @@ fn replay_view(rows: &[&ParsedPlayerTick]) -> Option<ReplayView> {
     (!view.is_empty()).then_some(view)
 }
 
-fn replay_cosmetics(rows: &[&ParsedPlayerTick]) -> Option<ReplayCosmetics> {
+fn replay_cosmetics(rows: &[&ParsedPlayerTick], export_stickers: bool) -> Option<ReplayCosmetics> {
     let mut weapon_specs: BTreeMap<i32, BTreeSet<CosmeticPaintSpec>> = BTreeMap::new();
     let mut weapon_custom_names: BTreeMap<i32, BTreeSet<String>> = BTreeMap::new();
+    let mut weapon_stickers: BTreeMap<i32, BTreeSet<Vec<CosmeticStickerSpec>>> = BTreeMap::new();
+    let mut weapon_stickers_missing = BTreeSet::new();
     let mut knife_specs = BTreeSet::new();
     let mut knife_custom_names = BTreeSet::new();
     let mut glove_specs = BTreeSet::new();
@@ -1249,6 +1254,16 @@ fn replay_cosmetics(rows: &[&ParsedPlayerTick]) -> Option<ReplayCosmetics> {
                 if let Some(name) = cosmetic_custom_name(row) {
                     weapon_custom_names.entry(def).or_default().insert(name);
                 }
+                if export_stickers {
+                    match cosmetic_sticker_set(row) {
+                        Some(stickers) => {
+                            weapon_stickers.entry(def).or_default().insert(stickers);
+                        }
+                        None => {
+                            weapon_stickers_missing.insert(def);
+                        }
+                    }
+                }
             }
         }
 
@@ -1279,6 +1294,11 @@ fn replay_cosmetics(rows: &[&ParsedPlayerTick]) -> Option<ReplayCosmetics> {
             seed: spec.seed,
             wear: f32::from_bits(spec.wear_bits),
             custom_name: stable_weapon_custom_name(&weapon_custom_names, weapon_def_index),
+            stickers: stable_weapon_stickers(
+                &weapon_stickers,
+                &weapon_stickers_missing,
+                weapon_def_index,
+            ),
         });
     }
 
@@ -1352,11 +1372,78 @@ fn stable_knife_custom_name(
     }
 }
 
+fn cosmetic_sticker_set(row: &ParsedPlayerTick) -> Option<Vec<CosmeticStickerSpec>> {
+    if row.active_weapon_stickers.is_empty() {
+        return None;
+    }
+
+    let mut slots = BTreeSet::new();
+    let mut stickers = Vec::with_capacity(row.active_weapon_stickers.len());
+    for sticker in &row.active_weapon_stickers {
+        if sticker.slot > 4
+            || sticker.sticker_id == 0
+            || !sticker.wear.is_finite()
+            || !(0.0..=1.0).contains(&sticker.wear)
+            || !sticker.offset_x.is_finite()
+            || !sticker.offset_y.is_finite()
+            || !slots.insert(sticker.slot)
+        {
+            return None;
+        }
+        stickers.push(CosmeticStickerSpec {
+            slot: sticker.slot,
+            sticker_id: sticker.sticker_id,
+            wear_bits: sticker.wear.to_bits(),
+            offset_x_bits: sticker.offset_x.to_bits(),
+            offset_y_bits: sticker.offset_y.to_bits(),
+        });
+    }
+    stickers.sort();
+    (!stickers.is_empty()).then_some(stickers)
+}
+
+fn stable_weapon_stickers(
+    stickers: &BTreeMap<i32, BTreeSet<Vec<CosmeticStickerSpec>>>,
+    missing: &BTreeSet<i32>,
+    weapon_def_index: i32,
+) -> Vec<ReplayWeaponSticker> {
+    if missing.contains(&weapon_def_index) {
+        return Vec::new();
+    }
+    let Some(sets) = stickers.get(&weapon_def_index) else {
+        return Vec::new();
+    };
+    if sets.len() != 1 {
+        return Vec::new();
+    }
+    sets.iter()
+        .next()
+        .into_iter()
+        .flat_map(|set| set.iter())
+        .map(|sticker| ReplayWeaponSticker {
+            slot: sticker.slot,
+            sticker_id: sticker.sticker_id,
+            wear: f32::from_bits(sticker.wear_bits),
+            offset_x: f32::from_bits(sticker.offset_x_bits),
+            offset_y: f32::from_bits(sticker.offset_y_bits),
+        })
+        .collect()
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct CosmeticPaintSpec {
     paint_kit: u32,
     seed: u32,
     wear_bits: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct CosmeticStickerSpec {
+    slot: u8,
+    sticker_id: u32,
+    wear_bits: u32,
+    offset_x_bits: u32,
+    offset_y_bits: u32,
 }
 
 fn cosmetic_paint_spec(
@@ -1626,7 +1713,7 @@ pub fn parse_round_list(value: &str) -> Result<BTreeSet<u32>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Cs2Rec, ParsedDemo, ReplayTick};
+    use crate::model::{Cs2Rec, ParsedDemo, ParsedWeaponSticker, ReplayTick};
     use crate::rec_writer::read_rec;
 
     #[test]
@@ -1704,6 +1791,7 @@ mod tests {
                 active_weapon_paint_seed: Some(12),
                 active_weapon_paint_wear: Some(0.125),
                 active_weapon_custom_name: Some("alpha rifle".to_string()),
+                active_weapon_stickers: Vec::new(),
                 glove_item_def_index: Some(5030),
                 glove_paint_kit: Some(10006),
                 glove_paint_seed: Some(4),
@@ -1717,6 +1805,7 @@ mod tests {
                 active_weapon_paint_seed: Some(321),
                 active_weapon_paint_wear: Some(0.01),
                 active_weapon_custom_name: Some("alpha knife".to_string()),
+                active_weapon_stickers: Vec::new(),
                 glove_item_def_index: Some(5030),
                 glove_paint_kit: Some(10006),
                 glove_paint_seed: Some(4),
@@ -1934,6 +2023,7 @@ mod tests {
                 active_weapon_paint_seed: Some(12),
                 active_weapon_paint_wear: Some(0.125),
                 active_weapon_custom_name: Some("first".to_string()),
+                active_weapon_stickers: Vec::new(),
                 ..sample_row(100)
             },
             ParsedPlayerTick {
@@ -1942,6 +2032,7 @@ mod tests {
                 active_weapon_paint_seed: Some(12),
                 active_weapon_paint_wear: Some(0.125),
                 active_weapon_custom_name: Some("second".to_string()),
+                active_weapon_stickers: Vec::new(),
                 ..sample_row(164)
             },
         ];
@@ -1958,6 +2049,208 @@ mod tests {
     }
 
     #[test]
+    fn sticker_export_is_default_off_under_cosmetics() {
+        let mut parsed = sample_demo();
+        parsed.rows = vec![
+            ParsedPlayerTick {
+                item_def_idx: 7,
+                active_weapon_paint_kit: Some(180),
+                active_weapon_paint_seed: Some(12),
+                active_weapon_paint_wear: Some(0.125),
+                active_weapon_stickers: vec![sticker(0, 477, 0.05, 0.1, 0.2)],
+                ..sample_row(100)
+            },
+            ParsedPlayerTick {
+                item_def_idx: 7,
+                active_weapon_paint_kit: Some(180),
+                active_weapon_paint_seed: Some(12),
+                active_weapon_paint_wear: Some(0.125),
+                active_weapon_stickers: vec![sticker(0, 477, 0.05, 0.1, 0.2)],
+                ..sample_row(164)
+            },
+        ];
+
+        let memory = export_memory_with_cosmetics(parsed);
+        let weapon = &memory.manifest.files[0]
+            .cosmetics
+            .as_ref()
+            .expect("expected cosmetic evidence")
+            .weapons[0];
+
+        assert!(weapon.stickers.is_empty());
+        let json = serde_json::to_string(weapon).unwrap();
+        assert!(!json.contains("stickers"));
+    }
+
+    #[test]
+    fn stable_weapon_stickers_are_serialized_when_enabled() {
+        let mut parsed = sample_demo();
+        parsed.rows = vec![
+            ParsedPlayerTick {
+                item_def_idx: 7,
+                active_weapon_paint_kit: Some(180),
+                active_weapon_paint_seed: Some(12),
+                active_weapon_paint_wear: Some(0.125),
+                active_weapon_stickers: vec![
+                    sticker(1, 478, 0.0, -0.25, 0.75),
+                    sticker(0, 477, 0.05, 0.1, 0.2),
+                ],
+                ..sample_row(100)
+            },
+            ParsedPlayerTick {
+                item_def_idx: 7,
+                active_weapon_paint_kit: Some(180),
+                active_weapon_paint_seed: Some(12),
+                active_weapon_paint_wear: Some(0.125),
+                active_weapon_stickers: vec![
+                    sticker(1, 478, 0.0, -0.25, 0.75),
+                    sticker(0, 477, 0.05, 0.1, 0.2),
+                ],
+                ..sample_row(164)
+            },
+        ];
+
+        let memory = export_memory_with_stickers(parsed);
+        let stickers = &memory.manifest.files[0]
+            .cosmetics
+            .as_ref()
+            .expect("expected cosmetic evidence")
+            .weapons[0]
+            .stickers;
+
+        assert_eq!(stickers.len(), 2);
+        assert_eq!(stickers[0].slot, 0);
+        assert_eq!(stickers[0].sticker_id, 477);
+        assert_eq!(stickers[0].wear.to_bits(), 0.05_f32.to_bits());
+        assert_eq!(stickers[0].offset_x.to_bits(), 0.1_f32.to_bits());
+        assert_eq!(stickers[0].offset_y.to_bits(), 0.2_f32.to_bits());
+        assert_eq!(stickers[1].slot, 1);
+        assert_eq!(stickers[1].sticker_id, 478);
+    }
+
+    #[test]
+    fn conflicting_weapon_stickers_only_skip_stickers() {
+        let mut parsed = sample_demo();
+        parsed.rows = vec![
+            ParsedPlayerTick {
+                item_def_idx: 7,
+                active_weapon_paint_kit: Some(180),
+                active_weapon_paint_seed: Some(12),
+                active_weapon_paint_wear: Some(0.125),
+                active_weapon_stickers: vec![sticker(0, 477, 0.05, 0.1, 0.2)],
+                ..sample_row(100)
+            },
+            ParsedPlayerTick {
+                item_def_idx: 7,
+                active_weapon_paint_kit: Some(180),
+                active_weapon_paint_seed: Some(12),
+                active_weapon_paint_wear: Some(0.125),
+                active_weapon_stickers: vec![sticker(0, 478, 0.05, 0.1, 0.2)],
+                ..sample_row(164)
+            },
+        ];
+
+        let memory = export_memory_with_stickers(parsed);
+        let weapon = &memory.manifest.files[0]
+            .cosmetics
+            .as_ref()
+            .expect("expected cosmetic evidence")
+            .weapons[0];
+
+        assert_eq!(weapon.paint_kit, 180);
+        assert!(weapon.stickers.is_empty());
+    }
+
+    #[test]
+    fn invalid_weapon_stickers_are_skipped() {
+        let mut parsed = sample_demo();
+        parsed.rows = vec![
+            ParsedPlayerTick {
+                item_def_idx: 7,
+                active_weapon_paint_kit: Some(180),
+                active_weapon_paint_seed: Some(12),
+                active_weapon_paint_wear: Some(0.125),
+                active_weapon_stickers: vec![
+                    sticker(0, 477, 0.05, 0.1, 0.2),
+                    sticker(0, 478, 0.05, 0.1, 0.2),
+                ],
+                ..sample_row(100)
+            },
+            ParsedPlayerTick {
+                item_def_idx: 7,
+                active_weapon_paint_kit: Some(180),
+                active_weapon_paint_seed: Some(12),
+                active_weapon_paint_wear: Some(0.125),
+                active_weapon_stickers: vec![sticker(5, 477, f32::NAN, 0.1, 0.2)],
+                ..sample_row(164)
+            },
+        ];
+
+        let memory = export_memory_with_stickers(parsed);
+        let weapon = &memory.manifest.files[0]
+            .cosmetics
+            .as_ref()
+            .expect("expected cosmetic evidence")
+            .weapons[0];
+
+        assert!(weapon.stickers.is_empty());
+    }
+
+    #[test]
+    fn missing_weapon_stickers_skip_stickers_only() {
+        let mut parsed = sample_demo();
+        parsed.rows = vec![
+            ParsedPlayerTick {
+                item_def_idx: 7,
+                active_weapon_paint_kit: Some(180),
+                active_weapon_paint_seed: Some(12),
+                active_weapon_paint_wear: Some(0.125),
+                active_weapon_stickers: vec![sticker(0, 477, 0.05, 0.1, 0.2)],
+                ..sample_row(100)
+            },
+            ParsedPlayerTick {
+                item_def_idx: 7,
+                active_weapon_paint_kit: Some(180),
+                active_weapon_paint_seed: Some(12),
+                active_weapon_paint_wear: Some(0.125),
+                active_weapon_stickers: Vec::new(),
+                ..sample_row(164)
+            },
+        ];
+
+        let memory = export_memory_with_stickers(parsed);
+        let weapon = &memory.manifest.files[0]
+            .cosmetics
+            .as_ref()
+            .expect("expected cosmetic evidence")
+            .weapons[0];
+
+        assert_eq!(weapon.paint_kit, 180);
+        assert!(weapon.stickers.is_empty());
+    }
+
+    #[test]
+    fn sticker_only_evidence_does_not_create_weapon_cosmetic() {
+        let mut parsed = sample_demo();
+        parsed.rows = vec![
+            ParsedPlayerTick {
+                item_def_idx: 7,
+                active_weapon_stickers: vec![sticker(0, 477, 0.05, 0.1, 0.2)],
+                ..sample_row(100)
+            },
+            ParsedPlayerTick {
+                item_def_idx: 7,
+                active_weapon_stickers: vec![sticker(0, 477, 0.05, 0.1, 0.2)],
+                ..sample_row(164)
+            },
+        ];
+
+        let memory = export_memory_with_stickers(parsed);
+
+        assert!(memory.manifest.files[0].cosmetics.is_none());
+    }
+
+    #[test]
     fn memory_export_matches_filesystem_export_surface() {
         let parsed = sample_demo();
         let selected_rounds = Some(BTreeSet::from([1]));
@@ -1970,6 +2263,7 @@ mod tests {
             subtick_mode: SubtickMode::Auto,
             freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
             export_cosmetics: false,
+            export_stickers: false,
             analysis: AnalysisOptions::default(),
         };
 
@@ -2010,6 +2304,7 @@ mod tests {
                 subtick_mode: SubtickMode::Auto,
                 freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
                 export_cosmetics: false,
+                export_stickers: false,
                 analysis: AnalysisOptions::default(),
             },
         )
@@ -2039,6 +2334,7 @@ mod tests {
                 subtick_mode: SubtickMode::Auto,
                 freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
                 export_cosmetics: false,
+                export_stickers: false,
                 analysis: AnalysisOptions::default(),
             },
         )
@@ -2084,6 +2380,7 @@ mod tests {
                 subtick_mode: SubtickMode::Auto,
                 freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
                 export_cosmetics: false,
+                export_stickers: false,
                 analysis: AnalysisOptions::default(),
             },
         )
@@ -2128,6 +2425,7 @@ mod tests {
                 subtick_mode: SubtickMode::Auto,
                 freeze_preroll_seconds: 1.0,
                 export_cosmetics: false,
+                export_stickers: false,
                 analysis: AnalysisOptions::default(),
             },
         )
@@ -2373,17 +2671,38 @@ mod tests {
         );
     }
 
+    fn sticker(
+        slot: u8,
+        sticker_id: u32,
+        wear: f32,
+        offset_x: f32,
+        offset_y: f32,
+    ) -> ParsedWeaponSticker {
+        ParsedWeaponSticker {
+            slot,
+            sticker_id,
+            wear,
+            offset_x,
+            offset_y,
+        }
+    }
+
     fn export_memory(parsed: ParsedDemo) -> MemoryConversionReport {
-        export_memory_with_options(parsed, false)
+        export_memory_with_options(parsed, false, false)
     }
 
     fn export_memory_with_cosmetics(parsed: ParsedDemo) -> MemoryConversionReport {
-        export_memory_with_options(parsed, true)
+        export_memory_with_options(parsed, true, false)
+    }
+
+    fn export_memory_with_stickers(parsed: ParsedDemo) -> MemoryConversionReport {
+        export_memory_with_options(parsed, true, true)
     }
 
     fn export_memory_with_options(
         parsed: ParsedDemo,
         export_cosmetics: bool,
+        export_stickers: bool,
     ) -> MemoryConversionReport {
         export_demo_to_memory(
             &parsed,
@@ -2396,6 +2715,7 @@ mod tests {
                 subtick_mode: SubtickMode::Auto,
                 freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
                 export_cosmetics,
+                export_stickers,
                 analysis: AnalysisOptions::default(),
             },
         )
@@ -2467,6 +2787,7 @@ mod tests {
             active_weapon_paint_seed: None,
             active_weapon_paint_wear: None,
             active_weapon_custom_name: None,
+            active_weapon_stickers: Vec::new(),
             glove_item_def_index: None,
             glove_paint_kit: None,
             glove_paint_seed: None,

@@ -13,7 +13,7 @@ use crate::first_pass::prop_controller::ITEM_PURCHASE_DEF_IDX;
 use crate::first_pass::prop_controller::ITEM_PURCHASE_HANDLE;
 use crate::first_pass::prop_controller::ITEM_PURCHASE_NEW_DEF_IDX;
 use crate::first_pass::prop_controller::MY_WEAPONS_OFFSET;
-use crate::first_pass::prop_controller::WEAPON_SKIN_ID;
+use crate::first_pass::prop_controller::{WEAPON_ATTRIBUTE_DEF_INDEX_ID, WEAPON_SKIN_ID};
 use crate::maps::BASETYPE_DECODERS;
 use crate::second_pass::decoder::Decoder;
 use crate::second_pass::decoder::Decoder::*;
@@ -495,6 +495,9 @@ pub fn get_propinfo(field: &Field, path: &FieldPath) -> Option<FieldInfo> {
     }
     if fi.prop_id == WEAPON_SKIN_ID {
         fi.prop_id = WEAPON_SKIN_ID + path.path[1] as u32;
+    }
+    if fi.prop_id == WEAPON_ATTRIBUTE_DEF_INDEX_ID {
+        fi.prop_id = WEAPON_ATTRIBUTE_DEF_INDEX_ID + path.path[1] as u32;
     }
     if fi.prop_id == GLOVE_PAINT_ID {
         fi.prop_id = GLOVE_PAINT_ID + path.path[1] as u32;

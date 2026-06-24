@@ -291,6 +291,27 @@ public sealed partial class DemoTracerPlugin
 
         [JsonPropertyName("custom_name")]
         public string? CustomName { get; set; }
+
+        [JsonPropertyName("stickers")]
+        public List<ReplayWeaponSticker> Stickers { get; set; } = new();
+    }
+
+    private sealed class ReplayWeaponSticker
+    {
+        [JsonPropertyName("slot")]
+        public int Slot { get; set; }
+
+        [JsonPropertyName("sticker_id")]
+        public uint StickerId { get; set; }
+
+        [JsonPropertyName("wear")]
+        public float Wear { get; set; }
+
+        [JsonPropertyName("offset_x")]
+        public float OffsetX { get; set; }
+
+        [JsonPropertyName("offset_y")]
+        public float OffsetY { get; set; }
     }
 
     private sealed class ReplayItemCosmetic

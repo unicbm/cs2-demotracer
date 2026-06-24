@@ -119,7 +119,8 @@ public sealed partial class DemoTracerPlugin
                 PaintKit = weapon.PaintKit,
                 Seed = weapon.Seed,
                 Wear = weapon.Wear,
-                CustomName = NormalizeCosmeticCustomName(weapon.CustomName)
+                CustomName = NormalizeCosmeticCustomName(weapon.CustomName),
+                Stickers = NormalizeWeaponStickers(weapon.Stickers)
             });
         }
 
@@ -170,6 +171,41 @@ public sealed partial class DemoTracerPlugin
            cosmetic.Wear is >= 0.0f and <= 1.0f &&
            float.IsFinite(cosmetic.Wear);
 
+    private static List<ReplayWeaponSticker> NormalizeWeaponStickers(IEnumerable<ReplayWeaponSticker>? stickers)
+    {
+        if (stickers == null)
+            return [];
+
+        var normalized = new List<ReplayWeaponSticker>();
+        var slots = new HashSet<int>();
+        foreach (var sticker in stickers)
+        {
+            if (sticker.Slot is < 0 or > 4 ||
+                sticker.StickerId == 0 ||
+                sticker.Wear is < 0.0f or > 1.0f ||
+                !float.IsFinite(sticker.Wear) ||
+                !float.IsFinite(sticker.OffsetX) ||
+                !float.IsFinite(sticker.OffsetY) ||
+                !slots.Add(sticker.Slot))
+            {
+                return [];
+            }
+
+            normalized.Add(new ReplayWeaponSticker
+            {
+                Slot = sticker.Slot,
+                StickerId = sticker.StickerId,
+                Wear = sticker.Wear,
+                OffsetX = sticker.OffsetX,
+                OffsetY = sticker.OffsetY
+            });
+        }
+
+        return normalized
+            .OrderBy(sticker => sticker.Slot)
+            .ToList();
+    }
+
     private static string? NormalizeCosmeticCustomName(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -203,19 +239,29 @@ public sealed partial class DemoTracerPlugin
         }
     }
 
+    private void ResetStickerAlignState(bool resetCounters = false)
+    {
+        if (resetCounters)
+        {
+            _stickerAppliedCount = 0;
+            _stickerSkippedCount = 0;
+        }
+    }
+
     private string FormatCosmeticStatusCounts()
     {
         var counts = CountLoadedCosmeticEvidence();
         return
-            $"cosmetics_evidence={counts.Files} cosmetic_weapons={counts.Weapons} cosmetic_knives={counts.Knives} cosmetic_gloves={counts.Gloves} applied={_cosmeticAppliedCount} skipped={_cosmeticSkippedCount}";
+            $"cosmetics_evidence={counts.Files} cosmetic_weapons={counts.Weapons} cosmetic_knives={counts.Knives} cosmetic_gloves={counts.Gloves} sticker_evidence={counts.Stickers} applied={_cosmeticAppliedCount} skipped={_cosmeticSkippedCount} sticker_applied={_stickerAppliedCount} sticker_skipped={_stickerSkippedCount}";
     }
 
-    private (int Files, int Weapons, int Knives, int Gloves) CountLoadedCosmeticEvidence()
+    private (int Files, int Weapons, int Knives, int Gloves, int Stickers) CountLoadedCosmeticEvidence()
     {
         var files = 0;
         var weapons = 0;
         var knives = 0;
         var gloves = 0;
+        var stickers = 0;
 
         foreach (var replay in _loadedReplays.Values)
         {
@@ -224,13 +270,14 @@ public sealed partial class DemoTracerPlugin
 
             files++;
             weapons += replay.Cosmetics.Weapons.Count;
+            stickers += replay.Cosmetics.Weapons.Sum(weapon => weapon.Stickers.Count);
             if (replay.Cosmetics.Knife != null)
                 knives++;
             if (replay.Cosmetics.Glove != null)
                 gloves++;
         }
 
-        return (files, weapons, knives, gloves);
+        return (files, weapons, knives, gloves, stickers);
     }
 
     private void ApplyLoadedReplayCosmeticsForSlot(int slot, LoadedReplay replay)
@@ -727,7 +774,7 @@ public sealed partial class DemoTracerPlugin
         if (!TryGetWeaponClassByDefIndex(cosmetic.WeaponDefIndex, out _))
             return false;
 
-        return TryApplyItemCosmetic(
+        var applied = TryApplyItemCosmetic(
             player,
             weapon,
             new ReplayItemCosmetic
@@ -739,6 +786,14 @@ public sealed partial class DemoTracerPlugin
                 CustomName = cosmetic.CustomName
             },
             allowSubclassChange: false);
+        if (!applied)
+        {
+            RecordStickerSkipped(cosmetic.Stickers.Count);
+            return false;
+        }
+
+        ApplyWeaponStickers(weapon, cosmetic);
+        return true;
     }
 
     private bool TryApplyItemCosmetic(
@@ -904,6 +959,75 @@ public sealed partial class DemoTracerPlugin
         catch (Exception ex)
         {
             Server.PrintToConsole($"dtr: cosmetic attribute write failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    private void ApplyWeaponStickers(CBasePlayerWeapon weapon, ReplayWeaponCosmetic cosmetic)
+    {
+        if (!_cosmeticAlignEnabled ||
+            !_stickerAlignEnabled ||
+            cosmetic.Stickers.Count == 0)
+        {
+            return;
+        }
+
+        if (AttributeSetter.Value == null)
+        {
+            RecordStickerSkipped(cosmetic.Stickers.Count);
+            return;
+        }
+
+        try
+        {
+            var item = weapon.AttributeManager.Item;
+            var applied = 0;
+            var skipped = 0;
+            foreach (var sticker in cosmetic.Stickers)
+            {
+                var networkedOk = TrySetStickerAttributes(item.NetworkedDynamicAttributes.Handle, sticker);
+                var listOk = TrySetStickerAttributes(item.AttributeList.Handle, sticker);
+                if (networkedOk && listOk)
+                    applied++;
+                else
+                    skipped++;
+            }
+
+            if (applied > 0)
+                Utilities.SetStateChanged(weapon, "CEconEntity", "m_AttributeManager");
+            _stickerAppliedCount += applied;
+            _stickerSkippedCount += skipped;
+        }
+        catch (Exception ex)
+        {
+            Server.PrintToConsole($"dtr: sticker apply failed item={weapon.DesignerName}: {ex.Message}");
+            RecordStickerSkipped(cosmetic.Stickers.Count);
+        }
+    }
+
+    private void RecordStickerSkipped(int count)
+    {
+        if (_cosmeticAlignEnabled && _stickerAlignEnabled && count > 0)
+            _stickerSkippedCount += count;
+    }
+
+    private static bool TrySetStickerAttributes(nint attributeListHandle, ReplayWeaponSticker sticker)
+    {
+        if (AttributeSetter.Value == null)
+            return false;
+
+        try
+        {
+            var slot = $"sticker slot {sticker.Slot}";
+            AttributeSetter.Value.Invoke(attributeListHandle, $"{slot} id", BitConverter.UInt32BitsToSingle(sticker.StickerId));
+            AttributeSetter.Value.Invoke(attributeListHandle, $"{slot} wear", sticker.Wear);
+            AttributeSetter.Value.Invoke(attributeListHandle, $"{slot} offset x", sticker.OffsetX);
+            AttributeSetter.Value.Invoke(attributeListHandle, $"{slot} offset y", sticker.OffsetY);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Server.PrintToConsole($"dtr: sticker attribute write failed slot={sticker.Slot}: {ex.Message}");
             return false;
         }
     }

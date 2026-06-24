@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
-pub const DEMOTRACER_ABI: i32 = 16;
+pub const DEMOTRACER_ABI: i32 = 17;
 pub const DTR_FORMAT_VERSION: u32 = 6;
 
 pub fn public_demo_path(path: &str) -> String {
@@ -426,6 +426,15 @@ pub struct ParsedGameEvent {
     pub health: Option<i32>,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub struct ParsedWeaponSticker {
+    pub slot: u8,
+    pub sticker_id: u32,
+    pub wear: f32,
+    pub offset_x: f32,
+    pub offset_y: f32,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct ParsedPlayerTick {
     pub tick: i32,
@@ -451,6 +460,7 @@ pub struct ParsedPlayerTick {
     pub active_weapon_paint_seed: Option<u32>,
     pub active_weapon_paint_wear: Option<f32>,
     pub active_weapon_custom_name: Option<String>,
+    pub active_weapon_stickers: Vec<ParsedWeaponSticker>,
     pub glove_item_def_index: Option<i32>,
     pub glove_paint_kit: Option<u32>,
     pub glove_paint_seed: Option<u32>,
@@ -746,6 +756,17 @@ pub struct ReplayWeaponCosmetic {
     pub wear: f32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stickers: Vec<ReplayWeaponSticker>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub struct ReplayWeaponSticker {
+    pub slot: u8,
+    pub sticker_id: u32,
+    pub wear: f32,
+    pub offset_x: f32,
+    pub offset_y: f32,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

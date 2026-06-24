@@ -22,6 +22,7 @@ pub struct BuildPoolOptions {
     pub subtick_mode: SubtickMode,
     pub freeze_preroll_seconds: f32,
     pub export_cosmetics: bool,
+    pub export_stickers: bool,
     pub analysis: AnalysisOptions,
 }
 
@@ -77,6 +78,7 @@ pub fn build_round_pool(options: &BuildPoolOptions) -> Result<BuildPoolReport> {
                         subtick_mode: options.subtick_mode,
                         freeze_preroll_seconds: options.freeze_preroll_seconds,
                         export_cosmetics: options.export_cosmetics,
+                        export_stickers: options.export_stickers,
                         analysis: options.analysis,
                     },
                 )?;
