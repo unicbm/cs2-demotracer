@@ -1,6 +1,6 @@
 use super::entities::PlayerMetaData;
-use super::variants::Sticker;
 use super::variants::Variant;
+use super::variants::{InventoryWeaponCosmetic, Sticker};
 use crate::first_pass::prop_controller::*;
 use crate::first_pass::read_bits::DemoParserError;
 use crate::maps::BUTTONMAP;
@@ -475,6 +475,7 @@ impl<'a> SecondPassParser<'a> {
             "active_weapon_original_owner" => self.find_weapon_original_owner(entity_id),
             "inventory" => self.find_my_inventory(entity_id),
             "inventory_as_ids" => self.find_my_inventory_as_ids(entity_id),
+            "inventory_weapon_cosmetics" => self.find_my_inventory_weapon_cosmetics(entity_id),
             "inventory_as_bitmask" => self.find_my_inventory_as_bitmask(entity_id),
             "CCSPlayerPawn.m_bSpottedByMask" => self.find_spotted(entity_id, prop_info),
             "entity_id" => return Ok(Variant::I32(*entity_id)),
@@ -556,14 +557,10 @@ impl<'a> SecondPassParser<'a> {
         ];
 
         for idx in 0..64 {
-            let Ok(Variant::U32(definition_index)) =
-                self.get_prop_from_ent(&(WEAPON_ATTRIBUTE_DEF_INDEX_ID + idx), weapon_entity_id)
-            else {
+            let Ok(Variant::U32(definition_index)) = self.get_prop_from_ent(&(WEAPON_ATTRIBUTE_DEF_INDEX_ID + idx), weapon_entity_id) else {
                 continue;
             };
-            let Ok(Variant::F32(raw_value)) =
-                self.get_prop_from_ent(&(WEAPON_SKIN_ID + idx), weapon_entity_id)
-            else {
+            let Ok(Variant::F32(raw_value)) = self.get_prop_from_ent(&(WEAPON_SKIN_ID + idx), weapon_entity_id) else {
                 continue;
             };
 
@@ -805,6 +802,76 @@ impl<'a> SecondPassParser<'a> {
             }
         }
         Ok(Variant::U32Vec(names))
+    }
+    pub fn find_my_inventory_weapon_cosmetics(&self, entity_id: &i32) -> Result<Variant, PropCollectionError> {
+        let mut cosmetics = vec![];
+        let mut unique_eids = vec![];
+
+        match self.find_is_alive(entity_id) {
+            Ok(Variant::Bool(true)) => {}
+            _ => return Ok(Variant::InventoryWeaponCosmetics(vec![])),
+        };
+        let inventory_max_len = match self.get_prop_from_ent(&(MY_WEAPONS_OFFSET as u32), entity_id) {
+            Ok(Variant::U32(p)) => p,
+            _ => return Err(PropCollectionError::InventoryMaxNotFound),
+        };
+
+        for i in 1..inventory_max_len + 1 {
+            let prop_id = MY_WEAPONS_OFFSET + i;
+            let eid = match self.get_prop_from_ent(&(prop_id as u32), entity_id) {
+                Ok(Variant::U32(handle)) => (handle & ((1 << 14) - 1)) as i32,
+                _ => continue,
+            };
+            if unique_eids.contains(&eid) {
+                continue;
+            }
+            unique_eids.push(eid);
+
+            let Some(item_def_id) = &self.prop_controller.special_ids.item_def else {
+                continue;
+            };
+            let item_def_index = match self.get_prop_from_ent(item_def_id, &eid) {
+                Ok(Variant::U32(def)) => def,
+                Ok(Variant::I32(def)) if def >= 0 => def as u32,
+                _ => continue,
+            };
+
+            let paint_kit = match self.find_weapon_skin_id(&eid) {
+                Ok(Variant::U32(value)) => value,
+                _ => 0,
+            };
+            let paint_seed = match self.get_prop_from_ent(&WEAPON_PAINT_SEED, &eid) {
+                Ok(Variant::F32(value)) if value.is_finite() && value >= 0.0 => value as u32,
+                Ok(Variant::U32(value)) => value,
+                _ => 0,
+            };
+            let paint_wear = match self.get_prop_from_ent(&WEAPON_FLOAT, &eid) {
+                Ok(Variant::F32(value)) => value,
+                _ => -1.0,
+            };
+            let custom_name = self
+                .prop_controller
+                .special_ids
+                .custom_name
+                .and_then(|custom_name_id| match self.get_prop_from_ent(&custom_name_id, &eid) {
+                    Ok(Variant::String(value)) => Some(value),
+                    _ => None,
+                });
+            let stickers = match self.find_stickers(&eid) {
+                Ok(Variant::Stickers(stickers)) => stickers,
+                _ => Vec::new(),
+            };
+
+            cosmetics.push(InventoryWeaponCosmetic {
+                item_def_index,
+                paint_kit,
+                paint_seed,
+                paint_wear,
+                custom_name,
+                stickers,
+            });
+        }
+        Ok(Variant::InventoryWeaponCosmetics(cosmetics))
     }
     pub fn find_my_inventory_as_bitmask(&self, entity_id: &i32) -> Result<Variant, PropCollectionError> {
         let mut bitmask = 0;

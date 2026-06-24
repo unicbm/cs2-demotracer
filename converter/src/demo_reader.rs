@@ -7,8 +7,8 @@ mod demoparser_impl {
     use super::*;
     use crate::io_error;
     use crate::model::{
-        ParsedGameEvent, ParsedPlayerTick, ParsedProjectile, ParsedWeaponSticker,
-        ProjectileEffectSource, ProjectileKind, SubtickMove,
+        ParsedGameEvent, ParsedInventoryWeaponCosmetic, ParsedPlayerTick, ParsedProjectile,
+        ParsedWeaponSticker, ProjectileEffectSource, ProjectileKind, SubtickMove,
     };
     use ahash::AHashMap;
     use parser::first_pass::parser_settings::{rm_user_friendly_names, ParserInputs};
@@ -44,6 +44,7 @@ mod demoparser_impl {
             "usercmd_buttonstate_3",
             "item_def_idx",
             "inventory_as_ids",
+            "inventory_weapon_cosmetics",
             "weapon_skin_id",
             "weapon_paint_seed",
             "weapon_float",
@@ -54,6 +55,11 @@ mod demoparser_impl {
             "glove_paint_seed",
             "glove_paint_float",
             "crosshair_code",
+            "score",
+            "mvps",
+            "kills_total",
+            "deaths_total",
+            "assists_total",
             "armor_value",
             "has_helmet",
             "has_defuser",
@@ -202,6 +208,12 @@ mod demoparser_impl {
                     .into_iter()
                     .map(|v| v as i32)
                     .collect(),
+                inventory_weapon_cosmetics: get_inventory_weapon_cosmetics(
+                    &columns,
+                    "inventory_weapon_cosmetics",
+                    idx,
+                )
+                .unwrap_or_default(),
                 active_weapon_paint_kit: get_u32(&columns, "weapon_skin_id", idx),
                 active_weapon_paint_seed: get_u32(&columns, "weapon_paint_seed", idx),
                 active_weapon_paint_wear: get_f32(&columns, "weapon_float", idx),
@@ -215,6 +227,11 @@ mod demoparser_impl {
                 glove_paint_wear: get_f32(&columns, "glove_paint_float", idx),
                 crosshair_code: get_string(&columns, "crosshair_code", idx)
                     .and_then(normalize_crosshair_code),
+                scoreboard_score: get_i32(&columns, "score", idx),
+                scoreboard_mvps: get_u32(&columns, "mvps", idx),
+                scoreboard_kills: get_u32(&columns, "kills_total", idx),
+                scoreboard_deaths: get_u32(&columns, "deaths_total", idx),
+                scoreboard_assists: get_u32(&columns, "assists_total", idx),
                 armor_value: get_u32(&columns, "armor_value", idx).unwrap_or_default(),
                 has_helmet: get_bool(&columns, "has_helmet", idx).unwrap_or(false),
                 has_defuser: get_bool(&columns, "has_defuser", idx).unwrap_or(false),
@@ -929,6 +946,55 @@ mod demoparser_impl {
                     wear: sticker.wear,
                     offset_x: sticker.x,
                     offset_y: sticker.y,
+                })
+            })
+            .collect::<Vec<_>>();
+        (!parsed.is_empty()).then_some(parsed)
+    }
+
+    fn get_inventory_weapon_cosmetics(
+        columns: &AHashMap<String, &PropColumn>,
+        name: &str,
+        idx: usize,
+    ) -> Option<Vec<ParsedInventoryWeaponCosmetic>> {
+        let weapons = match columns.get(name)?.data.as_ref()? {
+            VarVec::InventoryWeaponCosmetics(v) => v.get(idx)?,
+            _ => return None,
+        };
+        let parsed = weapons
+            .iter()
+            .filter_map(|weapon| {
+                let item_def_index = i32::try_from(weapon.item_def_index).ok()?;
+                let stickers = weapon
+                    .stickers
+                    .iter()
+                    .filter_map(|sticker| {
+                        let slot = u8::try_from(sticker.slot).ok()?;
+                        if slot > 4
+                            || sticker.id == 0
+                            || !sticker.wear.is_finite()
+                            || !(0.0..=1.0).contains(&sticker.wear)
+                            || !sticker.x.is_finite()
+                            || !sticker.y.is_finite()
+                        {
+                            return None;
+                        }
+                        Some(ParsedWeaponSticker {
+                            slot,
+                            sticker_id: sticker.id,
+                            wear: sticker.wear,
+                            offset_x: sticker.x,
+                            offset_y: sticker.y,
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                Some(ParsedInventoryWeaponCosmetic {
+                    item_def_index,
+                    paint_kit: weapon.paint_kit,
+                    paint_seed: weapon.paint_seed,
+                    paint_wear: weapon.paint_wear,
+                    custom_name: weapon.custom_name.clone().and_then(normalize_custom_name),
+                    stickers,
                 })
             })
             .collect::<Vec<_>>();

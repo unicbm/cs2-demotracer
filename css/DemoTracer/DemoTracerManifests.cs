@@ -42,6 +42,9 @@ public sealed partial class DemoTracerPlugin
 
         [JsonPropertyName("duration_seconds")]
         public float DurationSeconds { get; set; }
+
+        [JsonPropertyName("scoreboard")]
+        public ReplayRoundScoreboard? Scoreboard { get; set; }
     }
 
     private sealed class NadeManifest
@@ -240,6 +243,9 @@ public sealed partial class DemoTracerPlugin
 
         [JsonPropertyName("view")]
         public ReplayView? View { get; set; }
+
+        [JsonPropertyName("scoreboard")]
+        public ReplayPlayerScoreboard? Scoreboard { get; set; }
     }
 
     private sealed class ReplayLoadoutSnapshot
@@ -261,6 +267,33 @@ public sealed partial class DemoTracerPlugin
     {
         [JsonPropertyName("crosshair_code")]
         public string? CrosshairCode { get; set; }
+    }
+
+    private sealed class ReplayRoundScoreboard
+    {
+        [JsonPropertyName("t_score")]
+        public int TScore { get; set; }
+
+        [JsonPropertyName("ct_score")]
+        public int CtScore { get; set; }
+    }
+
+    private sealed class ReplayPlayerScoreboard
+    {
+        [JsonPropertyName("score")]
+        public int? Score { get; set; }
+
+        [JsonPropertyName("kills")]
+        public int? Kills { get; set; }
+
+        [JsonPropertyName("deaths")]
+        public int? Deaths { get; set; }
+
+        [JsonPropertyName("assists")]
+        public int? Assists { get; set; }
+
+        [JsonPropertyName("mvps")]
+        public int? MVPs { get; set; }
     }
 
     private sealed class ReplayCosmetics

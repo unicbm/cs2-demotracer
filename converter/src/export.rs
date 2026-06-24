@@ -1,10 +1,12 @@
 use crate::demo_id::output_demo_id;
 use crate::model::{
     public_demo_path, ConversionManifest, ConvertedFile, ConvertedRound, EconomyClass,
-    HighFidelityMetadata, ParsedDemo, ParsedGameEvent, ParsedPlayerTick, ParsedProjectile,
-    ReplayCosmetics, ReplayHifiEvent, ReplayHifiEventKind, ReplayInventoryItemCount,
-    ReplayInventorySnapshot, ReplayItemCosmetic, ReplayLoadout, ReplayView, ReplayWeaponCosmetic,
-    ReplayWeaponSticker, Side, SubtickMode, TeamEconomy, DEMOTRACER_ABI, DTR_FORMAT_VERSION,
+    HighFidelityMetadata, ParsedDemo, ParsedGameEvent, ParsedInventoryWeaponCosmetic,
+    ParsedPlayerTick, ParsedProjectile, ParsedWeaponSticker, ReplayCosmetics, ReplayHifiEvent,
+    ReplayHifiEventKind, ReplayInventoryItemCount, ReplayInventorySnapshot, ReplayItemCosmetic,
+    ReplayLoadout, ReplayPlayerScoreboard, ReplayRoundScoreboard, ReplayView,
+    ReplayWeaponCosmetic, ReplayWeaponSticker, Side, SubtickMode, TeamEconomy, DEMOTRACER_ABI,
+    DTR_FORMAT_VERSION,
 };
 use crate::quality::{analyze_demo, AnalysisOptions};
 use crate::rec_writer::write_rec;
@@ -178,6 +180,7 @@ pub fn export_demo_to_memory(
         let pistol_round = is_pistol_round(round.round);
         let t_economy = team_economy(round_rows, round.start_tick, end_tick, 2, pistol_round);
         let ct_economy = team_economy(round_rows, round.start_tick, end_tick, 3, pistol_round);
+        let round_scoreboard = replay_round_scoreboard(round_rows);
         let first_file_index = manifest.files.len();
 
         let mut players: BTreeMap<u64, Vec<&ParsedPlayerTick>> = BTreeMap::new();
@@ -193,6 +196,7 @@ pub fn export_demo_to_memory(
             }
             players.entry(row.steam_id).or_default().push(row);
         }
+        let cosmetic_players = cosmetic_rows_by_player(round_rows, end_tick, options.side);
 
         for (steam_id, mut player_rows) in players {
             player_rows.sort_by_key(|row| row.tick);
@@ -211,6 +215,10 @@ pub fn export_demo_to_memory(
                 .get(&steam_id)
                 .map(Vec::as_slice)
                 .unwrap_or(&[]);
+            let cosmetic_player_rows = cosmetic_players
+                .get(&steam_id)
+                .map(Vec::as_slice)
+                .unwrap_or(player_rows.as_slice());
             let (mut rec, stats) = synthesize_player_rec_with_row_refs(
                 &player_rows,
                 player_projectiles,
@@ -262,11 +270,17 @@ pub fn export_demo_to_memory(
                 inventory_snapshot_count: rec.high_fidelity.inventory_snapshots.len(),
                 loadout: replay_loadout(player_rows[0]),
                 cosmetics: if options.export_cosmetics {
-                    replay_cosmetics(&player_rows, options.export_stickers)
+                    replay_cosmetics_at(
+                        &player_rows,
+                        cosmetic_player_rows,
+                        rec.header.play_start_tick_index,
+                        options.export_stickers,
+                    )
                 } else {
                     None
                 },
                 view: replay_view(&player_rows),
+                scoreboard: replay_player_scoreboard(cosmetic_player_rows),
             });
             artifacts.push(ConversionArtifact {
                 path,
@@ -298,6 +312,7 @@ pub fn export_demo_to_memory(
                 cut_reason,
                 t_economy,
                 ct_economy,
+                scoreboard: round_scoreboard,
                 files,
             });
         }
@@ -864,6 +879,29 @@ fn live_rows_by_player<'a>(
     by_player
 }
 
+fn cosmetic_rows_by_player<'a>(
+    round_rows: &[&'a ParsedPlayerTick],
+    end_tick: i32,
+    side: Side,
+) -> BTreeMap<u64, Vec<&'a ParsedPlayerTick>> {
+    let mut by_player: BTreeMap<u64, Vec<&ParsedPlayerTick>> = BTreeMap::new();
+    for &row in round_rows {
+        if row.tick > end_tick
+            || !row.is_alive
+            || row.steam_id == 0
+            || !side.matches_team(row.team_num)
+        {
+            continue;
+        }
+        by_player.entry(row.steam_id).or_default().push(row);
+    }
+    for rows in by_player.values_mut() {
+        rows.sort_by_key(|row| row.tick);
+        rows.dedup_by_key(|row| row.tick);
+    }
+    by_player
+}
+
 fn inventory_counts(row: &ParsedPlayerTick) -> BTreeMap<i32, u32> {
     let mut counts = BTreeMap::new();
     for raw_def in &row.inventory_as_ids {
@@ -1214,7 +1252,75 @@ fn replay_view(rows: &[&ParsedPlayerTick]) -> Option<ReplayView> {
     (!view.is_empty()).then_some(view)
 }
 
-fn replay_cosmetics(rows: &[&ParsedPlayerTick], export_stickers: bool) -> Option<ReplayCosmetics> {
+fn replay_round_scoreboard(round_rows: &[&ParsedPlayerTick]) -> Option<ReplayRoundScoreboard> {
+    let mut t_score = None;
+    let mut ct_score = None;
+
+    for &row in round_rows {
+        let Some(score) = row.team_rounds_total else {
+            continue;
+        };
+        match row.team_num {
+            2 => {
+                t_score.get_or_insert(score);
+            }
+            3 => {
+                ct_score.get_or_insert(score);
+            }
+            _ => {}
+        }
+        if t_score.is_some() && ct_score.is_some() {
+            break;
+        }
+    }
+
+    Some(ReplayRoundScoreboard {
+        t_score: t_score?,
+        ct_score: ct_score?,
+    })
+}
+
+fn replay_player_scoreboard(rows: &[&ParsedPlayerTick]) -> Option<ReplayPlayerScoreboard> {
+    for row in rows {
+        let scoreboard = ReplayPlayerScoreboard {
+            score: row.scoreboard_score,
+            kills: row.scoreboard_kills,
+            deaths: row.scoreboard_deaths,
+            assists: row.scoreboard_assists,
+            mvps: row.scoreboard_mvps,
+        };
+        if !scoreboard.is_empty() {
+            return Some(scoreboard);
+        }
+    }
+
+    None
+}
+
+fn replay_cosmetics_at(
+    rows: &[&ParsedPlayerTick],
+    cosmetic_rows: &[&ParsedPlayerTick],
+    play_start_tick_index: u32,
+    export_stickers: bool,
+) -> Option<ReplayCosmetics> {
+    let mut cosmetics = replay_active_cosmetics(rows, export_stickers).unwrap_or_default();
+    if let Some(weapons) = round_inventory_weapon_cosmetics(cosmetic_rows, export_stickers) {
+        cosmetics.weapons = weapons;
+    } else if let Some(weapons) =
+        live_start_inventory_weapon_cosmetics(rows, play_start_tick_index, export_stickers)
+    {
+        cosmetics.weapons = weapons;
+    }
+    cosmetics
+        .weapons
+        .sort_by_key(|weapon| weapon.weapon_def_index);
+    (!cosmetics.is_empty()).then_some(cosmetics)
+}
+
+fn replay_active_cosmetics(
+    rows: &[&ParsedPlayerTick],
+    export_stickers: bool,
+) -> Option<ReplayCosmetics> {
     let mut weapon_specs: BTreeMap<i32, BTreeSet<CosmeticPaintSpec>> = BTreeMap::new();
     let mut weapon_custom_names: BTreeMap<i32, BTreeSet<String>> = BTreeMap::new();
     let mut weapon_stickers: BTreeMap<i32, BTreeSet<Vec<CosmeticStickerSpec>>> = BTreeMap::new();
@@ -1238,7 +1344,7 @@ fn replay_cosmetics(rows: &[&ParsedPlayerTick], export_stickers: bool) -> Option
             ) {
                 knife_specs.insert((raw_def, spec));
             }
-            if let Some(name) = cosmetic_custom_name(row) {
+            if let Some(name) = active_cosmetic_custom_name(row) {
                 knife_custom_names.insert((raw_def, name));
             }
         } else {
@@ -1251,11 +1357,11 @@ fn replay_cosmetics(rows: &[&ParsedPlayerTick], export_stickers: bool) -> Option
                 ) {
                     weapon_specs.entry(def).or_default().insert(spec);
                 }
-                if let Some(name) = cosmetic_custom_name(row) {
+                if let Some(name) = active_cosmetic_custom_name(row) {
                     weapon_custom_names.entry(def).or_default().insert(name);
                 }
                 if export_stickers {
-                    match cosmetic_sticker_set(row) {
+                    match active_cosmetic_sticker_set(row) {
                         Some(stickers) => {
                             weapon_stickers.entry(def).or_default().insert(stickers);
                         }
@@ -1332,10 +1438,127 @@ fn replay_cosmetics(rows: &[&ParsedPlayerTick], export_stickers: bool) -> Option
     (!cosmetics.is_empty()).then_some(cosmetics)
 }
 
-fn cosmetic_custom_name(row: &ParsedPlayerTick) -> Option<String> {
-    let cleaned = row
-        .active_weapon_custom_name
-        .as_deref()?
+fn live_start_inventory_weapon_cosmetics(
+    rows: &[&ParsedPlayerTick],
+    play_start_tick_index: u32,
+    export_stickers: bool,
+) -> Option<Vec<ReplayWeaponCosmetic>> {
+    let row = live_start_inventory_cosmetic_row(rows, play_start_tick_index)?;
+    inventory_weapon_cosmetics_for_row(row, export_stickers)
+}
+
+fn round_inventory_weapon_cosmetics(
+    rows: &[&ParsedPlayerTick],
+    export_stickers: bool,
+) -> Option<Vec<ReplayWeaponCosmetic>> {
+    let mut by_def = BTreeMap::new();
+    for row in rows {
+        if !row.is_alive || row.steam_id == 0 {
+            continue;
+        }
+        let Some(weapons) = inventory_weapon_cosmetics_for_row(row, export_stickers) else {
+            continue;
+        };
+        for weapon in weapons {
+            by_def.entry(weapon.weapon_def_index).or_insert(weapon);
+        }
+    }
+    let weapons = by_def.into_values().collect::<Vec<_>>();
+    (!weapons.is_empty()).then_some(weapons)
+}
+
+fn live_start_inventory_cosmetic_row<'a>(
+    rows: &[&'a ParsedPlayerTick],
+    play_start_tick_index: u32,
+) -> Option<&'a ParsedPlayerTick> {
+    if rows.is_empty() {
+        return None;
+    }
+    let center = (play_start_tick_index as usize).min(rows.len().saturating_sub(1));
+    let mut candidates = Vec::with_capacity(5);
+    candidates.push(center);
+    for offset in 1..=2 {
+        if center + offset < rows.len() {
+            candidates.push(center + offset);
+        }
+    }
+    for offset in 1..=2 {
+        if let Some(idx) = center.checked_sub(offset) {
+            candidates.push(idx);
+        }
+    }
+    candidates
+        .into_iter()
+        .map(|idx| rows[idx])
+        .find(|row| !row.inventory_weapon_cosmetics.is_empty())
+}
+
+fn inventory_weapon_cosmetics_for_row(
+    row: &ParsedPlayerTick,
+    export_stickers: bool,
+) -> Option<Vec<ReplayWeaponCosmetic>> {
+    let mut weapon_specs: BTreeMap<i32, BTreeSet<CosmeticPaintSpec>> = BTreeMap::new();
+    let mut weapon_custom_names: BTreeMap<i32, BTreeSet<String>> = BTreeMap::new();
+    let mut weapon_stickers: BTreeMap<i32, BTreeSet<Vec<CosmeticStickerSpec>>> = BTreeMap::new();
+    let weapon_stickers_missing = BTreeSet::new();
+
+    for item in &row.inventory_weapon_cosmetics {
+        let def = normalize_weapon_def_index(item.item_def_index);
+        if !is_weapon_cosmetic_def_index(def) {
+            continue;
+        }
+        if let Some(spec) = inventory_cosmetic_paint_spec(item) {
+            weapon_specs.entry(def).or_default().insert(spec);
+        }
+        if let Some(name) = cosmetic_custom_name_value(item.custom_name.as_deref()) {
+            weapon_custom_names.entry(def).or_default().insert(name);
+        }
+        if export_stickers {
+            if let Some(stickers) = cosmetic_sticker_set_from_slice(&item.stickers) {
+                weapon_stickers.entry(def).or_default().insert(stickers);
+            }
+        }
+    }
+
+    let mut weapons = Vec::new();
+    for (weapon_def_index, specs) in weapon_specs {
+        if specs.len() != 1 {
+            continue;
+        }
+        let spec = *specs.iter().next().expect("checked one cosmetic spec");
+        weapons.push(ReplayWeaponCosmetic {
+            weapon_def_index,
+            paint_kit: spec.paint_kit,
+            seed: spec.seed,
+            wear: f32::from_bits(spec.wear_bits),
+            custom_name: stable_weapon_custom_name(&weapon_custom_names, weapon_def_index),
+            stickers: stable_weapon_stickers(
+                &weapon_stickers,
+                &weapon_stickers_missing,
+                weapon_def_index,
+            ),
+        });
+    }
+    weapons.sort_by_key(|weapon| weapon.weapon_def_index);
+    (!weapons.is_empty()).then_some(weapons)
+}
+
+fn inventory_cosmetic_paint_spec(
+    item: &ParsedInventoryWeaponCosmetic,
+) -> Option<CosmeticPaintSpec> {
+    cosmetic_paint_spec(
+        Some(item.paint_kit),
+        Some(item.paint_seed),
+        Some(item.paint_wear),
+    )
+}
+
+fn active_cosmetic_custom_name(row: &ParsedPlayerTick) -> Option<String> {
+    cosmetic_custom_name_value(row.active_weapon_custom_name.as_deref())
+}
+
+fn cosmetic_custom_name_value(value: Option<&str>) -> Option<String> {
+    let cleaned = value?
         .trim()
         .chars()
         .filter(|ch| !ch.is_control() || *ch == '\t')
@@ -1372,14 +1595,20 @@ fn stable_knife_custom_name(
     }
 }
 
-fn cosmetic_sticker_set(row: &ParsedPlayerTick) -> Option<Vec<CosmeticStickerSpec>> {
-    if row.active_weapon_stickers.is_empty() {
+fn active_cosmetic_sticker_set(row: &ParsedPlayerTick) -> Option<Vec<CosmeticStickerSpec>> {
+    cosmetic_sticker_set_from_slice(&row.active_weapon_stickers)
+}
+
+fn cosmetic_sticker_set_from_slice(
+    stickers: &[ParsedWeaponSticker],
+) -> Option<Vec<CosmeticStickerSpec>> {
+    if stickers.is_empty() {
         return None;
     }
 
     let mut slots = BTreeSet::new();
-    let mut stickers = Vec::with_capacity(row.active_weapon_stickers.len());
-    for sticker in &row.active_weapon_stickers {
+    let mut parsed = Vec::with_capacity(stickers.len());
+    for sticker in stickers {
         if sticker.slot > 4
             || sticker.sticker_id == 0
             || !sticker.wear.is_finite()
@@ -1390,7 +1619,7 @@ fn cosmetic_sticker_set(row: &ParsedPlayerTick) -> Option<Vec<CosmeticStickerSpe
         {
             return None;
         }
-        stickers.push(CosmeticStickerSpec {
+        parsed.push(CosmeticStickerSpec {
             slot: sticker.slot,
             sticker_id: sticker.sticker_id,
             wear_bits: sticker.wear.to_bits(),
@@ -1398,8 +1627,8 @@ fn cosmetic_sticker_set(row: &ParsedPlayerTick) -> Option<Vec<CosmeticStickerSpe
             offset_y_bits: sticker.offset_y.to_bits(),
         });
     }
-    stickers.sort();
-    (!stickers.is_empty()).then_some(stickers)
+    parsed.sort();
+    (!parsed.is_empty()).then_some(parsed)
 }
 
 fn stable_weapon_stickers(
@@ -1713,7 +1942,9 @@ pub fn parse_round_list(value: &str) -> Result<BTreeSet<u32>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Cs2Rec, ParsedDemo, ParsedWeaponSticker, ReplayTick};
+    use crate::model::{
+        Cs2Rec, ParsedDemo, ParsedInventoryWeaponCosmetic, ParsedWeaponSticker, ReplayTick,
+    };
     use crate::rec_writer::read_rec;
 
     #[test]
@@ -2126,6 +2357,96 @@ mod tests {
         assert_eq!(stickers[0].offset_y.to_bits(), 0.2_f32.to_bits());
         assert_eq!(stickers[1].slot, 1);
         assert_eq!(stickers[1].sticker_id, 478);
+    }
+
+    #[test]
+    fn live_start_inventory_weapon_cosmetics_override_active_weapon_cosmetics() {
+        let mut parsed = sample_demo();
+        parsed.rows = vec![
+            ParsedPlayerTick {
+                item_def_idx: 16,
+                inventory_as_ids: vec![16, 61],
+                inventory_weapon_cosmetics: vec![inventory_weapon_cosmetic(
+                    16,
+                    926,
+                    42,
+                    0.123,
+                    Some("Dove1e"),
+                    vec![
+                        sticker(0, 225, 0.0, 0.0, 0.0),
+                        sticker(3, 7891, 0.0, -0.1, 0.2),
+                    ],
+                )],
+                active_weapon_paint_kit: Some(309),
+                active_weapon_paint_seed: Some(7),
+                active_weapon_paint_wear: Some(0.4),
+                active_weapon_custom_name: None,
+                active_weapon_stickers: vec![sticker(0, 60, 0.0, 0.0, 0.0)],
+                ..sample_row(100)
+            },
+            ParsedPlayerTick {
+                item_def_idx: 16,
+                inventory_as_ids: vec![16, 61],
+                active_weapon_paint_kit: Some(309),
+                active_weapon_paint_seed: Some(7),
+                active_weapon_paint_wear: Some(0.4),
+                active_weapon_stickers: vec![sticker(0, 60, 0.0, 0.0, 0.0)],
+                ..sample_row(164)
+            },
+        ];
+
+        let memory = export_memory_with_stickers(parsed);
+        let weapon = &memory.manifest.files[0]
+            .cosmetics
+            .as_ref()
+            .expect("expected cosmetic evidence")
+            .weapons[0];
+
+        assert_eq!(weapon.weapon_def_index, 16);
+        assert_eq!(weapon.paint_kit, 926);
+        assert_eq!(weapon.seed, 42);
+        assert_eq!(weapon.wear.to_bits(), 0.123_f32.to_bits());
+        assert_eq!(weapon.custom_name.as_deref(), Some("Dove1e"));
+        assert_eq!(weapon.stickers.len(), 2);
+        assert_eq!(weapon.stickers[0].sticker_id, 225);
+        assert_eq!(weapon.stickers[1].sticker_id, 7891);
+    }
+
+    #[test]
+    fn round_inventory_weapon_cosmetics_use_first_stable_weapon_entity() {
+        let early = ParsedPlayerTick {
+            inventory_weapon_cosmetics: vec![inventory_weapon_cosmetic(
+                16,
+                926,
+                727,
+                0.000_518_145_2,
+                Some("Dove1e"),
+                vec![sticker(0, 225, 0.0, 0.0, 0.0)],
+            )],
+            ..sample_row(100)
+        };
+        let later = ParsedPlayerTick {
+            inventory_weapon_cosmetics: vec![inventory_weapon_cosmetic(
+                16,
+                309,
+                941,
+                0.032_685_65,
+                None,
+                vec![sticker(0, 60, 0.0, 0.0, 0.0)],
+            )],
+            ..sample_row(164)
+        };
+        let rows = vec![&early, &later];
+
+        let weapons = round_inventory_weapon_cosmetics(&rows, true)
+            .expect("expected inventory weapon evidence");
+
+        assert_eq!(weapons.len(), 1);
+        assert_eq!(weapons[0].weapon_def_index, 16);
+        assert_eq!(weapons[0].paint_kit, 926);
+        assert_eq!(weapons[0].seed, 727);
+        assert_eq!(weapons[0].custom_name.as_deref(), Some("Dove1e"));
+        assert_eq!(weapons[0].stickers[0].sticker_id, 225);
     }
 
     #[test]
@@ -2687,6 +3008,24 @@ mod tests {
         }
     }
 
+    fn inventory_weapon_cosmetic(
+        item_def_index: i32,
+        paint_kit: u32,
+        paint_seed: u32,
+        paint_wear: f32,
+        custom_name: Option<&str>,
+        stickers: Vec<ParsedWeaponSticker>,
+    ) -> ParsedInventoryWeaponCosmetic {
+        ParsedInventoryWeaponCosmetic {
+            item_def_index,
+            paint_kit,
+            paint_seed,
+            paint_wear,
+            custom_name: custom_name.map(str::to_string),
+            stickers,
+        }
+    }
+
     fn export_memory(parsed: ParsedDemo) -> MemoryConversionReport {
         export_memory_with_options(parsed, false, false)
     }
@@ -2783,6 +3122,7 @@ mod tests {
             buttonstate3: 0,
             item_def_idx: 7,
             inventory_as_ids: vec![7],
+            inventory_weapon_cosmetics: Vec::new(),
             active_weapon_paint_kit: None,
             active_weapon_paint_seed: None,
             active_weapon_paint_wear: None,
@@ -2793,6 +3133,11 @@ mod tests {
             glove_paint_seed: None,
             glove_paint_wear: None,
             crosshair_code: None,
+            scoreboard_score: None,
+            scoreboard_mvps: None,
+            scoreboard_kills: None,
+            scoreboard_deaths: None,
+            scoreboard_assists: None,
             armor_value: 100,
             has_helmet: true,
             has_defuser: false,

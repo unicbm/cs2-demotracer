@@ -22,6 +22,7 @@ pub enum Variant {
     U32Vec(Vec<u32>),
     U64Vec(Vec<u64>),
     Stickers(Vec<Sticker>),
+    InventoryWeaponCosmetics(Vec<InventoryWeaponCosmetic>),
     InputHistory(Vec<InputHistory>),
     UserCmdSubtickMoves(Vec<UserCmdSubtickMove>),
 }
@@ -33,6 +34,15 @@ pub struct Sticker {
     pub id: u32,
     pub x: f32,
     pub y: f32,
+}
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct InventoryWeaponCosmetic {
+    pub item_def_index: u32,
+    pub paint_kit: u32,
+    pub paint_seed: u32,
+    pub paint_wear: f32,
+    pub custom_name: Option<String>,
+    pub stickers: Vec<Sticker>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct InputHistory {
@@ -70,6 +80,7 @@ pub enum VarVec {
     XYVec(Vec<Option<[f32; 2]>>),
     XYZVec(Vec<Option<[f32; 3]>>),
     Stickers(Vec<Vec<Sticker>>),
+    InventoryWeaponCosmetics(Vec<Vec<InventoryWeaponCosmetic>>),
     InputHistory(Vec<Vec<InputHistory>>),
     UserCmdSubtickMoves(Vec<Vec<UserCmdSubtickMove>>),
 }
@@ -89,6 +100,7 @@ impl VarVec {
             Variant::VecXY(_) => VarVec::XYVec(vec![]),
             Variant::VecXYZ(_) => VarVec::XYZVec(vec![]),
             Variant::Stickers(_) => VarVec::Stickers(vec![]),
+            Variant::InventoryWeaponCosmetics(_) => VarVec::InventoryWeaponCosmetics(vec![]),
             Variant::InputHistory(_) => VarVec::InputHistory(vec![]),
             Variant::UserCmdSubtickMoves(_) => VarVec::UserCmdSubtickMoves(vec![]),
         }
@@ -119,6 +131,7 @@ impl PropColumn {
             Some(VarVec::XYVec(b)) => VarVec::XYVec(indicies.iter().map(|x| b[*x]).collect_vec()),
             Some(VarVec::XYZVec(b)) => VarVec::XYZVec(indicies.iter().map(|x| b[*x]).collect_vec()),
             Some(VarVec::Stickers(b)) => VarVec::Stickers(indicies.iter().map(|x| b[*x].to_owned()).collect_vec()),
+            Some(VarVec::InventoryWeaponCosmetics(b)) => VarVec::InventoryWeaponCosmetics(indicies.iter().map(|x| b[*x].to_owned()).collect_vec()),
             Some(VarVec::InputHistory(b)) => VarVec::InputHistory(indicies.iter().map(|x| b[*x].to_owned()).collect_vec()),
             Some(VarVec::UserCmdSubtickMoves(b)) => VarVec::UserCmdSubtickMoves(indicies.iter().map(|x| b[*x].to_owned()).collect_vec()),
             None => {
@@ -147,6 +160,7 @@ impl PropColumn {
             Some(VarVec::XYVec(b)) => b.len(),
             Some(VarVec::XYZVec(b)) => b.len(),
             Some(VarVec::Stickers(b)) => b.len(),
+            Some(VarVec::InventoryWeaponCosmetics(b)) => b.len(),
             Some(VarVec::InputHistory(b)) => b.len(),
             Some(VarVec::UserCmdSubtickMoves(b)) => b.len(),
             None => self.num_nones,
@@ -275,6 +289,17 @@ impl PropColumn {
                 }
                 _ => {}
             },
+            Some(VarVec::InventoryWeaponCosmetics(v)) => match &other.data {
+                Some(VarVec::InventoryWeaponCosmetics(v_other)) => {
+                    v.extend_from_slice(&v_other);
+                }
+                None => {
+                    for _ in 0..other.num_nones {
+                        v.push(vec![]);
+                    }
+                }
+                _ => {}
+            },
             Some(VarVec::InputHistory(v)) => match &other.data {
                 Some(VarVec::InputHistory(v_other)) => {
                     v.extend_from_slice(&v_other);
@@ -353,6 +378,10 @@ impl PropColumn {
                     self.resolve_vec_type(PropColumn::get_type(&other.data));
                     self.extend_from(other);
                 }
+                Some(VarVec::InventoryWeaponCosmetics(_inner)) => {
+                    self.resolve_vec_type(PropColumn::get_type(&other.data));
+                    self.extend_from(other);
+                }
                 Some(VarVec::U32Vec(_inner)) => {
                     self.resolve_vec_type(PropColumn::get_type(&other.data));
                     self.extend_from(other);
@@ -388,6 +417,7 @@ impl PropColumn {
             Some(VarVec::U32Vec(_)) => Some(11),
             Some(VarVec::InputHistory(_)) => Some(12),
             Some(VarVec::UserCmdSubtickMoves(_)) => Some(13),
+            Some(VarVec::InventoryWeaponCosmetics(_)) => Some(14),
 
             None => None,
         }
@@ -411,6 +441,7 @@ impl PropColumn {
             Some(11) => self.data = Some(VarVec::U32Vec(vec![])),
             Some(12) => self.data = Some(VarVec::InputHistory(vec![])),
             Some(13) => self.data = Some(VarVec::UserCmdSubtickMoves(vec![])),
+            Some(14) => self.data = Some(VarVec::InventoryWeaponCosmetics(vec![])),
             _ => {}
         }
         for _ in 0..self.num_nones {
@@ -491,6 +522,10 @@ impl VarVec {
                 VarVec::Stickers(f) => f.push(p),
                 _ => {}
             },
+            Some(Variant::InventoryWeaponCosmetics(p)) => match self {
+                VarVec::InventoryWeaponCosmetics(f) => f.push(p),
+                _ => {}
+            },
             Some(Variant::InputHistory(p)) => match self {
                 VarVec::InputHistory(f) => f.push(p),
                 _ => {}
@@ -516,6 +551,7 @@ impl VarVec {
             VarVec::XYZVec(f) => f.push(None),
             VarVec::U32Vec(f) => f.push(vec![]),
             VarVec::Stickers(f) => f.push(vec![]),
+            VarVec::InventoryWeaponCosmetics(f) => f.push(vec![]),
             VarVec::InputHistory(f) => f.push(vec![]),
             VarVec::UserCmdSubtickMoves(f) => f.push(vec![]),
         }
@@ -574,6 +610,13 @@ impl Serialize for Variant {
                 s.end()
             }
             Variant::Stickers(v) => {
+                let mut s = serializer.serialize_seq(Some(v.len()))?;
+                for item in v {
+                    s.serialize_element(&item)?;
+                }
+                s.end()
+            }
+            Variant::InventoryWeaponCosmetics(v) => {
                 let mut s = serializer.serialize_seq(Some(v.len()))?;
                 for item in v {
                     s.serialize_element(&item)?;
@@ -757,6 +800,10 @@ pub fn soa_to_aos(soa: OutputSerdeHelperStruct) -> Vec<std::collections::HashMap
                         Some(f) => hm.insert(prop_info.prop_friendly_name.clone(), Some(Variant::Stickers(f.clone()))),
                         _ => hm.insert(prop_info.prop_friendly_name.clone(), None),
                     },
+                    Some(VarVec::InventoryWeaponCosmetics(val)) => match val.get(idx) {
+                        Some(f) => hm.insert(prop_info.prop_friendly_name.clone(), Some(Variant::InventoryWeaponCosmetics(f.clone()))),
+                        _ => hm.insert(prop_info.prop_friendly_name.clone(), None),
+                    },
                     Some(VarVec::InputHistory(val)) => match val.get(idx) {
                         Some(f) => hm.insert(prop_info.prop_friendly_name.clone(), Some(Variant::InputHistory(f.clone()))),
                         _ => hm.insert(prop_info.prop_friendly_name.clone(), None),
@@ -822,6 +869,9 @@ impl Serialize for OutputSerdeHelperStruct {
                         map.serialize_entry(&prop_info.prop_friendly_name, val)?;
                     }
                     Some(VarVec::Stickers(val)) => {
+                        map.serialize_entry(&prop_info.prop_friendly_name, val)?;
+                    }
+                    Some(VarVec::InventoryWeaponCosmetics(val)) => {
                         map.serialize_entry(&prop_info.prop_friendly_name, val)?;
                     }
                     Some(VarVec::InputHistory(val)) => {
