@@ -48,6 +48,25 @@ validate 输出即可。批量转换走本机 CPU/磁盘吞吐；实际速度取
 
 如果你只想查看 `.dtr` 字段布局，可以看主 README 里的 [`.dtr` Format Contract](../README.md#dtr-format-contract)。详细转换器用法见 [`USAGE.zh-Hans.md`](USAGE.zh-Hans.md)，服务器指令的用途和实现边界见 [`COMMANDS.zh-Hans.md`](COMMANDS.zh-Hans.md)。
 
+## 饰品对齐与 GSLT 风险
+
+> [!IMPORTANT]
+> 饰品、custom name 和贴纸 metadata 默认绝不导出。普通 `convert` 输出是推荐的安全路径。
+>
+> 只有在你明确传入 `--export-cosmetics`、`--acknowledge-cosmetic-gslt-risk`
+> 和 `--accept-cosmetic-export-disclaimer` 时，converter 才会导出这些
+> metadata；贴纸还必须额外传入 `--export-stickers`。runtime 里的饰品和贴纸
+> 对齐也默认关闭，并且只消费 manifest 里的 demo 证据。
+>
+> 这个功能只面向本地/私有 replay fidelity。listen/practice server 的 GSLT
+> 暴露面通常低于 dedicated server，但只写 bot 不是 Valve policy 豁免；如果人类
+> 可以观察、控制、持有、检视或以其他方式使用带模拟饰品的 bot，就应当视为存在
+> 饰品/库存策略风险。在 dedicated、community 或 public server 上，请把饰品/库存
+> 模拟视为服务器运营者自行承担的 Valve
+> [Game Server Operation Guidelines](https://blog.counter-strike.net/server_guidelines/)
+> 和 Steam [game server account](https://steamcommunity.com/dev/managegameservers)
+> 风险。
+
 ## 适合谁
 
 - 想把职业比赛 demo 里的 10 人轨迹搬进本地 CS2 服务器。
@@ -311,7 +330,8 @@ dtr_stop_all
 - 需要同一张地图，并且服务器里要有足够的 bot。
 - `.dtr` 是无损压缩的 BotController 兼容 replay 格式，并包含 demo 原始投掷物元数据、按玩家记录的高保真事件和库存快照；离线完整 usercmd 还会继续补。
 - 某些武器和默认手枪配置在 CS2 里比较麻烦，目前优先保证不崩服和基本行为正确。
-- CS2 demo 可能暴露饰品/econ 元数据，包括 custom name 和贴纸。converter 默认不导出这些字段；饰品导出必须显式传入 `--export-cosmetics`、`--acknowledge-cosmetic-gslt-risk` 和 `--accept-cosmetic-export-disclaimer`，贴纸导出还必须额外传入 `--export-stickers`。runtime 饰品和贴纸对齐也默认关闭，并且只消费 manifest 里的 demo 证据。这个功能面向本地/私有 replay 验证；listen/practice server 通常没有专用服 GSLT 暴露面，但这不等于 Valve 规则保证安全。专用服、社区服或公网服上的饰品/库存模拟可能进入 Valve [Game Server Operation Guidelines](https://blog.counter-strike.net/server_guidelines/) 和 Steam [game server account](https://steamcommunity.com/dev/managegameservers) 责任范围；Valve 曾经禁用提供库存/资料伪造服务的服务器运营者 GSLT。任何非私有本地验证场景下的饰品导出或对齐都请自行承担运营风险。
+- 饰品/econ 导出和 runtime 对齐都是显式 opt-in；见
+  [饰品对齐与 GSLT 风险](#饰品对齐与-gslt-风险)。
 - 这个工具不是作弊工具，也不会接入匹配服务器；它面向本地服务器、研究和内容制作。
 
 ## 开发者入口
