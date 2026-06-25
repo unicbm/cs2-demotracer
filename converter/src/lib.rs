@@ -1,18 +1,24 @@
+mod analysis;
 pub mod api;
 pub mod browser_analysis;
 pub mod demo_id;
 pub mod demo_reader;
 pub mod export;
 pub mod model;
+mod nade;
 pub mod nade_export;
 pub mod nade_library;
 pub mod pool;
 pub mod quality;
 pub mod rec_writer;
+mod replay;
 pub mod synthesis;
+mod workflows;
 
 #[cfg(feature = "gui")]
 pub mod gui;
+#[cfg(feature = "gui")]
+mod ui;
 
 pub mod dtr {
     pub use crate::model::{

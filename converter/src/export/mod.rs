@@ -1,15 +1,20 @@
+use crate::analysis::quality::{analyze_demo, AnalysisOptions};
 use crate::demo_id::output_demo_id;
 use crate::model::{
     public_demo_path, ConversionManifest, ConvertedFile, ConvertedRound, EconomyClass,
     HighFidelityMetadata, ParsedDemo, ParsedGameEvent, ParsedInventoryWeaponCosmetic,
     ParsedPlayerTick, ParsedProjectile, ParsedWeaponSticker, ReplayCosmetics, ReplayHifiEvent,
     ReplayHifiEventKind, ReplayInventoryItemCount, ReplayInventorySnapshot, ReplayItemCosmetic,
-    ReplayLoadout, ReplayPlayerScoreboard, ReplayRoundScoreboard, ReplayView, ReplayWeaponCosmetic,
+    ReplayPlayerScoreboard, ReplayRoundScoreboard, ReplayView, ReplayWeaponCosmetic,
     ReplayWeaponSticker, Side, SubtickMode, TeamEconomy, DEMOTRACER_ABI, DTR_FORMAT_VERSION,
 };
-use crate::quality::{analyze_demo, AnalysisOptions};
 use crate::rec_writer::write_rec;
-use crate::synthesis::{synthesize_player_rec_with_row_refs, SynthesisOptions, SynthesisStats};
+use crate::replay::context::{
+    first_weapon_def_index, preload_weapon_def_indices_from_refs, replay_loadout,
+};
+use crate::replay::synthesis::{
+    synthesize_player_rec_with_row_refs, SynthesisOptions, SynthesisStats,
+};
 use crate::{io_error, Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -1171,58 +1176,6 @@ fn is_pistol_round(round: u32) -> bool {
     round == 0 || round == 12
 }
 
-pub(crate) fn first_weapon_def_index(rec: &crate::model::Cs2Rec) -> i32 {
-    rec.ticks
-        .iter()
-        .map(|tick| normalize_weapon_def_index(tick.weapon_def_index))
-        .find(|def| is_known_weapon_def_index(*def))
-        .unwrap_or(-1)
-}
-
-pub(crate) fn preload_weapon_def_indices_from_refs(
-    rows: &[&ParsedPlayerTick],
-    rec: &crate::model::Cs2Rec,
-) -> Vec<i32> {
-    preload_weapon_def_indices_from_iter(rows.iter().copied(), rec)
-}
-
-fn preload_weapon_def_indices_from_iter<'a>(
-    rows: impl IntoIterator<Item = &'a ParsedPlayerTick>,
-    rec: &crate::model::Cs2Rec,
-) -> Vec<i32> {
-    let mut seen = BTreeSet::new();
-    let mut defs = Vec::new();
-    for row in rows {
-        for raw_def in &row.inventory_as_ids {
-            let def = normalize_weapon_def_index(*raw_def);
-            if is_preload_weapon_def_index(def) && seen.insert(def) {
-                defs.push(def);
-            }
-        }
-    }
-    for tick in &rec.ticks {
-        let def = normalize_weapon_def_index(tick.weapon_def_index);
-        if is_preload_weapon_def_index(def) && seen.insert(def) {
-            defs.push(def);
-        }
-    }
-    defs
-}
-
-pub(crate) fn replay_loadout(row: &ParsedPlayerTick) -> ReplayLoadout {
-    ReplayLoadout {
-        weapon_def_indices: row
-            .inventory_as_ids
-            .iter()
-            .map(|def| normalize_weapon_def_index(*def))
-            .filter(|def| is_loadout_weapon_def_index(*def))
-            .collect(),
-        armor_value: row.armor_value,
-        has_helmet: row.has_helmet,
-        has_defuser: row.has_defuser,
-    }
-}
-
 fn replay_view(rows: &[&ParsedPlayerTick]) -> Option<ReplayView> {
     let mut crosshair_codes = BTreeSet::new();
 
@@ -1767,14 +1720,6 @@ fn is_known_weapon_def_index(def: i32) -> bool {
 
 fn is_replay_equipment_event_def(def: i32) -> bool {
     matches!(normalize_weapon_def_index(def), 43 | 44 | 45 | 46 | 47 | 48)
-}
-
-fn is_preload_weapon_def_index(def: i32) -> bool {
-    is_known_weapon_def_index(def) && !matches!(def, 31 | 42 | 49)
-}
-
-fn is_loadout_weapon_def_index(def: i32) -> bool {
-    is_known_weapon_def_index(def) && !matches!(def, 42 | 49)
 }
 
 fn is_weapon_cosmetic_def_index(def: i32) -> bool {
