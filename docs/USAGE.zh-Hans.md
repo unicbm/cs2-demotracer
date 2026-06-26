@@ -55,11 +55,16 @@ cs2-demotracer.exe convert --demo <demo.dem> --output <输出目录> --export-co
 
 ```text
 manifest.json
+avatars/<sha256>.<ext>
 round00/t/*.dtr
 round00/ct/*.dtr
 ```
 
 实际输出目录名会是 `<demo-stem>-<hash12>`；`hash12` 来自 demo 文件内容，用来避免同名 demo 互相覆盖。
+`avatars/` 只在 demo 包含比赛服务器头像覆写时生成；manifest 会记录每个头像对应的 SteamID64。
+当 replay identity 为 `full` 时，DemoTracer 会通过 `ServerAvatarOverrides`
+把匹配的 PNG 头像覆写应用到 BotHider 管理的 replay bot，并由 native runtime
+启用 `sv_reliableavatardata`。
 
 ## 2. 批量生成地图回合池
 

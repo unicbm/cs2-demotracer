@@ -327,6 +327,7 @@ The output looks like this:
 
 ```text
 output/<demo-id>/manifest.json
+output/<demo-id>/avatars/<sha256>.<ext>
 output/<demo-id>/round00/t/<player>.dtr
 output/<demo-id>/round00/ct/<player>.dtr
 output/<demo-id>/round01/...
@@ -334,7 +335,14 @@ output/<demo-id>/round01/...
 
 `<demo-id>` is `<demo-stem>-<hash12>`, where `hash12` is derived from the demo file contents. This prevents repeated event/map names from overwriting each other.
 
-`manifest.json` is the easiest file to use for playback.
+`avatars/` is present only when the demo contains server-provided avatar
+overrides. `manifest.json` records the SteamID64-to-avatar mapping and remains
+the easiest file to use for playback.
+
+At playback time, DemoTracer can apply those PNGs as server avatar overrides for
+matching BotHider-managed replay bots. The native runtime enables
+`sv_reliableavatardata` and writes `ServerAvatarOverrides`; this is only an
+in-server presentation override, not a change to any player's real Steam avatar.
 
 For users who do not write Rust, [`examples/`](examples/) contains small Python
 and Node.js scripts that call the CLI, locate the generated `manifest.json`, and
@@ -451,6 +459,10 @@ dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
 `seq` means "play a sequence starting from a manifest source round"; the final
 `0` is `from_source_round=0`, not "play only round 0". Use
 `dtr_go round "<manifest.json>" 0` for single-round playback.
+
+Replay identity is `full` by default. When BotHider is managing the replay bot
+slots, loading a manifest writes demo names, SteamID64 values, and any matching
+demo-provided avatar PNG overrides.
 
 When full-round playback starts, DemoTracer treats the selected replay bots as
 being reset to the replay round start: alive replay bots are restored to 100 HP,

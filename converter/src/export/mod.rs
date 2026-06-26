@@ -2,12 +2,12 @@ use crate::analysis::quality::{analyze_demo, AnalysisOptions};
 use crate::demo_id::output_demo_id;
 use crate::model::{
     public_demo_path, ConversionManifest, ConvertedFile, ConvertedRound, EconomyClass,
-    HighFidelityMetadata, ParsedDemo, ParsedGameEvent, ParsedInventoryWeaponCosmetic,
-    ParsedPlayerTick, ParsedProjectile, ParsedWeaponSticker, ReplayCosmetics, ReplayHifiEvent,
-    ReplayHifiEventKind, ReplayInventoryItemCount, ReplayInventorySnapshot, ReplayItemCosmetic,
-    ReplayPlayerScoreboard, ReplayRoundScoreboard, ReplayView, ReplayWeaponCosmetic,
-    ReplayWeaponSticker, RoundSummary, Side, SubtickMode, TeamEconomy, DEMOTRACER_ABI,
-    DTR_FORMAT_VERSION,
+    HighFidelityMetadata, ManifestAvatarOverride, ParsedAvatarOverride, ParsedDemo,
+    ParsedGameEvent, ParsedInventoryWeaponCosmetic, ParsedPlayerTick, ParsedProjectile,
+    ParsedWeaponSticker, ReplayCosmetics, ReplayHifiEvent, ReplayHifiEventKind,
+    ReplayInventoryItemCount, ReplayInventorySnapshot, ReplayItemCosmetic, ReplayPlayerScoreboard,
+    ReplayRoundScoreboard, ReplayView, ReplayWeaponCosmetic, ReplayWeaponSticker, RoundSummary,
+    Side, SubtickMode, TeamEconomy, DEMOTRACER_ABI, DTR_FORMAT_VERSION,
 };
 use crate::rec_writer::write_rec;
 use crate::replay::context::{
@@ -82,6 +82,7 @@ pub struct ConversionReport {
 #[serde(rename_all = "snake_case")]
 pub enum ConversionArtifactKind {
     Dtr,
+    Avatar,
     Manifest,
     Log,
 }
@@ -194,6 +195,7 @@ fn export_demo_to_memory_inner(
         tick_rate: parsed.tick_rate,
         abi: DEMOTRACER_ABI,
         format_version: DTR_FORMAT_VERSION,
+        avatar_overrides: Vec::new(),
         rounds: Vec::new(),
         files: Vec::new(),
     };
@@ -438,6 +440,7 @@ fn export_demo_to_memory_inner(
         );
     }
 
+    append_avatar_override_artifacts(parsed, &mut manifest, &mut artifacts, &mut log);
     let manifest_json = serde_json::to_string_pretty(&manifest)?;
 
     log.push(format!("files_written={}", manifest.files.len()));
@@ -475,6 +478,50 @@ fn export_demo_to_memory_inner(
         log,
         artifacts,
     })
+}
+
+fn append_avatar_override_artifacts(
+    parsed: &ParsedDemo,
+    manifest: &mut ConversionManifest,
+    artifacts: &mut Vec<ConversionArtifact>,
+    log: &mut Vec<String>,
+) {
+    if parsed.avatar_overrides.is_empty() {
+        return;
+    }
+
+    let mut written_paths = BTreeSet::new();
+    for avatar in &parsed.avatar_overrides {
+        let path = avatar_override_path(avatar);
+        manifest.avatar_overrides.push(ManifestAvatarOverride {
+            steam_id: avatar.steam_id,
+            format: avatar.format,
+            sha256: avatar.sha256.clone(),
+            path: path.clone(),
+            source: avatar.source.clone(),
+            bytes: avatar.bytes.len(),
+        });
+
+        if written_paths.insert(path.clone()) {
+            artifacts.push(ConversionArtifact {
+                path,
+                bytes: avatar.bytes.clone(),
+                kind: ConversionArtifactKind::Avatar,
+                round: None,
+                steam_id: Some(avatar.steam_id),
+            });
+        }
+    }
+
+    log.push(format!(
+        "avatar_overrides={} avatar_assets={}",
+        manifest.avatar_overrides.len(),
+        written_paths.len()
+    ));
+}
+
+fn avatar_override_path(avatar: &ParsedAvatarOverride) -> String {
+    format!("avatars/{}.{}", avatar.sha256, avatar.format.extension())
 }
 
 pub fn export_demo(parsed: &ParsedDemo, options: &ConvertOptions) -> Result<ConversionReport> {
@@ -2127,7 +2174,8 @@ pub fn parse_round_list(value: &str) -> Result<BTreeSet<u32>> {
 mod tests {
     use super::*;
     use crate::model::{
-        Cs2Rec, ParsedDemo, ParsedInventoryWeaponCosmetic, ParsedWeaponSticker, ReplayTick,
+        AvatarImageFormat, Cs2Rec, ParsedAvatarOverride, ParsedDemo, ParsedInventoryWeaponCosmetic,
+        ParsedWeaponSticker, ReplayTick,
     };
     use crate::rec_writer::read_rec;
 
@@ -2298,6 +2346,60 @@ mod tests {
         assert!(memory.manifest.files[0].cosmetics.is_none());
         let json = serde_json::to_string(&memory.manifest.files[0]).unwrap();
         assert!(!json.contains("cosmetics"));
+    }
+
+    #[test]
+    fn manifest_writes_demo_avatar_override_assets() {
+        let mut parsed = sample_demo();
+        let bytes = b"\x89PNG\r\n\x1a\navatar".to_vec();
+        let sha256 = crate::demo_id::sha256_hex(&bytes);
+        parsed.avatar_overrides = vec![
+            ParsedAvatarOverride {
+                steam_id: 76561198000000001,
+                format: AvatarImageFormat::Png,
+                sha256: sha256.clone(),
+                source: "ServerAvatarOverrides".to_string(),
+                bytes: bytes.clone(),
+            },
+            ParsedAvatarOverride {
+                steam_id: 76561198000000002,
+                format: AvatarImageFormat::Png,
+                sha256: sha256.clone(),
+                source: "ServerAvatarOverrides".to_string(),
+                bytes: bytes.clone(),
+            },
+        ];
+
+        let memory = export_memory(parsed);
+        let expected_path = format!("avatars/{sha256}.png");
+
+        assert_eq!(memory.manifest.avatar_overrides.len(), 2);
+        assert_eq!(
+            memory.manifest.avatar_overrides[0].steam_id,
+            76561198000000001
+        );
+        assert_eq!(
+            memory.manifest.avatar_overrides[0].path.as_str(),
+            expected_path.as_str()
+        );
+        assert!(memory.log.contains("avatar_overrides=2 avatar_assets=1"));
+
+        let avatar_artifacts = memory
+            .artifacts
+            .iter()
+            .filter(|artifact| artifact.kind == ConversionArtifactKind::Avatar)
+            .collect::<Vec<_>>();
+        assert_eq!(avatar_artifacts.len(), 1);
+        assert_eq!(avatar_artifacts[0].bytes.as_slice(), bytes.as_slice());
+
+        let manifest_artifact = memory
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.kind == ConversionArtifactKind::Manifest)
+            .unwrap();
+        let manifest_json = std::str::from_utf8(&manifest_artifact.bytes).unwrap();
+        assert!(manifest_json.contains("\"avatar_overrides\""));
+        assert!(manifest_json.contains(&format!("\"path\": \"{expected_path}\"")));
     }
 
     #[test]
@@ -3350,6 +3452,7 @@ mod tests {
             rows: vec![sample_row(100), sample_row(164)],
             projectiles: Vec::new(),
             events: Vec::new(),
+            avatar_overrides: Vec::new(),
         }
     }
 

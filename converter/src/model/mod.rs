@@ -393,6 +393,36 @@ pub struct ParsedDemo {
     pub rows: Vec<ParsedPlayerTick>,
     pub projectiles: Vec<ParsedProjectile>,
     pub events: Vec<ParsedGameEvent>,
+    pub avatar_overrides: Vec<ParsedAvatarOverride>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AvatarImageFormat {
+    Png,
+    Jpeg,
+    #[default]
+    Binary,
+}
+
+impl AvatarImageFormat {
+    pub fn extension(self) -> &'static str {
+        match self {
+            Self::Png => "png",
+            Self::Jpeg => "jpg",
+            Self::Binary => "bin",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct ParsedAvatarOverride {
+    pub steam_id: u64,
+    pub format: AvatarImageFormat,
+    pub sha256: String,
+    pub source: String,
+    #[serde(skip)]
+    pub bytes: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -660,8 +690,20 @@ pub struct ConversionManifest {
     pub tick_rate: f32,
     pub abi: i32,
     pub format_version: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub avatar_overrides: Vec<ManifestAvatarOverride>,
     pub rounds: Vec<ConvertedRound>,
     pub files: Vec<ConvertedFile>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ManifestAvatarOverride {
+    pub steam_id: u64,
+    pub format: AvatarImageFormat,
+    pub sha256: String,
+    pub path: String,
+    pub source: String,
+    pub bytes: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

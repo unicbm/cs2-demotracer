@@ -7,8 +7,9 @@ mod demoparser_impl {
     use super::*;
     use crate::io_error;
     use crate::model::{
-        ParsedGameEvent, ParsedInventoryWeaponCosmetic, ParsedPlayerTick, ParsedProjectile,
-        ParsedWeaponSticker, ProjectileEffectSource, ProjectileKind, SubtickMove,
+        AvatarImageFormat, ParsedAvatarOverride, ParsedGameEvent, ParsedInventoryWeaponCosmetic,
+        ParsedPlayerTick, ParsedProjectile, ParsedWeaponSticker, ProjectileEffectSource,
+        ProjectileKind, SubtickMove,
     };
     use ahash::AHashMap;
     use parser::first_pass::parser_settings::{rm_user_friendly_names, ParserInputs};
@@ -16,6 +17,7 @@ mod demoparser_impl {
     use parser::second_pass::game_events::GameEvent;
     use parser::second_pass::parser_settings::create_huffman_lookup_table;
     use parser::second_pass::variants::{PropColumn, VarVec, Variant};
+    use std::collections::BTreeMap;
     use std::fs;
 
     pub fn read_demo(path: &Path) -> Result<ParsedDemo> {
@@ -284,6 +286,7 @@ mod demoparser_impl {
         bomb_planted_ticks.dedup();
         let events = parse_game_events(&output.game_events);
         let projectiles = parse_projectiles(bytes, tick_rate, &output.game_events)?;
+        let avatar_overrides = parse_avatar_overrides(output.server_avatar_overrides);
 
         Ok(ParsedDemo {
             path: display_path.to_string(),
@@ -297,7 +300,54 @@ mod demoparser_impl {
             rows,
             projectiles,
             events,
+            avatar_overrides,
         })
+    }
+
+    fn parse_avatar_overrides(raw: Vec<(String, Vec<u8>)>) -> Vec<ParsedAvatarOverride> {
+        let mut by_steam_id: BTreeMap<u64, BTreeMap<String, (AvatarImageFormat, Vec<u8>)>> =
+            BTreeMap::new();
+        for (key, bytes) in raw {
+            if bytes.is_empty() {
+                continue;
+            }
+            let Ok(steam_id) = key.trim().parse::<u64>() else {
+                continue;
+            };
+            let sha256 = crate::demo_id::sha256_hex(&bytes);
+            by_steam_id
+                .entry(steam_id)
+                .or_default()
+                .entry(sha256)
+                .or_insert_with(|| (detect_avatar_image_format(&bytes), bytes));
+        }
+
+        by_steam_id
+            .into_iter()
+            .filter_map(|(steam_id, mut variants)| {
+                if variants.len() != 1 {
+                    return None;
+                }
+                let (sha256, (format, bytes)) = variants.pop_first()?;
+                Some(ParsedAvatarOverride {
+                    steam_id,
+                    format,
+                    sha256,
+                    source: "ServerAvatarOverrides".to_string(),
+                    bytes,
+                })
+            })
+            .collect()
+    }
+
+    fn detect_avatar_image_format(bytes: &[u8]) -> AvatarImageFormat {
+        if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+            AvatarImageFormat::Png
+        } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+            AvatarImageFormat::Jpeg
+        } else {
+            AvatarImageFormat::Binary
+        }
     }
 
     pub fn read_demo_header_map_bytes(bytes: &[u8]) -> Result<Option<String>> {

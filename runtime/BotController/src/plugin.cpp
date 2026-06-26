@@ -10,6 +10,7 @@
 #include <icvar.h>
 #include <convar.h>
 #include <interfaces/interfaces.h>
+#include <networkstringtabledefs.h>
 
 #include <nlohmann/json.hpp>
 
@@ -106,6 +107,14 @@ bool BotControllerPlugin::Load(PluginId id, ISmmAPI *ismm,
 
     // Engine interface used by console command output (ClientPrintf).
     BotController::Commands::g_pEngine = BotController::Dispatch::g_pEngine;
+    BotController::Commands::g_pStringTables = static_cast<INetworkStringTableContainer *>(
+        ismm->GetEngineFactory()(INTERFACENAME_NETWORKSTRINGTABLESERVER, nullptr));
+    if (!BotController::Commands::g_pStringTables)
+    {
+        BotController::DebugOut(
+            "[BotController] WARN: network string table server interface unavailable; "
+            "bc_avatar_override_probe disabled\n");
+    }
     BotController::Dispatch::g_pGameClients =
         static_cast<ISource2GameClients *>(serverIface);
 
@@ -186,6 +195,7 @@ bool BotControllerPlugin::Unload(char * /*error*/, size_t /*maxlen*/)
     BotController::Dispatch::g_pEngine = nullptr;
     BotController::Dispatch::g_pGameClients = nullptr;
     BotController::Commands::g_pEngine = nullptr;
+    BotController::Commands::g_pStringTables = nullptr;
     ConVar_Unregister();
     g_pCVar = nullptr;
     BotController::DebugOut("[BotController] plugin unloaded\n");

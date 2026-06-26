@@ -14,12 +14,16 @@
 #include <tier0/dbg.h>
 #include <convar.h>
 #include <eiface.h>
+#include <icvar.h>
+#include <networkstringtabledefs.h>
 #include <playerslot.h>
 
 #include <cstdarg>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -28,6 +32,7 @@ namespace BotController
     namespace Commands
     {
         IVEngineServer2 *g_pEngine = nullptr;
+        INetworkStringTableContainer *g_pStringTables = nullptr;
 
         // ClientPrintf to the calling player, or server log if from console.
         void PrintToCaller(const CCommandContext &context, const char *fmt, ...)
@@ -126,6 +131,112 @@ namespace BotController
             return "?";
         }
 
+        static bool IsSteamId64(const char *s)
+        {
+            if (!s || !*s)
+                return false;
+            size_t len = 0;
+            for (const unsigned char *p = reinterpret_cast<const unsigned char *>(s); *p; ++p)
+            {
+                if (!std::isdigit(*p))
+                    return false;
+                ++len;
+            }
+            return len >= 16 && len <= 20;
+        }
+
+        static bool ReadPngFile(const char *path, std::vector<unsigned char> &out,
+                                char *err, size_t errLen)
+        {
+            if (!path || !*path)
+            {
+                std::snprintf(err, errLen, "empty path");
+                return false;
+            }
+
+            std::ifstream file(path, std::ios::binary | std::ios::ate);
+            if (!file)
+            {
+                std::snprintf(err, errLen, "failed to open file");
+                return false;
+            }
+
+            const std::streamoff size = file.tellg();
+            if (size <= 0)
+            {
+                std::snprintf(err, errLen, "empty file");
+                return false;
+            }
+            if (size > 16 * 1024)
+            {
+                std::snprintf(err, errLen, "PNG must be 16 KiB or smaller");
+                return false;
+            }
+
+            out.resize(static_cast<size_t>(size));
+            file.seekg(0, std::ios::beg);
+            if (!file.read(reinterpret_cast<char *>(out.data()), size))
+            {
+                std::snprintf(err, errLen, "failed to read file");
+                return false;
+            }
+
+            static constexpr unsigned char kPngSig[8] =
+                {0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a};
+            if (out.size() < sizeof(kPngSig) ||
+                std::memcmp(out.data(), kPngSig, sizeof(kPngSig)) != 0)
+            {
+                std::snprintf(err, errLen, "file is not a PNG");
+                return false;
+            }
+            return true;
+        }
+
+        static bool SetAvatarOverride(INetworkStringTable *table, const char *steamId,
+                                      const std::vector<unsigned char> &bytes, int &index)
+        {
+            SetStringUserDataRequest_t userData{};
+            userData.m_pRawData = const_cast<unsigned char *>(bytes.data());
+            userData.m_cbDataSize = static_cast<unsigned int>(bytes.size());
+
+            index = table->FindStringIndex(steamId);
+            if (index < 0)
+            {
+                index = table->AddString(true, steamId, &userData);
+                return index >= 0;
+            }
+            return table->SetStringUserData(index, &userData, true);
+        }
+
+        static bool EnsureReliableAvatarData(const CCommandContext &context)
+        {
+            ConVarRefAbstract reliableAvatarData("sv_reliableavatardata");
+            if (!reliableAvatarData.IsValidRef() ||
+                !reliableAvatarData.IsConVarDataAvailable())
+            {
+                PrintToCaller(
+                    context,
+                    "[BC] error: sv_reliableavatardata not found; server avatar overrides are unavailable\n");
+                return false;
+            }
+
+            if (!reliableAvatarData.GetBool())
+            {
+                reliableAvatarData.SetBool(true);
+                if (!reliableAvatarData.GetBool())
+                {
+                    PrintToCaller(
+                        context,
+                        "[BC] error: failed to enable sv_reliableavatardata; run sv_reliableavatardata true\n");
+                    return false;
+                }
+                PrintToCaller(
+                    context,
+                    "[BC] sv_reliableavatardata enabled for server avatar overrides\n");
+            }
+            return true;
+        }
+
         static bool ParseReplaySnapMode(const char *s, MotionRecorder::ReplaySnapMode &out)
         {
             if (!s)
@@ -214,6 +325,68 @@ namespace BotController
             return false;
         }
     }
+}
+
+CON_COMMAND_F(bc_avatar_override_probe,
+              "bc_avatar_override_probe <steamid64> <png_path>  "
+              "Experimental: set ServerAvatarOverrides user data for one SteamID.",
+              FCVAR_NONE)
+{
+    using namespace BotController;
+
+    if (args.ArgC() < 3)
+    {
+        Commands::PrintToCaller(context,
+                                "usage: bc_avatar_override_probe <steamid64> <png_path>\n");
+        return;
+    }
+
+    const char *steamId = args.Arg(1);
+    if (!Commands::IsSteamId64(steamId))
+    {
+        Commands::PrintToCaller(context, "[BC] error: expected a SteamID64 key\n");
+        return;
+    }
+
+    if (!Commands::g_pStringTables)
+    {
+        Commands::PrintToCaller(context,
+                                "[BC] error: network string table server interface unavailable\n");
+        return;
+    }
+
+    INetworkStringTable *table =
+        Commands::g_pStringTables->FindTable("ServerAvatarOverrides");
+    if (!table)
+    {
+        Commands::PrintToCaller(context,
+                                "[BC] error: ServerAvatarOverrides table not found yet\n");
+        return;
+    }
+
+    std::vector<unsigned char> bytes;
+    char err[128] = {0};
+    if (!Commands::ReadPngFile(args.Arg(2), bytes, err, sizeof(err)))
+    {
+        Commands::PrintToCaller(context, "[BC] error: %s\n", err);
+        return;
+    }
+
+    if (!Commands::EnsureReliableAvatarData(context))
+        return;
+
+    int index = -1;
+    if (!Commands::SetAvatarOverride(table, steamId, bytes, index))
+    {
+        Commands::PrintToCaller(context,
+                                "[BC] error: failed to update avatar override for %s\n",
+                                steamId);
+        return;
+    }
+
+    Commands::PrintToCaller(context,
+                            "[BC] avatar override set %s (%zu bytes, index %d, sv_reliableavatardata=true)\n",
+                            steamId, bytes.size(), index);
 }
 
 CON_COMMAND_F(bc_lock,

@@ -494,6 +494,7 @@ mod tests {
             rows: vec![row(1, 0, 2, 1), row(1, 640, 3, 2)],
             projectiles: Vec::new(),
             events: Vec::new(),
+            avatar_overrides: Vec::new(),
         };
         let analysis = analyze_demo(&parsed, AnalysisOptions::default());
         assert_eq!(analysis.rounds[0].status, RoundStatus::Suspicious);
@@ -520,6 +521,7 @@ mod tests {
             rows: vec![frozen],
             projectiles: Vec::new(),
             events: Vec::new(),
+            avatar_overrides: Vec::new(),
         };
 
         let analysis = analyze_demo(&parsed, AnalysisOptions::default());
@@ -568,6 +570,7 @@ mod tests {
             rows,
             projectiles: Vec::new(),
             events: Vec::new(),
+            avatar_overrides: Vec::new(),
         };
 
         let analysis = analyze_demo(&parsed, AnalysisOptions::default());
@@ -599,6 +602,7 @@ mod tests {
             rows,
             projectiles: Vec::new(),
             events: Vec::new(),
+            avatar_overrides: Vec::new(),
         };
 
         let analysis = analyze_demo(&parsed, AnalysisOptions::default());
@@ -637,6 +641,7 @@ mod tests {
             rows,
             projectiles: Vec::new(),
             events: Vec::new(),
+            avatar_overrides: Vec::new(),
         };
 
         let analysis = analyze_demo(&parsed, AnalysisOptions::default());
@@ -675,6 +680,7 @@ mod tests {
             rows,
             projectiles: Vec::new(),
             events: Vec::new(),
+            avatar_overrides: Vec::new(),
         };
 
         let analysis = analyze_demo(&parsed, AnalysisOptions::default());

@@ -26,6 +26,9 @@ public sealed partial class DemoTracerPlugin
         [JsonPropertyName("rounds")]
         public List<ManifestRound> Rounds { get; set; } = new();
 
+        [JsonPropertyName("avatar_overrides")]
+        public List<ManifestAvatarOverride> AvatarOverrides { get; set; } = new();
+
         public int EffectiveDtrFormatVersion => DtrFormatVersion != 0 ? DtrFormatVersion : FormatVersion;
     }
 
@@ -248,6 +251,27 @@ public sealed partial class DemoTracerPlugin
         public ReplayPlayerScoreboard? Scoreboard { get; set; }
     }
 
+    private sealed class ManifestAvatarOverride
+    {
+        [JsonPropertyName("steam_id")]
+        public ulong SteamId { get; set; }
+
+        [JsonPropertyName("format")]
+        public string Format { get; set; } = string.Empty;
+
+        [JsonPropertyName("sha256")]
+        public string Sha256 { get; set; } = string.Empty;
+
+        [JsonPropertyName("path")]
+        public string Path { get; set; } = string.Empty;
+
+        [JsonPropertyName("source")]
+        public string Source { get; set; } = string.Empty;
+
+        [JsonPropertyName("bytes")]
+        public int Bytes { get; set; }
+    }
+
     private sealed class ReplayLoadoutSnapshot
     {
         [JsonPropertyName("weapon_def_indices")]
@@ -402,6 +426,7 @@ public sealed partial class DemoTracerPlugin
     private static void ValidateConversionManifest(string manifestPath, ConversionManifest manifest)
     {
         manifest.Files ??= new List<ManifestFile>();
+        manifest.AvatarOverrides ??= new List<ManifestAvatarOverride>();
         ValidateManifestAbi(manifest.Abi);
         if (string.IsNullOrWhiteSpace(manifest.Map))
             throw new InvalidDataException("manifest map is required");
@@ -422,6 +447,7 @@ public sealed partial class DemoTracerPlugin
         var manifestDir = Path.GetDirectoryName(Path.GetFullPath(manifestPath)) ?? ".";
         for (var i = 0; i < manifest.Files.Count; i++)
             ValidateManifestFile(manifest.Files[i], i, manifestDir, paths);
+        ValidateManifestAvatarOverrides(manifest.AvatarOverrides, manifestDir);
     }
 
     private static void ValidateManifestFile(
@@ -445,6 +471,27 @@ public sealed partial class DemoTracerPlugin
             !file.Side.Equals("ct", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidDataException($"manifest file {index} side must be t or ct: {file.Side}");
+        }
+    }
+
+    private static void ValidateManifestAvatarOverrides(
+        IReadOnlyList<ManifestAvatarOverride> avatarOverrides,
+        string manifestDir)
+    {
+        var steamIds = new HashSet<ulong>();
+        for (var i = 0; i < avatarOverrides.Count; i++)
+        {
+            var avatar = avatarOverrides[i];
+            if (avatar == null)
+                throw new InvalidDataException($"manifest avatar override {i} is null");
+            if (avatar.SteamId == 0)
+                throw new InvalidDataException($"manifest avatar override {i} steam_id is required");
+            if (!steamIds.Add(avatar.SteamId))
+                throw new InvalidDataException($"duplicate manifest avatar override steam_id: {avatar.SteamId}");
+            if (string.IsNullOrWhiteSpace(avatar.Path))
+                throw new InvalidDataException($"manifest avatar override {i} path is required");
+            if (!TryResolveChildPathUnderRoot(manifestDir, avatar.Path, out _, out var pathError))
+                throw new InvalidDataException($"manifest avatar override {i} {pathError}");
         }
     }
 

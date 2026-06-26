@@ -21,6 +21,7 @@ use csgoproto::CDemoFileHeader;
 use csgoproto::CDemoFullPacket;
 use csgoproto::CDemoPacket;
 use csgoproto::CDemoSendTables;
+use csgoproto::CDemoStringTables;
 use csgoproto::CsvcMsgGameEventList;
 use csgoproto::EDemoCommands;
 use prost::Message;
@@ -67,6 +68,7 @@ pub struct FirstPassOutput<'a> {
     pub header: AHashMap<String, String>,
     pub order_by_steamid: bool,
     pub list_props: bool,
+    pub server_avatar_overrides: Vec<(String, Vec<u8>)>,
 }
 #[derive(Debug)]
 pub struct Frame {
@@ -122,6 +124,7 @@ impl<'a> FirstPassParser<'a> {
                 EDemoCommands::DemSendTables => self.parse_sendtable_bytes(bytes)?,
                 EDemoCommands::DemFileHeader => self.parse_header(bytes)?,
                 EDemoCommands::DemClassInfo => self.parse_class_info(bytes)?,
+                EDemoCommands::DemStringTables => self.parse_demo_string_tables(bytes)?,
                 EDemoCommands::DemSignonPacket => self.parse_packet(bytes)?,
                 EDemoCommands::DemFullPacket => self.parse_full_packet(bytes, &frame)?,
                 EDemoCommands::DemStop => break,
@@ -226,6 +229,7 @@ impl<'a> FirstPassParser<'a> {
             stringtable_players: self.stringtable_players.clone(),
             added_temp_props: self.added_temp_props.clone(),
             list_props: self.list_props,
+            server_avatar_overrides: self.server_avatar_overrides.clone(),
         })
     }
     fn fallback_if_first_pass_missing_data(&mut self) -> Result<(), DemoParserError> {
@@ -248,6 +252,26 @@ impl<'a> FirstPassParser<'a> {
             hm.insert(event_desc.eventid(), event_desc);
         }
         self.ge_list = hm;
+        Ok(())
+    }
+    pub fn parse_demo_string_tables(&mut self, bytes: &[u8]) -> Result<(), DemoParserError> {
+        let string_tables = match CDemoStringTables::decode(bytes) {
+            Ok(tables) => tables,
+            Err(_) => return Err(DemoParserError::MalformedMessage),
+        };
+        for table in &string_tables.tables {
+            if table.table_name() != "ServerAvatarOverrides" {
+                continue;
+            }
+            for item in &table.items {
+                let key = item.str();
+                let data = item.data();
+                if !key.is_empty() && !data.is_empty() {
+                    self.server_avatar_overrides
+                        .push((key.to_string(), data.to_vec()));
+                }
+            }
+        }
         Ok(())
     }
     pub fn parse_full_packet(&mut self, bytes: &[u8], frame: &Frame) -> Result<(), DemoParserError> {

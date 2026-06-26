@@ -17,7 +17,8 @@ dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
 Replay identity, weapon/loadout alignment, projectile alignment, and crosshair
 alignment are on by default. Identity alignment only writes demo names and
 SteamID64 values when BotHider is present and managing the target replay bot
-slots.
+slots. If the manifest contains demo-provided PNG avatar overrides, identity
+`full` also applies them for matching SteamID64 values.
 
 Use `seq` for "sequence from source round", `round` for one source round only,
 and `pool` for economy-matched pool playback. `dtr_go` validates the plan,
@@ -35,7 +36,7 @@ arms it, then issues `mp_restartgame 1` so playback catches a fresh
 | `dtr_crosshair_align` | `1` | Apply demo-evidence crosshair codes to human viewers while they watch replay bots in-eye. |
 | `dtr_handoff` | `death_or_contact slot` | Release only the contacted/dead replay slot after contact or death. |
 | `dtr_partial` | `1` | Allow replay with fewer bots than manifest players. |
-| `dtr_replay_identity` | `full` | Write demo name and SteamID64 through BotHider-managed replay bot slots when available. |
+| `dtr_replay_identity` | `full` | Write demo name, SteamID64, and demo-provided avatar overrides through BotHider-managed replay bot slots when available. |
 | `dtr_util_trace` | `0` | Utility CSV trace disabled. |
 | `bc_replay_pov` | `spectated` | Publish expensive native first-person POV updates only for replay bots watched in-eye. |
 
@@ -323,7 +324,9 @@ Controls BotHider identity alignment.
 
 When enabled and BotHider is available, manifest loading queues name and
 SteamID64 updates for BotHider-managed bot slots using the demo player's
-`player_name` and `steam_id`. The default mode is `full`.
+`player_name` and `steam_id`. If the manifest contains PNG `avatar_overrides`,
+`full` mode also writes the matching server avatar override and enables
+`sv_reliableavatardata`. The default mode is `full`.
 
 This is mainly for POV/spectator clarity. If BotHider is not installed or is not
 managing a replay bot slot, identity alignment skips that slot instead of

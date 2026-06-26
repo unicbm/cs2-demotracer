@@ -35,15 +35,27 @@ impl<'a> FirstPassParser<'a> {
     pub fn update_string_table(&mut self, bytes: &[u8]) -> Result<(), DemoParserError> {
         let table = CsvcMsgUpdateStringTable::decode(bytes).map_err(|_| DemoParserError::MalformedMessage)?;
 
-        let st = self.string_tables.get(table.table_id() as usize).ok_or(DemoParserError::StringTableNotFound)?;
+        let Some((name, user_data_fixed, user_data_size, flags, var_bit_counts)) =
+            self.string_tables.get(table.table_id() as usize).map(|st| {
+                (
+                    st.name.clone(),
+                    st.user_data_fixed,
+                    st.user_data_size,
+                    st.flags,
+                    st.var_bit_counts,
+                )
+            })
+        else {
+            return Ok(());
+        };
         self.parse_string_table(
             table.string_data().to_vec(),
             table.num_changed_entries(),
-            st.name.clone(),
-            st.user_data_fixed,
-            st.user_data_size,
-            st.flags,
-            st.var_bit_counts,
+            name,
+            user_data_fixed,
+            user_data_size,
+            flags,
+            var_bit_counts,
         )?;
         Ok(())
     }
@@ -51,7 +63,10 @@ impl<'a> FirstPassParser<'a> {
     pub fn parse_create_stringtable(&mut self, bytes: &[u8]) -> Result<(), DemoParserError> {
         let table = CsvcMsgCreateStringTable::decode(bytes).map_err(|_| DemoParserError::MalformedMessage)?;
 
-        if !(table.name() == "instancebaseline" || table.name() == "userinfo") {
+        if !(table.name() == "instancebaseline"
+            || table.name() == "userinfo"
+            || table.name() == "ServerAvatarOverrides")
+        {
             return Ok(());
         }
         let bytes = match table.data_compressed() {
@@ -165,6 +180,10 @@ impl<'a> FirstPassParser<'a> {
                         Ok(cls_id) => self.baselines.insert(cls_id, value.clone()),
                         Err(_e) => None,
                     };
+                }
+                if name == "ServerAvatarOverrides" && !key.is_empty() && !value.is_empty() {
+                    self.server_avatar_overrides
+                        .push((key.clone(), value.clone()));
                 }
                 items.push(StringTableEntry { idx, key, value });
             }

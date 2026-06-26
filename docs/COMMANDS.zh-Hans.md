@@ -14,7 +14,8 @@ dtr_go seq "<输出目录>\<demo-id>\manifest.json" 0
 ```
 
 replay identity、武器/loadout 对齐、投掷物对齐和准星对齐默认开启。identity 对齐只会在
-BotHider 存在且管理目标 replay bot slot 时写入 demo 名字和 SteamID64。
+BotHider 存在且管理目标 replay bot slot 时写入 demo 名字和 SteamID64。如果 manifest
+包含 demo 提供的 PNG 头像覆写，`full` identity 也会按 SteamID64 应用。
 
 `seq` 表示“从某个 source round 开始顺序播放”，`round` 表示“只播放一个
 source round”，`pool` 表示“按本地经济从回合池选择”。`dtr_go` 会先校验并
@@ -31,7 +32,7 @@ armed plan，再执行 `mp_restartgame 1`，确保接住新的 `round_start`。
 | `dtr_crosshair_align` | `1` | 第一人称观察 replay bot 时，把 demo 证据里的准星 code 临时应用到真人观察者。 |
 | `dtr_handoff` | `death_or_contact slot` | 接触或死亡后只释放触发的 replay slot。 |
 | `dtr_partial` | `1` | bot 数量不足时允许部分 replay。 |
-| `dtr_replay_identity` | `full` | BotHider 可用时，通过其管理的 replay bot slot 写入 demo 名字和 SteamID64。 |
+| `dtr_replay_identity` | `full` | BotHider 可用时，通过其管理的 replay bot slot 写入 demo 名字、SteamID64 和 demo 头像覆写。 |
 | `dtr_util_trace` | `0` | 默认不写 utility CSV trace。 |
 | `bc_replay_pov` | `spectated` | 只给正在被第一人称观察的 replay bot 发布昂贵的 native POV 更新。 |
 
@@ -283,7 +284,9 @@ flag 之外又加了 `--export-stickers` 生成时，它才会生效。
 控制 BotHider identity 对齐。
 
 开启后，如果 BotHider 可用且 slot 由 BotHider 管理，加载 manifest 时会把 demo 玩家
-的 `player_name` 和 `steam_id` 写给对应 bot slot。默认模式是 `full`。
+的 `player_name` 和 `steam_id` 写给对应 bot slot。如果 manifest 包含 PNG
+`avatar_overrides`，`full` 模式也会写入匹配的服务器头像覆写，并启用
+`sv_reliableavatardata`。默认模式是 `full`。
 
 这个主要用于 POV 和 spectator 观察清晰度。如果没有安装 BotHider，或目标 slot 不由
 BotHider 管理，identity 对齐会跳过该 slot，而不会应用到真人玩家。

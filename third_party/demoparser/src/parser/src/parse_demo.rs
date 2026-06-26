@@ -38,6 +38,7 @@ pub struct DemoOutput {
     pub voice_data: Vec<(i32, CsvcMsgVoiceData)>,
     pub prop_controller: PropController,
     pub df_per_player: AHashMap<u64, AHashMap<u32, PropColumn>>,
+    pub server_avatar_overrides: Vec<(String, Vec<u8>)>,
 }
 
 pub struct Parser<'a> {
@@ -332,6 +333,7 @@ impl<'a> Parser<'a> {
             voice_data: second_pass_outputs.iter().flat_map(|x| x.voice_data.clone()).collect_vec(),
             df_per_player: pp,
             uniq_prop_names: all_prop_names,
+            server_avatar_overrides: first_pass_output.server_avatar_overrides,
         }
     }
 

@@ -140,6 +140,7 @@ cs2-demotracer.exe convert --demo "<demo.dem>" --output "<输出目录>" --expor
 
 ```text
 output/<demo-id>/manifest.json
+output/<demo-id>/avatars/<sha256>.<ext>
 output/<demo-id>/round00/t/<玩家>.dtr
 output/<demo-id>/round00/ct/<玩家>.dtr
 output/<demo-id>/round01/...
@@ -147,7 +148,13 @@ output/<demo-id>/round01/...
 
 `<demo-id>` 是 `<demo-stem>-<hash12>`，其中 `hash12` 来自 demo 文件内容。这样即使不同赛事的文件名很像，也不会互相覆盖。
 
-`manifest.json` 是播放时最方便使用的入口文件。
+`avatars/` 只会在 demo 内包含比赛服务器头像覆写时生成。`manifest.json`
+会记录 SteamID64 到头像资源的映射，播放入口仍然是 `manifest.json`。
+
+播放时，如果 replay identity 是 `full` 且目标 slot 是 BotHider 管理的 replay bot，
+DemoTracer 会应用这些 demo 提供的 PNG 头像覆写。native runtime 会启用
+`sv_reliableavatardata` 并写入 `ServerAvatarOverrides`；这只改变服务器内显示，
+不会修改玩家真实 Steam 头像。
 
 如果你不会写 Rust，可以看 [`examples/`](../examples/) 里的 Python 和 Node.js
 小脚本。它们只是调用 CLI、定位生成的 `manifest.json`，再打印一条 CS2 console
@@ -263,6 +270,8 @@ dtr_go seq "<输出目录>\<demo-id>\manifest.json" 0
 - 最后的 `0` 是 `from_source_round=0`，不是“只播放 round 0”。
 - 如果只想播放单个 source round，用 `dtr_go round "<manifest.json>" 0`。
 - 插件会在 `round_start` 准备 bot，在 `round_freeze_end` 开始播放。
+- replay identity 默认是 `full`；BotHider 管理 replay bot slot 时，会写入 demo
+  名字、SteamID64，以及 manifest 中匹配的 demo 头像 PNG 覆写。
 
 完整回合回放开始时，DemoTracer 会把选中的 replay bot 当作回合起点状态处理：
 仍然存活的 replay bot 会恢复到 100 HP；已经死亡的 replay bot 会先复活，再开始

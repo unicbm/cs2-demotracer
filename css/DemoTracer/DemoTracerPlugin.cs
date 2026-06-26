@@ -619,7 +619,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 .Order()
                 .ToArray();
             command.ReplyToCommand(
-                $"[DTR DOCTOR] manifest type=round path=\"{manifestPath}\" map={manifest.Map} abi={manifest.Abi} dtr_format={manifest.EffectiveDtrFormatVersion} files={manifest.Files.Count} rounds={FormatRoundList(rounds)}");
+                $"[DTR DOCTOR] manifest type=round path=\"{manifestPath}\" map={manifest.Map} abi={manifest.Abi} dtr_format={manifest.EffectiveDtrFormatVersion} files={manifest.Files.Count} avatar_overrides={manifest.AvatarOverrides.Count} rounds={FormatRoundList(rounds)}");
             return;
         }
 
@@ -1930,6 +1930,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             }
 
             var manifestDir = Path.GetDirectoryName(Path.GetFullPath(manifestPath)) ?? ".";
+            var avatarOverrides = BuildAvatarOverrideMap(manifest.AvatarOverrides);
             var roundFiles = manifest.Files
                 .Where(file => file.Round == round)
                 .OrderBy(file => file.Side, StringComparer.Ordinal)
@@ -1966,9 +1967,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             replayStateReplaced = true;
             _loadedRoundScoreboard = roundScoreboard;
             var loaded = new List<string>();
-            if (!LoadSide(tAssignments, manifestDir, loaded, out var loadError))
+            if (!LoadSide(tAssignments, manifestDir, avatarOverrides, loaded, out var loadError))
                 return FailLoadRoundAfterPartialLoad(round, loadError);
-            if (!LoadSide(ctAssignments, manifestDir, loaded, out loadError))
+            if (!LoadSide(ctAssignments, manifestDir, avatarOverrides, loaded, out loadError))
                 return FailLoadRoundAfterPartialLoad(round, loadError);
 
             var partial = skippedT > 0 || skippedCt > 0
@@ -1993,6 +1994,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private bool LoadSide(
         IReadOnlyList<ReplayAssignment> assignments,
         string manifestDir,
+        IReadOnlyDictionary<ulong, ManifestAvatarOverride> avatarOverrides,
         List<string> loaded,
         out string error)
     {
@@ -2034,7 +2036,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 file.Scoreboard,
                 replayMetadata: replayMetadata);
             BotControllerNative.SetBuySkip(slot);
-            TryApplyReplayIdentity(slot, file);
+            TryApplyReplayIdentity(slot, file, manifestDir, avatarOverrides);
             loaded.Add($"{file.Side}:slot{slot}:{file.PlayerName}");
         }
         return true;
@@ -2051,7 +2053,23 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         return assignments;
     }
 
-    private void TryApplyReplayIdentity(int slot, ManifestFile file)
+    private static Dictionary<ulong, ManifestAvatarOverride> BuildAvatarOverrideMap(
+        IReadOnlyList<ManifestAvatarOverride> avatarOverrides)
+    {
+        var map = new Dictionary<ulong, ManifestAvatarOverride>();
+        foreach (var avatar in avatarOverrides)
+        {
+            if (avatar.SteamId != 0)
+                map.TryAdd(avatar.SteamId, avatar);
+        }
+        return map;
+    }
+
+    private void TryApplyReplayIdentity(
+        int slot,
+        ManifestFile file,
+        string manifestDir,
+        IReadOnlyDictionary<ulong, ManifestAvatarOverride> avatarOverrides)
     {
         if (_replayIdentityMode == ReplayIdentityMode.Off)
             return;
@@ -2080,11 +2098,57 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (!string.IsNullOrWhiteSpace(file.PlayerName))
             Server.ExecuteCommand($"bh_setname {slot} \"{EscapeConsoleString(file.PlayerName)}\"");
         if (_replayIdentityMode == ReplayIdentityMode.Full)
+        {
+            TryApplyReplayAvatarOverride(slot, file, manifestDir, avatarOverrides);
             Server.ExecuteCommand($"bh_setsid {slot} {file.SteamId}");
+        }
         Server.PrintToConsole(
             _replayIdentityMode == ReplayIdentityMode.Full
                 ? $"dtr: replay identity queued slot={slot} player={file.PlayerName} sid={file.SteamId}"
                 : $"dtr: replay identity queued slot={slot} player={file.PlayerName}");
+    }
+
+    private void TryApplyReplayAvatarOverride(
+        int slot,
+        ManifestFile file,
+        string manifestDir,
+        IReadOnlyDictionary<ulong, ManifestAvatarOverride> avatarOverrides)
+    {
+        if (file.SteamId == 0 ||
+            !avatarOverrides.TryGetValue(file.SteamId, out var avatar))
+        {
+            return;
+        }
+
+        var format = avatar.Format.Trim();
+        var pngFormat =
+            (format.Length == 0 && avatar.Path.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) ||
+            format.Equals("png", StringComparison.OrdinalIgnoreCase);
+        if (!pngFormat)
+        {
+            Server.PrintToConsole(
+                $"dtr: replay avatar skipped slot={slot} player={file.PlayerName} sid={file.SteamId}: unsupported format={avatar.Format}");
+            return;
+        }
+
+        if (!TryResolveChildPathUnderRoot(manifestDir, avatar.Path, out var avatarPath, out var pathError))
+        {
+            Server.PrintToConsole(
+                $"dtr: replay avatar skipped slot={slot} player={file.PlayerName} sid={file.SteamId}: {pathError}");
+            return;
+        }
+
+        if (!File.Exists(avatarPath))
+        {
+            Server.PrintToConsole(
+                $"dtr: replay avatar skipped slot={slot} player={file.PlayerName} sid={file.SteamId}: missing {avatar.Path}");
+            return;
+        }
+
+        Server.ExecuteCommand(
+            $"bc_avatar_override_probe {file.SteamId} \"{EscapeConsoleString(avatarPath)}\"");
+        Server.PrintToConsole(
+            $"dtr: replay avatar queued slot={slot} player={file.PlayerName} sid={file.SteamId} path={avatar.Path}");
     }
 
     private string PlayLoaded(bool loop)
