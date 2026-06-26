@@ -29,6 +29,12 @@ public sealed partial class DemoTracerPlugin
         RestoreAllReplayViewerCrosshairs();
     }
 
+    private void ClearCrosshairAlignStateForLifecycle()
+    {
+        _viewerAppliedCrosshairCodes.Clear();
+        _viewerOriginalCrosshairCodes.Clear();
+    }
+
     private string FormatCrosshairStatusCounts()
         => $"crosshair_evidence={CountLoadedCrosshairEvidence()} crosshair_viewers={_viewerAppliedCrosshairCodes.Count}";
 

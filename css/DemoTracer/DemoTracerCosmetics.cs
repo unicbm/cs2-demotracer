@@ -11,11 +11,23 @@ namespace DemoTracer;
 
 public sealed partial class DemoTracerPlugin
 {
+    private const int CosmeticHeartbeatAttempts = 12;
+    private const float CosmeticHeartbeatIntervalSeconds = 0.10f;
     private const string AttributeSetterWindowsSignature = "40 53 55 41 56 48 81 EC 90 00 00 00";
     private const string AttributeSetterLinuxSignature = "55 48 89 E5 41 57 41 56 49 89 FE 41 55 41 54 53 48 89 F3 48 83 EC ? F3 0F 11 85";
+    private static readonly (int WeaponDefIndex, int PaintKit)[] BuiltInLegacyCosmeticPaints =
+    [
+        // Fallback when skins_en.json is absent. These older USP-S finishes use
+        // the legacy bodygroup in CS2; bodygroup 0 renders as the plain dark model.
+        (61, 277), // USP-S | Stainless
+        (61, 339), // USP-S | Caiman
+        (61, 504), // USP-S | Kill Confirmed
+    ];
     private static readonly Lazy<MemoryFunctionVoid<nint, string, float>?> AttributeSetter = new(CreateAttributeSetter);
     private readonly HashSet<(int WeaponDefIndex, int PaintKit)> _legacyCosmeticPaints = new();
+    private readonly Dictionary<int, int> _cosmeticHeartbeatTokens = new();
     private bool _cosmeticGiveNamedItemHooked;
+    private int _nextCosmeticHeartbeatToken;
 
     private void HookCosmeticGiveNamedItem()
     {
@@ -55,10 +67,14 @@ public sealed partial class DemoTracerPlugin
     private void LoadCosmeticLegacyPaints()
     {
         _legacyCosmeticPaints.Clear();
+        foreach (var (weaponDefIndex, paintKit) in BuiltInLegacyCosmeticPaints)
+            _legacyCosmeticPaints.Add((NormalizeWeaponDefIndex(weaponDefIndex), paintKit));
+
         var path = Path.Combine(ModuleDirectory, "skins_en.json");
         if (!File.Exists(path))
         {
-            Server.PrintToConsole("dtr: cosmetic legacy paint lookup not found; weapon bodygroup defaults to current-model");
+            Server.PrintToConsole(
+                $"dtr: cosmetic legacy paint lookup not found; using built-in fallback entries={_legacyCosmeticPaints.Count}");
             return;
         }
 
@@ -96,7 +112,7 @@ public sealed partial class DemoTracerPlugin
                 ? element.GetInt32()
                 : int.TryParse(element.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
                     ? value
-                    : 0;
+            : 0;
         }
     }
 
@@ -232,6 +248,7 @@ public sealed partial class DemoTracerPlugin
     private void ResetCosmeticAlignState(bool resetCounters = false)
     {
         _cosmeticSyncedSlots.Clear();
+        _cosmeticHeartbeatTokens.Clear();
         if (resetCounters)
         {
             _cosmeticAppliedCount = 0;
@@ -297,16 +314,13 @@ public sealed partial class DemoTracerPlugin
 
         var applied = 0;
         var skipped = 0;
-        var scheduledRefreshes = RefreshReplayCosmeticWeaponsForSlot(slot, player, pawn, replay);
-
         foreach (var cosmetic in replay.Cosmetics.Weapons)
         {
-            if (scheduledRefreshes.Contains(cosmetic.WeaponDefIndex))
-                continue;
             if (TryFindReplayWeaponByDefIndex(pawn, cosmetic.WeaponDefIndex, out var weapon) &&
                 TryApplyWeaponCosmetic(player, weapon, cosmetic))
             {
                 applied++;
+                ScheduleReplayWeaponCosmeticRetry(slot, cosmetic, framesRemaining: 3);
             }
             else
             {
@@ -341,70 +355,74 @@ public sealed partial class DemoTracerPlugin
         {
             _cosmeticSyncedSlots.Add(slot);
             Server.PrintToConsole(
-                $"dtr: cosmetic aligned slot={slot} player={replay.PlayerName} applied={applied} refreshes={scheduledRefreshes.Count} skipped={skipped}");
+                $"dtr: cosmetic aligned slot={slot} player={replay.PlayerName} applied={applied} skipped={skipped}");
         }
-        else if (scheduledRefreshes.Count > 0)
-        {
-            _cosmeticSyncedSlots.Add(slot);
-            Server.PrintToConsole(
-                $"dtr: cosmetic refresh queued slot={slot} player={replay.PlayerName} refreshes={scheduledRefreshes.Count} skipped={skipped}");
-        }
+
+        if (replay.Cosmetics.Weapons.Count > 0)
+            ScheduleReplayCosmeticHeartbeat(slot);
     }
 
-    private HashSet<int> RefreshReplayCosmeticWeaponsForSlot(
-        int slot,
-        CCSPlayerController player,
-        CCSPlayerPawn pawn,
-        LoadedReplay replay)
+    private void ScheduleReplayCosmeticHeartbeat(int slot)
     {
-        var scheduled = new HashSet<int>();
-        if (pawn.WeaponServices == null)
-            return scheduled;
-
-        foreach (var cosmetic in replay.Cosmetics.Weapons)
-        {
-            if (!TryGetWeaponClassByDefIndex(cosmetic.WeaponDefIndex, out var className))
-                continue;
-
-            var replaySlot = GetReplayWeaponSlot(className);
-            if (replaySlot is not (ReplayWeaponSlot.Primary or ReplayWeaponSlot.Secondary))
-                continue;
-
-            if (!TryFindReplayWeaponByDefIndex(pawn, cosmetic.WeaponDefIndex, out var weapon))
-                continue;
-
-            var ammo = CaptureWeaponAmmo(weapon);
-
-            BotControllerNative.UnlockWeaponSlot(slot);
-            _lastLockedWeaponTarget.Remove(slot);
-            _lastEnsuredWeaponDef.Remove(slot);
-            _lastReplayWeaponDef.Remove(slot);
-
-            if (!DropAndKillReplayWeapon(player, pawn, weapon, "cosmetic_refresh"))
-                continue;
-
-            scheduled.Add(cosmetic.WeaponDefIndex);
-            Server.NextFrame(() => CompleteReplayCosmeticWeaponRefresh(slot, replay, className, cosmetic, ammo));
-        }
-
-        return scheduled;
+        var token = ++_nextCosmeticHeartbeatToken;
+        _cosmeticHeartbeatTokens[slot] = token;
+        AddTimer(
+            CosmeticHeartbeatIntervalSeconds,
+            () => RunReplayCosmeticHeartbeat(slot, token, CosmeticHeartbeatAttempts),
+            TimerFlags.STOP_ON_MAPCHANGE);
     }
 
-    private void CompleteReplayCosmeticWeaponRefresh(
-        int slot,
-        LoadedReplay replay,
-        string className,
-        ReplayWeaponCosmetic cosmetic,
-        ReplayWeaponAmmo ammo)
+    private void RunReplayCosmeticHeartbeat(int slot, int token, int attemptsRemaining)
     {
-        if (!_cosmeticAlignEnabled || !_weaponAlignEnabled || !IsReplaySlotStillSafe(slot))
+        if (attemptsRemaining <= 0 ||
+            !_cosmeticHeartbeatTokens.TryGetValue(slot, out var activeToken) ||
+            activeToken != token)
+        {
             return;
+        }
+
+        if (!_cosmeticAlignEnabled ||
+            !_weaponAlignEnabled ||
+            !_loadedReplays.TryGetValue(slot, out var replay) ||
+            replay.UtilityOnly ||
+            !HasCosmeticEvidence(replay.Cosmetics) ||
+            !IsReplaySlotStillSafe(slot))
+        {
+            _cosmeticHeartbeatTokens.Remove(slot);
+            return;
+        }
 
         var player = Utilities.GetPlayerFromSlot(slot);
-        if (player is not { IsValid: true, PawnIsAlive: true })
+        var pawn = player?.PlayerPawn.Value;
+        if (player is { IsValid: true, PawnIsAlive: true } && pawn is { IsValid: true })
+        {
+            foreach (var cosmetic in replay.Cosmetics.Weapons)
+            {
+                if (TryFindReplayWeaponByDefIndex(pawn, cosmetic.WeaponDefIndex, out var weapon))
+                    _ = TryApplyWeaponCosmetic(player, weapon, cosmetic, countStickerStats: false);
+            }
+        }
+
+        if (attemptsRemaining == 1)
+        {
+            _cosmeticHeartbeatTokens.Remove(slot);
+            return;
+        }
+
+        AddTimer(
+            CosmeticHeartbeatIntervalSeconds,
+            () => RunReplayCosmeticHeartbeat(slot, token, attemptsRemaining - 1),
+            TimerFlags.STOP_ON_MAPCHANGE);
+    }
+
+    private void ScheduleReplayWeaponCosmeticRetry(
+        int slot,
+        ReplayWeaponCosmetic cosmetic,
+        int framesRemaining)
+    {
+        if (framesRemaining <= 0)
             return;
 
-        TryGiveNamedItem(player, className);
         Server.NextFrame(() =>
         {
             if (!_cosmeticAlignEnabled || !_weaponAlignEnabled || !IsReplaySlotStillSafe(slot))
@@ -421,47 +439,9 @@ public sealed partial class DemoTracerPlugin
             if (TryFindReplayWeaponByDefIndex(refreshedPawn, cosmetic.WeaponDefIndex, out var refreshedWeapon) &&
                 TryApplyWeaponCosmetic(refreshedPlayer, refreshedWeapon, cosmetic))
             {
-                RestoreWeaponAmmo(refreshedWeapon, ammo);
-                _cosmeticAppliedCount++;
-                Server.PrintToConsole(
-                    $"dtr: cosmetic refreshed weapon slot={slot} player={replay.PlayerName} def={cosmetic.WeaponDefIndex} paint={cosmetic.PaintKit}");
+                ScheduleReplayWeaponCosmeticRetry(slot, cosmetic, framesRemaining - 1);
             }
-            else
-            {
-                _cosmeticSkippedCount++;
-            }
-
-            ApplyReplayWeaponPreset(slot, ChooseStartWeaponDef(replay), allowSlotReplacement: true, force: true);
         });
-    }
-
-    private readonly record struct ReplayWeaponAmmo(int Clip1, int ReserveAmmo);
-
-    private static ReplayWeaponAmmo CaptureWeaponAmmo(CBasePlayerWeapon weapon)
-    {
-        try
-        {
-            var reserve = weapon.ReserveAmmo[0];
-            return new ReplayWeaponAmmo(weapon.Clip1, reserve);
-        }
-        catch
-        {
-            return new ReplayWeaponAmmo(0, 0);
-        }
-    }
-
-    private static void RestoreWeaponAmmo(CBasePlayerWeapon weapon, ReplayWeaponAmmo ammo)
-    {
-        try
-        {
-            if (ammo.Clip1 > 0)
-                weapon.Clip1 = ammo.Clip1;
-            if (ammo.ReserveAmmo > 0)
-                weapon.ReserveAmmo[0] = ammo.ReserveAmmo;
-        }
-        catch
-        {
-        }
     }
 
     private void ApplyReplayWeaponCosmeticForSlot(int slot, int weaponDefIndex)
@@ -769,7 +749,8 @@ public sealed partial class DemoTracerPlugin
     private bool TryApplyWeaponCosmetic(
         CCSPlayerController player,
         CBasePlayerWeapon weapon,
-        ReplayWeaponCosmetic cosmetic)
+        ReplayWeaponCosmetic cosmetic,
+        bool countStickerStats = true)
     {
         if (!TryGetWeaponClassByDefIndex(cosmetic.WeaponDefIndex, out _))
             return false;
@@ -788,11 +769,12 @@ public sealed partial class DemoTracerPlugin
             allowSubclassChange: false);
         if (!applied)
         {
-            RecordStickerSkipped(cosmetic.Stickers.Count);
+            if (countStickerStats)
+                RecordStickerSkipped(cosmetic.Stickers.Count);
             return false;
         }
 
-        ApplyWeaponStickers(weapon, cosmetic);
+        ApplyWeaponStickers(weapon, cosmetic, countStickerStats);
         return true;
     }
 
@@ -820,6 +802,7 @@ public sealed partial class DemoTracerPlugin
             weapon.FallbackPaintKit = (int)Math.Min(cosmetic.PaintKit, int.MaxValue);
             weapon.FallbackSeed = (int)Math.Min(cosmetic.Seed, int.MaxValue);
             weapon.FallbackWear = cosmetic.Wear;
+            MarkWeaponPaintStateChanged(weapon);
             if (!string.IsNullOrWhiteSpace(cosmetic.CustomName))
                 item.CustomName = cosmetic.CustomName;
             _ = TrySetTextureAttributes(item.NetworkedDynamicAttributes.Handle, cosmetic);
@@ -916,6 +899,13 @@ public sealed partial class DemoTracerPlugin
 
     private static ulong _nextReplayEconItemId = 10_000_000_000;
 
+    private static void MarkWeaponPaintStateChanged(CBasePlayerWeapon weapon)
+    {
+        Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackPaintKit");
+        Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackSeed");
+        Utilities.SetStateChanged(weapon, "CEconEntity", "m_flFallbackWear");
+    }
+
     private static void UpdateReplayEconItemId(CEconItemView item)
     {
         var itemId = _nextReplayEconItemId++;
@@ -963,7 +953,10 @@ public sealed partial class DemoTracerPlugin
         }
     }
 
-    private void ApplyWeaponStickers(CBasePlayerWeapon weapon, ReplayWeaponCosmetic cosmetic)
+    private void ApplyWeaponStickers(
+        CBasePlayerWeapon weapon,
+        ReplayWeaponCosmetic cosmetic,
+        bool countStickerStats)
     {
         if (!_cosmeticAlignEnabled ||
             !_stickerAlignEnabled ||
@@ -974,7 +967,8 @@ public sealed partial class DemoTracerPlugin
 
         if (AttributeSetter.Value == null)
         {
-            RecordStickerSkipped(cosmetic.Stickers.Count);
+            if (countStickerStats)
+                RecordStickerSkipped(cosmetic.Stickers.Count);
             return;
         }
 
@@ -995,13 +989,17 @@ public sealed partial class DemoTracerPlugin
 
             if (applied > 0)
                 Utilities.SetStateChanged(weapon, "CEconEntity", "m_AttributeManager");
-            _stickerAppliedCount += applied;
-            _stickerSkippedCount += skipped;
+            if (countStickerStats)
+            {
+                _stickerAppliedCount += applied;
+                _stickerSkippedCount += skipped;
+            }
         }
         catch (Exception ex)
         {
             Server.PrintToConsole($"dtr: sticker apply failed item={weapon.DesignerName}: {ex.Message}");
-            RecordStickerSkipped(cosmetic.Stickers.Count);
+            if (countStickerStats)
+                RecordStickerSkipped(cosmetic.Stickers.Count);
         }
     }
 

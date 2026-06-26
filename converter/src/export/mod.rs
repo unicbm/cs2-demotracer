@@ -11,7 +11,8 @@ use crate::model::{
 };
 use crate::rec_writer::write_rec;
 use crate::replay::context::{
-    first_weapon_def_index, preload_weapon_def_indices_from_refs, replay_loadout,
+    first_weapon_def_index_from_play_start, preload_weapon_def_indices_from_refs_from_play_start,
+    replay_loadout,
 };
 use crate::replay::synthesis::{
     synthesize_player_rec_with_row_refs, SynthesisOptions, SynthesisStats,
@@ -21,6 +22,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 pub const DEFAULT_FREEZE_PREROLL_SECONDS: f32 = 10.0;
 
@@ -355,6 +357,10 @@ fn export_demo_to_memory_inner(
             let path = rel_path.to_string_lossy().replace('\\', "/");
             let ticks = rec.ticks.len();
             let subticks = rec.subticks.len();
+            let play_start_row = player_rows
+                .get(rec.header.play_start_tick_index as usize)
+                .copied()
+                .unwrap_or(player_rows[0]);
             manifest.files.push(ConvertedFile {
                 path: path.clone(),
                 round: round.round,
@@ -364,14 +370,18 @@ fn export_demo_to_memory_inner(
                 ticks,
                 subticks,
                 play_start_tick_index: rec.header.play_start_tick_index,
-                first_weapon_def_index: first_weapon_def_index(&rec),
-                preload_weapon_def_indices: preload_weapon_def_indices_from_refs(
+                first_weapon_def_index: first_weapon_def_index_from_play_start(
+                    &rec,
+                    rec.header.play_start_tick_index,
+                ),
+                preload_weapon_def_indices: preload_weapon_def_indices_from_refs_from_play_start(
                     &player_rows,
                     &rec,
+                    rec.header.play_start_tick_index,
                 ),
                 hifi_event_count: rec.high_fidelity.events.len(),
                 inventory_snapshot_count: rec.high_fidelity.inventory_snapshots.len(),
-                loadout: replay_loadout(player_rows[0]),
+                loadout: replay_loadout(play_start_row),
                 cosmetics: if options.export_cosmetics {
                     replay_cosmetics_at(
                         &player_rows,
@@ -1542,12 +1552,14 @@ fn replay_cosmetics_at(
     play_start_tick_index: u32,
     export_stickers: bool,
 ) -> Option<ReplayCosmetics> {
-    let mut cosmetics = replay_active_cosmetics(rows, export_stickers).unwrap_or_default();
-    if let Some(weapons) = round_inventory_weapon_cosmetics(cosmetic_rows, export_stickers) {
-        cosmetics.weapons = weapons;
-    } else if let Some(weapons) =
+    let play_start = (play_start_tick_index as usize).min(rows.len().saturating_sub(1));
+    let active_rows = rows.get(play_start..).unwrap_or(rows);
+    let mut cosmetics = replay_active_cosmetics(active_rows, export_stickers).unwrap_or_default();
+    if let Some(weapons) =
         live_start_inventory_weapon_cosmetics(rows, play_start_tick_index, export_stickers)
     {
+        cosmetics.weapons = weapons;
+    } else if let Some(weapons) = round_inventory_weapon_cosmetics(cosmetic_rows, export_stickers) {
         cosmetics.weapons = weapons;
     }
     cosmetics
@@ -1594,7 +1606,9 @@ fn replay_active_cosmetics(
                     row.active_weapon_paint_seed,
                     row.active_weapon_paint_wear,
                 ) {
-                    weapon_specs.entry(def).or_default().insert(spec);
+                    if valid_weapon_cosmetic_paint(def, spec.paint_kit) {
+                        weapon_specs.entry(def).or_default().insert(spec);
+                    }
                 }
                 if let Some(name) = active_cosmetic_custom_name(row) {
                     weapon_custom_names.entry(def).or_default().insert(name);
@@ -1683,7 +1697,7 @@ fn live_start_inventory_weapon_cosmetics(
     export_stickers: bool,
 ) -> Option<Vec<ReplayWeaponCosmetic>> {
     let row = live_start_inventory_cosmetic_row(rows, play_start_tick_index)?;
-    inventory_weapon_cosmetics_for_row(row, export_stickers)
+    Some(inventory_weapon_cosmetics_for_row(row, export_stickers).unwrap_or_default())
 }
 
 fn round_inventory_weapon_cosmetics(
@@ -1747,7 +1761,9 @@ fn inventory_weapon_cosmetics_for_row(
             continue;
         }
         if let Some(spec) = inventory_cosmetic_paint_spec(item) {
-            weapon_specs.entry(def).or_default().insert(spec);
+            if valid_weapon_cosmetic_paint(def, spec.paint_kit) {
+                weapon_specs.entry(def).or_default().insert(spec);
+            }
         }
         if let Some(name) = cosmetic_custom_name_value(item.custom_name.as_deref()) {
             weapon_custom_names.entry(def).or_default().insert(name);
@@ -1930,6 +1946,46 @@ fn cosmetic_paint_spec(
         seed,
         wear_bits: wear.to_bits(),
     })
+}
+
+fn valid_weapon_cosmetic_paint(weapon_def_index: i32, paint_kit: u32) -> bool {
+    valid_weapon_cosmetic_paints()
+        .contains(&(normalize_weapon_def_index(weapon_def_index), paint_kit))
+}
+
+fn valid_weapon_cosmetic_paints() -> &'static BTreeSet<(i32, u32)> {
+    static VALID: OnceLock<BTreeSet<(i32, u32)>> = OnceLock::new();
+    VALID.get_or_init(|| {
+        let value: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../css/DemoTracer/skins_en.json"
+        )))
+        .expect("embedded skins_en.json must be valid JSON");
+        value
+            .as_array()
+            .expect("embedded skins_en.json must be a JSON array")
+            .iter()
+            .filter_map(|item| {
+                let def = json_int(item.get("weapon_defindex")?)?;
+                let paint = json_u32(item.get("paint")?)?;
+                (is_weapon_cosmetic_def_index(def) && paint > 0).then_some((def, paint))
+            })
+            .collect()
+    })
+}
+
+fn json_int(value: &serde_json::Value) -> Option<i32> {
+    value
+        .as_i64()
+        .and_then(|raw| i32::try_from(raw).ok())
+        .or_else(|| value.as_str()?.parse::<i32>().ok())
+}
+
+fn json_u32(value: &serde_json::Value) -> Option<u32> {
+    value
+        .as_u64()
+        .and_then(|raw| u32::try_from(raw).ok())
+        .or_else(|| value.as_str()?.parse::<u32>().ok())
 }
 
 fn glove_cosmetic_paint_spec(
@@ -2178,6 +2234,7 @@ mod tests {
         ParsedWeaponSticker, ReplayTick,
     };
     use crate::rec_writer::read_rec;
+    use crate::replay::context::{first_weapon_def_index, preload_weapon_def_indices_from_refs};
 
     #[test]
     fn preload_weapon_defs_are_normalized_and_deduped() {
@@ -2733,6 +2790,87 @@ mod tests {
         assert_eq!(weapons[0].seed, 727);
         assert_eq!(weapons[0].custom_name.as_deref(), Some("Dove1e"));
         assert_eq!(weapons[0].stickers[0].sticker_id, 225);
+    }
+
+    #[test]
+    fn live_start_inventory_weapon_cosmetics_prevent_freeze_transfer_pollution() {
+        let freeze_purchase = ParsedPlayerTick {
+            item_def_idx: 2,
+            inventory_as_ids: vec![2],
+            inventory_weapon_cosmetics: vec![inventory_weapon_cosmetic(
+                2,
+                747,
+                451,
+                0.067_470_92,
+                None,
+                Vec::new(),
+            )],
+            ..sample_row(100)
+        };
+        let live_start = ParsedPlayerTick {
+            item_def_idx: 61,
+            inventory_as_ids: vec![61],
+            inventory_weapon_cosmetics: vec![inventory_weapon_cosmetic(
+                61,
+                1040,
+                853,
+                0.099,
+                None,
+                Vec::new(),
+            )],
+            ..sample_row(164)
+        };
+        let rows = vec![&freeze_purchase, &live_start];
+
+        let cosmetics = replay_cosmetics_at(&rows, &rows, 1, true)
+            .expect("expected live-start cosmetic evidence");
+
+        assert_eq!(cosmetics.weapons.len(), 1);
+        assert_eq!(cosmetics.weapons[0].weapon_def_index, 61);
+        assert_eq!(cosmetics.weapons[0].paint_kit, 1040);
+        assert_eq!(cosmetics.weapons[0].seed, 853);
+    }
+
+    #[test]
+    fn unpainted_live_start_inventory_blocks_active_weapon_false_positive() {
+        let active_false_positive = ParsedPlayerTick {
+            item_def_idx: 32,
+            inventory_as_ids: vec![32],
+            inventory_weapon_cosmetics: vec![inventory_weapon_cosmetic(
+                32,
+                0,
+                0,
+                0.0,
+                None,
+                Vec::new(),
+            )],
+            active_weapon_paint_kit: Some(339),
+            active_weapon_paint_seed: Some(24),
+            active_weapon_paint_wear: Some(0.055_136_383),
+            ..sample_row(164)
+        };
+        let rows = vec![&active_false_positive];
+
+        let cosmetics = replay_cosmetics_at(&rows, &rows, 0, true);
+
+        assert!(cosmetics.is_none());
+    }
+
+    #[test]
+    fn invalid_weapon_paint_pair_is_skipped_without_inventory_evidence() {
+        let active_false_positive = ParsedPlayerTick {
+            item_def_idx: 32,
+            inventory_as_ids: vec![32],
+            active_weapon_paint_kit: Some(339),
+            active_weapon_paint_seed: Some(24),
+            active_weapon_paint_wear: Some(0.055_136_383),
+            ..sample_row(164)
+        };
+        let rows = vec![&active_false_positive];
+
+        let cosmetics = replay_cosmetics_at(&rows, &rows, 0, true);
+
+        assert!(cosmetics.is_none());
     }
 
     #[test]

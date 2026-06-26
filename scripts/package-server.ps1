@@ -100,6 +100,7 @@ $pluginOut = Join-Path $stageRoot "addons\counterstrikesharp\plugins\DemoTracer"
 Copy-RequiredFile (Join-Path $cssOut "DemoTracer.deps.json") (Join-Path $pluginOut "DemoTracer.deps.json")
 Copy-RequiredFile (Join-Path $cssOut "DemoTracer.dll") (Join-Path $pluginOut "DemoTracer.dll")
 Copy-RequiredFile (Join-Path $cssOut "DemoTracer.pdb") (Join-Path $pluginOut "DemoTracer.pdb")
+Copy-RequiredFile (Join-Path $cssOut "skins_en.json") (Join-Path $pluginOut "skins_en.json")
 Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.deps.json") (Join-Path $pluginOut "DemoTracerApi.deps.json")
 Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.dll") (Join-Path $pluginOut "DemoTracerApi.dll")
 Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.pdb") (Join-Path $pluginOut "DemoTracerApi.pdb")
@@ -167,6 +168,7 @@ from this package.
 - `addons/BotController/gamedata.json`
 - `addons/metamod/BotController.vdf`
 - `addons/counterstrikesharp/plugins/DemoTracer/`
+  - `skins_en.json` legacy cosmetic model lookup
 - `docs/COMMANDS.md`
 - `docs/COMMANDS.zh-Hans.md`
 

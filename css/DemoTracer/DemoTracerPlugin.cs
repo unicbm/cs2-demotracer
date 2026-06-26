@@ -131,11 +131,15 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private int _nextNadeStartToken;
     private NadeCycleState? _nadeCycle;
     private int _nextNadeCycleToken;
+    private bool _mapActive = true;
+    private bool _lifecycleResetInProgress;
 
     public override void Load(bool hotReload)
     {
         LoadCosmeticLegacyPaints();
         HookCosmeticGiveNamedItem();
+        RegisterListener<Listeners.OnMapStart>(OnMapStart);
+        RegisterListener<Listeners.OnMapEnd>(OnMapEnd);
         RegisterListener<Listeners.OnTick>(OnTick);
         RegisterListener<Listeners.OnEntitySpawned>(OnEntitySpawned);
         RegisterListener<Listeners.OnEntityDeleted>(OnEntityDeleted);
@@ -147,10 +151,22 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     public override void Unload(bool hotReload)
     {
         UnhookCosmeticGiveNamedItem();
-        StopAndUnloadLoaded();
+        ClearReplayStateForLifecycle(hotReload ? "plugin_reload" : "plugin_unload");
         StopUtilityTrace();
         BotControllerNative.ClearAllBuyPlans();
         _botHiderProbe.Dispose();
+    }
+
+    private void OnMapStart(string mapName)
+    {
+        _mapActive = true;
+        ClearReplayStateForLifecycle($"map_start:{mapName}");
+    }
+
+    private void OnMapEnd()
+    {
+        _mapActive = false;
+        ClearReplayStateForLifecycle("map_end");
     }
 
     private static void ConfigureNativeSafetyOffsets()
@@ -810,6 +826,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private void OnTick()
     {
+        if (!_mapActive || _lifecycleResetInProgress)
+            return;
+
         ProcessPendingProjectileAlign();
 
         if (_utilityTraceEnabled && _nadeCycle == null)
@@ -1246,6 +1265,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private void OnEntitySpawned(CEntityInstance entity)
     {
+        if (!_mapActive || _lifecycleResetInProgress)
+            return;
+
         TryApplySpawnedReplayWeaponCosmetic(entity);
 
         if (!TryGetProjectileKind(entity, out var kind, out var weaponDefIndex))
@@ -1485,6 +1507,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private void OnEntityDeleted(CEntityInstance entity)
     {
+        if (!_mapActive || _lifecycleResetInProgress)
+            return;
+
         _pendingProjectileAlign.Remove(entity.Index);
 
         if (!_utilityTraceEnabled)
@@ -2671,6 +2696,99 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         SetReplayPovMask(0);
     }
 
+    private void ClearReplayStateForLifecycle(string reason)
+    {
+        if (_lifecycleResetInProgress)
+            return;
+
+        _lifecycleResetInProgress = true;
+        try
+        {
+            var hadReplayState = _loadedSlots.Count > 0 ||
+                                 _loadedReplays.Count > 0 ||
+                                 _lastPlayingSlots.Count > 0 ||
+                                 _queuedNadeStartTokens.Count > 0 ||
+                                 _pendingProjectileAlign.Count > 0 ||
+                                 _nadeCycle != null ||
+                                 _armed ||
+                                 _sequenceActive ||
+                                 _poolActive;
+
+            _nadeCycle = null;
+            _nextNadeCycleToken++;
+            _nextNadeStartToken++;
+            InvalidateFreezePreroll();
+
+            if (BotControllerNative.IsCompatible)
+            {
+                foreach (var slot in NativeReplaySlots())
+                    ClearNativeSlotForLifecycle(slot);
+                _ = BotControllerNative.ClearAllBuyPlans();
+                _ = BotControllerNative.SetReplayPovMask(0);
+            }
+            _lastReplayPovMask = 0;
+
+            _loadedSlots.Clear();
+            _loadedReplays.Clear();
+            _lastEnsuredWeaponDef.Clear();
+            _lastReplayWeaponDef.Clear();
+            _lastLockedWeaponTarget.Clear();
+            _pendingWeaponAlign.Clear();
+            _projectileAlignNextBySlot.Clear();
+            _replayHifiEventNextBySlot.Clear();
+            _pendingProjectileAlign.Clear();
+            _trackedDroppedReplayItems.Clear();
+            _queuedNadeStartTokens.Clear();
+            _rebuiltInventorySlots.Clear();
+            _loadoutSyncedSlots.Clear();
+            ResetCosmeticAlignState(resetCounters: true);
+            ResetStickerAlignState(resetCounters: true);
+            ClearCrosshairAlignStateForLifecycle();
+            ResetScoreboardAlignState(resetCounters: true);
+            _loadedRoundScoreboard = null;
+            _lastPlayingSlots.Clear();
+            _quietReplaySlots.Clear();
+            _replayStartedAt.Clear();
+            _pendingBulletHits.Clear();
+            _pendingBulletDamages.Clear();
+            _pendingThreat360.Clear();
+            _utilityTraceProjectiles.Clear();
+            _safeC4Aligned = false;
+
+            _armed = false;
+            _armedLoop = false;
+            _armedPrepared = false;
+            _armedLabel = string.Empty;
+            _armedManifestPath = string.Empty;
+            _armedSourceRound = -1;
+            StopSequenceState();
+            StopPoolState();
+
+            if (hadReplayState)
+                Server.PrintToConsole($"dtr: cleared replay lifecycle state reason={reason}");
+        }
+        finally
+        {
+            _lifecycleResetInProgress = false;
+        }
+    }
+
+    private static void ClearNativeSlotForLifecycle(int slot)
+    {
+        try
+        {
+            BotControllerNative.StopReplay(slot);
+            BotControllerNative.UnloadReplay(slot);
+            BotControllerNative.ClearBuyPlan(slot);
+            BotControllerNative.UnlockReplayControl(slot);
+            BotControllerNative.UnlockWeaponSlot(slot);
+        }
+        catch (Exception ex)
+        {
+            Server.PrintToConsole($"dtr: lifecycle native clear failed slot={slot}: {ex.Message}");
+        }
+    }
+
     private void StopLoadedReplaySlots(string reason)
     {
         StopNadeCycle(reason, stopCurrent: false);
@@ -2688,6 +2806,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _queuedNadeStartTokens.Clear();
         _rebuiltInventorySlots.Clear();
         _cosmeticSyncedSlots.Clear();
+        _cosmeticHeartbeatTokens.Clear();
         RestoreAllReplayViewerCrosshairs();
         _lastPlayingSlots.Clear();
         _quietReplaySlots.Clear();
@@ -2799,6 +2918,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _pendingBulletHits.Remove(slot);
         _pendingBulletDamages.Remove(slot);
         _pendingThreat360.Remove(slot);
+        _cosmeticHeartbeatTokens.Remove(slot);
         BotControllerNative.ClearBuyPlan(slot);
         BotControllerNative.UnlockReplayControl(slot);
         BotControllerNative.UnlockWeaponSlot(slot);
@@ -2879,6 +2999,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _queuedNadeStartTokens.Remove(slot);
         _rebuiltInventorySlots.Remove(slot);
         _cosmeticSyncedSlots.Remove(slot);
+        _cosmeticHeartbeatTokens.Remove(slot);
         _scoreboardSyncedSlots.Remove(slot);
         KillTrackedReplayDropsForSlot(slot, "forget_replay");
     }
@@ -2947,6 +3068,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _rebuiltInventorySlots.Remove(slot);
         _loadoutSyncedSlots.Remove(slot);
         _cosmeticSyncedSlots.Remove(slot);
+        _cosmeticHeartbeatTokens.Remove(slot);
         _scoreboardSyncedSlots.Remove(slot);
         _safeC4Aligned = false;
     }

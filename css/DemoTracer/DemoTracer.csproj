@@ -13,4 +13,8 @@
       <Private>false</Private>
     </ProjectReference>
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="skins_en.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

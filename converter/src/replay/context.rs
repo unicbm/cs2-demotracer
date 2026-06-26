@@ -9,11 +9,54 @@ pub(crate) fn first_weapon_def_index(rec: &Cs2Rec) -> i32 {
         .unwrap_or(-1)
 }
 
+pub(crate) fn first_weapon_def_index_from_play_start(
+    rec: &Cs2Rec,
+    play_start_tick_index: u32,
+) -> i32 {
+    let start = (play_start_tick_index as usize).min(rec.ticks.len());
+    rec.ticks
+        .iter()
+        .skip(start)
+        .map(|tick| normalize_weapon_def_index(tick.weapon_def_index))
+        .find(|def| is_known_weapon_def_index(*def))
+        .unwrap_or_else(|| first_weapon_def_index(rec))
+}
+
 pub(crate) fn preload_weapon_def_indices_from_refs(
     rows: &[&ParsedPlayerTick],
     rec: &Cs2Rec,
 ) -> Vec<i32> {
     preload_weapon_def_indices_from_iter(rows.iter().copied(), rec)
+}
+
+pub(crate) fn preload_weapon_def_indices_from_refs_from_play_start(
+    rows: &[&ParsedPlayerTick],
+    rec: &Cs2Rec,
+    play_start_tick_index: u32,
+) -> Vec<i32> {
+    let start = (play_start_tick_index as usize).min(rows.len());
+    let mut seen = BTreeSet::new();
+    let mut defs = Vec::new();
+    for row in rows.iter().copied().skip(start) {
+        for raw_def in &row.inventory_as_ids {
+            let def = normalize_weapon_def_index(*raw_def);
+            if is_preload_weapon_def_index(def) && seen.insert(def) {
+                defs.push(def);
+            }
+        }
+    }
+    let rec_start = (play_start_tick_index as usize).min(rec.ticks.len());
+    for tick in rec.ticks.iter().skip(rec_start) {
+        let def = normalize_weapon_def_index(tick.weapon_def_index);
+        if is_preload_weapon_def_index(def) && seen.insert(def) {
+            defs.push(def);
+        }
+    }
+    if defs.is_empty() {
+        preload_weapon_def_indices_from_refs(rows, rec)
+    } else {
+        defs
+    }
 }
 
 fn preload_weapon_def_indices_from_iter<'a>(
