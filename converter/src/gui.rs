@@ -73,7 +73,8 @@ pub fn run_gui() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1180.0, 760.0])
-            .with_min_inner_size([960.0, 620.0]),
+            .with_min_inner_size([960.0, 620.0])
+            .with_decorations(false),
         ..Default::default()
     };
     eframe::run_native(
@@ -400,15 +401,11 @@ impl DemoTracerGui {
     }
 
     fn open_result_folder(&mut self) {
-        let Some(path) = self
-            .result
-            .as_ref()
-            .map(|result| result.manifest_path.clone())
-        else {
+        let Some(path) = self.result.as_ref().map(|result| result.root.clone()) else {
             return;
         };
-        if let Err(err) = reveal_path(&path) {
-            self.push_log(format!("could not open result folder: {err}"));
+        if let Err(err) = open_folder_path(&path) {
+            self.push_log(format!("could not open output folder: {err}"));
         }
     }
 }
@@ -476,6 +473,7 @@ impl eframe::App for DemoTracerGui {
             self.draw_logs(ui);
         });
 
+        self.draw_resize_grip(ctx);
         self.draw_overwrite_dialog(ctx);
         self.draw_cosmetic_disclaimer_dialog(ctx);
     }
@@ -487,7 +485,8 @@ impl DemoTracerGui {
         let mut changed = false;
         egui::Frame::new()
             .fill(top_bar_color(ui))
-            .inner_margin(egui::Margin::symmetric(12, 6))
+            .stroke(egui::Stroke::new(1.0, border_color(ui)))
+            .inner_margin(egui::Margin::symmetric(10, 5))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(
@@ -502,7 +501,35 @@ impl DemoTracerGui {
                             .color(ui.visuals().strong_text_color()),
                     );
                     ui.label(RichText::new("v1").color(ui.visuals().weak_text_color()));
+
+                    let drag_width = (ui.available_width() - 390.0).max(24.0);
+                    let drag_response =
+                        ui.allocate_response(egui::vec2(drag_width, 28.0), egui::Sense::drag());
+                    if drag_response.drag_started() {
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                    }
+                    if drag_response.double_clicked() {
+                        toggle_maximized(ui.ctx());
+                    }
+
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if titlebar_button(ui, "x", DANGER, tr(lang, "close_window")).clicked() {
+                            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+                        let maximized = ui
+                            .ctx()
+                            .input(|input| input.viewport().maximized.unwrap_or(false));
+                        let maximize_label = if maximized { "□" } else { "▢" };
+                        if titlebar_button(ui, maximize_label, INFO, tr(lang, "maximize_window"))
+                            .clicked()
+                        {
+                            toggle_maximized(ui.ctx());
+                        }
+                        if titlebar_button(ui, "-", INFO, tr(lang, "minimize_window")).clicked() {
+                            ui.ctx()
+                                .send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                        }
+                        ui.separator();
                         egui::ComboBox::from_id_salt("theme-choice")
                             .selected_text(theme_choice_label(self.settings.theme, lang))
                             .show_ui(ui, |ui| {
@@ -559,6 +586,38 @@ impl DemoTracerGui {
         if changed {
             self.save_settings();
         }
+    }
+
+    fn draw_resize_grip(&self, ctx: &egui::Context) {
+        let maximized = ctx.input(|input| input.viewport().maximized.unwrap_or(false));
+        if maximized {
+            return;
+        }
+        egui::Area::new("window-resize-grip".into())
+            .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-4.0, -4.0))
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                let (rect, response) =
+                    ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::drag());
+                let response = response.on_hover_cursor(egui::CursorIcon::ResizeNwSe);
+                if response.drag_started() {
+                    ui.ctx()
+                        .send_viewport_cmd(egui::ViewportCommand::BeginResize(
+                            egui::ResizeDirection::SouthEast,
+                        ));
+                }
+                let stroke = egui::Stroke::new(1.0, table_header_color(ui));
+                let painter = ui.painter();
+                for offset in [5.0, 9.0, 13.0] {
+                    painter.line_segment(
+                        [
+                            egui::pos2(rect.right() - offset, rect.bottom() - 2.0),
+                            egui::pos2(rect.right() - 2.0, rect.bottom() - offset),
+                        ],
+                        stroke,
+                    );
+                }
+            });
     }
 
     fn draw_controls(&mut self, ui: &mut egui::Ui) {
@@ -744,7 +803,7 @@ impl DemoTracerGui {
             .column(Column::exact(82.0))
             .column(Column::exact(58.0))
             .column(Column::remainder().at_least(220.0))
-            .header(28.0, |mut header| {
+            .header(26.0, |mut header| {
                 header.col(|ui| table_header_text(ui, ""));
                 header.col(|ui| table_header_text(ui, tr(lang, "round")));
                 header.col(|ui| table_header_text(ui, tr(lang, "status")));
@@ -763,9 +822,9 @@ impl DemoTracerGui {
                     if !allowed {
                         *selected = false;
                     }
-                    body.row(34.0, |mut row| {
-                        row.set_selected(*selected);
+                    body.row(28.0, |mut row| {
                         row.col(|ui| {
+                            ui.spacing_mut().interact_size = egui::vec2(22.0, 22.0);
                             let checkbox_response =
                                 ui.add_enabled(allowed, egui::Checkbox::without_text(selected));
                             if !allowed {
@@ -777,14 +836,14 @@ impl DemoTracerGui {
                             table_text(
                                 ui,
                                 format!("{:02}", round.round),
-                                ui.visuals().strong_text_color(),
+                                table_body_text_color(ui),
                                 true,
                             )
                         });
                         row.col(|ui| {
                             let status_color = match round.status {
-                                RoundStatus::Recommended => GOOD,
-                                RoundStatus::Suspicious => WARN,
+                                RoundStatus::Recommended => recommended_text_color(ui),
+                                RoundStatus::Suspicious => suspicious_text_color(ui),
                             };
                             table_text(
                                 ui,
@@ -797,7 +856,7 @@ impl DemoTracerGui {
                             table_text(
                                 ui,
                                 format!("{:.1}s", round.duration_seconds),
-                                ui.visuals().strong_text_color(),
+                                table_body_text_color(ui),
                                 false,
                             );
                         });
@@ -805,7 +864,7 @@ impl DemoTracerGui {
                             table_text(
                                 ui,
                                 format!("{}/{}", round.t_players, round.ct_players),
-                                ui.visuals().strong_text_color(),
+                                table_body_text_color(ui),
                                 false,
                             );
                         });
@@ -813,13 +872,11 @@ impl DemoTracerGui {
                             table_text(
                                 ui,
                                 round.valid_rows.to_string(),
-                                ui.visuals().strong_text_color(),
+                                table_body_text_color(ui),
                                 false,
                             )
                         });
-                        row.col(|ui| {
-                            table_text(ui, files, ui.visuals().strong_text_color(), false)
-                        });
+                        row.col(|ui| table_text(ui, files, table_body_text_color(ui), false));
                         row.col(|ui| {
                             let notes = if round.problems.is_empty() {
                                 String::new()
@@ -828,7 +885,9 @@ impl DemoTracerGui {
                             };
                             ui.add(
                                 egui::Label::new(
-                                    RichText::new(notes).color(ui.visuals().weak_text_color()),
+                                    RichText::new(notes)
+                                        .size(14.0)
+                                        .color(table_muted_text_color(ui)),
                                 )
                                 .wrap(),
                             );
@@ -852,20 +911,37 @@ impl DemoTracerGui {
 
                 let manifest_text = result.manifest_path.display().to_string();
                 let root_text = result.root.display().to_string();
-                let command = result.console_command(self.first_selected_or_exported_round());
+                let root_path = result.root.clone();
+                let first_round = self.first_selected_or_exported_round();
+                let round_command = result.console_round_command(first_round);
+                let seq_command = result.console_seq_command(first_round);
                 let players = result.players.clone();
 
                 egui::Frame::new()
-                    .fill(Color32::from_rgb(18, 58, 42))
+                    .fill(panel_deep_color(ui))
                     .stroke(egui::Stroke::new(1.5, GOOD))
-                    .inner_margin(egui::Margin::symmetric(12, 10))
+                    .inner_margin(egui::Margin::symmetric(12, 9))
                     .show(ui, |ui| {
-                        ui.label(
-                            RichText::new(tr(lang, "conversion_complete"))
-                                .strong()
-                                .size(22.0)
-                                .color(Color32::WHITE),
-                        );
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("|").strong().size(24.0).color(GOOD));
+                            ui.vertical(|ui| {
+                                ui.label(
+                                    RichText::new(tr(lang, "conversion_complete"))
+                                        .strong()
+                                        .size(20.0)
+                                        .color(ui.visuals().strong_text_color()),
+                                );
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{} / {} {}",
+                                        format_bytes(result.output_bytes),
+                                        result.rounds_exported,
+                                        tr(lang, "rounds")
+                                    ))
+                                    .color(ui.visuals().weak_text_color()),
+                                );
+                            });
+                        });
                     });
                 ui.add_space(10.0);
                 ui.horizontal_wrapped(|ui| {
@@ -904,71 +980,81 @@ impl DemoTracerGui {
                     .stroke(egui::Stroke::new(1.0, border_color(ui)))
                     .inner_margin(egui::Margin::symmetric(10, 8))
                     .show(ui, |ui| {
-                        ui.label(
-                            RichText::new(tr(lang, "players"))
-                                .strong()
-                                .color(ui.visuals().strong_text_color()),
-                        );
-                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(tr(lang, "players"))
+                                    .strong()
+                                    .color(ui.visuals().strong_text_color()),
+                            );
+                            ui.label(
+                                RichText::new(tr(lang, "team_group_hint"))
+                                    .color(ui.visuals().weak_text_color()),
+                            );
+                        });
+                        ui.add_space(6.0);
                         if players.is_empty() {
                             ui.label(
                                 RichText::new(tr(lang, "no_players"))
                                     .color(ui.visuals().weak_text_color()),
                             );
                         } else {
-                            for player in players.iter().take(12) {
-                                ui.horizontal(|ui| {
-                                    let side_color = if player.side.eq_ignore_ascii_case("t") {
-                                        Color32::from_rgb(238, 190, 92)
-                                    } else {
-                                        Color32::from_rgb(92, 178, 255)
-                                    };
-                                    ui.label(
-                                        RichText::new(player.side.to_uppercase())
-                                            .strong()
-                                            .color(side_color),
-                                    );
-                                    ui.label(RichText::new(&player.name).strong());
-                                    ui.label(
-                                        RichText::new(format!(
-                                            "{}r / {}f / {}",
-                                            player.rounds, player.files, player.steam_id
-                                        ))
-                                        .color(ui.visuals().weak_text_color()),
-                                    );
-                                });
-                            }
-                            if players.len() > 12 {
-                                ui.label(
-                                    RichText::new(format!("+{} more players", players.len() - 12))
-                                        .color(ui.visuals().weak_text_color()),
-                                );
+                            for team in [1_usize, 2, 3] {
+                                let team_players: Vec<_> = players
+                                    .iter()
+                                    .filter(|player| player.team == team)
+                                    .collect();
+                                if !team_players.is_empty() {
+                                    draw_player_team(ui, lang, team, &team_players);
+                                    ui.add_space(6.0);
+                                }
                             }
                         }
                     });
                 ui.add_space(10.0);
                 path_block(ui, tr(lang, "root"), &root_text);
+                let mut open_output = false;
+                ui.horizontal(|ui| {
+                    open_output = ui.button(tr(lang, "open_output")).clicked();
+                });
                 path_block(ui, tr(lang, "manifest"), &manifest_text);
                 ui.add_space(8.0);
-                let mut copy_command = false;
+                let mut copy_round_command = false;
+                let mut copy_seq_command = false;
                 let mut copy_manifest = false;
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(tr(lang, "cs2_console")).strong());
-                    copy_command = ui.button(tr(lang, "copy_command")).clicked();
+                    copy_round_command = ui.button(tr(lang, "copy_round_command")).clicked();
+                    copy_seq_command = ui.button(tr(lang, "copy_seq_command")).clicked();
                     copy_manifest = ui.button(tr(lang, "copy_manifest")).clicked();
                 });
-                if copy_command {
-                    ui.ctx().copy_text(command.clone());
-                    self.push_log(tr(lang, "copied_command").to_string());
+                if open_output {
+                    if let Err(err) = open_folder_path(&root_path) {
+                        self.push_log(format!("could not open output folder: {err}"));
+                    }
+                }
+                if copy_round_command {
+                    ui.ctx().copy_text(round_command.clone());
+                    self.push_log(tr(lang, "copied_round_command").to_string());
+                }
+                if copy_seq_command {
+                    ui.ctx().copy_text(seq_command.clone());
+                    self.push_log(tr(lang, "copied_seq_command").to_string());
                 }
                 if copy_manifest {
                     ui.ctx().copy_text(manifest_text.clone());
                     self.push_log(tr(lang, "copied_manifest").to_string());
                 }
-                let mut command_text = command;
+                let mut round_text = round_command;
                 ui.add(
-                    egui::TextEdit::multiline(&mut command_text)
-                        .desired_rows(3)
+                    egui::TextEdit::singleline(&mut round_text)
+                        .desired_width(ui.available_width())
+                        .code_editor()
+                        .interactive(false),
+                );
+                let mut seq_text = seq_command;
+                ui.add(
+                    egui::TextEdit::singleline(&mut seq_text)
+                        .desired_width(ui.available_width())
                         .code_editor()
                         .interactive(false),
                 );
@@ -1371,7 +1457,7 @@ impl GuiProgress {
 
 #[derive(Clone)]
 struct PlayerSummary {
-    side: String,
+    team: usize,
     steam_id: u64,
     name: String,
     rounds: usize,
@@ -1379,7 +1465,8 @@ struct PlayerSummary {
 }
 
 struct PlayerAccumulator {
-    side: String,
+    first_round: u32,
+    first_side: String,
     name: String,
     rounds: BTreeSet<u32>,
     files: usize,
@@ -1446,10 +1533,16 @@ impl ConversionResultView {
         }
     }
 
-    fn console_command(&self, first_round: Option<u32>) -> String {
+    fn console_round_command(&self, first_round: Option<u32>) -> String {
         let round = first_round.unwrap_or(0);
         let manifest = console_quote_path(&self.manifest_path);
-        format!("dtr_go round \"{manifest}\" {round}\r\ndtr_go seq \"{manifest}\" {round}")
+        format!("dtr_go round \"{manifest}\" {round}")
+    }
+
+    fn console_seq_command(&self, first_round: Option<u32>) -> String {
+        let round = first_round.unwrap_or(0);
+        let manifest = console_quote_path(&self.manifest_path);
+        format!("dtr_go seq \"{manifest}\" {round}")
     }
 }
 
@@ -1614,17 +1707,17 @@ fn apply_visuals(ctx: &egui::Context, theme: ResolvedTheme) {
         visuals.window_fill = Color32::from_rgb(25, 26, 30);
         visuals.extreme_bg_color = Color32::from_rgb(11, 12, 15);
         visuals.faint_bg_color = Color32::from_rgb(31, 32, 37);
-        visuals.widgets.active.bg_fill = Color32::from_rgb(42, 94, 126);
+        visuals.widgets.active.bg_fill = Color32::from_rgb(40, 86, 70);
         visuals.widgets.hovered.bg_fill = Color32::from_rgb(58, 60, 68);
-        visuals.selection.bg_fill = Color32::from_rgb(47, 119, 152);
+        visuals.selection.bg_fill = Color32::from_rgb(48, 98, 78);
     } else {
         visuals.panel_fill = Color32::from_rgb(236, 238, 242);
         visuals.window_fill = Color32::from_rgb(248, 249, 251);
         visuals.extreme_bg_color = Color32::from_rgb(255, 255, 255);
         visuals.faint_bg_color = Color32::from_rgb(229, 232, 238);
-        visuals.widgets.active.bg_fill = Color32::from_rgb(196, 218, 232);
+        visuals.widgets.active.bg_fill = Color32::from_rgb(206, 223, 216);
         visuals.widgets.hovered.bg_fill = Color32::from_rgb(225, 229, 236);
-        visuals.selection.bg_fill = Color32::from_rgb(140, 190, 218);
+        visuals.selection.bg_fill = Color32::from_rgb(188, 214, 203);
     }
     ctx.set_visuals(visuals);
 
@@ -1679,6 +1772,88 @@ fn border_color(ui: &egui::Ui) -> Color32 {
     }
 }
 
+fn toggle_maximized(ctx: &egui::Context) {
+    let maximized = ctx.input(|input| input.viewport().maximized.unwrap_or(false));
+    ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+}
+
+fn titlebar_button(
+    ui: &mut egui::Ui,
+    label: &str,
+    accent: Color32,
+    tooltip: &str,
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(34.0, 26.0), egui::Sense::click());
+    let hovered = response.hovered();
+    let fill = if hovered {
+        if label == "x" {
+            Color32::from_rgb(176, 45, 55)
+        } else if ui.visuals().dark_mode {
+            Color32::from_rgb(42, 47, 55)
+        } else {
+            Color32::from_rgb(218, 225, 232)
+        }
+    } else {
+        Color32::TRANSPARENT
+    };
+    ui.painter().rect_filled(rect, 4.0, fill);
+    let text_color = if hovered && label == "x" {
+        Color32::WHITE
+    } else if hovered {
+        accent
+    } else {
+        ui.visuals().weak_text_color()
+    };
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        label,
+        FontId::proportional(15.0),
+        text_color,
+    );
+    response.on_hover_text(tooltip)
+}
+
+fn table_body_text_color(ui: &egui::Ui) -> Color32 {
+    if ui.visuals().dark_mode {
+        Color32::from_rgb(224, 230, 238)
+    } else {
+        Color32::from_rgb(20, 27, 36)
+    }
+}
+
+fn table_header_color(ui: &egui::Ui) -> Color32 {
+    if ui.visuals().dark_mode {
+        Color32::from_rgb(154, 165, 180)
+    } else {
+        Color32::from_rgb(92, 99, 110)
+    }
+}
+
+fn table_muted_text_color(ui: &egui::Ui) -> Color32 {
+    if ui.visuals().dark_mode {
+        Color32::from_rgb(136, 148, 164)
+    } else {
+        Color32::from_rgb(91, 99, 111)
+    }
+}
+
+fn recommended_text_color(ui: &egui::Ui) -> Color32 {
+    if ui.visuals().dark_mode {
+        Color32::from_rgb(97, 215, 150)
+    } else {
+        Color32::from_rgb(35, 122, 83)
+    }
+}
+
+fn suspicious_text_color(ui: &egui::Ui) -> Color32 {
+    if ui.visuals().dark_mode {
+        Color32::from_rgb(236, 175, 89)
+    } else {
+        Color32::from_rgb(151, 96, 35)
+    }
+}
+
 fn language_choice_label(choice: LanguageChoice, lang: UiLanguage) -> &'static str {
     match choice {
         LanguageChoice::System => tr(lang, "lang_system"),
@@ -1700,6 +1875,27 @@ fn side_label(side: Side, lang: UiLanguage) -> &'static str {
         Side::Both => tr(lang, "side_both"),
         Side::T => "T",
         Side::Ct => "CT",
+    }
+}
+
+fn player_team_label(team: usize, lang: UiLanguage) -> &'static str {
+    match team {
+        1 => tr(lang, "team_1"),
+        2 => tr(lang, "team_2"),
+        _ => tr(lang, "team_other"),
+    }
+}
+
+fn player_count_label(count: usize, lang: UiLanguage) -> String {
+    match lang {
+        UiLanguage::ZhCn => format!("{count} 人"),
+        UiLanguage::En => {
+            if count == 1 {
+                "1 player".to_string()
+            } else {
+                format!("{count} players")
+            }
+        }
     }
 }
 
@@ -1735,7 +1931,7 @@ fn tr(lang: UiLanguage, key: &str) -> &'static str {
             "folder" => "目录",
             "analyze" => "解析",
             "convert" => "转换",
-            "open_result" => "打开结果",
+            "open_result" => "打开 output",
             "rounds" => "回合",
             "round" => "回合",
             "status" => "状态",
@@ -1756,15 +1952,26 @@ fn tr(lang: UiLanguage, key: &str) -> &'static str {
             "conversion_complete" => "转换完成",
             "size" => "大小",
             "players" => "选手",
+            "team_group_hint" => "按最早导出回合分组，避免换边误读",
+            "team_1" => "队伍 1",
+            "team_2" => "队伍 2",
+            "team_other" => "其他",
+            "round_short" => "回合",
+            "file_short" => "文件",
             "validated" => "验证",
             "cosmetics_exported" => "已导出饰品元数据",
             "no_players" => "没有导出选手文件",
             "root" => "根目录",
             "manifest" => "Manifest",
             "cs2_console" => "CS2 控制台",
+            "open_output" => "打开 output 文件夹",
             "copy_command" => "复制指令",
+            "copy_round_command" => "复制 round",
+            "copy_seq_command" => "复制 seq",
             "copy_manifest" => "复制 manifest",
             "copied_command" => "已复制 CS2 指令",
+            "copied_round_command" => "已复制 round 指令",
+            "copied_seq_command" => "已复制 seq 指令",
             "copied_manifest" => "已复制 manifest 路径",
             "advanced" => "高级选项",
             "activity" => "Activity",
@@ -1798,6 +2005,9 @@ fn tr(lang: UiLanguage, key: &str) -> &'static str {
             "theme_system" => "系统主题",
             "theme_dark" => "深色",
             "theme_light" => "浅色",
+            "minimize_window" => "最小化",
+            "maximize_window" => "最大化/还原",
+            "close_window" => "关闭",
             "status_idle" => "Idle",
             "status_parsing" => "Parsing",
             "status_parsed" => "Parsed",
@@ -1813,7 +2023,7 @@ fn tr(lang: UiLanguage, key: &str) -> &'static str {
             "folder" => "Folder",
             "analyze" => "Analyze",
             "convert" => "Convert",
-            "open_result" => "Open",
+            "open_result" => "Open output",
             "rounds" => "Rounds",
             "round" => "Round",
             "status" => "Status",
@@ -1834,15 +2044,26 @@ fn tr(lang: UiLanguage, key: &str) -> &'static str {
             "conversion_complete" => "Conversion complete",
             "size" => "Size",
             "players" => "Players",
+            "team_group_hint" => "Grouped by first exported round, not fixed T/CT side",
+            "team_1" => "Team 1",
+            "team_2" => "Team 2",
+            "team_other" => "Other",
+            "round_short" => "r",
+            "file_short" => "f",
             "validated" => "Validated",
             "cosmetics_exported" => "Cosmetic metadata exported",
             "no_players" => "No player files exported",
             "root" => "Root",
             "manifest" => "Manifest",
             "cs2_console" => "CS2 console",
+            "open_output" => "Open output folder",
             "copy_command" => "Copy command",
+            "copy_round_command" => "Copy round",
+            "copy_seq_command" => "Copy seq",
             "copy_manifest" => "Copy manifest",
             "copied_command" => "Copied CS2 command",
+            "copied_round_command" => "Copied round command",
+            "copied_seq_command" => "Copied seq command",
             "copied_manifest" => "Copied manifest path",
             "advanced" => "Advanced Options",
             "activity" => "Activity",
@@ -1876,6 +2097,9 @@ fn tr(lang: UiLanguage, key: &str) -> &'static str {
             "theme_system" => "System theme",
             "theme_dark" => "Dark",
             "theme_light" => "Light",
+            "minimize_window" => "Minimize",
+            "maximize_window" => "Maximize/restore",
+            "close_window" => "Close",
             "status_idle" => "Idle",
             "status_parsing" => "Parsing",
             "status_parsed" => "Parsed",
@@ -1923,12 +2147,72 @@ fn summary_tile(ui: &mut egui::Ui, label: &str, value: &str, accent: Color32) {
         .inner_margin(egui::Margin::symmetric(10, 8))
         .show(ui, |ui| {
             ui.set_min_width(104.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("|").strong().color(accent));
+                ui.label(
+                    RichText::new(label)
+                        .size(13.0)
+                        .color(ui.visuals().weak_text_color()),
+                );
+            });
             ui.label(
-                RichText::new(label)
-                    .size(13.0)
-                    .color(ui.visuals().weak_text_color()),
+                RichText::new(value)
+                    .strong()
+                    .size(20.0)
+                    .color(ui.visuals().strong_text_color()),
             );
-            ui.label(RichText::new(value).strong().size(20.0).color(accent));
+        });
+}
+
+fn draw_player_team(ui: &mut egui::Ui, lang: UiLanguage, team: usize, players: &[&PlayerSummary]) {
+    let accent = match team {
+        1 => Color32::from_rgb(230, 177, 83),
+        2 => Color32::from_rgb(106, 176, 220),
+        _ => ui.visuals().weak_text_color(),
+    };
+    egui::Frame::new()
+        .fill(panel_deep_color(ui))
+        .stroke(egui::Stroke::new(1.0, border_color(ui)))
+        .inner_margin(egui::Margin::symmetric(8, 6))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(player_team_label(team, lang))
+                        .strong()
+                        .color(accent),
+                );
+                ui.label(
+                    RichText::new(player_count_label(players.len(), lang))
+                        .color(ui.visuals().weak_text_color()),
+                );
+            });
+            ui.add_space(4.0);
+            for player in players {
+                ui.horizontal(|ui| {
+                    ui.add_sized(
+                        [158.0, 20.0],
+                        egui::Label::new(
+                            RichText::new(player.steam_id.to_string())
+                                .font(FontId::monospace(13.0))
+                                .strong()
+                                .color(ui.visuals().strong_text_color()),
+                        ),
+                    );
+                    ui.label(RichText::new(&player.name).color(ui.visuals().strong_text_color()));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(
+                            RichText::new(format!(
+                                "{} {} / {} {}",
+                                player.rounds,
+                                tr(lang, "round_short"),
+                                player.files,
+                                tr(lang, "file_short")
+                            ))
+                            .color(ui.visuals().weak_text_color()),
+                        );
+                    });
+                });
+            }
         });
 }
 
@@ -1982,12 +2266,13 @@ fn table_header_text(ui: &mut egui::Ui, text: &str) {
     ui.label(
         RichText::new(text)
             .strong()
-            .color(ui.visuals().weak_text_color()),
+            .size(14.0)
+            .color(table_header_color(ui)),
     );
 }
 
 fn table_text(ui: &mut egui::Ui, text: impl Into<String>, color: Color32, strong: bool) {
-    let mut rich = RichText::new(text.into()).color(color);
+    let mut rich = RichText::new(text.into()).size(15.0).color(color);
     if strong {
         rich = rich.strong();
     }
@@ -1995,33 +2280,47 @@ fn table_text(ui: &mut egui::Ui, text: impl Into<String>, color: Color32, strong
 }
 
 fn summarize_exported_players(files: &[crate::model::ConvertedFile]) -> Vec<PlayerSummary> {
-    let mut players: BTreeMap<(u8, u64), PlayerAccumulator> = BTreeMap::new();
+    let mut players: BTreeMap<u64, PlayerAccumulator> = BTreeMap::new();
     for file in files {
-        let key = (side_rank(&file.side), file.steam_id);
-        let player = players.entry(key).or_insert_with(|| PlayerAccumulator {
-            side: file.side.clone(),
-            name: if file.player_name.is_empty() {
-                file.steam_id.to_string()
-            } else {
-                file.player_name.clone()
-            },
-            rounds: BTreeSet::new(),
-            files: 0,
-        });
+        let player = players
+            .entry(file.steam_id)
+            .or_insert_with(|| PlayerAccumulator {
+                first_round: file.round,
+                first_side: file.side.clone(),
+                name: if file.player_name.is_empty() {
+                    file.steam_id.to_string()
+                } else {
+                    file.player_name.clone()
+                },
+                rounds: BTreeSet::new(),
+                files: 0,
+            });
+        if file.round < player.first_round
+            || (file.round == player.first_round
+                && side_rank(&file.side) < side_rank(&player.first_side))
+        {
+            player.first_round = file.round;
+            player.first_side = file.side.clone();
+        }
+        if player.name == file.steam_id.to_string() && !file.player_name.is_empty() {
+            player.name = file.player_name.clone();
+        }
         player.rounds.insert(file.round);
         player.files += 1;
     }
 
-    players
+    let mut summaries: Vec<_> = players
         .into_iter()
-        .map(|((_, steam_id), player)| PlayerSummary {
-            side: player.side,
+        .map(|(steam_id, player)| PlayerSummary {
+            team: team_index_from_first_side(&player.first_side),
             steam_id,
             name: player.name,
             rounds: player.rounds.len(),
             files: player.files,
         })
-        .collect()
+        .collect();
+    summaries.sort_by_key(|player| (player.team, player.steam_id));
+    summaries
 }
 
 fn side_rank(side: &str) -> u8 {
@@ -2031,6 +2330,16 @@ fn side_rank(side: &str) -> u8 {
         1
     } else {
         2
+    }
+}
+
+fn team_index_from_first_side(side: &str) -> usize {
+    if side.eq_ignore_ascii_case("t") {
+        1
+    } else if side.eq_ignore_ascii_case("ct") {
+        2
+    } else {
+        3
     }
 }
 
@@ -2153,19 +2462,16 @@ fn save_settings(settings: &GuiSettings) -> std::io::Result<()> {
     fs::write(path, text)
 }
 
-fn reveal_path(path: &Path) -> std::io::Result<()> {
+fn open_folder_path(path: &Path) -> std::io::Result<()> {
     #[cfg(windows)]
     {
-        Command::new("explorer")
-            .arg(format!("/select,{}", path.display()))
-            .spawn()?;
+        Command::new("explorer").arg(path).spawn()?;
         return Ok(());
     }
 
     #[cfg(not(windows))]
     {
-        let target = path.parent().unwrap_or(path);
-        Command::new("xdg-open").arg(target).spawn()?;
+        Command::new("xdg-open").arg(path).spawn()?;
         Ok(())
     }
 }
@@ -2320,21 +2626,46 @@ mod tests {
     }
 
     #[test]
-    fn exported_players_are_grouped_by_side_and_steam_id() {
+    fn console_commands_are_split_by_mode() {
+        let result = ConversionResultView {
+            root: PathBuf::from("out/demo"),
+            manifest_path: PathBuf::from("out/demo/manifest.json"),
+            files_written: 0,
+            validated: 0,
+            output_bytes: 0,
+            rounds_exported: 1,
+            files_by_round: BTreeMap::new(),
+            players: Vec::new(),
+            cosmetic_files: 0,
+            sticker_files: 0,
+        };
+
+        assert_eq!(
+            result.console_round_command(Some(7)),
+            "dtr_go round \"out/demo/manifest.json\" 7"
+        );
+        assert_eq!(
+            result.console_seq_command(Some(7)),
+            "dtr_go seq \"out/demo/manifest.json\" 7"
+        );
+    }
+
+    #[test]
+    fn exported_players_are_grouped_by_steam_id_and_team() {
         let files = vec![
             converted_file(1, "t", 11, "alpha"),
-            converted_file(2, "t", 11, "alpha"),
+            converted_file(2, "ct", 11, "alpha"),
             converted_file(1, "ct", 22, "bravo"),
         ];
 
         let players = summarize_exported_players(&files);
 
         assert_eq!(players.len(), 2);
-        assert_eq!(players[0].side, "t");
+        assert_eq!(players[0].team, 1);
         assert_eq!(players[0].steam_id, 11);
         assert_eq!(players[0].rounds, 2);
         assert_eq!(players[0].files, 2);
-        assert_eq!(players[1].side, "ct");
+        assert_eq!(players[1].team, 2);
         assert_eq!(players[1].steam_id, 22);
     }
 

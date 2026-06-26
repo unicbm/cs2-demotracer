@@ -154,6 +154,10 @@ fn validate_manifest_artifact_paths(
     match value {
         serde_json::Value::Object(map) => {
             for (key, value) in map {
+                if key == "avatar_overrides" {
+                    validate_manifest_avatar_override_paths(pack_root, manifest_path, value)?;
+                    continue;
+                }
                 if let Some(kind) = manifest_artifact_kind(key) {
                     if let Some(text) = value.as_str() {
                         validate_manifest_artifact_path(pack_root, manifest_path, key, kind, text)?;
@@ -176,6 +180,7 @@ fn validate_manifest_artifact_paths(
 enum ManifestArtifactKind {
     Dtr,
     ManifestJson,
+    AvatarImage,
 }
 
 fn manifest_artifact_kind(key: &str) -> Option<ManifestArtifactKind> {
@@ -255,6 +260,48 @@ fn validate_manifest_artifact_extension(
                 )));
             }
         }
+        ManifestArtifactKind::AvatarImage => {
+            if !has_avatar_image_extension(full) {
+                return Err(crate::Error::InvalidDemo(format!(
+                    "{} contains {key} target with unsupported extension {:?}: expected .png, .jpg, .jpeg, or .bin",
+                    manifest_path.display(),
+                    value
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_manifest_avatar_override_paths(
+    pack_root: &Path,
+    manifest_path: &Path,
+    value: &serde_json::Value,
+) -> crate::Result<()> {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, value) in map {
+                if key == "path" {
+                    if let Some(text) = value.as_str() {
+                        validate_manifest_artifact_path(
+                            pack_root,
+                            manifest_path,
+                            "avatar_overrides[].path",
+                            ManifestArtifactKind::AvatarImage,
+                            text,
+                        )?;
+                    }
+                } else {
+                    validate_manifest_artifact_paths(pack_root, manifest_path, value)?;
+                }
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                validate_manifest_avatar_override_paths(pack_root, manifest_path, item)?;
+            }
+        }
+        _ => {}
     }
     Ok(())
 }
@@ -263,6 +310,17 @@ fn has_dtr_extension(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("dtr"))
+}
+
+fn has_avatar_image_extension(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| {
+            matches!(
+                ext.to_ascii_lowercase().as_str(),
+                "png" | "jpg" | "jpeg" | "bin"
+            )
+        })
 }
 
 fn is_absolute_manifest_artifact_path(value: &str) -> bool {
@@ -442,6 +500,53 @@ mod tests {
 
         validate_manifest_artifact_paths(pack, &pack.join("nade_library.json"), &library_manifest)
             .unwrap();
+    }
+
+    #[test]
+    fn manifest_hygiene_allows_avatar_override_images_inside_pack() {
+        let temp = tempfile::tempdir().unwrap();
+        let pack = temp.path();
+        let manifest_path = pack.join("manifest.json");
+        let replay_path = pack.join("round01/t/player.dtr");
+        let avatar_path = pack.join("avatars/avatar.png");
+        fs::create_dir_all(replay_path.parent().unwrap()).unwrap();
+        fs::create_dir_all(avatar_path.parent().unwrap()).unwrap();
+        fs::write(&replay_path, b"dtr").unwrap();
+        fs::write(&avatar_path, b"png").unwrap();
+        fs::write(
+            &manifest_path,
+            serde_json::to_string(&json!({
+                "files": [
+                    { "path": "round01/t/player.dtr" }
+                ],
+                "avatar_overrides": [
+                    { "steam_id": 76561198000000001_u64, "path": "avatars/avatar.png" }
+                ]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        validate_public_artifacts(pack).unwrap();
+    }
+
+    #[test]
+    fn manifest_hygiene_rejects_avatar_override_non_image_targets() {
+        let temp = tempfile::tempdir().unwrap();
+        let pack = temp.path();
+        let avatar_path = pack.join("avatars/avatar.txt");
+        fs::create_dir_all(avatar_path.parent().unwrap()).unwrap();
+        fs::write(&avatar_path, b"not an avatar").unwrap();
+        let manifest_path = pack.join("manifest.json");
+        let manifest = json!({
+            "avatar_overrides": [
+                { "steam_id": 76561198000000001_u64, "path": "avatars/avatar.txt" }
+            ]
+        });
+
+        let err = validate_manifest_artifact_paths(pack, &manifest_path, &manifest).unwrap_err();
+
+        assert!(err.to_string().contains("expected .png"));
     }
 
     #[test]
