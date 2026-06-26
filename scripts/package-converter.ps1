@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.2.1",
+    [string]$Version = "0.3.0",
     [string]$OutputRoot = "dist",
     [switch]$SkipBuild
 )
@@ -70,7 +70,7 @@ git_commit: $gitCommit
 platform: windows-x64
 cli: cs2-demotracer.exe
 gui: cs2-demotracer-gui.exe
-dtr_writer: 6
+dtr_writer: 7
 manifest_abi: 17
 
 Use cs2-demotracer.exe for CLI, batch, pool, and Demo2Nade workflows.
