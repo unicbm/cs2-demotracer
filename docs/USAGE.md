@@ -51,8 +51,10 @@ cs2-demotracer.exe convert --demo <demo.dem> --output <output-dir> --export-cosm
 ```
 
 To include stable weapon sticker slot/id/wear/offset metadata, also pass
-`--export-stickers`. `convert-pool` accepts the same flags and otherwise keeps
-every replay manifest cosmetic-free.
+`--export-stickers`. To include stable weapon charm/keychain slot-0 id, offset,
+and optional seed/highlight/sticker metadata, also pass `--export-charms`.
+`convert-pool` accepts the same flags and otherwise keeps every replay manifest
+cosmetic-free.
 
 The most important files are:
 
@@ -267,9 +269,13 @@ round manifest was exported with `--export-cosmetics` plus the two risk
 acknowledgement flags. When evidence exists, DemoTracer applies only
 demo-observed weapon paint, knife, glove metadata, and stable weapon/knife
 custom names to safe replay bots. It does not randomize cosmetics, read profile
-databases, or apply charms, agents, or StatTrak. Weapon stickers require the
-extra `--export-stickers` converter flag and `dtr_set align stickers on` at
-runtime.
+databases, or apply agents. It can apply demo-observed StatTrak item quality
+(`quality=9`) for exported weapon cosmetics. When a demo StatTrak counter is
+not exposed, runtime writes a display counter of `0` so CS2 can select the
+StatTrak counter model; this does not invent a demo kill count. Weapon stickers
+require the extra `--export-stickers` converter flag and
+`dtr_set align stickers on` at runtime. Weapon charms/keychains require the
+extra `--export-charms` converter flag and `dtr_set align charms on` at runtime.
 
 This feature is intended for local/private replay validation. A local listen
 server may not have the same GSLT exposure as a dedicated server, but bot-only

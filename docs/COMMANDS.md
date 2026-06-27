@@ -33,6 +33,7 @@ arms it, then issues `mp_restartgame 1` so playback catches a fresh
 | `dtr_projectile_align` | `1` | Align grenade projectile initial vectors from `.dtr` v4+ data. |
 | `dtr_cosmetic_align` | `0` | Consume opt-in manifest cosmetic evidence and apply weapon skin, knife, and glove cosmetics to replay bots. |
 | `dtr_sticker_align` | `0` | Consume extra opt-in weapon sticker evidence under cosmetic alignment. |
+| `dtr_charm_align` | `0` | Consume extra opt-in weapon charm/keychain evidence under cosmetic alignment. |
 | `dtr_crosshair_align` | `1` | Apply demo-evidence crosshair codes to human viewers while they watch replay bots in-eye. |
 | `dtr_handoff` | `death_or_contact slot` | Release only the contacted/dead replay slot after contact or death. |
 | `dtr_partial` | `1` | Allow replay with fewer bots than manifest players. |
@@ -275,6 +276,9 @@ Implementation when enabled:
 - Weapon stickers are not part of this command alone. They require
   `--export-stickers` during conversion and `dtr_sticker_align 1` or
   `dtr_set align stickers on` at runtime.
+- Weapon charms/keychains are not part of this command alone. They require
+  `--export-charms` during conversion and `dtr_charm_align 1` or
+  `dtr_set align charms on` at runtime.
 - Applies only to safe replay bot slots after weapon/loadout alignment has
   confirmed the replay inventory path.
 - Never picks random cosmetics, never reads a server profile/database, and never
@@ -282,7 +286,11 @@ Implementation when enabled:
 
 Important limits:
 
-- Charms/keychains, agents, and StatTrak are not applied.
+- Agents are not applied.
+- StatTrak is limited to demo-observed weapon cosmetic evidence:
+  `quality=9` may be applied. If the manifest has no nonnegative
+  `stattrak_counter`, runtime writes display counter `0` to request the
+  StatTrak counter model; this is not a demo kill-count claim.
 - Missing, zero, contradictory, or unsupported demo evidence is skipped.
 - This is a replay-fidelity feature intended for local/private validation.
 - A local listen/practice server may not have the same GSLT exposure as a
@@ -303,10 +311,30 @@ Implementation when enabled:
 
 - Applies only stable manifest sticker evidence attached to confirmed replay
   weapon cosmetics.
-- Supports sticker slot, sticker id, wear, offset x, and offset y.
-- Does not apply rotation, schema, charms/keychains, agents, or StatTrak.
+- Supports sticker slot, sticker id, wear, offset x, offset y, rotation, and
+  raw scale metadata.
+- Does not apply schema or agents. Charms/keychains use
+  `dtr_charm_align`. StatTrak comes from weapon cosmetic evidence, not sticker
+  alignment.
 - Sticker write failures are counted as skipped stickers and do not roll back
   weapon paint, knife, glove, or custom-name alignment.
+
+### `dtr_charm_align <0|1>`
+
+Enables or disables weapon charm/keychain alignment. It is off by default and
+has no effect unless cosmetic alignment is also enabled and the manifest was
+exported with `--export-charms` in addition to the cosmetic export risk flags.
+
+Implementation when enabled:
+
+- Applies only stable manifest charm/keychain evidence attached to confirmed
+  replay weapon cosmetics.
+- Supports charm slot 0 id, offset x, offset y, offset z, optional seed,
+  optional highlight, and optional charm sticker id.
+- Does not apply random charms, profile/database inventory, agents, or
+  unsupported charm slots.
+- Charm write failures are counted as skipped charms and do not roll back weapon
+  paint, knife, glove, custom-name, StatTrak, or sticker alignment.
 
 ### `dtr_crosshair_align <0|1>`
 

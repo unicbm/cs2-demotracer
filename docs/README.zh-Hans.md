@@ -51,12 +51,13 @@ demo 长度、存储和导出范围。
 ## 饰品对齐与 GSLT 风险
 
 > [!IMPORTANT]
-> 饰品、custom name 和贴纸 metadata 默认绝不导出。普通 `convert` 输出是推荐的安全路径。
+> 饰品、custom name、贴纸和挂件 metadata 默认绝不导出。普通 `convert` 输出是推荐的安全路径。
 >
 > 只有在你明确传入 `--export-cosmetics`、`--acknowledge-cosmetic-gslt-risk`
 > 和 `--accept-cosmetic-export-disclaimer` 时，converter 才会导出这些
-> metadata；贴纸还必须额外传入 `--export-stickers`。runtime 里的饰品和贴纸
-> 对齐也默认关闭，并且只消费 manifest 里的 demo 证据。
+> metadata；贴纸还必须额外传入 `--export-stickers`，挂件还必须额外传入
+> `--export-charms`。runtime 里的饰品、贴纸和挂件对齐也默认关闭，并且只消费
+> manifest 里的 demo 证据。
 >
 > 这个功能只面向本地/私有 replay fidelity。listen/practice server 的 GSLT
 > 暴露面通常低于 dedicated server，但只写 bot 不是 Valve policy 豁免；如果人类
@@ -135,7 +136,15 @@ cs2-demotracer.exe convert --demo "<demo.dem>" --output "<输出目录>" --expor
 cs2-demotracer.exe convert --demo "<demo.dem>" --output "<输出目录>" --export-cosmetics --export-stickers --acknowledge-cosmetic-gslt-risk --accept-cosmetic-export-disclaimer
 ```
 
-`convert-pool` 也使用同样 flag；不传时，池子里的 replay manifest 同样不写饰品字段。
+武器挂件/keychain metadata 也是额外 opt-in，必须在上面三个 flag 之外再加
+`--export-charms`：
+
+```powershell
+cs2-demotracer.exe convert --demo "<demo.dem>" --output "<输出目录>" --export-cosmetics --export-charms --acknowledge-cosmetic-gslt-risk --accept-cosmetic-export-disclaimer
+```
+
+`convert-pool` 也使用同样 flag，并额外支持 `--export-stickers` 和
+`--export-charms`；不传时，池子里的 replay manifest 同样不写饰品字段。
 
 导出后会生成类似这样的目录：
 
@@ -182,7 +191,7 @@ cargo run --release --features gui --bin cs2-demotracer-gui
 
 GUI 是纯 Rust `egui` 工作台，v1 只覆盖单 demo 流程：选择或拖入 `.dem`、
 选择输出目录、查看回合质量、勾选回合、转换、验证，并复制生成的 CS2 console
-指令。界面支持英文/简体中文和 system/light/dark 主题。饰品/sticker 导出在
+指令。界面支持英文/简体中文和 system/light/dark 主题。饰品/sticker/挂件导出在
 GUI 中仍默认关闭，必须完成显式风险确认后才能启用。批量回合池和 Demo2Nade
 在 v1 仍只通过 CLI 提供。
 
@@ -294,13 +303,22 @@ dtr_go seq "<输出目录>\<demo-id>\manifest.json" 0
 生效时也只把 demo 观测到的武器 paint、刀、手套元数据，以及稳定的武器/刀具 custom
 name 应用到安全 replay bot；它不会随机分配饰品，不读取 profile/database，也不会应用
 贴纸，除非 manifest 是用 `--export-stickers` 导出且 runtime 也开启了
-`dtr_set align stickers on`。它也不会应用挂件/charms、探员或 StatTrak。只写 bot
+`dtr_set align stickers on`；也不会应用挂件，除非 manifest 是用
+`--export-charms` 导出且 runtime 也开启了 `dtr_set align charms on`。它可以应用
+demo 观测到的 StatTrak/暗金武器质量 (`quality=9`)；如果 demo 没暴露 StatTrak
+计数器，runtime 会写显示用 `0`，让 CS2 选择带计数器的 StatTrak 模型，但这不代表
+伪造了 demo 击杀数。它也不会应用探员。只写 bot
 不是规则豁免：如果真人玩家可以观察、接管、持有、检视或以其他
 方式使用这些 bot 物品外观，就应该按饰品/库存模拟风险处理。
 
 `dtr_set align stickers on` 是饰品对齐下面额外的默认关闭子模式。它要求
 `dtr_set align cosmetics on`，并且 manifest 必须包含 `--export-stickers` 导出的证据；
-它只把稳定 demo 观测到的武器贴纸 slot/id/wear/offset 应用到安全 replay bot。
+它只把稳定 demo 观测到的武器贴纸 slot/id/wear/offset/rotation/scale 元数据应用到安全 replay bot。
+
+`dtr_set align charms on` 是饰品对齐下面额外的默认关闭子模式。它要求
+`dtr_set align cosmetics on`，并且 manifest 必须包含 `--export-charms` 导出的证据；
+它只把稳定 demo 观测到的武器挂件/keychain slot 0 id、offset、可选 seed、
+可选 highlight 和可选 charm sticker id 应用到安全 replay bot。
 
 `dtr_set align crosshair on` 默认开启。它只把 demo 中稳定观测到的
 `crosshair_code` 临时应用到正在第一人称观察安全 replay bot 的真人观察者，并在

@@ -437,6 +437,19 @@ pub struct ParsedDemo {
     pub projectiles: Vec<ParsedProjectile>,
     pub events: Vec<ParsedGameEvent>,
     pub avatar_overrides: Vec<ParsedAvatarOverride>,
+    pub econ_items: Vec<ParsedEconItem>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct ParsedEconItem {
+    pub steam_id: Option<u64>,
+    pub item_def_index: Option<u32>,
+    pub paint_kit: Option<u32>,
+    pub paint_seed: Option<u32>,
+    pub paint_wear_raw: Option<u32>,
+    pub paint_wear: Option<f32>,
+    pub item_name: Option<String>,
+    pub skin_name: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -506,6 +519,8 @@ pub struct ParsedWeaponSticker {
     pub wear: f32,
     pub offset_x: f32,
     pub offset_y: f32,
+    pub scale: Option<f32>,
+    pub rotation: Option<f32>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -514,8 +529,18 @@ pub struct ParsedInventoryWeaponCosmetic {
     pub paint_kit: u32,
     pub paint_seed: u32,
     pub paint_wear: f32,
+    pub entity_quality: Option<i32>,
+    pub stattrak_counter: Option<i32>,
+    pub attributes: Vec<ParsedInventoryWeaponAttribute>,
     pub custom_name: Option<String>,
     pub stickers: Vec<ParsedWeaponSticker>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub struct ParsedInventoryWeaponAttribute {
+    pub definition_index: u32,
+    pub raw_value: f32,
+    pub raw_value_bits: u32,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -958,9 +983,15 @@ pub struct ReplayWeaponCosmetic {
     pub seed: u32,
     pub wear: f32,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub quality: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stattrak_counter: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_name: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stickers: Vec<ReplayWeaponSticker>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub charms: Vec<ReplayWeaponCharm>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -970,6 +1001,25 @@ pub struct ReplayWeaponSticker {
     pub wear: f32,
     pub offset_x: f32,
     pub offset_y: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<f32>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub struct ReplayWeaponCharm {
+    pub slot: u8,
+    pub charm_id: u32,
+    pub offset_x: f32,
+    pub offset_y: f32,
+    pub offset_z: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sticker_id: Option<u32>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

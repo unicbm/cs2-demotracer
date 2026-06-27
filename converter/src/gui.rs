@@ -98,6 +98,7 @@ struct GuiSettings {
     sync_scoreboard: bool,
     export_cosmetics: bool,
     export_stickers: bool,
+    export_charms: bool,
     advanced_open: bool,
     activity_open: bool,
 }
@@ -116,6 +117,7 @@ impl Default for GuiSettings {
             sync_scoreboard: false,
             export_cosmetics: false,
             export_stickers: false,
+            export_charms: false,
             advanced_open: false,
             activity_open: false,
         }
@@ -221,6 +223,9 @@ impl DemoTracerGui {
         if self.settings.export_stickers && !self.settings.export_cosmetics {
             self.settings.export_stickers = false;
         }
+        if self.settings.export_charms && !self.settings.export_cosmetics {
+            self.settings.export_charms = false;
+        }
         if !cosmetic_export_ready(&self.settings, self.cosmetic_acknowledged) {
             self.show_cosmetic_disclaimer = true;
             self.cosmetic_confirmation.clear();
@@ -278,6 +283,7 @@ impl DemoTracerGui {
             freeze_preroll_seconds: self.settings.freeze_preroll_seconds,
             export_cosmetics: self.settings.export_cosmetics,
             export_stickers: self.settings.export_stickers,
+            export_charms: self.settings.export_charms,
             analysis: AnalysisOptions::default(),
         }
     }
@@ -363,6 +369,7 @@ impl DemoTracerGui {
             self.settings.freeze_preroll_seconds.clamp(0.0, 120.0);
         if !self.settings.export_cosmetics {
             self.settings.export_stickers = false;
+            self.settings.export_charms = false;
         }
         if let Err(err) = save_settings(&self.settings) {
             self.push_log(format!("settings not saved: {err}"));
@@ -1144,6 +1151,7 @@ impl DemoTracerGui {
                             self.show_cosmetic_disclaimer = true;
                         } else {
                             self.settings.export_stickers = false;
+                            self.settings.export_charms = false;
                             self.show_cosmetic_disclaimer = false;
                         }
                     }
@@ -1162,9 +1170,21 @@ impl DemoTracerGui {
                             self.cosmetic_confirmation.clear();
                             self.show_cosmetic_disclaimer = true;
                         }
+                        let charms_changed = ui
+                            .checkbox(&mut self.settings.export_charms, tr(lang, "export_charms"))
+                            .changed();
+                        if charms_changed {
+                            changed = true;
+                        }
+                        if charms_changed && self.settings.export_charms {
+                            self.cosmetic_acknowledged = false;
+                            self.cosmetic_confirmation.clear();
+                            self.show_cosmetic_disclaimer = true;
+                        }
                     });
                     if !self.settings.export_cosmetics {
                         self.settings.export_stickers = false;
+                        self.settings.export_charms = false;
                     }
                     if self.settings.export_cosmetics && self.cosmetic_acknowledged {
                         ui.colored_label(GOOD, tr(lang, "risk_confirmed"));
@@ -1337,6 +1357,7 @@ impl DemoTracerGui {
                     if ui.button(tr(lang, "cancel")).clicked() {
                         self.settings.export_cosmetics = false;
                         self.settings.export_stickers = false;
+                        self.settings.export_charms = false;
                         self.cosmetic_acknowledged = false;
                         self.cosmetic_confirmation.clear();
                         self.show_cosmetic_disclaimer = false;
@@ -1994,20 +2015,21 @@ fn tr(lang: UiLanguage, key: &str) -> &'static str {
             "sync_scoreboard" => "同步比分",
             "export_cosmetics" => "导出饰品",
             "export_stickers" => "导出贴纸",
+            "export_charms" => "导出挂坠",
             "risk_confirmed" => "风险已确认",
             "confirmation_required" => "需要确认",
             "high_risk_option" => "高风险选项",
-            "high_risk_option_body" => "只写入 demo 证据；后续 runtime 启用饰品/贴纸对齐前需自行评估 GSLT 风险。",
+            "high_risk_option_body" => "只写入 demo 证据；后续 runtime 启用饰品/贴纸/挂坠对齐前需自行评估 GSLT 风险。",
             "output_exists" => "输出已存在",
             "output_exists_body" => "目标 demo 输出目录已存在。",
             "clear_and_convert" => "清理并转换",
             "cancel" => "取消",
             "cosmetic_confirmation" => "饰品导出确认",
             "high_risk_title" => "高风险：GSLT / 饰品导出",
-            "risk_intro" => "这只会把 demo 里的武器、刀、手套、贴纸证据写入 manifest；风险来自后续 runtime 使用这些证据做饰品/贴纸对齐。",
+            "risk_intro" => "这只会把 demo 里的武器、刀、手套、贴纸、挂坠证据写入 manifest；风险来自后续 runtime 使用这些证据做饰品/贴纸/挂坠对齐。",
             "before_enable" => "启用前确认：",
             "risk_bullet_guidelines" => "- 你已评估 Valve 服务器规则和 GSLT 风险。",
-            "risk_bullet_default_off" => "- runtime 饰品/贴纸对齐仍保持默认关闭。",
+            "risk_bullet_default_off" => "- runtime 饰品/贴纸/挂坠对齐仍保持默认关闭。",
             "risk_bullet_public" => "- 不要在公网或真人可控制/可观察 bot 的环境暴露模拟饰品，除非你接受该风险。",
             "type_to_unlock" => "输入固定短语解锁：",
             "phrase_required" => "短语不匹配时不会启用导出。",
@@ -2087,20 +2109,21 @@ fn tr(lang: UiLanguage, key: &str) -> &'static str {
             "sync_scoreboard" => "Sync scoreboard",
             "export_cosmetics" => "Export cosmetics",
             "export_stickers" => "Export stickers",
+            "export_charms" => "Export charms",
             "risk_confirmed" => "risk confirmed",
             "confirmation_required" => "confirmation required",
             "high_risk_option" => "High-risk option",
-            "high_risk_option_body" => "Writes demo evidence only; assess GSLT risk before enabling runtime cosmetic/sticker alignment.",
+            "high_risk_option_body" => "Writes demo evidence only; assess GSLT risk before enabling runtime cosmetic/sticker/charm alignment.",
             "output_exists" => "Output already exists",
             "output_exists_body" => "The target demo output directory already exists.",
             "clear_and_convert" => "Clear and convert",
             "cancel" => "Cancel",
             "cosmetic_confirmation" => "Cosmetic export confirmation",
             "high_risk_title" => "HIGH RISK: GSLT / cosmetic export",
-            "risk_intro" => "This only writes demo-observed weapon, knife, glove, and sticker evidence into the manifest; risk comes from later runtime cosmetic/sticker alignment.",
+            "risk_intro" => "This only writes demo-observed weapon, knife, glove, sticker, and charm evidence into the manifest; risk comes from later runtime cosmetic/sticker/charm alignment.",
             "before_enable" => "Before enabling this, confirm:",
             "risk_bullet_guidelines" => "- You have assessed Valve server guideline and GSLT risk.",
-            "risk_bullet_default_off" => "- Runtime cosmetic/sticker alignment stays default-off.",
+            "risk_bullet_default_off" => "- Runtime cosmetic/sticker/charm alignment stays default-off.",
             "risk_bullet_public" => "- Do not expose simulated cosmetics to public or human-controlled bot usage unless you accept that risk.",
             "type_to_unlock" => "Type exactly to unlock export:",
             "phrase_required" => "Export remains disabled until the phrase matches.",
@@ -2460,6 +2483,7 @@ fn load_settings() -> GuiSettings {
     let mut settings: GuiSettings = serde_json::from_str(&text).unwrap_or_default();
     if !settings.export_cosmetics {
         settings.export_stickers = false;
+        settings.export_charms = false;
     }
     settings
 }

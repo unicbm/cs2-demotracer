@@ -54,6 +54,7 @@ pub const GLOVE_PAINT_ID: u32 = 20000000;
 pub const GLOVE_PAINT_SEED: u32 = 20000001;
 pub const GLOVE_PAINT_FLOAT: u32 = 20000002;
 pub const GLOVE_SKIN: u32 = 20000003;
+pub const GLOVE_ATTRIBUTE_DEF_INDEX_ID: u32 = 21000000;
 
 pub const USERCMD_VIEWANGLE_X: u32 = 100000022;
 pub const USERCMD_VIEWANGLE_Y: u32 = 100000023;
@@ -490,6 +491,9 @@ impl PropController {
         if !full_name.starts_with("CCSPlayerPawn") && prop_name.contains("CEconItemAttribute.m_iAttributeDefinitionIndex") {
             f.prop_id = WEAPON_ATTRIBUTE_DEF_INDEX_ID as u32;
         }
+        if full_name.starts_with("CCSPlayerPawn") && prop_name.contains("CEconItemAttribute.m_iAttributeDefinitionIndex") {
+            f.prop_id = GLOVE_ATTRIBUTE_DEF_INDEX_ID as u32;
+        }
         if full_name.starts_with("CCSPlayerPawn") && prop_name.contains("CEconItemAttribute.m_iRawValue32") {
             f.prop_id = GLOVE_PAINT_ID as u32;
         }
@@ -512,6 +516,8 @@ impl PropController {
                 "CBodyComponentBaseAnimGraph.m_cellY" => self.special_ids.m_cell_y_grenade = Some(id),
                 "CBodyComponentBaseAnimGraph.m_cellZ" => self.special_ids.m_cell_z_grenade = Some(id),
                 "m_iItemDefinitionIndex" => self.special_ids.item_def = Some(id),
+                "m_iEntityQuality" => self.special_ids.entity_quality = Some(id),
+                "m_nFallbackStatTrak" => self.special_ids.fallback_stattrak = Some(id),
                 "m_OriginalOwnerXuidLow" => self.special_ids.orig_own_low = Some(id),
                 "m_OriginalOwnerXuidHigh" => self.special_ids.orig_own_high = Some(id),
                 "m_szCustomName" => self.special_ids.custom_name = Some(id),

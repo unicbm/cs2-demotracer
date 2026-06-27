@@ -346,11 +346,20 @@ public sealed partial class DemoTracerPlugin
         [JsonPropertyName("wear")]
         public float Wear { get; set; }
 
+        [JsonPropertyName("quality")]
+        public int? Quality { get; set; }
+
+        [JsonPropertyName("stattrak_counter")]
+        public int? StattrakCounter { get; set; }
+
         [JsonPropertyName("custom_name")]
         public string? CustomName { get; set; }
 
         [JsonPropertyName("stickers")]
         public List<ReplayWeaponSticker> Stickers { get; set; } = new();
+
+        [JsonPropertyName("charms")]
+        public List<ReplayWeaponCharm> Charms { get; set; } = new();
     }
 
     private sealed class ReplayWeaponSticker
@@ -369,6 +378,39 @@ public sealed partial class DemoTracerPlugin
 
         [JsonPropertyName("offset_y")]
         public float OffsetY { get; set; }
+
+        [JsonPropertyName("scale")]
+        public float? Scale { get; set; }
+
+        [JsonPropertyName("rotation")]
+        public float? Rotation { get; set; }
+    }
+
+    private sealed class ReplayWeaponCharm
+    {
+        [JsonPropertyName("slot")]
+        public int Slot { get; set; }
+
+        [JsonPropertyName("charm_id")]
+        public uint CharmId { get; set; }
+
+        [JsonPropertyName("offset_x")]
+        public float OffsetX { get; set; }
+
+        [JsonPropertyName("offset_y")]
+        public float OffsetY { get; set; }
+
+        [JsonPropertyName("offset_z")]
+        public float OffsetZ { get; set; }
+
+        [JsonPropertyName("seed")]
+        public uint? Seed { get; set; }
+
+        [JsonPropertyName("highlight")]
+        public uint? Highlight { get; set; }
+
+        [JsonPropertyName("sticker_id")]
+        public uint? StickerId { get; set; }
     }
 
     private sealed class ReplayItemCosmetic

@@ -60,14 +60,15 @@ details are documented in [`docs/COMMANDS.md`](docs/COMMANDS.md).
 ## Cosmetic Alignment and GSLT Safety
 
 > [!IMPORTANT]
-> Cosmetic, custom-name, and sticker metadata are never exported by default.
+> Cosmetic, custom-name, sticker, and charm metadata are never exported by default.
 > Normal `convert` output is the recommended safe path.
 >
 > Export that metadata only when you intentionally pass `--export-cosmetics`,
 > `--acknowledge-cosmetic-gslt-risk`, and
 > `--accept-cosmetic-export-disclaimer`; stickers also require
-> `--export-stickers`. Runtime cosmetic and sticker alignment are default-off
-> and consume only demo evidence from the manifest.
+> `--export-stickers`, and charms also require `--export-charms`. Runtime
+> cosmetic, sticker, and charm alignment are default-off and consume only demo
+> evidence from the manifest.
 >
 > This feature is for local/private replay fidelity. A listen/practice server
 > usually has less GSLT exposure than a dedicated server, but bot-only inventory
@@ -217,21 +218,22 @@ section ID `4`. The top-level object is:
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| schema_version | `u32` | Current metadata schema is `1` |
+| schema_version | `u32` | Current metadata schema is `2` |
 | events | array | Player-scoped high-fidelity events |
 | inventory_snapshots | array | Inventory state after inventory changes |
 
 `events` are stored in the `.dtr` file for the player they affect, so
 equipment/C4 events are not blindly executed ten times. Event `kind` values are:
-`item_drop`, `item_pickup`, `item_transfer`, `bomb_drop`, `bomb_pickup`,
-`bomb_beginplant`, `bomb_planted`, `weapon_fire`, `player_hurt`, and
-`player_death`.
+`bomb_initial_owner`, `item_drop`, `item_pickup`, `item_transfer`, `bomb_drop`,
+`bomb_pickup`, `bomb_beginplant`, `bomb_planted`, `weapon_fire`,
+`player_hurt`, `player_death`, `round_start`, and `round_freeze_end`.
 
 Equipment events include `tick_index`, absolute demo `tick`, actor/target
 SteamID64 where known, normalized `weapon_def_index`, optional `item_name`, and
-post-event item counts when the converter can infer them. Bomb events use
-`weapon_def_index = 49`. Combat events are record-only for now: the CSS plugin
-loads them for diagnostics/future behavior, but does not force damage or death.
+post-event item counts when the converter can infer them. C4-specific events
+use `weapon_def_index = 49`. Combat events are record-only for now: the CSS
+plugin loads them for diagnostics/future behavior, but does not force damage or
+death.
 
 `inventory_snapshots` are also player-scoped and are written only when the
 player inventory changes. Each snapshot contains normalized weapon def counts,
@@ -408,8 +410,16 @@ Weapon sticker metadata is a separate opt-in on top of cosmetic export:
 cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>" --export-cosmetics --export-stickers --acknowledge-cosmetic-gslt-risk --accept-cosmetic-export-disclaimer
 ```
 
+Weapon charm/keychain metadata is also a separate opt-in on top of cosmetic
+export:
+
+```powershell
+cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>" --export-cosmetics --export-charms --acknowledge-cosmetic-gslt-risk --accept-cosmetic-export-disclaimer
+```
+
 `convert-pool` uses the same three flags when you intentionally want cosmetic
-metadata in pool replay manifests, and also accepts `--export-stickers`.
+metadata in pool replay manifests, and also accepts `--export-stickers` and
+`--export-charms`.
 
 The output looks like this:
 
@@ -459,7 +469,7 @@ cargo run --release --features gui --bin cs2-demotracer-gui
 The GUI is a pure Rust `egui` workbench for the single-demo path: choose or
 drop a `.dem`, choose an output folder, inspect round quality, select rounds,
 convert, validate, and copy the generated CS2 console command. It supports
-English/Simplified Chinese UI text and system/light/dark themes. Cosmetic/sticker
+English/Simplified Chinese UI text and system/light/dark themes. Cosmetic/sticker/charm
 export remains default-off and requires explicit risk confirmation before it can
 be enabled. Batch pool conversion and Demo2Nade remain CLI-only in v1.
 
@@ -575,7 +585,12 @@ flags above. When evidence exists, it only applies demo-observed weapon paint,
 knife, glove metadata, and stable weapon/knife custom names to safe replay
 bots. It does not randomize cosmetics, does not read profile databases, and
 does not apply stickers unless sticker export and `dtr_set align stickers on`
-are also enabled. It never applies charms, agents, or StatTrak. Bot-only
+are also enabled. It does not apply charms unless charm export and
+`dtr_set align charms on` are also enabled. It can apply demo-observed StatTrak
+item quality (`quality=9`) for exported weapon cosmetics. When a demo StatTrak
+counter is not exposed, runtime writes a display counter of `0` so CS2 can
+select the StatTrak counter model; this does not invent a demo kill count. It
+never applies agents. Bot-only
 mutation is not a policy exemption: if human players can observe, control,
 possess, inspect, or otherwise use bots carrying
 simulated cosmetics, treat the server as exposed to cosmetic/inventory policy
@@ -585,6 +600,12 @@ risk.
 cosmetic alignment. It requires `dtr_set align cosmetics on` and a manifest
 exported with `--export-stickers`; it applies only stable demo-observed weapon
 sticker slot/id/wear/offset metadata to safe replay bots.
+
+`dtr_set align charms on` is another default-off sub-mode under cosmetic
+alignment. It requires `dtr_set align cosmetics on` and a manifest exported with
+`--export-charms`; it applies only stable demo-observed weapon charm/keychain
+slot 0 id, offset, optional seed, optional highlight, and optional charm sticker
+metadata to safe replay bots.
 
 `dtr_set align crosshair on` is on by default. It applies only a
 stable demo-observed `crosshair_code` to a human viewer while they are watching

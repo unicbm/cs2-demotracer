@@ -135,8 +135,11 @@ public sealed partial class DemoTracerPlugin
                 PaintKit = weapon.PaintKit,
                 Seed = weapon.Seed,
                 Wear = weapon.Wear,
+                Quality = NormalizeStattrakQuality(weapon.Quality),
+                StattrakCounter = NormalizeStattrakCounter(weapon.StattrakCounter),
                 CustomName = NormalizeCosmeticCustomName(weapon.CustomName),
-                Stickers = NormalizeWeaponStickers(weapon.Stickers)
+                Stickers = NormalizeWeaponStickers(weapon.Stickers),
+                Charms = NormalizeWeaponCharms(weapon.Charms)
             });
         }
 
@@ -187,6 +190,12 @@ public sealed partial class DemoTracerPlugin
            cosmetic.Wear is >= 0.0f and <= 1.0f &&
            float.IsFinite(cosmetic.Wear);
 
+    private static int? NormalizeStattrakQuality(int? quality)
+        => quality == 9 ? 9 : null;
+
+    private static int? NormalizeStattrakCounter(int? counter)
+        => counter is >= 0 ? counter : null;
+
     private static List<ReplayWeaponSticker> NormalizeWeaponStickers(IEnumerable<ReplayWeaponSticker>? stickers)
     {
         if (stickers == null)
@@ -202,6 +211,8 @@ public sealed partial class DemoTracerPlugin
                 !float.IsFinite(sticker.Wear) ||
                 !float.IsFinite(sticker.OffsetX) ||
                 !float.IsFinite(sticker.OffsetY) ||
+                (sticker.Scale.HasValue && !float.IsFinite(sticker.Scale.Value)) ||
+                (sticker.Rotation.HasValue && !float.IsFinite(sticker.Rotation.Value)) ||
                 !slots.Add(sticker.Slot))
             {
                 return [];
@@ -213,7 +224,9 @@ public sealed partial class DemoTracerPlugin
                 StickerId = sticker.StickerId,
                 Wear = sticker.Wear,
                 OffsetX = sticker.OffsetX,
-                OffsetY = sticker.OffsetY
+                OffsetY = sticker.OffsetY,
+                Scale = sticker.Scale,
+                Rotation = sticker.Rotation
             });
         }
 
@@ -221,6 +234,46 @@ public sealed partial class DemoTracerPlugin
             .OrderBy(sticker => sticker.Slot)
             .ToList();
     }
+
+    private static List<ReplayWeaponCharm> NormalizeWeaponCharms(IEnumerable<ReplayWeaponCharm>? charms)
+    {
+        if (charms == null)
+            return [];
+
+        var normalized = new List<ReplayWeaponCharm>();
+        var slots = new HashSet<int>();
+        foreach (var charm in charms)
+        {
+            if (charm.Slot != 0 ||
+                charm.CharmId == 0 ||
+                !float.IsFinite(charm.OffsetX) ||
+                !float.IsFinite(charm.OffsetY) ||
+                !float.IsFinite(charm.OffsetZ) ||
+                !slots.Add(charm.Slot))
+            {
+                return [];
+            }
+
+            normalized.Add(new ReplayWeaponCharm
+            {
+                Slot = charm.Slot,
+                CharmId = charm.CharmId,
+                OffsetX = charm.OffsetX,
+                OffsetY = charm.OffsetY,
+                OffsetZ = charm.OffsetZ,
+                Seed = NormalizeOptionalUInt(charm.Seed),
+                Highlight = NormalizeOptionalUInt(charm.Highlight),
+                StickerId = NormalizeOptionalUInt(charm.StickerId)
+            });
+        }
+
+        return normalized
+            .OrderBy(charm => charm.Slot)
+            .ToList();
+    }
+
+    private static uint? NormalizeOptionalUInt(uint? value)
+        => value is > 0 ? value : null;
 
     private static string? NormalizeCosmeticCustomName(string? value)
     {
@@ -265,20 +318,30 @@ public sealed partial class DemoTracerPlugin
         }
     }
 
+    private void ResetCharmAlignState(bool resetCounters = false)
+    {
+        if (resetCounters)
+        {
+            _charmAppliedCount = 0;
+            _charmSkippedCount = 0;
+        }
+    }
+
     private string FormatCosmeticStatusCounts()
     {
         var counts = CountLoadedCosmeticEvidence();
         return
-            $"cosmetics_evidence={counts.Files} cosmetic_weapons={counts.Weapons} cosmetic_knives={counts.Knives} cosmetic_gloves={counts.Gloves} sticker_evidence={counts.Stickers} applied={_cosmeticAppliedCount} skipped={_cosmeticSkippedCount} sticker_applied={_stickerAppliedCount} sticker_skipped={_stickerSkippedCount}";
+            $"cosmetics_evidence={counts.Files} cosmetic_weapons={counts.Weapons} cosmetic_knives={counts.Knives} cosmetic_gloves={counts.Gloves} sticker_evidence={counts.Stickers} charm_evidence={counts.Charms} applied={_cosmeticAppliedCount} skipped={_cosmeticSkippedCount} sticker_applied={_stickerAppliedCount} sticker_skipped={_stickerSkippedCount} charm_applied={_charmAppliedCount} charm_skipped={_charmSkippedCount}";
     }
 
-    private (int Files, int Weapons, int Knives, int Gloves, int Stickers) CountLoadedCosmeticEvidence()
+    private (int Files, int Weapons, int Knives, int Gloves, int Stickers, int Charms) CountLoadedCosmeticEvidence()
     {
         var files = 0;
         var weapons = 0;
         var knives = 0;
         var gloves = 0;
         var stickers = 0;
+        var charms = 0;
 
         foreach (var replay in _loadedReplays.Values)
         {
@@ -288,13 +351,14 @@ public sealed partial class DemoTracerPlugin
             files++;
             weapons += replay.Cosmetics.Weapons.Count;
             stickers += replay.Cosmetics.Weapons.Sum(weapon => weapon.Stickers.Count);
+            charms += replay.Cosmetics.Weapons.Sum(weapon => weapon.Charms.Count);
             if (replay.Cosmetics.Knife != null)
                 knives++;
             if (replay.Cosmetics.Glove != null)
                 gloves++;
         }
 
-        return (files, weapons, knives, gloves, stickers);
+        return (files, weapons, knives, gloves, stickers, charms);
     }
 
     private void ApplyLoadedReplayCosmeticsForSlot(int slot, LoadedReplay replay)
@@ -770,11 +834,16 @@ public sealed partial class DemoTracerPlugin
         if (!applied)
         {
             if (countStickerStats)
+            {
                 RecordStickerSkipped(cosmetic.Stickers.Count);
+                RecordCharmSkipped(cosmetic.Charms.Count);
+            }
             return false;
         }
 
+        ApplyWeaponStattrakEvidence(weapon, cosmetic);
         ApplyWeaponStickers(weapon, cosmetic, countStickerStats);
+        ApplyWeaponCharms(weapon, cosmetic, countStickerStats);
         return true;
     }
 
@@ -824,6 +893,22 @@ public sealed partial class DemoTracerPlugin
 
     private bool IsLegacyCosmeticPaint(int weaponDefIndex, int paintKit)
         => _legacyCosmeticPaints.Contains((NormalizeWeaponDefIndex(weaponDefIndex), paintKit));
+
+    private static void ApplyWeaponStattrakEvidence(
+        CBasePlayerWeapon weapon,
+        ReplayWeaponCosmetic cosmetic)
+    {
+        if (cosmetic.Quality != 9 && cosmetic.StattrakCounter == null)
+            return;
+
+        var item = weapon.AttributeManager.Item;
+        item.EntityQuality = 9;
+        weapon.FallbackStatTrak = cosmetic.StattrakCounter ?? 0;
+        _ = TrySetStattrakAttributes(item.NetworkedDynamicAttributes.Handle, weapon.FallbackStatTrak);
+        _ = TrySetStattrakAttributes(item.AttributeList.Handle, weapon.FallbackStatTrak);
+        Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackStatTrak");
+        Utilities.SetStateChanged(weapon, "CEconEntity", "m_AttributeManager");
+    }
 
     private bool TryApplyGloveCosmetic(
         CCSPlayerController player,
@@ -888,6 +973,7 @@ public sealed partial class DemoTracerPlugin
             return false;
         }
 
+        MarkGloveCosmeticStateChanged(pawn);
         pawn.AcceptInput("SetBodygroup", value: "first_or_third_person,0");
         AddTimer(0.2f, () =>
         {
@@ -904,6 +990,18 @@ public sealed partial class DemoTracerPlugin
         Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackPaintKit");
         Utilities.SetStateChanged(weapon, "CEconEntity", "m_nFallbackSeed");
         Utilities.SetStateChanged(weapon, "CEconEntity", "m_flFallbackWear");
+    }
+
+    private static void MarkGloveCosmeticStateChanged(CCSPlayerPawn pawn)
+    {
+        try
+        {
+            Utilities.SetStateChanged(pawn, "CCSPlayerPawn", "m_EconGloves");
+        }
+        catch (Exception ex)
+        {
+            Server.PrintToConsole($"dtr: glove cosmetic state change failed: {ex.Message}");
+        }
     }
 
     private static void UpdateReplayEconItemId(CEconItemView item)
@@ -949,6 +1047,24 @@ public sealed partial class DemoTracerPlugin
         catch (Exception ex)
         {
             Server.PrintToConsole($"dtr: cosmetic attribute write failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static bool TrySetStattrakAttributes(nint attributeListHandle, int counter)
+    {
+        if (AttributeSetter.Value == null)
+            return false;
+
+        try
+        {
+            AttributeSetter.Value.Invoke(attributeListHandle, "kill eater", BitConverter.Int32BitsToSingle(counter));
+            AttributeSetter.Value.Invoke(attributeListHandle, "kill eater score type", 0.0f);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Server.PrintToConsole($"dtr: StatTrak attribute write failed: {ex.Message}");
             return false;
         }
     }
@@ -1009,6 +1125,62 @@ public sealed partial class DemoTracerPlugin
             _stickerSkippedCount += count;
     }
 
+    private void ApplyWeaponCharms(
+        CBasePlayerWeapon weapon,
+        ReplayWeaponCosmetic cosmetic,
+        bool countCharmStats)
+    {
+        if (!_cosmeticAlignEnabled ||
+            !_charmAlignEnabled ||
+            cosmetic.Charms.Count == 0)
+        {
+            return;
+        }
+
+        if (AttributeSetter.Value == null)
+        {
+            if (countCharmStats)
+                RecordCharmSkipped(cosmetic.Charms.Count);
+            return;
+        }
+
+        try
+        {
+            var item = weapon.AttributeManager.Item;
+            var applied = 0;
+            var skipped = 0;
+            foreach (var charm in cosmetic.Charms)
+            {
+                var networkedOk = TrySetCharmAttributes(item.NetworkedDynamicAttributes.Handle, charm);
+                var listOk = TrySetCharmAttributes(item.AttributeList.Handle, charm);
+                if (networkedOk && listOk)
+                    applied++;
+                else
+                    skipped++;
+            }
+
+            if (applied > 0)
+                Utilities.SetStateChanged(weapon, "CEconEntity", "m_AttributeManager");
+            if (countCharmStats)
+            {
+                _charmAppliedCount += applied;
+                _charmSkippedCount += skipped;
+            }
+        }
+        catch (Exception ex)
+        {
+            Server.PrintToConsole($"dtr: charm apply failed item={weapon.DesignerName}: {ex.Message}");
+            if (countCharmStats)
+                RecordCharmSkipped(cosmetic.Charms.Count);
+        }
+    }
+
+    private void RecordCharmSkipped(int count)
+    {
+        if (_cosmeticAlignEnabled && _charmAlignEnabled && count > 0)
+            _charmSkippedCount += count;
+    }
+
     private static bool TrySetStickerAttributes(nint attributeListHandle, ReplayWeaponSticker sticker)
     {
         if (AttributeSetter.Value == null)
@@ -1021,11 +1193,42 @@ public sealed partial class DemoTracerPlugin
             AttributeSetter.Value.Invoke(attributeListHandle, $"{slot} wear", sticker.Wear);
             AttributeSetter.Value.Invoke(attributeListHandle, $"{slot} offset x", sticker.OffsetX);
             AttributeSetter.Value.Invoke(attributeListHandle, $"{slot} offset y", sticker.OffsetY);
+            if (sticker.Scale.HasValue)
+                AttributeSetter.Value.Invoke(attributeListHandle, $"{slot} scale", sticker.Scale.Value);
+            if (sticker.Rotation.HasValue)
+                AttributeSetter.Value.Invoke(attributeListHandle, $"{slot} rotation", sticker.Rotation.Value);
             return true;
         }
         catch (Exception ex)
         {
             Server.PrintToConsole($"dtr: sticker attribute write failed slot={sticker.Slot}: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static bool TrySetCharmAttributes(nint attributeListHandle, ReplayWeaponCharm charm)
+    {
+        if (AttributeSetter.Value == null)
+            return false;
+
+        try
+        {
+            var slot = $"keychain slot {charm.Slot}";
+            AttributeSetter.Value.Invoke(attributeListHandle, $"{slot} id", BitConverter.UInt32BitsToSingle(charm.CharmId));
+            AttributeSetter.Value.Invoke(attributeListHandle, $"{slot} offset x", charm.OffsetX);
+            AttributeSetter.Value.Invoke(attributeListHandle, $"{slot} offset y", charm.OffsetY);
+            AttributeSetter.Value.Invoke(attributeListHandle, $"{slot} offset z", charm.OffsetZ);
+            if (charm.Seed is { } seed)
+                AttributeSetter.Value.Invoke(attributeListHandle, $"{slot} seed", BitConverter.UInt32BitsToSingle(seed));
+            if (charm.Highlight is { } highlight)
+                AttributeSetter.Value.Invoke(attributeListHandle, $"{slot} highlight", BitConverter.UInt32BitsToSingle(highlight));
+            if (charm.StickerId is { } stickerId)
+                AttributeSetter.Value.Invoke(attributeListHandle, $"{slot} sticker", BitConverter.UInt32BitsToSingle(stickerId));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Server.PrintToConsole($"dtr: charm attribute write failed slot={charm.Slot}: {ex.Message}");
             return false;
         }
     }

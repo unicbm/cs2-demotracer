@@ -505,6 +505,7 @@ mod tests {
             projectiles: Vec::new(),
             events: Vec::new(),
             avatar_overrides: Vec::new(),
+            econ_items: Vec::new(),
         };
         let analysis = analyze_demo(&parsed, AnalysisOptions::default());
         assert_eq!(analysis.rounds[0].status, RoundStatus::Suspicious);
@@ -532,6 +533,7 @@ mod tests {
             projectiles: Vec::new(),
             events: Vec::new(),
             avatar_overrides: Vec::new(),
+            econ_items: Vec::new(),
         };
 
         let analysis = analyze_demo(&parsed, AnalysisOptions::default());
@@ -581,6 +583,7 @@ mod tests {
             projectiles: Vec::new(),
             events: Vec::new(),
             avatar_overrides: Vec::new(),
+            econ_items: Vec::new(),
         };
 
         let analysis = analyze_demo(&parsed, AnalysisOptions::default());
@@ -613,6 +616,7 @@ mod tests {
             projectiles: Vec::new(),
             events: Vec::new(),
             avatar_overrides: Vec::new(),
+            econ_items: Vec::new(),
         };
 
         let analysis = analyze_demo(&parsed, AnalysisOptions::default());
@@ -652,6 +656,7 @@ mod tests {
             projectiles: Vec::new(),
             events: Vec::new(),
             avatar_overrides: Vec::new(),
+            econ_items: Vec::new(),
         };
 
         let analysis = analyze_demo(&parsed, AnalysisOptions::default());
@@ -691,6 +696,7 @@ mod tests {
             projectiles: Vec::new(),
             events: Vec::new(),
             avatar_overrides: Vec::new(),
+            econ_items: Vec::new(),
         };
 
         let analysis = analyze_demo(&parsed, AnalysisOptions::default());

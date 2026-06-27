@@ -2,12 +2,13 @@ use crate::analysis::quality::{analyze_demo, AnalysisOptions};
 use crate::demo_id::output_demo_id;
 use crate::model::{
     public_demo_path, ConversionManifest, ConvertedFile, ConvertedRound, EconomyClass,
-    HighFidelityMetadata, ManifestAvatarOverride, ParsedAvatarOverride, ParsedDemo,
-    ParsedGameEvent, ParsedInventoryWeaponCosmetic, ParsedPlayerTick, ParsedProjectile,
-    ParsedWeaponSticker, ReplayCosmetics, ReplayHifiEvent, ReplayHifiEventKind,
-    ReplayInventoryItemCount, ReplayInventorySnapshot, ReplayItemCosmetic, ReplayPlayerScoreboard,
-    ReplayRoundScoreboard, ReplayView, ReplayWeaponCosmetic, ReplayWeaponSticker, RoundSummary,
-    Side, SubtickMode, TeamEconomy, DEMOTRACER_ABI, DTR_FORMAT_VERSION,
+    HighFidelityMetadata, ManifestAvatarOverride, ParsedAvatarOverride, ParsedDemo, ParsedEconItem,
+    ParsedGameEvent, ParsedInventoryWeaponAttribute, ParsedInventoryWeaponCosmetic,
+    ParsedPlayerTick, ParsedProjectile, ParsedWeaponSticker, ReplayCosmetics, ReplayHifiEvent,
+    ReplayHifiEventKind, ReplayInventoryItemCount, ReplayInventorySnapshot, ReplayItemCosmetic,
+    ReplayPlayerScoreboard, ReplayRoundScoreboard, ReplayView, ReplayWeaponCharm,
+    ReplayWeaponCosmetic, ReplayWeaponSticker, RoundSummary, Side, SubtickMode, TeamEconomy,
+    DEMOTRACER_ABI, DTR_FORMAT_VERSION,
 };
 use crate::rec_writer::write_rec;
 use crate::replay::context::{
@@ -25,6 +26,13 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 pub const DEFAULT_FREEZE_PREROLL_SECONDS: f32 = 10.0;
+const KEYCHAIN_SLOT_0_ID_ATTR: u32 = 299;
+const KEYCHAIN_SLOT_0_OFFSET_X_ATTR: u32 = 300;
+const KEYCHAIN_SLOT_0_OFFSET_Y_ATTR: u32 = 301;
+const KEYCHAIN_SLOT_0_OFFSET_Z_ATTR: u32 = 302;
+const KEYCHAIN_SLOT_0_SEED_ATTR: u32 = 306;
+const KEYCHAIN_SLOT_0_HIGHLIGHT_ATTR: u32 = 314;
+const KEYCHAIN_SLOT_0_STICKER_ATTR: u32 = 321;
 
 #[derive(Clone, Debug)]
 pub struct ConvertOptions {
@@ -38,6 +46,7 @@ pub struct ConvertOptions {
     pub freeze_preroll_seconds: f32,
     pub export_cosmetics: bool,
     pub export_stickers: bool,
+    pub export_charms: bool,
     pub analysis: AnalysisOptions,
 }
 
@@ -52,6 +61,7 @@ pub struct ConvertMemoryOptions {
     pub freeze_preroll_seconds: f32,
     pub export_cosmetics: bool,
     pub export_stickers: bool,
+    pub export_charms: bool,
     pub analysis: AnalysisOptions,
 }
 
@@ -67,6 +77,7 @@ impl From<&ConvertOptions> for ConvertMemoryOptions {
             freeze_preroll_seconds: options.freeze_preroll_seconds,
             export_cosmetics: options.export_cosmetics,
             export_stickers: options.export_stickers,
+            export_charms: options.export_charms,
             analysis: options.analysis,
         }
     }
@@ -293,6 +304,11 @@ fn export_demo_to_memory_inner(
             },
         );
         let cosmetic_players = cosmetic_rows_by_player(round_rows, end_tick, options.side);
+        let econ_gloves = if options.export_cosmetics {
+            glove_econ_cosmetics_by_player(parsed)
+        } else {
+            BTreeMap::new()
+        };
 
         for (steam_id, mut player_rows) in players {
             player_rows.sort_by_key(|row| row.tick);
@@ -387,7 +403,9 @@ fn export_demo_to_memory_inner(
                         &player_rows,
                         cosmetic_player_rows,
                         rec.header.play_start_tick_index,
+                        econ_gloves.get(&steam_id),
                         options.export_stickers,
+                        options.export_charms,
                     )
                 } else {
                     None
@@ -1550,22 +1568,93 @@ fn replay_cosmetics_at(
     rows: &[&ParsedPlayerTick],
     cosmetic_rows: &[&ParsedPlayerTick],
     play_start_tick_index: u32,
+    econ_glove: Option<&ReplayItemCosmetic>,
     export_stickers: bool,
+    export_charms: bool,
 ) -> Option<ReplayCosmetics> {
     let play_start = (play_start_tick_index as usize).min(rows.len().saturating_sub(1));
     let active_rows = rows.get(play_start..).unwrap_or(rows);
     let mut cosmetics = replay_active_cosmetics(active_rows, export_stickers).unwrap_or_default();
-    if let Some(weapons) =
-        live_start_inventory_weapon_cosmetics(rows, play_start_tick_index, export_stickers)
-    {
+    if let Some(glove) = econ_glove {
+        cosmetics.glove = Some(glove.clone());
+    }
+    if let Some(weapons) = live_start_inventory_weapon_cosmetics(
+        rows,
+        play_start_tick_index,
+        export_stickers,
+        export_charms,
+    ) {
         cosmetics.weapons = weapons;
-    } else if let Some(weapons) = round_inventory_weapon_cosmetics(cosmetic_rows, export_stickers) {
+    } else if let Some(weapons) =
+        round_inventory_weapon_cosmetics(cosmetic_rows, export_stickers, export_charms)
+    {
         cosmetics.weapons = weapons;
     }
     cosmetics
         .weapons
         .sort_by_key(|weapon| weapon.weapon_def_index);
     (!cosmetics.is_empty()).then_some(cosmetics)
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct EconGloveSpec {
+    item_def_index: i32,
+    paint_kit: u32,
+    seed: u32,
+    wear_bits: u32,
+}
+
+fn glove_econ_cosmetics_by_player(parsed: &ParsedDemo) -> BTreeMap<u64, ReplayItemCosmetic> {
+    let mut specs_by_player: BTreeMap<u64, BTreeSet<EconGloveSpec>> = BTreeMap::new();
+    for item in &parsed.econ_items {
+        let Some(steam_id) = item.steam_id else {
+            continue;
+        };
+        let Some(spec) = econ_glove_spec(item) else {
+            continue;
+        };
+        specs_by_player.entry(steam_id).or_default().insert(spec);
+    }
+
+    specs_by_player
+        .into_iter()
+        .filter_map(|(steam_id, specs)| {
+            if specs.len() != 1 {
+                return None;
+            }
+            let spec = *specs.iter().next()?;
+            Some((
+                steam_id,
+                ReplayItemCosmetic {
+                    item_def_index: Some(spec.item_def_index),
+                    paint_kit: spec.paint_kit,
+                    seed: spec.seed,
+                    wear: f32::from_bits(spec.wear_bits),
+                    custom_name: None,
+                },
+            ))
+        })
+        .collect()
+}
+
+fn econ_glove_spec(item: &ParsedEconItem) -> Option<EconGloveSpec> {
+    let item_def_index = i32::try_from(item.item_def_index?).ok()?;
+    if !is_plausible_glove_item_def_index(item_def_index) {
+        return None;
+    }
+    let paint_kit = item.paint_kit.filter(|value| *value > 0)?;
+    let seed = item.paint_seed?;
+    let wear_bits = item.paint_wear_raw?;
+    let wear = f32::from_bits(wear_bits);
+    if !wear.is_finite() || !(0.0..=1.0).contains(&wear) {
+        return None;
+    }
+    Some(EconGloveSpec {
+        item_def_index,
+        paint_kit,
+        seed,
+        wear_bits,
+    })
 }
 
 fn replay_active_cosmetics(
@@ -1652,12 +1741,15 @@ fn replay_active_cosmetics(
             paint_kit: spec.paint_kit,
             seed: spec.seed,
             wear: f32::from_bits(spec.wear_bits),
+            quality: None,
+            stattrak_counter: None,
             custom_name: stable_weapon_custom_name(&weapon_custom_names, weapon_def_index),
             stickers: stable_weapon_stickers(
                 &weapon_stickers,
                 &weapon_stickers_missing,
                 weapon_def_index,
             ),
+            charms: Vec::new(),
         });
     }
 
@@ -1695,21 +1787,26 @@ fn live_start_inventory_weapon_cosmetics(
     rows: &[&ParsedPlayerTick],
     play_start_tick_index: u32,
     export_stickers: bool,
+    export_charms: bool,
 ) -> Option<Vec<ReplayWeaponCosmetic>> {
     let row = live_start_inventory_cosmetic_row(rows, play_start_tick_index)?;
-    Some(inventory_weapon_cosmetics_for_row(row, export_stickers).unwrap_or_default())
+    Some(
+        inventory_weapon_cosmetics_for_row(row, export_stickers, export_charms).unwrap_or_default(),
+    )
 }
 
 fn round_inventory_weapon_cosmetics(
     rows: &[&ParsedPlayerTick],
     export_stickers: bool,
+    export_charms: bool,
 ) -> Option<Vec<ReplayWeaponCosmetic>> {
     let mut by_def = BTreeMap::new();
     for row in rows {
         if !row.is_alive || row.steam_id == 0 {
             continue;
         }
-        let Some(weapons) = inventory_weapon_cosmetics_for_row(row, export_stickers) else {
+        let Some(weapons) = inventory_weapon_cosmetics_for_row(row, export_stickers, export_charms)
+        else {
             continue;
         };
         for weapon in weapons {
@@ -1749,11 +1846,16 @@ fn live_start_inventory_cosmetic_row<'a>(
 fn inventory_weapon_cosmetics_for_row(
     row: &ParsedPlayerTick,
     export_stickers: bool,
+    export_charms: bool,
 ) -> Option<Vec<ReplayWeaponCosmetic>> {
     let mut weapon_specs: BTreeMap<i32, BTreeSet<CosmeticPaintSpec>> = BTreeMap::new();
     let mut weapon_custom_names: BTreeMap<i32, BTreeSet<String>> = BTreeMap::new();
+    let mut weapon_qualities: BTreeMap<i32, BTreeSet<i32>> = BTreeMap::new();
+    let mut weapon_stattrak_counters: BTreeMap<i32, BTreeSet<i32>> = BTreeMap::new();
     let mut weapon_stickers: BTreeMap<i32, BTreeSet<Vec<CosmeticStickerSpec>>> = BTreeMap::new();
+    let mut weapon_charms: BTreeMap<i32, BTreeSet<Vec<CosmeticCharmSpec>>> = BTreeMap::new();
     let weapon_stickers_missing = BTreeSet::new();
+    let weapon_charms_missing = BTreeSet::new();
 
     for item in &row.inventory_weapon_cosmetics {
         let def = normalize_weapon_def_index(item.item_def_index);
@@ -1768,9 +1870,23 @@ fn inventory_weapon_cosmetics_for_row(
         if let Some(name) = cosmetic_custom_name_value(item.custom_name.as_deref()) {
             weapon_custom_names.entry(def).or_default().insert(name);
         }
+        if item.entity_quality == Some(9) {
+            weapon_qualities.entry(def).or_default().insert(9);
+        }
+        if let Some(counter) = inventory_stattrak_counter(item) {
+            weapon_stattrak_counters
+                .entry(def)
+                .or_default()
+                .insert(counter);
+        }
         if export_stickers {
             if let Some(stickers) = cosmetic_sticker_set_from_slice(&item.stickers) {
                 weapon_stickers.entry(def).or_default().insert(stickers);
+            }
+        }
+        if export_charms {
+            if let Some(charms) = cosmetic_charm_set_from_attributes(&item.attributes) {
+                weapon_charms.entry(def).or_default().insert(charms);
             }
         }
     }
@@ -1786,12 +1902,15 @@ fn inventory_weapon_cosmetics_for_row(
             paint_kit: spec.paint_kit,
             seed: spec.seed,
             wear: f32::from_bits(spec.wear_bits),
+            quality: stable_weapon_i32_value(&weapon_qualities, weapon_def_index),
+            stattrak_counter: stable_weapon_i32_value(&weapon_stattrak_counters, weapon_def_index),
             custom_name: stable_weapon_custom_name(&weapon_custom_names, weapon_def_index),
             stickers: stable_weapon_stickers(
                 &weapon_stickers,
                 &weapon_stickers_missing,
                 weapon_def_index,
             ),
+            charms: stable_weapon_charms(&weapon_charms, &weapon_charms_missing, weapon_def_index),
         });
     }
     weapons.sort_by_key(|weapon| weapon.weapon_def_index);
@@ -1806,6 +1925,19 @@ fn inventory_cosmetic_paint_spec(
         Some(item.paint_seed),
         Some(item.paint_wear),
     )
+}
+
+fn inventory_stattrak_counter(item: &ParsedInventoryWeaponCosmetic) -> Option<i32> {
+    if let Some(counter) = item.stattrak_counter.filter(|counter| *counter >= 0) {
+        return Some(counter);
+    }
+    if item.entity_quality != Some(9) {
+        return None;
+    }
+    item.attributes
+        .iter()
+        .find(|attribute| attribute.definition_index == 80)
+        .and_then(|attribute| i32::try_from(attribute.raw_value_bits).ok())
 }
 
 fn active_cosmetic_custom_name(row: &ParsedPlayerTick) -> Option<String> {
@@ -1830,6 +1962,18 @@ fn stable_weapon_custom_name(
     let names = names.get(&weapon_def_index)?;
     if names.len() == 1 {
         names.iter().next().cloned()
+    } else {
+        None
+    }
+}
+
+fn stable_weapon_i32_value(
+    values: &BTreeMap<i32, BTreeSet<i32>>,
+    weapon_def_index: i32,
+) -> Option<i32> {
+    let values = values.get(&weapon_def_index)?;
+    if values.len() == 1 {
+        values.iter().next().copied()
     } else {
         None
     }
@@ -1870,6 +2014,8 @@ fn cosmetic_sticker_set_from_slice(
             || !(0.0..=1.0).contains(&sticker.wear)
             || !sticker.offset_x.is_finite()
             || !sticker.offset_y.is_finite()
+            || sticker.scale.is_some_and(|value| !value.is_finite())
+            || sticker.rotation.is_some_and(|value| !value.is_finite())
             || !slots.insert(sticker.slot)
         {
             return None;
@@ -1880,6 +2026,8 @@ fn cosmetic_sticker_set_from_slice(
             wear_bits: sticker.wear.to_bits(),
             offset_x_bits: sticker.offset_x.to_bits(),
             offset_y_bits: sticker.offset_y.to_bits(),
+            scale_bits: sticker.scale.map(f32::to_bits),
+            rotation_bits: sticker.rotation.map(f32::to_bits),
         });
     }
     parsed.sort();
@@ -1910,6 +2058,88 @@ fn stable_weapon_stickers(
             wear: f32::from_bits(sticker.wear_bits),
             offset_x: f32::from_bits(sticker.offset_x_bits),
             offset_y: f32::from_bits(sticker.offset_y_bits),
+            scale: sticker.scale_bits.map(f32::from_bits),
+            rotation: sticker.rotation_bits.map(f32::from_bits),
+        })
+        .collect()
+}
+
+fn cosmetic_charm_set_from_attributes(
+    attributes: &[ParsedInventoryWeaponAttribute],
+) -> Option<Vec<CosmeticCharmSpec>> {
+    let charm_id =
+        inventory_attribute_u32(attributes, KEYCHAIN_SLOT_0_ID_ATTR).filter(|id| *id > 0)?;
+    let offset_x = inventory_attribute_f32(attributes, KEYCHAIN_SLOT_0_OFFSET_X_ATTR)?;
+    let offset_y = inventory_attribute_f32(attributes, KEYCHAIN_SLOT_0_OFFSET_Y_ATTR)?;
+    let offset_z = inventory_attribute_f32(attributes, KEYCHAIN_SLOT_0_OFFSET_Z_ATTR)?;
+    if !offset_x.is_finite() || !offset_y.is_finite() || !offset_z.is_finite() {
+        return None;
+    }
+
+    let seed = inventory_attribute_u32(attributes, KEYCHAIN_SLOT_0_SEED_ATTR);
+    let highlight = inventory_attribute_u32(attributes, KEYCHAIN_SLOT_0_HIGHLIGHT_ATTR)
+        .filter(|value| *value > 0);
+    let sticker_id = inventory_attribute_u32(attributes, KEYCHAIN_SLOT_0_STICKER_ATTR)
+        .filter(|value| *value > 0);
+    Some(vec![CosmeticCharmSpec {
+        slot: 0,
+        charm_id,
+        offset_x_bits: offset_x.to_bits(),
+        offset_y_bits: offset_y.to_bits(),
+        offset_z_bits: offset_z.to_bits(),
+        seed,
+        highlight,
+        sticker_id,
+    }])
+}
+
+fn inventory_attribute_u32(
+    attributes: &[ParsedInventoryWeaponAttribute],
+    definition_index: u32,
+) -> Option<u32> {
+    attributes
+        .iter()
+        .find(|attribute| attribute.definition_index == definition_index)
+        .map(|attribute| attribute.raw_value_bits)
+}
+
+fn inventory_attribute_f32(
+    attributes: &[ParsedInventoryWeaponAttribute],
+    definition_index: u32,
+) -> Option<f32> {
+    attributes
+        .iter()
+        .find(|attribute| attribute.definition_index == definition_index)
+        .map(|attribute| attribute.raw_value)
+}
+
+fn stable_weapon_charms(
+    charms: &BTreeMap<i32, BTreeSet<Vec<CosmeticCharmSpec>>>,
+    missing: &BTreeSet<i32>,
+    weapon_def_index: i32,
+) -> Vec<ReplayWeaponCharm> {
+    if missing.contains(&weapon_def_index) {
+        return Vec::new();
+    }
+    let Some(sets) = charms.get(&weapon_def_index) else {
+        return Vec::new();
+    };
+    if sets.len() != 1 {
+        return Vec::new();
+    }
+    sets.iter()
+        .next()
+        .into_iter()
+        .flat_map(|set| set.iter())
+        .map(|charm| ReplayWeaponCharm {
+            slot: charm.slot,
+            charm_id: charm.charm_id,
+            offset_x: f32::from_bits(charm.offset_x_bits),
+            offset_y: f32::from_bits(charm.offset_y_bits),
+            offset_z: f32::from_bits(charm.offset_z_bits),
+            seed: charm.seed,
+            highlight: charm.highlight,
+            sticker_id: charm.sticker_id,
         })
         .collect()
 }
@@ -1928,6 +2158,20 @@ struct CosmeticStickerSpec {
     wear_bits: u32,
     offset_x_bits: u32,
     offset_y_bits: u32,
+    scale_bits: Option<u32>,
+    rotation_bits: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct CosmeticCharmSpec {
+    slot: u8,
+    charm_id: u32,
+    offset_x_bits: u32,
+    offset_y_bits: u32,
+    offset_z_bits: u32,
+    seed: Option<u32>,
+    highlight: Option<u32>,
+    sticker_id: Option<u32>,
 }
 
 fn cosmetic_paint_spec(
@@ -2230,8 +2474,8 @@ pub fn parse_round_list(value: &str) -> Result<BTreeSet<u32>> {
 mod tests {
     use super::*;
     use crate::model::{
-        AvatarImageFormat, Cs2Rec, ParsedAvatarOverride, ParsedDemo, ParsedInventoryWeaponCosmetic,
-        ParsedWeaponSticker, ReplayTick,
+        AvatarImageFormat, Cs2Rec, ParsedAvatarOverride, ParsedDemo, ParsedEconItem,
+        ParsedInventoryWeaponCosmetic, ParsedWeaponSticker, ReplayTick,
     };
     use crate::rec_writer::read_rec;
     use crate::replay::context::{first_weapon_def_index, preload_weapon_def_indices_from_refs};
@@ -2351,12 +2595,81 @@ mod tests {
         );
         assert_eq!(cosmetics.knife.as_ref().unwrap().item_def_index, Some(508));
         assert_eq!(cosmetics.knife.as_ref().unwrap().paint_kit, 38);
+        assert_eq!(cosmetics.knife.as_ref().unwrap().seed, 321);
+        assert_eq!(
+            cosmetics.knife.as_ref().unwrap().wear.to_bits(),
+            0.01_f32.to_bits()
+        );
         assert_eq!(
             cosmetics.knife.as_ref().unwrap().custom_name.as_deref(),
             Some("alpha knife")
         );
         assert_eq!(cosmetics.glove.as_ref().unwrap().item_def_index, Some(5030));
         assert_eq!(cosmetics.glove.as_ref().unwrap().paint_kit, 10006);
+        assert_eq!(cosmetics.glove.as_ref().unwrap().seed, 4);
+        assert_eq!(
+            cosmetics.glove.as_ref().unwrap().wear.to_bits(),
+            0.2_f32.to_bits()
+        );
+    }
+
+    #[test]
+    fn manifest_prefers_end_metadata_for_glove_cosmetics() {
+        let mut parsed = sample_demo();
+        parsed.rows = vec![
+            ParsedPlayerTick {
+                tick: 100,
+                steam_id: 76561198074762801,
+                name: "m0NESY".to_string(),
+                team_num: 3,
+                is_alive: true,
+                round: 1,
+                round_in_progress: true,
+                item_def_idx: 61,
+                glove_item_def_index: Some(5034),
+                glove_paint_kit: Some(10033),
+                glove_paint_seed: None,
+                glove_paint_wear: Some(0.2),
+                ..sample_row(100)
+            },
+            ParsedPlayerTick {
+                tick: 164,
+                steam_id: 76561198074762801,
+                name: "m0NESY".to_string(),
+                team_num: 3,
+                is_alive: true,
+                round: 1,
+                round_in_progress: true,
+                item_def_idx: 61,
+                glove_item_def_index: Some(5034),
+                glove_paint_kit: Some(10033),
+                glove_paint_seed: None,
+                glove_paint_wear: Some(0.2),
+                ..sample_row(164)
+            },
+        ];
+        parsed.econ_items = vec![ParsedEconItem {
+            steam_id: Some(76561198074762801),
+            item_def_index: Some(5034),
+            paint_kit: Some(10033),
+            paint_seed: Some(260),
+            paint_wear_raw: Some(0.204_478_43_f32.to_bits()),
+            paint_wear: Some(0.204_478_43),
+            item_name: None,
+            skin_name: Some("Crimson Kimono".to_string()),
+        }];
+
+        let memory = export_memory_with_cosmetics(parsed);
+        let glove = memory.manifest.files[0]
+            .cosmetics
+            .as_ref()
+            .and_then(|cosmetics| cosmetics.glove.as_ref())
+            .expect("expected glove evidence");
+
+        assert_eq!(glove.item_def_index, Some(5034));
+        assert_eq!(glove.paint_kit, 10033);
+        assert_eq!(glove.seed, 260);
+        assert_eq!(glove.wear.to_bits(), 0.204_478_43_f32.to_bits());
     }
 
     #[test]
@@ -2667,7 +2980,7 @@ mod tests {
                 active_weapon_paint_wear: Some(0.125),
                 active_weapon_stickers: vec![
                     sticker(1, 478, 0.0, -0.25, 0.75),
-                    sticker(0, 477, 0.05, 0.1, 0.2),
+                    sticker_with_transform(0, 477, 0.05, 0.1, 0.2, 1.35, 27.5),
                 ],
                 ..sample_row(100)
             },
@@ -2678,7 +2991,7 @@ mod tests {
                 active_weapon_paint_wear: Some(0.125),
                 active_weapon_stickers: vec![
                     sticker(1, 478, 0.0, -0.25, 0.75),
-                    sticker(0, 477, 0.05, 0.1, 0.2),
+                    sticker_with_transform(0, 477, 0.05, 0.1, 0.2, 1.35, 27.5),
                 ],
                 ..sample_row(164)
             },
@@ -2698,8 +3011,50 @@ mod tests {
         assert_eq!(stickers[0].wear.to_bits(), 0.05_f32.to_bits());
         assert_eq!(stickers[0].offset_x.to_bits(), 0.1_f32.to_bits());
         assert_eq!(stickers[0].offset_y.to_bits(), 0.2_f32.to_bits());
+        assert_eq!(stickers[0].scale.unwrap().to_bits(), 1.35_f32.to_bits());
+        assert_eq!(stickers[0].rotation.unwrap().to_bits(), 27.5_f32.to_bits());
         assert_eq!(stickers[1].slot, 1);
         assert_eq!(stickers[1].sticker_id, 478);
+    }
+
+    #[test]
+    fn stable_weapon_charms_are_serialized_when_enabled() {
+        let mut parsed = sample_demo();
+        parsed.rows = vec![charm_weapon_row(100, true), charm_weapon_row(164, true)];
+
+        let memory = export_memory_with_charms(parsed);
+        let charms = &memory.manifest.files[0]
+            .cosmetics
+            .as_ref()
+            .expect("expected cosmetic evidence")
+            .weapons[0]
+            .charms;
+
+        assert_eq!(charms.len(), 1);
+        assert_eq!(charms[0].slot, 0);
+        assert_eq!(charms[0].charm_id, 37);
+        assert_eq!(charms[0].offset_x.to_bits(), (-1.25_f32).to_bits());
+        assert_eq!(charms[0].offset_y.to_bits(), 0.5_f32.to_bits());
+        assert_eq!(charms[0].offset_z.to_bits(), 2.75_f32.to_bits());
+        assert_eq!(charms[0].seed, Some(12345));
+        assert_eq!(charms[0].sticker_id, Some(68));
+    }
+
+    #[test]
+    fn charm_export_is_default_off_under_cosmetics() {
+        let mut parsed = sample_demo();
+        parsed.rows = vec![charm_weapon_row(100, false), charm_weapon_row(164, false)];
+
+        let memory = export_memory_with_cosmetics(parsed);
+        let weapon = &memory.manifest.files[0]
+            .cosmetics
+            .as_ref()
+            .expect("expected cosmetic evidence")
+            .weapons[0];
+
+        assert!(weapon.charms.is_empty());
+        let json = serde_json::to_string(weapon).unwrap();
+        assert!(!json.contains("charms"));
     }
 
     #[test]
@@ -2756,6 +3111,55 @@ mod tests {
     }
 
     #[test]
+    fn inventory_weapon_cosmetics_export_stattrak_evidence() {
+        let mut stattrak_without_counter =
+            inventory_weapon_cosmetic(61, 1040, 853, 0.099, None, Vec::new());
+        stattrak_without_counter.entity_quality = Some(9);
+        stattrak_without_counter.stattrak_counter = Some(-1);
+        stattrak_without_counter.attributes = vec![stattrak_count_attribute(1923)];
+        let mut stattrak_with_counter =
+            inventory_weapon_cosmetic(16, 926, 42, 0.123, None, Vec::new());
+        stattrak_with_counter.entity_quality = Some(9);
+        stattrak_with_counter.stattrak_counter = Some(42);
+
+        let mut parsed = sample_demo();
+        parsed.rows = vec![
+            ParsedPlayerTick {
+                item_def_idx: 61,
+                inventory_as_ids: vec![16, 61],
+                ..sample_row(100)
+            },
+            ParsedPlayerTick {
+                item_def_idx: 61,
+                inventory_as_ids: vec![16, 61],
+                inventory_weapon_cosmetics: vec![stattrak_without_counter, stattrak_with_counter],
+                ..sample_row(164)
+            },
+        ];
+
+        let memory = export_memory_with_cosmetics(parsed);
+        let cosmetics = memory.manifest.files[0]
+            .cosmetics
+            .as_ref()
+            .expect("expected cosmetic evidence");
+        let m4a4 = cosmetics
+            .weapons
+            .iter()
+            .find(|weapon| weapon.weapon_def_index == 16)
+            .expect("expected counted StatTrak weapon");
+        let usps = cosmetics
+            .weapons
+            .iter()
+            .find(|weapon| weapon.weapon_def_index == 61)
+            .expect("expected StatTrak weapon");
+
+        assert_eq!(m4a4.quality, Some(9));
+        assert_eq!(m4a4.stattrak_counter, Some(42));
+        assert_eq!(usps.quality, Some(9));
+        assert_eq!(usps.stattrak_counter, Some(1923));
+    }
+
+    #[test]
     fn round_inventory_weapon_cosmetics_use_first_stable_weapon_entity() {
         let early = ParsedPlayerTick {
             inventory_weapon_cosmetics: vec![inventory_weapon_cosmetic(
@@ -2781,7 +3185,7 @@ mod tests {
         };
         let rows = vec![&early, &later];
 
-        let weapons = round_inventory_weapon_cosmetics(&rows, true)
+        let weapons = round_inventory_weapon_cosmetics(&rows, true, false)
             .expect("expected inventory weapon evidence");
 
         assert_eq!(weapons.len(), 1);
@@ -2822,7 +3226,7 @@ mod tests {
         };
         let rows = vec![&freeze_purchase, &live_start];
 
-        let cosmetics = replay_cosmetics_at(&rows, &rows, 1, true)
+        let cosmetics = replay_cosmetics_at(&rows, &rows, 1, None, true, false)
             .expect("expected live-start cosmetic evidence");
 
         assert_eq!(cosmetics.weapons.len(), 1);
@@ -2851,7 +3255,7 @@ mod tests {
         };
         let rows = vec![&active_false_positive];
 
-        let cosmetics = replay_cosmetics_at(&rows, &rows, 0, true);
+        let cosmetics = replay_cosmetics_at(&rows, &rows, 0, None, true, false);
 
         assert!(cosmetics.is_none());
     }
@@ -2868,7 +3272,7 @@ mod tests {
         };
         let rows = vec![&active_false_positive];
 
-        let cosmetics = replay_cosmetics_at(&rows, &rows, 0, true);
+        let cosmetics = replay_cosmetics_at(&rows, &rows, 0, None, true, false);
 
         assert!(cosmetics.is_none());
     }
@@ -3009,6 +3413,7 @@ mod tests {
             freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
             export_cosmetics: false,
             export_stickers: false,
+            export_charms: false,
             analysis: AnalysisOptions::default(),
         };
 
@@ -3050,6 +3455,7 @@ mod tests {
                 freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
                 export_cosmetics: false,
                 export_stickers: false,
+                export_charms: false,
                 analysis: AnalysisOptions::default(),
             },
         )
@@ -3078,6 +3484,7 @@ mod tests {
             freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
             export_cosmetics: false,
             export_stickers: false,
+            export_charms: false,
             analysis: AnalysisOptions::default(),
         };
         let mut events = Vec::new();
@@ -3130,6 +3537,7 @@ mod tests {
             freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
             export_cosmetics: false,
             export_stickers: false,
+            export_charms: false,
             analysis: AnalysisOptions::default(),
         };
         let mut events = Vec::new();
@@ -3163,6 +3571,7 @@ mod tests {
                 freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
                 export_cosmetics: false,
                 export_stickers: false,
+                export_charms: false,
                 analysis: AnalysisOptions::default(),
             },
         )
@@ -3209,6 +3618,7 @@ mod tests {
                 freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
                 export_cosmetics: false,
                 export_stickers: false,
+                export_charms: false,
                 analysis: AnalysisOptions::default(),
             },
         )
@@ -3254,6 +3664,7 @@ mod tests {
                 freeze_preroll_seconds: 1.0,
                 export_cosmetics: false,
                 export_stickers: false,
+                export_charms: false,
                 analysis: AnalysisOptions::default(),
             },
         )
@@ -3318,14 +3729,11 @@ mod tests {
 
         let rec = rec_for_steam(&export_memory(parsed), steam_id);
 
-        assert!(rec.high_fidelity.events.iter().all(|event| {
-            !matches!(
-                event.kind,
-                ReplayHifiEventKind::ItemDrop
-                    | ReplayHifiEventKind::ItemPickup
-                    | ReplayHifiEventKind::ItemTransfer
-            )
-        }));
+        assert!(rec
+            .high_fidelity
+            .events
+            .iter()
+            .all(|event| event.kind != ReplayHifiEventKind::ItemDrop));
     }
 
     #[test]
@@ -3512,6 +3920,56 @@ mod tests {
             wear,
             offset_x,
             offset_y,
+            scale: None,
+            rotation: None,
+        }
+    }
+
+    fn sticker_with_transform(
+        slot: u8,
+        sticker_id: u32,
+        wear: f32,
+        offset_x: f32,
+        offset_y: f32,
+        scale: f32,
+        rotation: f32,
+    ) -> ParsedWeaponSticker {
+        ParsedWeaponSticker {
+            slot,
+            sticker_id,
+            wear,
+            offset_x,
+            offset_y,
+            scale: Some(scale),
+            rotation: Some(rotation),
+        }
+    }
+
+    fn charm_weapon_row(tick: i32, include_optional: bool) -> ParsedPlayerTick {
+        let mut attributes = vec![
+            charm_int_attribute(KEYCHAIN_SLOT_0_ID_ATTR, 37),
+            charm_float_attribute(KEYCHAIN_SLOT_0_OFFSET_X_ATTR, -1.25),
+            charm_float_attribute(KEYCHAIN_SLOT_0_OFFSET_Y_ATTR, 0.5),
+            charm_float_attribute(KEYCHAIN_SLOT_0_OFFSET_Z_ATTR, 2.75),
+        ];
+        if include_optional {
+            attributes.push(charm_int_attribute(KEYCHAIN_SLOT_0_SEED_ATTR, 12345));
+            attributes.push(charm_int_attribute(KEYCHAIN_SLOT_0_STICKER_ATTR, 68));
+        }
+
+        ParsedPlayerTick {
+            item_def_idx: 7,
+            inventory_as_ids: vec![7],
+            inventory_weapon_cosmetics: vec![inventory_weapon_cosmetic_with_attributes(
+                7,
+                180,
+                12,
+                0.125,
+                None,
+                Vec::new(),
+                attributes,
+            )],
+            ..sample_row(tick)
         }
     }
 
@@ -3523,32 +3981,90 @@ mod tests {
         custom_name: Option<&str>,
         stickers: Vec<ParsedWeaponSticker>,
     ) -> ParsedInventoryWeaponCosmetic {
+        inventory_weapon_cosmetic_with_attributes(
+            item_def_index,
+            paint_kit,
+            paint_seed,
+            paint_wear,
+            custom_name,
+            stickers,
+            Vec::new(),
+        )
+    }
+
+    fn inventory_weapon_cosmetic_with_attributes(
+        item_def_index: i32,
+        paint_kit: u32,
+        paint_seed: u32,
+        paint_wear: f32,
+        custom_name: Option<&str>,
+        stickers: Vec<ParsedWeaponSticker>,
+        attributes: Vec<crate::model::ParsedInventoryWeaponAttribute>,
+    ) -> ParsedInventoryWeaponCosmetic {
         ParsedInventoryWeaponCosmetic {
             item_def_index,
             paint_kit,
             paint_seed,
             paint_wear,
+            entity_quality: None,
+            stattrak_counter: None,
+            attributes,
             custom_name: custom_name.map(str::to_string),
             stickers,
         }
     }
 
+    fn stattrak_count_attribute(count: u32) -> crate::model::ParsedInventoryWeaponAttribute {
+        crate::model::ParsedInventoryWeaponAttribute {
+            definition_index: 80,
+            raw_value: f32::from_bits(count),
+            raw_value_bits: count,
+        }
+    }
+
+    fn charm_int_attribute(
+        definition_index: u32,
+        value: u32,
+    ) -> crate::model::ParsedInventoryWeaponAttribute {
+        crate::model::ParsedInventoryWeaponAttribute {
+            definition_index,
+            raw_value: f32::from_bits(value),
+            raw_value_bits: value,
+        }
+    }
+
+    fn charm_float_attribute(
+        definition_index: u32,
+        value: f32,
+    ) -> crate::model::ParsedInventoryWeaponAttribute {
+        crate::model::ParsedInventoryWeaponAttribute {
+            definition_index,
+            raw_value: value,
+            raw_value_bits: value.to_bits(),
+        }
+    }
+
     fn export_memory(parsed: ParsedDemo) -> MemoryConversionReport {
-        export_memory_with_options(parsed, false, false)
+        export_memory_with_options(parsed, false, false, false)
     }
 
     fn export_memory_with_cosmetics(parsed: ParsedDemo) -> MemoryConversionReport {
-        export_memory_with_options(parsed, true, false)
+        export_memory_with_options(parsed, true, false, false)
     }
 
     fn export_memory_with_stickers(parsed: ParsedDemo) -> MemoryConversionReport {
-        export_memory_with_options(parsed, true, true)
+        export_memory_with_options(parsed, true, true, false)
+    }
+
+    fn export_memory_with_charms(parsed: ParsedDemo) -> MemoryConversionReport {
+        export_memory_with_options(parsed, true, false, true)
     }
 
     fn export_memory_with_options(
         parsed: ParsedDemo,
         export_cosmetics: bool,
         export_stickers: bool,
+        export_charms: bool,
     ) -> MemoryConversionReport {
         export_demo_to_memory(
             &parsed,
@@ -3562,6 +4078,7 @@ mod tests {
                 freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
                 export_cosmetics,
                 export_stickers,
+                export_charms,
                 analysis: AnalysisOptions::default(),
             },
         )
@@ -3591,6 +4108,7 @@ mod tests {
             projectiles: Vec::new(),
             events: Vec::new(),
             avatar_overrides: Vec::new(),
+            econ_items: Vec::new(),
         }
     }
 

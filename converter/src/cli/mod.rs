@@ -3,11 +3,13 @@ use cs2_demotracer::api::{
     build_nade_library_with_progress, export_nade_clips_from_demo_path, NadeClipExportRequest,
     NadeContextOptions, NadeDedupeOptions, NadeLibraryExportRequest,
 };
-use cs2_demotracer::demo_reader::read_demo;
+use cs2_demotracer::demo_reader::{
+    probe_stattrak, read_demo, StattrakProbeObservation, StattrakProbeReport,
+};
 use cs2_demotracer::export::{
     export_demo, parse_round_list, ConvertOptions, DEFAULT_FREEZE_PREROLL_SECONDS,
 };
-use cs2_demotracer::model::{Side, SubtickMode};
+use cs2_demotracer::model::{ParsedDemo, Side, SubtickMode};
 use cs2_demotracer::nade_export::{
     DEFAULT_OPENING_SECONDS, DEFAULT_POST_ROLL_SECONDS, DEFAULT_PRE_ROLL_SECONDS,
 };
@@ -69,6 +71,11 @@ enum Command {
         export_stickers: bool,
         #[arg(
             long,
+            help = "Also write stable demo-observed weapon charm/keychain metadata into manifest JSON; requires --export-cosmetics and the cosmetic risk confirmations."
+        )]
+        export_charms: bool,
+        #[arg(
+            long,
             help = "Confirm you understand cosmetic export/alignment may carry Valve Game Server Login Token risk."
         )]
         acknowledge_cosmetic_gslt_risk: bool,
@@ -86,6 +93,22 @@ enum Command {
         round: u32,
         #[arg(long, default_value_t = 240.0)]
         max_round_seconds: f32,
+    },
+    /// Probe active-weapon StatTrak evidence visible in a demo.
+    #[command(hide = true)]
+    ProbeStattrak {
+        #[arg(long)]
+        demo: PathBuf,
+        #[arg(long)]
+        all: bool,
+    },
+    /// Probe end-of-match econ item metadata visible in a demo.
+    #[command(hide = true)]
+    ProbeEconItems {
+        #[arg(long)]
+        demo: PathBuf,
+        #[arg(long)]
+        gloves_only: bool,
     },
     /// Convert one demo into compressed .dtr files and a manifest.
     Convert {
@@ -117,6 +140,11 @@ enum Command {
             help = "Also write stable demo-observed weapon sticker metadata into manifest JSON; requires --export-cosmetics and the cosmetic risk confirmations."
         )]
         export_stickers: bool,
+        #[arg(
+            long,
+            help = "Also write stable demo-observed weapon charm/keychain metadata into manifest JSON; requires --export-cosmetics and the cosmetic risk confirmations."
+        )]
+        export_charms: bool,
         #[arg(
             long,
             help = "Confirm you understand cosmetic export/alignment may carry Valve Game Server Login Token risk."
@@ -266,6 +294,14 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
             );
             print_round_players(&parsed, summary.start_tick, summary.end_tick, round);
         }
+        Command::ProbeStattrak { demo, all } => {
+            let report = probe_stattrak(&demo)?;
+            print_stattrak_probe(&report, all);
+        }
+        Command::ProbeEconItems { demo, gloves_only } => {
+            let parsed = read_demo(&demo)?;
+            print_econ_item_probe(&parsed, gloves_only);
+        }
         Command::Convert {
             demo,
             output,
@@ -278,15 +314,18 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
             freeze_preroll_seconds,
             export_cosmetics,
             export_stickers,
+            export_charms,
             acknowledge_cosmetic_gslt_risk,
             accept_cosmetic_export_disclaimer,
         } => {
-            let (export_cosmetics, export_stickers) = validate_cosmetic_export_consent(
-                export_cosmetics,
-                export_stickers,
-                acknowledge_cosmetic_gslt_risk,
-                accept_cosmetic_export_disclaimer,
-            )?;
+            let (export_cosmetics, export_stickers, export_charms) =
+                validate_cosmetic_export_consent(
+                    export_cosmetics,
+                    export_stickers,
+                    export_charms,
+                    acknowledge_cosmetic_gslt_risk,
+                    accept_cosmetic_export_disclaimer,
+                )?;
             let parsed = read_demo(&demo)?;
             let selected_rounds = rounds.as_deref().map(parse_round_list).transpose()?;
             let report = export_demo(
@@ -302,6 +341,7 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
                     freeze_preroll_seconds,
                     export_cosmetics,
                     export_stickers,
+                    export_charms,
                     analysis: AnalysisOptions {
                         max_round_seconds,
                         ..AnalysisOptions::default()
@@ -416,15 +456,18 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
             freeze_preroll_seconds,
             export_cosmetics,
             export_stickers,
+            export_charms,
             acknowledge_cosmetic_gslt_risk,
             accept_cosmetic_export_disclaimer,
         } => {
-            let (export_cosmetics, export_stickers) = validate_cosmetic_export_consent(
-                export_cosmetics,
-                export_stickers,
-                acknowledge_cosmetic_gslt_risk,
-                accept_cosmetic_export_disclaimer,
-            )?;
+            let (export_cosmetics, export_stickers, export_charms) =
+                validate_cosmetic_export_consent(
+                    export_cosmetics,
+                    export_stickers,
+                    export_charms,
+                    acknowledge_cosmetic_gslt_risk,
+                    accept_cosmetic_export_disclaimer,
+                )?;
             let report = build_round_pool(&BuildPoolOptions {
                 demo_dir,
                 output_dir: output,
@@ -436,6 +479,7 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
                 freeze_preroll_seconds,
                 export_cosmetics,
                 export_stickers,
+                export_charms,
                 analysis: AnalysisOptions {
                     max_round_seconds,
                     ..AnalysisOptions::default()
@@ -549,6 +593,7 @@ fn run_wizard() -> cs2_demotracer::Result<()> {
             freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
             export_cosmetics: false,
             export_stickers: false,
+            export_charms: false,
             analysis: AnalysisOptions::default(),
         },
     )?;
@@ -572,12 +617,18 @@ fn prompt_path(input: &str) -> PathBuf {
 fn validate_cosmetic_export_consent(
     export_cosmetics: bool,
     export_stickers: bool,
+    export_charms: bool,
     acknowledge_gslt_risk: bool,
     accept_disclaimer: bool,
-) -> cs2_demotracer::Result<(bool, bool)> {
+) -> cs2_demotracer::Result<(bool, bool, bool)> {
     if export_stickers && !export_cosmetics {
         return Err(cs2_demotracer::Error::InvalidDemo(
             "--export-stickers requires --export-cosmetics".to_string(),
+        ));
+    }
+    if export_charms && !export_cosmetics {
+        return Err(cs2_demotracer::Error::InvalidDemo(
+            "--export-charms requires --export-cosmetics".to_string(),
         ));
     }
 
@@ -589,11 +640,11 @@ fn validate_cosmetic_export_consent(
 
     if export_cosmetics && (!acknowledge_gslt_risk || !accept_disclaimer) {
         return Err(cs2_demotracer::Error::InvalidDemo(
-            "--export-cosmetics writes demo-observed weapon/knife/glove cosmetic metadata into manifest JSON and requires both --acknowledge-cosmetic-gslt-risk and --accept-cosmetic-export-disclaimer. --export-stickers adds weapon sticker metadata under the same risk gate. Use cosmetic export/alignment only where you have assessed Valve server guideline and GSLT risk.".to_string(),
+            "--export-cosmetics writes demo-observed weapon/knife/glove cosmetic metadata into manifest JSON and requires both --acknowledge-cosmetic-gslt-risk and --accept-cosmetic-export-disclaimer. --export-stickers adds weapon sticker metadata and --export-charms adds weapon charm/keychain metadata under the same risk gate. Use cosmetic export/alignment only where you have assessed Valve server guideline and GSLT risk.".to_string(),
         ));
     }
 
-    Ok((export_cosmetics, export_stickers))
+    Ok((export_cosmetics, export_stickers, export_charms))
 }
 
 fn parse_wizard_rounds(
@@ -653,13 +704,179 @@ fn dialog_error(err: impl Display) -> cs2_demotracer::Error {
     cs2_demotracer::Error::InvalidDemo(format!("interactive prompt failed: {err}"))
 }
 
+fn print_econ_item_probe(parsed: &ParsedDemo, gloves_only: bool) {
+    let mut rows = parsed
+        .econ_items
+        .iter()
+        .filter(|item| {
+            !gloves_only
+                || item
+                    .item_def_index
+                    .and_then(|def| i32::try_from(def).ok())
+                    .is_some_and(is_diagnostic_glove_item_def)
+        })
+        .collect::<Vec<_>>();
+    rows.sort_by_key(|item| {
+        (
+            item.steam_id.unwrap_or_default(),
+            item.item_def_index.unwrap_or_default(),
+            item.paint_kit.unwrap_or_default(),
+        )
+    });
+
+    println!(
+        "demo={} map={} econ_items={} shown={} gloves_only={}",
+        parsed.path,
+        parsed.map,
+        parsed.econ_items.len(),
+        rows.len(),
+        gloves_only
+    );
+    println!("steamid item_def paint seed wear_raw wear item skin");
+    for item in rows {
+        println!(
+            "{} {} {} {} {} {} {} {}",
+            format_optional(item.steam_id),
+            format_optional(item.item_def_index),
+            format_optional(item.paint_kit),
+            format_optional(item.paint_seed),
+            format_optional(item.paint_wear_raw),
+            format_optional_float(item.paint_wear),
+            item.item_name.as_deref().unwrap_or("-"),
+            item.skin_name.as_deref().unwrap_or("-")
+        );
+    }
+}
+
+fn format_optional<T: Display>(value: Option<T>) -> String {
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "-".to_string())
+}
+
+fn format_optional_float(value: Option<f32>) -> String {
+    value
+        .map(|value| format!("{value:.8}"))
+        .unwrap_or_else(|| "-".to_string())
+}
+
+fn print_stattrak_probe(report: &StattrakProbeReport, all: bool) {
+    let stattrak_item_count = report
+        .observations
+        .iter()
+        .filter(|observation| is_stattrak_candidate(observation))
+        .count();
+    let stattrak_counter_count = report
+        .observations
+        .iter()
+        .filter(|observation| has_stattrak_counter(observation))
+        .count();
+    println!(
+        "demo={} map={} rows={} observations={} stattrak_items={} stattrak_counters={} listed_matching_props={}",
+        report.demo_path,
+        report.map,
+        report.rows_seen,
+        report.observations.len(),
+        stattrak_item_count,
+        stattrak_counter_count,
+        if report.listed_matching_props.is_empty() {
+            "none".to_string()
+        } else {
+            report.listed_matching_props.join(",")
+        }
+    );
+
+    let rows = report
+        .observations
+        .iter()
+        .filter(|observation| all || is_stattrak_candidate(observation))
+        .collect::<Vec<_>>();
+    if rows.is_empty() {
+        println!(
+            "no active-weapon StatTrak item candidates found; rerun with --all to print non-candidate econ observations"
+        );
+        return;
+    }
+
+    println!(
+        "candidate round team steamid weapon paint_kit quality stattrak_values attrs first_tick last_tick samples name"
+    );
+    for observation in rows {
+        let team = match observation.team_num {
+            2 => "T",
+            3 => "CT",
+            _ => "UNK",
+        };
+        println!(
+            "{:<9} {:>5} {:>4} {} {:>6} {:>9} {:>7} {:>15} {:>28} {:>10} {:>9} {:>7} {}",
+            if is_stattrak_candidate(observation) {
+                "yes"
+            } else {
+                "no"
+            },
+            observation.round,
+            team,
+            observation.steam_id,
+            observation.weapon_def_index,
+            format_optional_u32(observation.paint_kit),
+            format_optional_i32(observation.weapon_quality),
+            format_i32_values(&observation.stattrak_values),
+            format_string_values(&observation.econ_attribute_pairs),
+            observation.first_tick,
+            observation.last_tick,
+            observation.samples,
+            observation.player_name
+        );
+    }
+}
+
+fn is_stattrak_candidate(observation: &StattrakProbeObservation) -> bool {
+    observation.weapon_quality == Some(9) || has_stattrak_counter(observation)
+}
+
+fn has_stattrak_counter(observation: &StattrakProbeObservation) -> bool {
+    observation.stattrak_values.iter().any(|value| *value >= 0)
+}
+
+fn format_optional_u32(value: Option<u32>) -> String {
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "-".to_string())
+}
+
+fn format_optional_i32(value: Option<i32>) -> String {
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "-".to_string())
+}
+
+fn format_i32_values(values: &[i32]) -> String {
+    if values.is_empty() {
+        "-".to_string()
+    } else {
+        values
+            .iter()
+            .map(i32::to_string)
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+}
+
+fn format_string_values(values: &[String]) -> String {
+    if values.is_empty() {
+        "-".to_string()
+    } else {
+        values.join("|")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn cosmetic_export_requires_both_confirmations() {
-        let err = validate_cosmetic_export_consent(true, false, true, false).unwrap_err();
+        let err = validate_cosmetic_export_consent(true, false, false, true, false).unwrap_err();
 
         assert!(err
             .to_string()
@@ -668,7 +885,7 @@ mod tests {
 
     #[test]
     fn cosmetic_export_acknowledgements_require_export_flag() {
-        let err = validate_cosmetic_export_consent(false, false, true, true).unwrap_err();
+        let err = validate_cosmetic_export_consent(false, false, false, true, true).unwrap_err();
 
         assert!(err.to_string().contains("--export-cosmetics"));
     }
@@ -676,14 +893,14 @@ mod tests {
     #[test]
     fn cosmetic_export_accepts_explicit_full_consent() {
         assert_eq!(
-            validate_cosmetic_export_consent(true, false, true, true).unwrap(),
-            (true, false)
+            validate_cosmetic_export_consent(true, false, false, true, true).unwrap(),
+            (true, false, false)
         );
     }
 
     #[test]
     fn sticker_export_requires_cosmetic_export() {
-        let err = validate_cosmetic_export_consent(false, true, false, false).unwrap_err();
+        let err = validate_cosmetic_export_consent(false, true, false, false, false).unwrap_err();
 
         assert!(err.to_string().contains("--export-cosmetics"));
     }
@@ -691,8 +908,23 @@ mod tests {
     #[test]
     fn sticker_export_accepts_explicit_full_consent() {
         assert_eq!(
-            validate_cosmetic_export_consent(true, true, true, true).unwrap(),
-            (true, true)
+            validate_cosmetic_export_consent(true, true, false, true, true).unwrap(),
+            (true, true, false)
+        );
+    }
+
+    #[test]
+    fn charm_export_requires_cosmetic_export() {
+        let err = validate_cosmetic_export_consent(false, false, true, false, false).unwrap_err();
+
+        assert!(err.to_string().contains("--export-cosmetics"));
+    }
+
+    #[test]
+    fn charm_export_accepts_explicit_full_consent() {
+        assert_eq!(
+            validate_cosmetic_export_consent(true, false, true, true, true).unwrap(),
+            (true, false, true)
         );
     }
 }

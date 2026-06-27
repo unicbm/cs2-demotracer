@@ -243,6 +243,8 @@ pub struct SpecialIDs {
     pub cell_z_offset_player: Option<u32>,
     pub active_weapon: Option<u32>,
     pub item_def: Option<u32>,
+    pub entity_quality: Option<u32>,
+    pub fallback_stattrak: Option<u32>,
 
     pub m_vec_x_grenade: Option<u32>,
     pub m_vec_y_grenade: Option<u32>,
@@ -307,6 +309,8 @@ impl SpecialIDs {
             cell_z_offset_player: None,
             active_weapon: None,
             item_def: None,
+            entity_quality: None,
+            fallback_stattrak: None,
             m_cell_x_grenade: None,
             m_cell_y_grenade: None,
             m_cell_z_grenade: None,

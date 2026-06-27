@@ -2,14 +2,39 @@ use crate::model::ParsedDemo;
 use crate::{Error, Result};
 use std::path::Path;
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct StattrakProbeReport {
+    pub demo_path: String,
+    pub map: String,
+    pub rows_seen: usize,
+    pub listed_matching_props: Vec<String>,
+    pub observations: Vec<StattrakProbeObservation>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct StattrakProbeObservation {
+    pub round: u32,
+    pub steam_id: u64,
+    pub player_name: String,
+    pub team_num: u8,
+    pub weapon_def_index: i32,
+    pub paint_kit: Option<u32>,
+    pub weapon_quality: Option<i32>,
+    pub stattrak_values: Vec<i32>,
+    pub econ_attribute_pairs: Vec<String>,
+    pub first_tick: i32,
+    pub last_tick: i32,
+    pub samples: usize,
+}
+
 #[cfg(feature = "demoparser")]
 mod demoparser_impl {
     use super::*;
     use crate::io_error;
     use crate::model::{
-        AvatarImageFormat, ParsedAvatarOverride, ParsedGameEvent, ParsedInventoryWeaponCosmetic,
-        ParsedPlayerTick, ParsedProjectile, ParsedWeaponSticker, ProjectileEffectSource,
-        ProjectileKind, SubtickMove,
+        AvatarImageFormat, ParsedAvatarOverride, ParsedEconItem, ParsedGameEvent,
+        ParsedInventoryWeaponAttribute, ParsedInventoryWeaponCosmetic, ParsedPlayerTick,
+        ParsedProjectile, ParsedWeaponSticker, ProjectileEffectSource, ProjectileKind, SubtickMove,
     };
     use ahash::AHashMap;
     use parser::first_pass::parser_settings::{rm_user_friendly_names, ParserInputs};
@@ -17,7 +42,7 @@ mod demoparser_impl {
     use parser::second_pass::game_events::GameEvent;
     use parser::second_pass::parser_settings::create_huffman_lookup_table;
     use parser::second_pass::variants::{PropColumn, VarVec, Variant};
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
 
     pub fn read_demo(path: &Path) -> Result<ParsedDemo> {
@@ -28,6 +53,211 @@ mod demoparser_impl {
             .unwrap_or("demo")
             .to_string();
         read_demo_bytes(&bytes, &stem, &path.display().to_string())
+    }
+
+    pub fn probe_stattrak(path: &Path) -> Result<StattrakProbeReport> {
+        let bytes = fs::read(path).map_err(|e| io_error(path, e))?;
+        probe_stattrak_bytes(&bytes, &path.display().to_string())
+    }
+
+    pub fn probe_stattrak_bytes(bytes: &[u8], display_path: &str) -> Result<StattrakProbeReport> {
+        let wanted_props = vec![
+            "item_def_idx",
+            "weapon_skin_id",
+            "weapon_quality",
+            "fall_back_stat_track",
+            "econ_item_attribute_def_idx",
+            "econ_raw_val_32",
+            "initial_value",
+            "inventory_weapon_cosmetics",
+            "team_num",
+            "total_rounds_played",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+        let real_props =
+            rm_user_friendly_names(&wanted_props).map_err(|e| Error::Parser(format!("{e:?}")))?;
+        let mut real_name_to_og_name = AHashMap::default();
+        for (real, friendly) in real_props.iter().zip(&wanted_props) {
+            real_name_to_og_name.insert(real.clone(), friendly.clone());
+        }
+
+        let huf = create_huffman_lookup_table();
+        let settings = ParserInputs {
+            real_name_to_og_name,
+            wanted_players: vec![],
+            wanted_player_props: real_props,
+            wanted_other_props: vec![],
+            wanted_prop_states: AHashMap::default(),
+            wanted_ticks: vec![],
+            wanted_events: vec![],
+            parse_ents: true,
+            parse_projectiles: false,
+            parse_grenades: false,
+            only_header: false,
+            only_convars: false,
+            huffman_lookup_table: &huf,
+            order_by_steamid: false,
+            list_props: true,
+            fallback_bytes: None,
+        };
+        let mut parser = Parser::new(settings, ParsingMode::Normal);
+        let output = parser
+            .parse_demo(bytes)
+            .map_err(|e| Error::Parser(format!("{e:?}")))?;
+
+        let header = output.header.unwrap_or_default();
+        let map = header
+            .get("map_name")
+            .cloned()
+            .unwrap_or_else(|| "unknown".to_string());
+
+        let mut columns: AHashMap<String, &PropColumn> = AHashMap::default();
+        for info in &output.prop_controller.prop_infos {
+            if let Some(column) = output.df.get(&info.id) {
+                columns.insert(info.prop_friendly_name.clone(), column);
+            }
+        }
+
+        let len = columns.values().map(|c| c.len()).max().unwrap_or_default();
+        let mut grouped: BTreeMap<
+            (u32, u64, i32, Option<u32>, Option<i32>),
+            StattrakProbeObservationBuilder,
+        > = BTreeMap::new();
+        let mut rows_seen = 0_usize;
+
+        for idx in 0..len {
+            let steam_id = get_u64(&columns, "steamid", idx).unwrap_or_default();
+            if steam_id == 0 {
+                continue;
+            }
+            rows_seen += 1;
+            let weapon_def_index = get_i32(&columns, "item_def_idx", idx)
+                .or_else(|| get_u32(&columns, "item_def_idx", idx).map(|v| v as i32))
+                .unwrap_or(-1);
+            if weapon_def_index <= 0 {
+                continue;
+            }
+
+            let paint_kit = get_u32(&columns, "weapon_skin_id", idx).filter(|value| *value > 0);
+            let weapon_quality = get_i32(&columns, "weapon_quality", idx);
+            let stattrak = get_i32(&columns, "fall_back_stat_track", idx);
+            let mut attr_pairs =
+                inventory_econ_attribute_pair_strings(&columns, idx, weapon_def_index, paint_kit);
+            if let Some(attr_pair) = econ_attribute_pair_string(&columns, idx) {
+                attr_pairs.insert(attr_pair);
+            }
+            if paint_kit.is_none()
+                && weapon_quality.is_none()
+                && stattrak.is_none()
+                && attr_pairs.is_empty()
+            {
+                continue;
+            }
+
+            let round = get_u32(&columns, "total_rounds_played", idx).unwrap_or_default();
+            let key = (round, steam_id, weapon_def_index, paint_kit, weapon_quality);
+            let tick = get_i32(&columns, "tick", idx).unwrap_or_default();
+            grouped
+                .entry(key)
+                .and_modify(|entry| {
+                    entry.first_tick = entry.first_tick.min(tick);
+                    entry.last_tick = entry.last_tick.max(tick);
+                    entry.samples += 1;
+                    if let Some(value) = stattrak {
+                        entry.stattrak_values.insert(value);
+                    }
+                    for value in attr_pairs.clone() {
+                        entry.econ_attribute_pairs.insert(value);
+                    }
+                })
+                .or_insert_with(|| {
+                    let mut stattrak_values = BTreeSet::new();
+                    if let Some(value) = stattrak {
+                        stattrak_values.insert(value);
+                    }
+                    StattrakProbeObservationBuilder {
+                        round,
+                        steam_id,
+                        player_name: get_string(&columns, "name", idx).unwrap_or_default(),
+                        team_num: get_u32(&columns, "team_num", idx).unwrap_or_default() as u8,
+                        weapon_def_index,
+                        paint_kit,
+                        weapon_quality,
+                        stattrak_values,
+                        econ_attribute_pairs: attr_pairs,
+                        first_tick: tick,
+                        last_tick: tick,
+                        samples: 1,
+                    }
+                });
+        }
+
+        let mut listed_matching_props = output
+            .uniq_prop_names
+            .into_iter()
+            .filter(|name| is_stattrak_probe_prop(name))
+            .collect::<Vec<_>>();
+        listed_matching_props.sort();
+        listed_matching_props.dedup();
+
+        let observations = grouped
+            .into_values()
+            .map(StattrakProbeObservationBuilder::finish)
+            .collect();
+
+        Ok(StattrakProbeReport {
+            demo_path: display_path.to_string(),
+            map,
+            rows_seen,
+            listed_matching_props,
+            observations,
+        })
+    }
+
+    #[derive(Clone, Debug)]
+    struct StattrakProbeObservationBuilder {
+        round: u32,
+        steam_id: u64,
+        player_name: String,
+        team_num: u8,
+        weapon_def_index: i32,
+        paint_kit: Option<u32>,
+        weapon_quality: Option<i32>,
+        stattrak_values: BTreeSet<i32>,
+        econ_attribute_pairs: BTreeSet<String>,
+        first_tick: i32,
+        last_tick: i32,
+        samples: usize,
+    }
+
+    impl StattrakProbeObservationBuilder {
+        fn finish(self) -> StattrakProbeObservation {
+            StattrakProbeObservation {
+                round: self.round,
+                steam_id: self.steam_id,
+                player_name: self.player_name,
+                team_num: self.team_num,
+                weapon_def_index: self.weapon_def_index,
+                paint_kit: self.paint_kit,
+                weapon_quality: self.weapon_quality,
+                stattrak_values: self.stattrak_values.into_iter().collect(),
+                econ_attribute_pairs: self.econ_attribute_pairs.into_iter().collect(),
+                first_tick: self.first_tick,
+                last_tick: self.last_tick,
+                samples: self.samples,
+            }
+        }
+    }
+
+    fn is_stattrak_probe_prop(name: &str) -> bool {
+        let lower = name.to_ascii_lowercase();
+        lower.contains("stattrak")
+            || lower.contains("stat_track")
+            || lower.contains("fallbackstat")
+            || lower.contains("entityquality")
+            || lower.contains("entity_quality")
     }
 
     pub fn read_demo_bytes(bytes: &[u8], stem: &str, display_path: &str) -> Result<ParsedDemo> {
@@ -307,6 +537,7 @@ mod demoparser_impl {
         let events = parse_game_events(&output.game_events);
         let projectiles = parse_projectiles(bytes, tick_rate, &output.game_events)?;
         let avatar_overrides = parse_avatar_overrides(output.server_avatar_overrides);
+        let econ_items = parse_econ_items(output.skins);
 
         Ok(ParsedDemo {
             path: display_path.to_string(),
@@ -321,6 +552,7 @@ mod demoparser_impl {
             projectiles,
             events,
             avatar_overrides,
+            econ_items,
         })
     }
 
@@ -356,6 +588,24 @@ mod demoparser_impl {
                     source: "ServerAvatarOverrides".to_string(),
                     bytes,
                 })
+            })
+            .collect()
+    }
+
+    fn parse_econ_items(
+        items: Vec<parser::second_pass::parser_settings::EconItem>,
+    ) -> Vec<ParsedEconItem> {
+        items
+            .into_iter()
+            .map(|item| ParsedEconItem {
+                steam_id: item.steamid,
+                item_def_index: item.def_index,
+                paint_kit: item.paint_index,
+                paint_seed: item.paint_seed,
+                paint_wear_raw: item.paint_wear,
+                paint_wear: item.paint_wear.map(f32::from_bits),
+                item_name: item.item_name,
+                skin_name: item.skin_name,
             })
             .collect()
     }
@@ -879,6 +1129,88 @@ mod demoparser_impl {
             VarVec::I32(v) => v.get(idx).copied().flatten(),
             VarVec::U32(v) => v.get(idx).copied().flatten().map(|v| v as i32),
             VarVec::U64(v) => v.get(idx).copied().flatten().map(|v| v as i32),
+            VarVec::F32(v) => v.get(idx).copied().flatten().and_then(f32_to_whole_i32),
+            _ => None,
+        }
+    }
+
+    fn f32_to_whole_i32(value: f32) -> Option<i32> {
+        if value.is_finite()
+            && value.fract() == 0.0
+            && value >= i32::MIN as f32
+            && value <= i32::MAX as f32
+        {
+            Some(value as i32)
+        } else {
+            None
+        }
+    }
+
+    fn econ_attribute_pair_string(
+        columns: &AHashMap<String, &PropColumn>,
+        idx: usize,
+    ) -> Option<String> {
+        let def = get_u32(columns, "econ_item_attribute_def_idx", idx)?;
+        let raw = format_variant_value(columns, "econ_raw_val_32", idx)
+            .unwrap_or_else(|| "-".to_string());
+        let initial =
+            format_variant_value(columns, "initial_value", idx).unwrap_or_else(|| "-".to_string());
+        Some(format!("def={def}:raw={raw}:initial={initial}"))
+    }
+
+    fn inventory_econ_attribute_pair_strings(
+        columns: &AHashMap<String, &PropColumn>,
+        idx: usize,
+        weapon_def_index: i32,
+        paint_kit: Option<u32>,
+    ) -> BTreeSet<String> {
+        let mut values = BTreeSet::new();
+        let weapons = match columns
+            .get("inventory_weapon_cosmetics")
+            .and_then(|column| {
+                let VarVec::InventoryWeaponCosmetics(values) = column.data.as_ref()? else {
+                    return None;
+                };
+                values.get(idx)
+            }) {
+            Some(weapons) => weapons,
+            None => return values,
+        };
+
+        for weapon in weapons {
+            if i32::try_from(weapon.item_def_index).ok() != Some(weapon_def_index) {
+                continue;
+            }
+            if let Some(paint_kit) = paint_kit {
+                if weapon.paint_kit != paint_kit {
+                    continue;
+                }
+            }
+            for (attribute_index, attribute) in weapon.attributes.iter().enumerate() {
+                values.insert(format!(
+                    "a{attribute_index:02}:def={}:raw={}:bits=0x{:08x}",
+                    attribute.definition_index, attribute.raw_value, attribute.raw_value_bits
+                ));
+            }
+        }
+
+        values
+    }
+
+    fn format_variant_value(
+        columns: &AHashMap<String, &PropColumn>,
+        name: &str,
+        idx: usize,
+    ) -> Option<String> {
+        match columns.get(name)?.data.as_ref()? {
+            VarVec::I32(v) => v.get(idx).copied().flatten().map(|value| value.to_string()),
+            VarVec::U32(v) => v.get(idx).copied().flatten().map(|value| value.to_string()),
+            VarVec::U64(v) => v.get(idx).copied().flatten().map(|value| value.to_string()),
+            VarVec::F32(v) => v
+                .get(idx)
+                .copied()
+                .flatten()
+                .map(|value| format!("{value}#0x{:08x}", value.to_bits())),
             _ => None,
         }
     }
@@ -1007,6 +1339,8 @@ mod demoparser_impl {
                     || !(0.0..=1.0).contains(&sticker.wear)
                     || !sticker.x.is_finite()
                     || !sticker.y.is_finite()
+                    || sticker.scale.is_some_and(|value| !value.is_finite())
+                    || sticker.rotation.is_some_and(|value| !value.is_finite())
                 {
                     return None;
                 }
@@ -1016,6 +1350,8 @@ mod demoparser_impl {
                     wear: sticker.wear,
                     offset_x: sticker.x,
                     offset_y: sticker.y,
+                    scale: sticker.scale,
+                    rotation: sticker.rotation,
                 })
             })
             .collect::<Vec<_>>();
@@ -1046,6 +1382,8 @@ mod demoparser_impl {
                             || !(0.0..=1.0).contains(&sticker.wear)
                             || !sticker.x.is_finite()
                             || !sticker.y.is_finite()
+                            || sticker.scale.is_some_and(|value| !value.is_finite())
+                            || sticker.rotation.is_some_and(|value| !value.is_finite())
                         {
                             return None;
                         }
@@ -1055,6 +1393,8 @@ mod demoparser_impl {
                             wear: sticker.wear,
                             offset_x: sticker.x,
                             offset_y: sticker.y,
+                            scale: sticker.scale,
+                            rotation: sticker.rotation,
                         })
                     })
                     .collect::<Vec<_>>();
@@ -1063,6 +1403,17 @@ mod demoparser_impl {
                     paint_kit: weapon.paint_kit,
                     paint_seed: weapon.paint_seed,
                     paint_wear: weapon.paint_wear,
+                    entity_quality: weapon.entity_quality,
+                    stattrak_counter: weapon.stattrak_counter,
+                    attributes: weapon
+                        .attributes
+                        .iter()
+                        .map(|attribute| ParsedInventoryWeaponAttribute {
+                            definition_index: attribute.definition_index,
+                            raw_value: attribute.raw_value,
+                            raw_value_bits: attribute.raw_value_bits,
+                        })
+                        .collect(),
                     custom_name: weapon.custom_name.clone().and_then(normalize_custom_name),
                     stickers,
                 })
@@ -1099,6 +1450,8 @@ mod demoparser_impl {
 }
 
 #[cfg(feature = "demoparser")]
+pub use demoparser_impl::probe_stattrak;
+#[cfg(feature = "demoparser")]
 pub use demoparser_impl::read_demo;
 #[cfg(feature = "demoparser")]
 pub use demoparser_impl::read_demo_bytes;
@@ -1107,6 +1460,11 @@ pub use demoparser_impl::read_demo_header_map_bytes;
 
 #[cfg(not(feature = "demoparser"))]
 pub fn read_demo(_path: &Path) -> Result<ParsedDemo> {
+    Err(Error::FeatureDisabled("demoparser"))
+}
+
+#[cfg(not(feature = "demoparser"))]
+pub fn probe_stattrak(_path: &Path) -> Result<StattrakProbeReport> {
     Err(Error::FeatureDisabled("demoparser"))
 }
 

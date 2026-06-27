@@ -1,6 +1,6 @@
 use super::entities::PlayerMetaData;
 use super::variants::Variant;
-use super::variants::{InventoryWeaponCosmetic, Sticker};
+use super::variants::{InventoryWeaponAttribute, InventoryWeaponCosmetic, Sticker};
 use crate::first_pass::prop_controller::*;
 use crate::first_pass::read_bits::DemoParserError;
 use crate::maps::BUTTONMAP;
@@ -36,6 +36,9 @@ const CELL_BITS: i32 = 9;
 const MAX_COORD: f32 = (1 << 14) as f32;
 // https://github.com/markus-wa/demoinfocs-golang/blob/master/pkg/demoinfocs/constants/constants.go#L11
 const IS_AIRBORNE_CONST: u32 = 0xFFFFFF;
+const ECON_ATTR_SET_ITEM_TEXTURE_PREFAB: u32 = 6;
+const ECON_ATTR_SET_ITEM_TEXTURE_SEED: u32 = 7;
+const ECON_ATTR_SET_ITEM_TEXTURE_WEAR: u32 = 8;
 
 #[derive(Debug, Clone)]
 pub struct ProjectileRecord {
@@ -55,9 +58,41 @@ struct StickerState {
     wear: Option<f32>,
     offset_x: Option<f32>,
     offset_y: Option<f32>,
+    scale: Option<f32>,
+    rotation: Option<f32>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct StickerAttribute {
+    definition_index: u32,
+    raw_value: f32,
 }
 
 impl StickerState {
+    fn set_id(&mut self, id: u32) {
+        self.id = (id != 0).then_some(id);
+    }
+
+    fn set_wear(&mut self, wear: f32) {
+        self.wear = Some(wear);
+    }
+
+    fn set_scale(&mut self, scale: f32) {
+        self.scale = Some(scale);
+    }
+
+    fn set_offset_x(&mut self, offset_x: f32) {
+        self.offset_x = Some(offset_x);
+    }
+
+    fn set_offset_y(&mut self, offset_y: f32) {
+        self.offset_y = Some(offset_y);
+    }
+
+    fn set_rotation(&mut self, rotation: f32) {
+        self.rotation = Some(rotation);
+    }
+
     fn into_sticker(self, slot: u32) -> Option<Sticker> {
         let id = self.id?;
         if id == 0 {
@@ -68,7 +103,13 @@ impl StickerState {
         let wear = self.wear.unwrap_or(0.0).max(0.0);
         let x = self.offset_x.unwrap_or(0.0);
         let y = self.offset_y.unwrap_or(0.0);
-        if !wear.is_finite() || wear > 1.0 || !x.is_finite() || !y.is_finite() {
+        if !wear.is_finite()
+            || wear > 1.0
+            || !x.is_finite()
+            || !y.is_finite()
+            || self.scale.is_some_and(|value| !value.is_finite())
+            || self.rotation.is_some_and(|value| !value.is_finite())
+        {
             return None;
         }
 
@@ -79,8 +120,90 @@ impl StickerState {
             wear,
             x,
             y,
+            scale: self.scale,
+            rotation: self.rotation,
         })
     }
+}
+
+fn stickers_from_attributes(attributes: impl IntoIterator<Item = StickerAttribute>) -> Vec<Sticker> {
+    let mut layers = vec![[
+        StickerState::default(),
+        StickerState::default(),
+        StickerState::default(),
+        StickerState::default(),
+        StickerState::default(),
+    ]];
+
+    for attribute in attributes {
+        let definition_index = attribute.definition_index;
+        let raw_value = attribute.raw_value;
+        match definition_index {
+            113 | 117 | 121 | 125 | 129 => {
+                let slot = ((definition_index - 113) / 4) as usize;
+                if layers.last().is_some_and(|layer| layer[slot].id.is_some()) {
+                    layers.push([
+                        StickerState::default(),
+                        StickerState::default(),
+                        StickerState::default(),
+                        StickerState::default(),
+                        StickerState::default(),
+                    ]);
+                }
+                layers
+                    .last_mut()
+                    .expect("at least one sticker layer")[slot]
+                    .set_id(raw_value.to_bits());
+            }
+            114 | 118 | 122 | 126 | 130 => {
+                let slot = ((definition_index - 114) / 4) as usize;
+                layers
+                    .last_mut()
+                    .expect("at least one sticker layer")[slot]
+                    .set_wear(raw_value);
+            }
+            115 | 119 | 123 | 127 | 131 => {
+                let slot = ((definition_index - 115) / 4) as usize;
+                layers
+                    .last_mut()
+                    .expect("at least one sticker layer")[slot]
+                    .set_scale(raw_value);
+            }
+            116 | 120 | 124 | 128 | 132 => {
+                let slot = ((definition_index - 116) / 4) as usize;
+                layers
+                    .last_mut()
+                    .expect("at least one sticker layer")[slot]
+                    .set_rotation(raw_value);
+            }
+            278..=287 => {
+                let slot = ((definition_index - 278) / 2) as usize;
+                if slot >= 5 {
+                    continue;
+                }
+                if (definition_index - 278) % 2 == 0 {
+                    layers
+                        .last_mut()
+                        .expect("at least one sticker layer")[slot]
+                        .set_offset_x(raw_value);
+                } else {
+                    layers
+                        .last_mut()
+                        .expect("at least one sticker layer")[slot]
+                        .set_offset_y(raw_value);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    (0..5)
+        .filter_map(|slot| {
+            layers
+                .iter()
+                .find_map(|layer| layer[slot].into_sticker(slot as u32))
+        })
+        .collect()
 }
 
 pub enum CoordinateAxis {
@@ -548,14 +671,7 @@ impl<'a> SecondPassParser<'a> {
     }
 
     pub fn find_stickers(&self, weapon_entity_id: &i32) -> Result<Variant, PropCollectionError> {
-        let mut states = [
-            StickerState::default(),
-            StickerState::default(),
-            StickerState::default(),
-            StickerState::default(),
-            StickerState::default(),
-        ];
-
+        let mut attributes = Vec::new();
         for idx in 0..64 {
             let Ok(Variant::U32(definition_index)) = self.get_prop_from_ent(&(WEAPON_ATTRIBUTE_DEF_INDEX_ID + idx), weapon_entity_id) else {
                 continue;
@@ -563,36 +679,13 @@ impl<'a> SecondPassParser<'a> {
             let Ok(Variant::F32(raw_value)) = self.get_prop_from_ent(&(WEAPON_SKIN_ID + idx), weapon_entity_id) else {
                 continue;
             };
-
-            match definition_index {
-                113 | 117 | 121 | 125 | 129 => {
-                    let slot = ((definition_index - 113) / 4) as usize;
-                    states[slot].id = Some(raw_value.to_bits());
-                }
-                114 | 118 | 122 | 126 | 130 => {
-                    let slot = ((definition_index - 114) / 4) as usize;
-                    states[slot].wear = Some(raw_value);
-                }
-                278..=287 => {
-                    let slot = ((definition_index - 278) / 2) as usize;
-                    if slot >= states.len() {
-                        continue;
-                    }
-                    if (definition_index - 278) % 2 == 0 {
-                        states[slot].offset_x = Some(raw_value);
-                    } else {
-                        states[slot].offset_y = Some(raw_value);
-                    }
-                }
-                _ => {}
-            }
+            attributes.push(StickerAttribute {
+                definition_index,
+                raw_value,
+            });
         }
 
-        let stickers = states
-            .into_iter()
-            .enumerate()
-            .filter_map(|(slot, state)| state.into_sticker(slot as u32))
-            .collect();
+        let stickers = stickers_from_attributes(attributes);
         Ok(Variant::Stickers(stickers))
     }
     pub fn find_skin_paint_seed(&self, player: &PlayerMetaData) -> Result<Variant, PropCollectionError> {
@@ -849,6 +942,31 @@ impl<'a> SecondPassParser<'a> {
                 Ok(Variant::F32(value)) => value,
                 _ => -1.0,
             };
+            let entity_quality = self
+                .prop_controller
+                .special_ids
+                .entity_quality
+                .and_then(|quality_id| match self.get_prop_from_ent(&quality_id, &eid) {
+                    Ok(Variant::I32(value)) => Some(value),
+                    Ok(Variant::U32(value)) => i32::try_from(value).ok(),
+                    Ok(Variant::F32(value)) if value.is_finite() && value.fract() == 0.0 => {
+                        Some(value as i32)
+                    }
+                    _ => None,
+                });
+            let stattrak_counter = self
+                .prop_controller
+                .special_ids
+                .fallback_stattrak
+                .and_then(|stattrak_id| match self.get_prop_from_ent(&stattrak_id, &eid) {
+                    Ok(Variant::I32(value)) => Some(value),
+                    Ok(Variant::U32(value)) => i32::try_from(value).ok(),
+                    Ok(Variant::F32(value)) if value.is_finite() && value.fract() == 0.0 => {
+                        Some(value as i32)
+                    }
+                    _ => None,
+                });
+            let attributes = self.find_weapon_econ_attributes(&eid);
             let custom_name = self
                 .prop_controller
                 .special_ids
@@ -867,12 +985,40 @@ impl<'a> SecondPassParser<'a> {
                 paint_kit,
                 paint_seed,
                 paint_wear,
+                entity_quality,
+                stattrak_counter,
+                attributes,
                 custom_name,
                 stickers,
             });
         }
         Ok(Variant::InventoryWeaponCosmetics(cosmetics))
     }
+
+    fn find_weapon_econ_attributes(&self, weapon_entity_id: &i32) -> Vec<InventoryWeaponAttribute> {
+        let mut attributes = Vec::new();
+        for idx in 0..64 {
+            let Ok(Variant::U32(definition_index)) =
+                self.get_prop_from_ent(&(WEAPON_ATTRIBUTE_DEF_INDEX_ID + idx), weapon_entity_id)
+            else {
+                continue;
+            };
+            let Ok(raw_value) = self.get_prop_from_ent(&(WEAPON_SKIN_ID + idx), weapon_entity_id)
+            else {
+                continue;
+            };
+            let Some((raw_value, raw_value_bits)) = econ_attribute_raw_value(raw_value) else {
+                continue;
+            };
+            attributes.push(InventoryWeaponAttribute {
+                definition_index,
+                raw_value,
+                raw_value_bits,
+            });
+        }
+        attributes
+    }
+
     pub fn find_my_inventory_as_bitmask(&self, entity_id: &i32) -> Result<Variant, PropCollectionError> {
         let mut bitmask = 0;
         let mut unique_eids = vec![];
@@ -1093,7 +1239,7 @@ impl<'a> SecondPassParser<'a> {
         };
     }
     pub fn find_glove_skin_id(&self, player_entid: &i32) -> Result<Variant, PropCollectionError> {
-        match self.get_prop_from_ent(&GLOVE_PAINT_ID, player_entid) {
+        match self.find_glove_attribute_value(player_entid, ECON_ATTR_SET_ITEM_TEXTURE_PREFAB) {
             Ok(Variant::F32(f)) => {
                 // The value is stored as a float for some reason
                 if f.fract() == 0.0 && f >= 0.0 {
@@ -1108,7 +1254,7 @@ impl<'a> SecondPassParser<'a> {
     }
 
     pub fn find_glove_skin(&self, player_entid: &i32) -> Result<Variant, PropCollectionError> {
-        match self.get_prop_from_ent(&GLOVE_PAINT_ID, player_entid) {
+        match self.find_glove_attribute_value(player_entid, ECON_ATTR_SET_ITEM_TEXTURE_PREFAB) {
             Ok(Variant::F32(f)) => {
                 // The value is stored as a float for some reason
                 if f.fract() == 0.0 && f >= 0.0 {
@@ -1127,17 +1273,48 @@ impl<'a> SecondPassParser<'a> {
     }
 
     pub fn find_glove_paint_seed(&self, player_entid: &i32) -> Result<Variant, PropCollectionError> {
-        match self.get_prop_from_ent(&GLOVE_PAINT_SEED, player_entid) {
-            Ok(p) => Ok(p),
+        match self.find_glove_attribute_value(player_entid, ECON_ATTR_SET_ITEM_TEXTURE_SEED) {
+            Ok(Variant::F32(f)) if f.is_finite() && f.fract() == 0.0 && f >= 0.0 => {
+                Ok(Variant::U32(f as u32))
+            }
+            Ok(Variant::U32(value)) => Ok(Variant::U32(value)),
+            Ok(Variant::I32(value)) if value >= 0 => Ok(Variant::U32(value as u32)),
+            Ok(_) => Err(PropCollectionError::GloveSkinIdxIncorrectVariant),
             Err(e) => return Err(e),
         }
     }
 
     pub fn find_glove_paint_float(&self, player_entid: &i32) -> Result<Variant, PropCollectionError> {
-        match self.get_prop_from_ent(&GLOVE_PAINT_FLOAT, player_entid) {
+        match self.find_glove_attribute_value(player_entid, ECON_ATTR_SET_ITEM_TEXTURE_WEAR) {
             Ok(p) => Ok(p),
             Err(e) => return Err(e),
         }
+    }
+
+    fn find_glove_attribute_value(
+        &self,
+        player_entid: &i32,
+        definition_index: u32,
+    ) -> Result<Variant, PropCollectionError> {
+        for idx in 0..64 {
+            let Ok(current_definition_index) =
+                self.get_prop_from_ent(&(GLOVE_ATTRIBUTE_DEF_INDEX_ID + idx), player_entid)
+            else {
+                continue;
+            };
+            if variant_to_nonnegative_u32(current_definition_index) != Some(definition_index) {
+                continue;
+            }
+            return self.get_prop_from_ent(&(GLOVE_PAINT_ID + idx), player_entid);
+        }
+
+        let legacy_id = match definition_index {
+            ECON_ATTR_SET_ITEM_TEXTURE_PREFAB => GLOVE_PAINT_ID,
+            ECON_ATTR_SET_ITEM_TEXTURE_SEED => GLOVE_PAINT_SEED,
+            ECON_ATTR_SET_ITEM_TEXTURE_WEAR => GLOVE_PAINT_FLOAT,
+            _ => return Err(PropCollectionError::GetPropFromEntPropNotFound),
+        };
+        self.get_prop_from_ent(&legacy_id, player_entid)
     }
 
     pub fn find_weapon_prop(&self, prop: &u32, player_entid: &i32) -> Result<Variant, PropCollectionError> {
@@ -1287,6 +1464,103 @@ fn coord_from_cell(cell: Result<Variant, PropCollectionError>, offset: Result<Va
         (_, _) => Err(PropCollectionError::CoordinateIncorrectTypes),
     }
 }
+
+fn econ_attribute_raw_value(value: Variant) -> Option<(f32, u32)> {
+    match value {
+        Variant::F32(value) => Some((value, value.to_bits())),
+        Variant::U32(value) => Some((value as f32, value)),
+        Variant::I32(value) if value >= 0 => Some((value as f32, value as u32)),
+        _ => None,
+    }
+}
+
+fn variant_to_nonnegative_u32(value: Variant) -> Option<u32> {
+    match value {
+        Variant::U32(value) => Some(value),
+        Variant::I32(value) if value >= 0 => Some(value as u32),
+        Variant::F32(value) if value.is_finite() && value.fract() == 0.0 && value >= 0.0 => {
+            Some(value as u32)
+        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{stickers_from_attributes, StickerAttribute};
+
+    #[test]
+    fn sticker_layers_keep_transform_state_with_matching_id_layer() {
+        let stickers = stickers_from_attributes([
+            attr(113, f32::from_bits(60)),
+            attr(117, f32::from_bits(76)),
+            attr(125, f32::from_bits(103)),
+            attr(117, f32::from_bits(5946)),
+            attr(118, 0.995967),
+            attr(120, 24.0),
+            attr(121, f32::from_bits(4885)),
+            attr(122, 1.0),
+            attr(124, 105.0),
+            attr(125, f32::from_bits(4885)),
+            attr(126, 1.0),
+            attr(128, 102.0),
+            attr(129, f32::from_bits(4893)),
+            attr(130, 1.0),
+            attr(132, 141.0),
+            attr(278, -0.116377234),
+            attr(279, 0.007121563),
+            attr(280, -0.30349553),
+            attr(281, 0.011387974),
+            attr(282, -0.28971416),
+            attr(283, -0.0014955997),
+            attr(284, -0.2608658),
+            attr(285, -0.00951612),
+            attr(286, 0.043130986),
+            attr(287, 0.03563851),
+        ]);
+
+        let ibp = stickers.iter().find(|sticker| sticker.slot == 0).unwrap();
+        assert_eq!(ibp.id, 60);
+        assert_eq!(ibp.name, "kat2014_ibuypower_holo");
+        assert_eq!(ibp.x, 0.0);
+        assert_eq!(ibp.y, 0.0);
+
+        let titan = stickers.iter().find(|sticker| sticker.slot == 1).unwrap();
+        assert_eq!(titan.id, 76);
+        assert_eq!(titan.name, "kat2014_titan_holo");
+        assert_eq!(titan.wear, 0.0);
+        assert_eq!(titan.rotation, None);
+        assert_eq!(titan.x, 0.0);
+        assert_eq!(titan.y, 0.0);
+
+        let banana = stickers.iter().find(|sticker| sticker.slot == 2).unwrap();
+        assert_eq!(banana.id, 4885);
+        assert_eq!(banana.wear, 1.0);
+        assert_eq!(banana.rotation, Some(105.0));
+        assert_eq!(banana.x, -0.28971416);
+        assert_eq!(banana.y, -0.0014955997);
+
+        let howling = stickers.iter().find(|sticker| sticker.slot == 3).unwrap();
+        assert_eq!(howling.id, 103);
+        assert_eq!(howling.name, "comm01_howling_dawn");
+        assert_eq!(howling.x, 0.0);
+        assert_eq!(howling.y, 0.0);
+
+        let war = stickers.iter().find(|sticker| sticker.slot == 4).unwrap();
+        assert_eq!(war.id, 4893);
+        assert_eq!(war.rotation, Some(141.0));
+        assert_eq!(war.x, 0.043130986);
+        assert_eq!(war.y, 0.03563851);
+    }
+
+    fn attr(definition_index: u32, raw_value: f32) -> StickerAttribute {
+        StickerAttribute {
+            definition_index,
+            raw_value,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum PropCollectionError {
     PlayerSpecialIDCellXMissing,

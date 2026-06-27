@@ -34,6 +34,8 @@ pub struct Sticker {
     pub id: u32,
     pub x: f32,
     pub y: f32,
+    pub scale: Option<f32>,
+    pub rotation: Option<f32>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct InventoryWeaponCosmetic {
@@ -41,8 +43,17 @@ pub struct InventoryWeaponCosmetic {
     pub paint_kit: u32,
     pub paint_seed: u32,
     pub paint_wear: f32,
+    pub entity_quality: Option<i32>,
+    pub stattrak_counter: Option<i32>,
+    pub attributes: Vec<InventoryWeaponAttribute>,
     pub custom_name: Option<String>,
     pub stickers: Vec<Sticker>,
+}
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct InventoryWeaponAttribute {
+    pub definition_index: u32,
+    pub raw_value: f32,
+    pub raw_value_bits: u32,
 }
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct InputHistory {
