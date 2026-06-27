@@ -25,11 +25,9 @@ research use. Commercial use is allowed under AGPL/GPL, but closed-source
 redistribution, hosted conversion services, and proprietary integrations
 require either full license compliance or a separate commercial license.
 
-The root `LICENSE-AGPL-3.0`, `LICENSE-GPL-3.0`, and `LICENSE-APACHE-2.0` files
-are kept as standard license texts so GitHub and license scanners can identify
-the repository's top-level license set. This `LICENSE` file remains the
-path-level map.
+The root `LICENSE-AGPL-3.0` and `LICENSE-GPL-3.0` files are kept as standard
+license texts so GitHub and license scanners can identify the repository's
+top-level license set. This `LICENSE` file remains the path-level map.
 
-Converter versions before v0.3.1 remain available under Apache-2.0.
 Previously published GPL-3.0-only releases remain available under their
 published terms. Later versions may use the path-level licenses above.

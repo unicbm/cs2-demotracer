@@ -111,7 +111,6 @@ Copy-RequiredFile (Join-Path $repoRoot "docs\COMMANDS.zh-Hans.md") (Join-Path $s
 Copy-RequiredFile (Join-Path $repoRoot "LICENSE") (Join-Path $stageRoot "LICENSE")
 Copy-RequiredFile (Join-Path $repoRoot "LICENSE-AGPL-3.0") (Join-Path $stageRoot "LICENSE-AGPL-3.0")
 Copy-RequiredFile (Join-Path $repoRoot "LICENSE-GPL-3.0") (Join-Path $stageRoot "LICENSE-GPL-3.0")
-Copy-RequiredFile (Join-Path $repoRoot "LICENSE-APACHE-2.0") (Join-Path $stageRoot "LICENSE-APACHE-2.0")
 
 $gitCommit = "unknown"
 try {

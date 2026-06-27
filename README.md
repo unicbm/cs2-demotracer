@@ -745,6 +745,5 @@ redistribution, hosted conversion services, and proprietary integrations
 require either full license compliance or a separate commercial license.
 
 See `LICENSE` for the path-level license matrix. The root
-`LICENSE-AGPL-3.0`, `LICENSE-GPL-3.0`, and `LICENSE-APACHE-2.0` files are
-standard license texts for GitHub and license scanners. Converter versions
-before v0.3.1 remain available under Apache-2.0.
+`LICENSE-AGPL-3.0` and `LICENSE-GPL-3.0` files are standard license texts for
+GitHub and license scanners.

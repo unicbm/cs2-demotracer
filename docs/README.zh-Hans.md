@@ -445,5 +445,4 @@ DemoTracer 以强 copyleft 条款 source-available，面向社区和研究用途
 完整遵守对应 license，或取得单独商业授权。
 
 完整路径级许可矩阵见根目录 `LICENSE`。根目录的 `LICENSE-AGPL-3.0`、
-`LICENSE-GPL-3.0` 和 `LICENSE-APACHE-2.0` 是给 GitHub 和 license scanner
-识别用的标准 license 正文。v0.3.1 之前的 converter 版本仍按 Apache-2.0。
+`LICENSE-GPL-3.0` 是给 GitHub 和 license scanner 识别用的标准 license 正文。
