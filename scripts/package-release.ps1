@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.3.1",
+    [string]$Version = "0.3.2",
     [string]$Configuration = "Release",
     [string]$OutputRoot = "dist",
     [string]$DotnetPath = "",
