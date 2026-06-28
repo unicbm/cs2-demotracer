@@ -109,8 +109,6 @@ New-Item -ItemType Directory -Force -Path (Join-Path $stageRoot "docs") | Out-Nu
 Copy-RequiredFile (Join-Path $repoRoot "docs\COMMANDS.md") (Join-Path $stageRoot "docs\COMMANDS.md")
 Copy-RequiredFile (Join-Path $repoRoot "docs\COMMANDS.zh-Hans.md") (Join-Path $stageRoot "docs\COMMANDS.zh-Hans.md")
 Copy-RequiredFile (Join-Path $repoRoot "LICENSE") (Join-Path $stageRoot "LICENSE")
-Copy-RequiredFile (Join-Path $repoRoot "LICENSE-AGPL-3.0") (Join-Path $stageRoot "LICENSE-AGPL-3.0")
-Copy-RequiredFile (Join-Path $repoRoot "LICENSE-GPL-3.0") (Join-Path $stageRoot "LICENSE-GPL-3.0")
 
 $gitCommit = "unknown"
 try {

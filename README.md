@@ -732,19 +732,7 @@ the runtime/plugin stack.
 
 ## License
 
-CS2 DemoTracer is now mixed-license:
+CS2 DemoTracer is AGPL-3.0-only. See `LICENSE` for the full license text.
 
-- `converter/`: AGPL-3.0-only beginning with v0.3.1.
-- `runtime/BotController/`: AGPL-3.0-only.
-- `css/DemoTracer/` and `css/DemoTracerApi/`: AGPL-3.0-only while bundled with
-  and linked against the BotController runtime.
-- `third_party/`: vendored components keep their upstream license files.
-
-DemoTracer is source-available under strong copyleft terms for community and
-research use. Commercial use is allowed under AGPL/GPL, but closed-source
-redistribution, hosted conversion services, and proprietary integrations
-require either full license compliance or a separate commercial license.
-
-See `LICENSE` for the path-level license matrix. The root
-`LICENSE-AGPL-3.0` and `LICENSE-GPL-3.0` files are standard license texts for
-GitHub and license scanners.
+Vendored third-party components keep their upstream license files under
+`third_party/`.

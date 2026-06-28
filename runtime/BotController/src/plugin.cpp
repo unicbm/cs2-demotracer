@@ -42,7 +42,7 @@ public:
     const char *GetName() override { return "BotController"; }
     const char *GetDescription() override { return "Record and Replay CS2 bots."; }
     const char *GetURL() override { return ""; }
-    const char *GetLicense() override { return "GPLv3"; }
+    const char *GetLicense() override { return "AGPLv3"; }
     const char *GetVersion() override { return "0.4.5"; }
     const char *GetDate() override { return __DATE__; }
     const char *GetLogTag() override { return "BL"; }

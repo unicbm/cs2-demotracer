@@ -178,7 +178,7 @@ buffers can be serialized and reloaded across rounds. Main thread only.
 
 ## License
 
-GPL-v3.0
+AGPL-3.0
 
 ------------------------------------------------------------------------
 
