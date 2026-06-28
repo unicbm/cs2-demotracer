@@ -15,7 +15,7 @@ namespace DemoTracer;
 public sealed partial class DemoTracerPlugin : BasePlugin
 {
     public override string ModuleName => "CS2 DemoTracer";
-    public override string ModuleVersion => "0.3.2";
+    public override string ModuleVersion => "0.3.1";
     public override string ModuleAuthor => "unicbm";
     public override string ModuleDescription => "Trace CS2 demos into bot-executable route replays.";
 
@@ -180,10 +180,10 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
         RestoreReplayViewerCrosshair(playerSlot);
 
-        if (!HasReplayLifecycleStateForSlot(playerSlot, includeNative: true))
+        if (!HasReplayLifecycleState(includeNative: true))
             return;
 
-        StopAndUnloadSlotForLifecycle(playerSlot, $"client_disconnect:{playerSlot}");
+        ClearReplayStateForLifecycle($"client_disconnect:{playerSlot}");
     }
 
     private static void ConfigureNativeSafetyOffsets()
@@ -387,7 +387,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     {
         if (command.ArgCount < 3)
         {
-            command.ReplyToCommand("usage: dtr_set identity <off|name|sid|visible|full>");
+            command.ReplyToCommand("usage: dtr_set identity <off|name|full>");
             return;
         }
 
@@ -401,16 +401,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             case "name":
                 _replayIdentityMode = ReplayIdentityMode.Name;
                 break;
-            case "sid":
-            case "steamid":
-            case "steam_id":
-                _replayIdentityMode = ReplayIdentityMode.SteamId;
-                break;
-            case "visible":
-            case "display":
-            case "soft":
-                _replayIdentityMode = ReplayIdentityMode.Visible;
-                break;
             case "full":
             case "1":
             case "on":
@@ -418,7 +408,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 _replayIdentityMode = ReplayIdentityMode.Full;
                 break;
             default:
-                command.ReplyToCommand("usage: dtr_set identity <off|name|sid|visible|full>");
+                command.ReplyToCommand("usage: dtr_set identity <off|name|full>");
                 return;
         }
 
@@ -556,7 +546,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     {
         if (command.ArgCount < 2)
         {
-            command.ReplyToCommand("usage: dtr_set identity <off|name|sid|visible|full>");
+            command.ReplyToCommand("usage: dtr_set identity <off|name|full>");
             command.ReplyToCommand("usage: dtr_set align <weapons|loadout|active_weapon|slot_lock|projectiles|cosmetics|stickers|charms|crosshair|scoreboard> <off|on>");
             command.ReplyToCommand("usage: dtr_set handoff <off|death|contact|death_or_contact> [slot|all]");
             command.ReplyToCommand("usage: dtr_set allow_partial <off|on>");
@@ -605,12 +595,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             var controllingBot = TryGetControllingBotState(bot, out var isControllingBot)
                 ? (isControllingBot ? "1" : "0")
                 : "unknown";
-            var userId = bot.UserId?.ToString(CultureInfo.InvariantCulture) ?? "unknown";
-            var kickIdHint = bot.UserId.HasValue
-                ? $" kick_hint='kickid {bot.UserId.Value.ToString(CultureInfo.InvariantCulture)}'"
-                : "";
             command.ReplyToCommand(
-                $"slot={bot.Slot} userid={userId} team={FormatTeamShort(bot.Team)} bot={bot.IsBot} managed={managed} replay={controllingBot} candidate={IsReplayTargetBot(bot)} name=\"{EscapeConsoleString(bot.PlayerName)}\"{kickIdHint}");
+                $"slot={bot.Slot} team={bot.Team} isBot={bot.IsBot} managed={managed} controllingBot={controllingBot} candidate={IsReplayTargetBot(bot)} name={bot.PlayerName}");
         }
     }
 
@@ -2156,49 +2142,38 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (_replayIdentityMode == ReplayIdentityMode.Off)
             return;
 
-        if (ReplayIdentityModeAppliesVisibleName() && !string.IsNullOrWhiteSpace(file.PlayerName))
-            TryApplyVisibleReplayName(slot, file.PlayerName);
-
-        var appliedSteamId = false;
-        if (ReplayIdentityModeAppliesSteamId())
+        if (_replayIdentityMode == ReplayIdentityMode.Full && file.SteamId == 0)
         {
-            if (file.SteamId == 0)
-            {
-                Server.PrintToConsole(
-                    $"dtr: replay steam identity skipped slot={slot} player={file.PlayerName}: missing steam_id");
-            }
-            else if (!_botHiderProbe.IsAvailable())
-            {
-                Server.PrintToConsole(
-                    $"dtr: replay steam identity skipped slot={slot} player={file.PlayerName}: BotHider unavailable");
-            }
-            else if (!_botHiderProbe.IsManagedBot(slot))
-            {
-                Server.PrintToConsole(
-                    $"dtr: replay steam identity skipped slot={slot} player={file.PlayerName}: not a BotHider managed bot");
-            }
-            else
-            {
-                TryApplyReplayAvatarOverride(slot, file, manifestDir, avatarOverrides);
-                Server.ExecuteCommand($"bh_setsid {slot} {file.SteamId}");
-                appliedSteamId = true;
-            }
+            Server.PrintToConsole(
+                $"dtr: replay identity skipped slot={slot} player={file.PlayerName}: missing steam_id");
+            return;
         }
 
-        Server.PrintToConsole(
-            appliedSteamId
-                ? $"dtr: replay identity queued slot={slot} mode={ReplayIdentityModeName()} player={file.PlayerName} sid={file.SteamId}"
-                : $"dtr: replay identity queued slot={slot} mode={ReplayIdentityModeName()} player={file.PlayerName}");
-    }
-
-    private static void TryApplyVisibleReplayName(int slot, string playerName)
-    {
-        var player = Utilities.GetPlayerFromSlot(slot);
-        if (player == null || !player.IsValid)
+        if (!_botHiderProbe.IsAvailable())
+        {
+            Server.PrintToConsole(
+                $"dtr: replay identity skipped slot={slot} player={file.PlayerName}: BotHider unavailable");
             return;
+        }
 
-        player.PlayerName = playerName;
-        Utilities.SetStateChanged(player, "CBasePlayerController", "m_iszPlayerName");
+        if (!_botHiderProbe.IsManagedBot(slot))
+        {
+            Server.PrintToConsole(
+                $"dtr: replay identity skipped slot={slot} player={file.PlayerName}: not a BotHider managed bot");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(file.PlayerName))
+            Server.ExecuteCommand($"bh_setname {slot} \"{EscapeConsoleString(file.PlayerName)}\"");
+        if (_replayIdentityMode == ReplayIdentityMode.Full)
+        {
+            TryApplyReplayAvatarOverride(slot, file, manifestDir, avatarOverrides);
+            Server.ExecuteCommand($"bh_setsid {slot} {file.SteamId}");
+        }
+        Server.PrintToConsole(
+            _replayIdentityMode == ReplayIdentityMode.Full
+                ? $"dtr: replay identity queued slot={slot} player={file.PlayerName} sid={file.SteamId}"
+                : $"dtr: replay identity queued slot={slot} player={file.PlayerName}");
     }
 
     private void TryApplyReplayAvatarOverride(
@@ -2859,40 +2834,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         }
 
         return includeNative && BotControllerNative.IsCompatible && HasAnyNativeActiveReplaySlot();
-    }
-
-    private bool HasReplayLifecycleStateForSlot(int slot, bool includeNative = false)
-    {
-        if (_loadedSlots.Contains(slot) ||
-            _loadedReplays.ContainsKey(slot) ||
-            _lastPlayingSlots.Contains(slot) ||
-            _queuedNadeStartTokens.ContainsKey(slot) ||
-            _replayStartedAt.ContainsKey(slot))
-        {
-            return true;
-        }
-
-        return includeNative &&
-               BotControllerNative.IsCompatible &&
-               BotControllerNative.GetReplayState(slot).Playing;
-    }
-
-    private void StopAndUnloadSlotForLifecycle(int slot, string reason)
-    {
-        try
-        {
-            BotControllerNative.StopReplay(slot);
-            ReleaseReplaySlot(slot, reason);
-            BotControllerNative.UnloadReplay(slot);
-            _loadedSlots.Remove(slot);
-            ForgetLoadedReplayMetadata(slot);
-            if (IsNadeCycleSlot(slot))
-                StopNadeCycle(reason, stopCurrent: false);
-        }
-        catch (Exception ex)
-        {
-            Server.PrintToConsole($"dtr: lifecycle slot clear failed slot={slot}: {ex.Message}");
-        }
     }
 
     private static void ClearNativeSlotForLifecycle(int slot)
@@ -3823,8 +3764,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     {
         Off,
         Name,
-        SteamId,
-        Visible,
         Full,
     }
 
@@ -4023,15 +3962,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private static string FormatOnOff(bool value)
         => value ? "on" : "off";
 
-    private static string FormatTeamShort(CsTeam team)
-        => team switch
-        {
-            CsTeam.Terrorist => "T",
-            CsTeam.CounterTerrorist => "CT",
-            CsTeam.Spectator => "SPEC",
-            _ => team.ToString()
-        };
-
     private static string CurrentMapName()
     {
         try
@@ -4168,17 +4098,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         => _replayIdentityMode switch
         {
             ReplayIdentityMode.Name => "name",
-            ReplayIdentityMode.SteamId => "sid",
-            ReplayIdentityMode.Visible => "visible",
             ReplayIdentityMode.Full => "full",
             _ => "off",
         };
-
-    private bool ReplayIdentityModeAppliesVisibleName()
-        => _replayIdentityMode is ReplayIdentityMode.Name or ReplayIdentityMode.Visible or ReplayIdentityMode.Full;
-
-    private bool ReplayIdentityModeAppliesSteamId()
-        => _replayIdentityMode is ReplayIdentityMode.SteamId or ReplayIdentityMode.Visible or ReplayIdentityMode.Full;
 
     private static bool NadeKindMatchesFilter(NadeClip clip, string filter)
     {

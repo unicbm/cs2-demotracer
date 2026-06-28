@@ -286,9 +286,8 @@ dtr_go seq "<输出目录>\<demo-id>\manifest.json" 0
 - 最后的 `0` 是 `from_source_round=0`，不是“只播放 round 0”。
 - 如果只想播放单个 source round，用 `dtr_go round "<manifest.json>" 0`。
 - 插件会在 `round_start` 准备 bot，在 `round_freeze_end` 开始播放。
-- replay identity 默认是 `full`；加载 manifest 时会通过 CounterStrikeSharp 的
-  player-name 字段把 demo 名字应用到选中的 replay bot。BotHider 管理对应 replay
-  bot slot 时，还会写入 SteamID64 和 manifest 中匹配的 demo 头像 PNG 覆写。
+- replay identity 默认是 `full`；BotHider 管理 replay bot slot 时，会写入 demo
+  名字、SteamID64，以及 manifest 中匹配的 demo 头像 PNG 覆写。
 
 完整回合回放开始时，DemoTracer 会把选中的 replay bot 当作回合起点状态处理：
 仍然存活的 replay bot 会恢复到 100 HP；已经死亡的 replay bot 会先复活，再开始
@@ -417,8 +416,8 @@ runtime bot replay 路径很难成立。它提供了 AGPL-3.0 的 BotController 
 包括 replay hook、录制、输入注入和武器锁定。
 
 感谢 [XBribo/CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider)，本项目使用
-它提供 BotHider 互操作路径，用于识别 BotHider 管理的 bot，并对齐 SteamID64 和
-服务器头像显示。
+它提供 BotHider 互操作路径，用于识别 BotHider 管理的 bot，并对齐显示名和
+SteamID64。
 
 感谢 [LaihoE/demoparser](https://github.com/LaihoE/demoparser) 提供 Rust CS2 demo
 parser。本项目 converter 使用它解析 demo；vendored 源码保留在

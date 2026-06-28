@@ -564,10 +564,9 @@ dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
 `0` is `from_source_round=0`, not "play only round 0". Use
 `dtr_go round "<manifest.json>" 0` for single-round playback.
 
-Replay identity is `full` by default. Loading a manifest applies demo names to
-the selected replay bots through CounterStrikeSharp's player-name field.
-SteamID64 values and matching demo-provided avatar PNG overrides are applied
-when BotHider is managing those replay bot slots.
+Replay identity is `full` by default. When BotHider is managing the replay bot
+slots, loading a manifest writes demo names, SteamID64 values, and any matching
+demo-provided avatar PNG overrides.
 
 When full-round playback starts, DemoTracer treats the selected replay bots as
 being reset to the replay round start: alive replay bots are restored to 100 HP,
@@ -715,8 +714,8 @@ AGPL-3.0 BotController foundation for replay hooks, recording, input injection,
 and weapon locking.
 
 Thank you to [XBribo/CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider)
-for the BotHider integration path used for managed bot detection, SteamID64
-alignment, and server avatar presentation alignment.
+for the BotHider integration path used for managed bot detection, display-name
+alignment, and SteamID64 alignment.
 
 Thank you to [LaihoE/demoparser](https://github.com/LaihoE/demoparser) for the
 Rust CS2 demo parser used by the converter. The vendored source is preserved

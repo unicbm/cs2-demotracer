@@ -15,9 +15,10 @@ dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
 ```
 
 Replay identity, weapon/loadout alignment, projectile alignment, and crosshair
-alignment are on by default. Identity alignment applies demo names through
-CounterStrikeSharp's player name field. SteamID64 values and avatar overrides
-still require BotHider to be present and managing the target replay bot slots.
+alignment are on by default. Identity alignment only writes demo names and
+SteamID64 values when BotHider is present and managing the target replay bot
+slots. If the manifest contains demo-provided PNG avatar overrides, identity
+`full` also applies them for matching SteamID64 values.
 
 Use `seq` for "sequence from source round", `round` for one source round only,
 and `pool` for economy-matched pool playback. `dtr_go` validates the plan,
@@ -36,7 +37,7 @@ arms it, then issues `mp_restartgame 1` so playback catches a fresh
 | `dtr_crosshair_align` | `1` | Apply demo-evidence crosshair codes to human viewers while they watch replay bots in-eye. |
 | `dtr_handoff` | `death_or_contact slot` | Release only the contacted/dead replay slot after contact or death. |
 | `dtr_partial` | `1` | Allow replay with fewer bots than manifest players. |
-| `dtr_replay_identity` | `full` | Apply demo names directly; SteamID64/avatar alignment uses BotHider-managed replay bot slots when available. |
+| `dtr_replay_identity` | `full` | Write demo name, SteamID64, and demo-provided avatar overrides through BotHider-managed replay bot slots when available. |
 | `dtr_util_trace` | `0` | Utility CSV trace disabled. |
 | `bc_replay_pov` | `spectated` | Publish expensive native first-person POV updates only for replay bots watched in-eye. |
 
@@ -347,31 +348,17 @@ weapons, projectiles, replay bot state, or inventory cosmetics.
 
 ### `dtr_replay_identity <0|1>`
 
-Controls replay identity alignment.
+Controls BotHider identity alignment.
 
-When enabled, manifest loading applies the demo player's `player_name` through
-`CCSPlayerController.PlayerName`. `full` mode also queues SteamID64 updates and
-matching PNG `avatar_overrides` through BotHider-managed bot slots when
-BotHider is available, and enables `sv_reliableavatardata`. The default mode is
-`full`.
+When enabled and BotHider is available, manifest loading queues name and
+SteamID64 updates for BotHider-managed bot slots using the demo player's
+`player_name` and `steam_id`. If the manifest contains PNG `avatar_overrides`,
+`full` mode also writes the matching server avatar override and enables
+`sv_reliableavatardata`. The default mode is `full`.
 
-Use `dtr_set identity sid` to apply the demo SteamID64 and matching avatar
-override without applying the demo name.
-
-`dtr_set identity name`, `visible`, and `full` do not call `bh_setname`; they use
-the same direct name assignment style as simple CounterStrikeSharp bot name
-changer plugins.
-
-DemoTracer intentionally uses this CounterStrikeSharp name assignment instead
-of BotHider's lower-level name rewrite. A botprofile-based approach could make
-native `bot_kick <demo-name>` work by ensuring every demo player name exists as
-a local bot profile name, but demo sources vary and maintaining that botprofile
-set for every server is brittle. DemoTracer therefore keeps the simple display
-name rewrite and exposes precise `kickid` hints through `dtr_bots`.
-
-This is mainly for POV/spectator clarity. Identity alignment is only invoked for
-the safe replay bot slots selected by DemoTracer; it is not applied to real
-human players.
+This is mainly for POV/spectator clarity. If BotHider is not installed or is not
+managing a replay bot slot, identity alignment skips that slot instead of
+applying to real human players.
 
 ### `dtr_partial <0|1>`
 
@@ -428,21 +415,7 @@ expected, or a sample pack is being checked on a new server.
 ### `dtr_bots`
 
 Prints team players, strict bot status, BotHider-managed status, native
-`controllingBot` state, replay-candidate status, slot, userid, short team,
-display name, and a `kickid` hint for precise bot removal.
-
-Because DemoTracer rewrites bot display names, native `bot_kick "NiKo"` may not
-target the visible demo player name you expect. Use the unique server userid
-shown by `dtr_bots` instead:
-
-```text
-[Client] slot=12 userid=12 team=CT bot=True managed=True replay=0 candidate=True name="m0NESY" kick_hint='kickid 12'
-```
-
-In this example, entering `kickid 12` in the server console kicks that exact
-m0NESY bot. Depending on your local server's bot quota and fill settings, CS2
-may still spawn another bot to fill the vacancy. For the normal "kick this
-specific replay bot" workflow, the `kickid` hint is the intended stable path.
+`controllingBot` state, replay-candidate status, slot, team, and name.
 
 Use this before playback if a manifest refuses to load or assigns fewer slots
 than expected.
