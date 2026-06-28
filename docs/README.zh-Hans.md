@@ -412,7 +412,7 @@ cargo run --release -- wizard
 CS2 DemoTracer 建立在多个优秀的开源项目之上。
 
 没有 [XBribo/CS2-Bot-Controller](https://github.com/XBribo/CS2-Bot-Controller)，
-runtime bot replay 路径很难成立。它提供了 GPL-3.0 的 BotController 基础，
+runtime bot replay 路径很难成立。它提供了 AGPL-3.0 的 BotController 基础，
 包括 replay hook、录制、输入注入和武器锁定。
 
 感谢 [XBribo/CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider)，本项目使用
@@ -435,9 +435,9 @@ runtime/plugin 栈。
 CS2 DemoTracer 现在采用按路径划分的 mixed-license：
 
 - `converter/`：自 v0.3.1 起为 AGPL-3.0-only。
-- `runtime/BotController/`：GPL-3.0-only。
-- `css/DemoTracer/` 和 `css/DemoTracerApi/`：暂时保持 GPL-3.0-only，等待
-  BotController ABI/API 例外明确后再决定是否调整。
+- `runtime/BotController/`：AGPL-3.0-only。
+- `css/DemoTracer/` 和 `css/DemoTracerApi/`：随包分发并链接 BotController runtime 时，
+  按 AGPL-3.0-only 处理。
 - `third_party/`：vendored 组件保留各自上游 license 文件。
 
 DemoTracer 以强 copyleft 条款 source-available，面向社区和研究用途。

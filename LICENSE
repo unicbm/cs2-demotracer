@@ -8,13 +8,13 @@ Path-level licenses:
 
 - `converter/`: AGPL-3.0-only beginning with v0.3.1. See
   `LICENSE-AGPL-3.0`.
-- `runtime/BotController/`: GPL-3.0-only. See `LICENSE-GPL-3.0` for the
+- `runtime/BotController/`: AGPL-3.0-only. See `LICENSE-AGPL-3.0` for the
   standard license text and `runtime/BotController/LICENSE` for the component
   copy.
-- `css/DemoTracer/`: GPL-3.0-only for now. This can be reconsidered after the
-  BotController ABI/API licensing exception is explicit.
-- `css/DemoTracerApi/`: GPL-3.0-only for now, kept aligned with the current
-  CounterStrikeSharp plugin package until it is explicitly relicensed.
+- `css/DemoTracer/`: AGPL-3.0-only while bundled with and linked against the
+  BotController runtime.
+- `css/DemoTracerApi/`: AGPL-3.0-only while kept aligned with the current
+  CounterStrikeSharp plugin package and BotController runtime dependency.
 - `third_party/`: each vendored component keeps its upstream license. The
   vendored demoparser license is at `third_party/demoparser/LICENSE`.
 - Documentation and examples follow the license of the component they describe

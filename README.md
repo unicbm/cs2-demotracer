@@ -710,7 +710,7 @@ CS2 DemoTracer builds on several excellent open-source projects.
 
 Without [XBribo/CS2-Bot-Controller](https://github.com/XBribo/CS2-Bot-Controller),
 the runtime bot replay path would not have been possible. It provides the
-GPL-3.0 BotController foundation for replay hooks, recording, input injection,
+AGPL-3.0 BotController foundation for replay hooks, recording, input injection,
 and weapon locking.
 
 Thank you to [XBribo/CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider)
@@ -734,9 +734,9 @@ the runtime/plugin stack.
 CS2 DemoTracer is now mixed-license:
 
 - `converter/`: AGPL-3.0-only beginning with v0.3.1.
-- `runtime/BotController/`: GPL-3.0-only.
-- `css/DemoTracer/` and `css/DemoTracerApi/`: GPL-3.0-only for now, pending an
-  explicit BotController ABI/API exception decision.
+- `runtime/BotController/`: AGPL-3.0-only.
+- `css/DemoTracer/` and `css/DemoTracerApi/`: AGPL-3.0-only while bundled with
+  and linked against the BotController runtime.
 - `third_party/`: vendored components keep their upstream license files.
 
 DemoTracer is source-available under strong copyleft terms for community and
