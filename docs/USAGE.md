@@ -261,8 +261,10 @@ not currently published to crates.io.
 Load the Metamod `BotController` runtime and CounterStrikeSharp `DemoTracer`
 plugin, then use the server commands in [`COMMANDS.md`](COMMANDS.md).
 
-Round manifests use `dtr_run_manifest` or `dtr_run_pool`. Nade manifests use
-`dtr_list_nades` and `dtr_run_nade`.
+Round manifests should use the high-level `dtr_go seq|round|pool` commands.
+`dtr_run_manifest` and `dtr_run_pool` are compatibility aliases for old scripts,
+not the preferred quick-start path. Nade manifests use `dtr_list_nades` and
+`dtr_run_nade`.
 
 Cosmetic alignment is optional and off by default. It has no effect unless the
 round manifest was exported with `--export-cosmetics` plus the two risk

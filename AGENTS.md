@@ -14,7 +14,7 @@ or legacy CS:GO paths.
   `dtr_`.
 - The replay extension is `.dtr`. The binary magic is `CSDTRREC`; current
   writer format is `.dtr` v7. Current manifest ABI is 17,
-  BotController native ABI is 16, and DemoTracer companion API is 2. Do not
+  BotController native ABI is 16, and DemoTracer companion API is 3. Do not
   change magic, ABI, API, or format layout without an explicit version decision
   and matching docs.
 - The maintained packaged converter target is Windows x64. Linux may work from

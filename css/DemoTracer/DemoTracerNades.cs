@@ -64,9 +64,12 @@ public sealed partial class DemoTracerPlugin
         var manifestPath = command.GetArg(1);
         var clipId = command.GetArg(2);
         var loop = command.ArgCount >= 5 && command.GetArg(4) != "0";
-        if (!CheckReplayStartGates(message => command.ReplyToCommand(message), stopCurrentForOverride: true))
-            return;
-        var result = RunNadeClip(manifestPath, clipId, slot, loop);
+        var result = RunNadeClipWithStartGate(
+            manifestPath,
+            clipId,
+            slot,
+            loop,
+            warningSink: message => command.ReplyToCommand(message));
         command.ReplyToCommand(result.Message);
     }
 
@@ -130,6 +133,51 @@ public sealed partial class DemoTracerPlugin
         command.ReplyToCommand(stopped ? "dtr: nade cycle stopped" : "dtr: no active nade cycle");
     }
 
+    private LoadRoundResult RunNadeClipWithStartGate(
+        string manifestPath,
+        string clipId,
+        int slot,
+        bool loop,
+        Action<string>? warningSink = null,
+        bool quiet = false)
+    {
+        if (!TryCheckNadeReplayStartGates(warningSink, out var blocked))
+            return blocked;
+
+        return RunNadeClip(manifestPath, clipId, slot, loop, quiet);
+    }
+
+    private LoadRoundResult RunNadeClipWithStartGate(
+        string manifestPath,
+        NadeClip clip,
+        int slot,
+        bool loop,
+        Action<string>? warningSink = null,
+        bool quiet = false)
+    {
+        if (!TryCheckNadeReplayStartGates(warningSink, out var blocked))
+            return blocked;
+
+        return RunNadeClip(manifestPath, clip, slot, loop, quiet);
+    }
+
+    private bool TryCheckNadeReplayStartGates(Action<string>? warningSink, out LoadRoundResult blocked)
+    {
+        var gateMessages = new List<string>();
+        if (!CheckReplayStartGates(message => gateMessages.Add(message), stopCurrentForOverride: true))
+        {
+            var blockMessage = gateMessages.LastOrDefault() ?? "dtr: replay start blocked";
+            blocked = LoadRoundResult.Fail(blockMessage);
+            return false;
+        }
+
+        foreach (var message in gateMessages)
+            warningSink?.Invoke(message);
+
+        blocked = default;
+        return true;
+    }
+
     private sealed class DemoTracerApiFacade : IDemoTracerApi
     {
         private readonly DemoTracerPlugin _plugin;
@@ -161,7 +209,7 @@ public sealed partial class DemoTracerPlugin
             bool loop,
             out DemoTracerNadeRunResult result)
         {
-            var run = _plugin.RunNadeClip(manifestPath, clipId, slot, loop, quiet: true);
+            var run = _plugin.RunNadeClipWithStartGate(manifestPath, clipId, slot, loop, quiet: true);
             result = new DemoTracerNadeRunResult
             {
                 Queued = run.Ok,
@@ -183,7 +231,7 @@ public sealed partial class DemoTracerPlugin
             var baseManifestPath = Path.Combine(
                 string.IsNullOrWhiteSpace(clipBasePath) ? "." : clipBasePath,
                 "__direct_nade_clip__.json");
-            var run = _plugin.RunNadeClip(baseManifestPath, internalClip, slot, loop, quiet: true);
+            var run = _plugin.RunNadeClipWithStartGate(baseManifestPath, internalClip, slot, loop, quiet: true);
             result = new DemoTracerNadeRunResult
             {
                 Queued = run.Ok,

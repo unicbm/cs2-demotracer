@@ -26,6 +26,7 @@
 /tmp/
 /converter/output/
 *.dem
+*.dtr
 *.cs2rec
 *.log
 *.tmp

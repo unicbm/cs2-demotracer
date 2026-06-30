@@ -99,7 +99,8 @@ round hint，用于经济/手枪局匹配，不是 manifest source round。
 - `round_freeze_end` 时启动所有已加载 replay。
 - 每启动一个 source round 后，自动推进到 manifest 里的下一个 source round。
 
-旧命令兼容：`dtr_run_manifest <manifest.json> [from_source_round]`。
+给旧脚本保留的兼容 alias，不作为推荐 quick start：
+`dtr_run_manifest <manifest.json> [from_source_round]`。
 
 ### `dtr_stop_sequence`
 

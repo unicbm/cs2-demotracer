@@ -684,6 +684,9 @@ public sealed partial class DemoTracerPlugin
         if (!CheckAbi(command))
             return;
         var loop = command.ArgCount >= 2 && command.GetArg(1) != "0";
+        if (!CheckReplayStartGates(message => command.ReplyToCommand(message), stopCurrentForOverride: false))
+            return;
+        command.ReplyToCommand("[DTR WARN] dtr_play loaded is manual/debug playback; it bypasses round_start/round_freeze_end lifecycle alignment.");
         command.ReplyToCommand(PlayLoaded(loop));
     }
 

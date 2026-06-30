@@ -6,7 +6,8 @@ param(
     [string]$RuntimeBuild = "runtime\BotController\build",
     [string]$DotnetPath = "",
     [switch]$BuildRuntime,
-    [switch]$SkipCssBuild
+    [switch]$SkipCssBuild,
+    [switch]$IncludeSymbols
 )
 
 $ErrorActionPreference = "Stop"
@@ -99,11 +100,14 @@ Copy-Item -LiteralPath (Join-Path $runtimeRoot "addons\metamod") `
 $pluginOut = Join-Path $stageRoot "addons\counterstrikesharp\plugins\DemoTracer"
 Copy-RequiredFile (Join-Path $cssOut "DemoTracer.deps.json") (Join-Path $pluginOut "DemoTracer.deps.json")
 Copy-RequiredFile (Join-Path $cssOut "DemoTracer.dll") (Join-Path $pluginOut "DemoTracer.dll")
-Copy-RequiredFile (Join-Path $cssOut "DemoTracer.pdb") (Join-Path $pluginOut "DemoTracer.pdb")
 Copy-RequiredFile (Join-Path $cssOut "skins_en.json") (Join-Path $pluginOut "skins_en.json")
+Copy-RequiredFile (Join-Path $repoRoot "css\DemoTracer\demotracer.config.example.json") (Join-Path $pluginOut "demotracer.config.example.json")
 Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.deps.json") (Join-Path $pluginOut "DemoTracerApi.deps.json")
 Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.dll") (Join-Path $pluginOut "DemoTracerApi.dll")
-Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.pdb") (Join-Path $pluginOut "DemoTracerApi.pdb")
+if ($IncludeSymbols) {
+    Copy-RequiredFile (Join-Path $cssOut "DemoTracer.pdb") (Join-Path $pluginOut "DemoTracer.pdb")
+    Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.pdb") (Join-Path $pluginOut "DemoTracerApi.pdb")
+}
 
 New-Item -ItemType Directory -Force -Path (Join-Path $stageRoot "docs") | Out-Null
 Copy-RequiredFile (Join-Path $repoRoot "docs\COMMANDS.md") (Join-Path $stageRoot "docs\COMMANDS.md")
@@ -124,7 +128,7 @@ platform: windows-x64
 bundled_botcontroller_abi: 16
 expected_demotracer_native_abi: 16
 dtr_reader: 3..7
-demotracer_api: 2
+demotracer_api: 3
 
 Install target:
 Copy this package's addons directory into your CS2 server game/csgo directory.
@@ -168,6 +172,7 @@ from this package.
 - `addons/BotController/gamedata.json`
 - `addons/metamod/BotController.vdf`
 - `addons/counterstrikesharp/plugins/DemoTracer/`
+  - `demotracer.config.example.json` sanitized local runtime defaults
   - `skins_en.json` legacy cosmetic model lookup
 - `docs/COMMANDS.md`
 - `docs/COMMANDS.zh-Hans.md`
@@ -177,10 +182,19 @@ from this package.
 - Required BotController native ABI: 16
 - Bundled BotController native ABI: 16
 - Supported `.dtr` reader versions: 3..7
+- DemoTracer companion API: 3
 - Maintained runtime platform: Windows x64
 '@
 $readme = $readme.Replace("__VERSION__", $Version)
 Set-Content -LiteralPath (Join-Path $stageRoot "README.md") -Value $readme -Encoding UTF8
+
+if (-not $IncludeSymbols) {
+    $pdbFiles = @(Get-ChildItem -LiteralPath $stageRoot -Recurse -Filter "*.pdb" -File -ErrorAction SilentlyContinue)
+    if ($pdbFiles.Count -gt 0) {
+        $pdbList = ($pdbFiles | ForEach-Object { $_.FullName }) -join "`n"
+        throw "default server bundle must not contain PDB files:`n$pdbList"
+    }
+}
 
 if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force

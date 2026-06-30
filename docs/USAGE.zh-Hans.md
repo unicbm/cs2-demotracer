@@ -247,8 +247,10 @@ write_rec_file("copy.dtr", &rec)?;
 先加载 Metamod `BotController` runtime 和 CounterStrikeSharp `DemoTracer` 插件，再使用
 [`COMMANDS.zh-Hans.md`](COMMANDS.zh-Hans.md) 里的服务器指令。
 
-普通回合 manifest 使用 `dtr_run_manifest` 或 `dtr_run_pool`。道具 manifest 使用
-`dtr_list_nades` 和 `dtr_run_nade`。
+普通回合 manifest 推荐使用高层 `dtr_go seq|round|pool` 命令。
+`dtr_run_manifest` 和 `dtr_run_pool` 是给旧脚本保留的兼容 alias，
+不是推荐的新手 quick start 路径。道具 manifest 使用 `dtr_list_nades` 和
+`dtr_run_nade`。
 
 饰品对齐是可选功能，默认关闭。只有 round manifest 是用 `--export-cosmetics` 和两个
 风险确认 flag 导出，并且里面确实有 `cosmetics` 证据时，它才会生效。生效时

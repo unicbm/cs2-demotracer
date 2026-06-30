@@ -107,7 +107,8 @@ Implementation:
 - On `round_freeze_end`, starts all loaded replays.
 - After each started round, advances to the next round in the manifest.
 
-Legacy alias: `dtr_run_manifest <manifest.json> [from_source_round]`.
+Compatibility alias for old scripts, not the preferred quick start:
+`dtr_run_manifest <manifest.json> [from_source_round]`.
 
 ### `dtr_stop_sequence`
 

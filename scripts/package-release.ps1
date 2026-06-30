@@ -5,7 +5,8 @@ param(
     [string]$DotnetPath = "",
     [switch]$SkipConverterBuild,
     [switch]$BuildRuntime,
-    [switch]$SkipCssBuild
+    [switch]$SkipCssBuild,
+    [switch]$IncludeSymbols
 )
 
 $ErrorActionPreference = "Stop"
@@ -33,6 +34,9 @@ if ($BuildRuntime) {
 }
 if ($SkipCssBuild) {
     $serverArgs.SkipCssBuild = $true
+}
+if ($IncludeSymbols) {
+    $serverArgs.IncludeSymbols = $true
 }
 & (Join-Path $PSScriptRoot "package-server.ps1") @serverArgs
 

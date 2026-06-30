@@ -505,6 +505,8 @@ fn read_v7_sections<R: Read>(
     let mut projectiles: Option<Vec<ReplayProjectile>> = None;
     let mut high_fidelity = HighFidelityMetadata::default();
     let mut saw_high_fidelity = false;
+    let mut saw_command_frames = false;
+    let mut saw_movement_extras = false;
     let mut command_frames = Vec::new();
     let mut movement_extras = Vec::new();
 
@@ -582,6 +584,7 @@ fn read_v7_sections<R: Read>(
                 saw_high_fidelity = true;
             }
             SECTION_COMMAND_FRAMES => {
+                reject_duplicate(saw_command_frames, "command frames")?;
                 require_section_shape(
                     "command frames",
                     header.section_version,
@@ -591,8 +594,10 @@ fn read_v7_sections<R: Read>(
                     tick_count * COMMAND_FRAME_BYTE_SIZE,
                 )?;
                 command_frames = read_command_frames_from_section(&body, tick_count)?;
+                saw_command_frames = true;
             }
             SECTION_MOVEMENT_EXTRAS => {
+                reject_duplicate(saw_movement_extras, "movement extras")?;
                 require_section_shape(
                     "movement extras",
                     header.section_version,
@@ -602,6 +607,7 @@ fn read_v7_sections<R: Read>(
                     tick_count * MOVEMENT_EXTRA_BYTE_SIZE,
                 )?;
                 movement_extras = read_movement_extras_from_section(&body, tick_count)?;
+                saw_movement_extras = true;
             }
             _ => unreachable!(),
         }
@@ -1316,7 +1322,7 @@ mod tests {
     use super::*;
     use crate::model::{
         Cs2RecHeader, HighFidelityMetadata, MovementSnapshot, ProjectileKind, ReplayCommandFrame,
-        ReplayProjectile, ReplayTick, SubtickMove, COMMAND_FIELD_FORWARD_MOVE,
+        ReplayMovementExtra, ReplayProjectile, ReplayTick, SubtickMove, COMMAND_FIELD_FORWARD_MOVE,
         COMMAND_FIELD_LEFT_MOVE, COMMAND_FIELD_MOUSE, COMMAND_FIELD_VIEW_ANGLES,
     };
 
@@ -1433,6 +1439,44 @@ mod tests {
         assert!(err
             .to_string()
             .contains("missing required v7 section snapshots"));
+    }
+
+    #[test]
+    fn rec_v7_reader_rejects_duplicate_command_frames_section() {
+        let rec = sample_rec();
+        let mut bytes = encoded_sample_rec();
+        append_duplicate_v7_section(
+            &mut bytes,
+            SECTION_COMMAND_FRAMES,
+            rec.command_frames.len(),
+            &build_command_frame_section(&rec).unwrap(),
+        );
+
+        let err = read_rec(&mut &bytes[..]).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("duplicate v7 section command frames"));
+    }
+
+    #[test]
+    fn rec_v7_reader_rejects_duplicate_movement_extras_section() {
+        let mut rec = sample_rec();
+        rec.movement_extras = vec![ReplayMovementExtra::default(); rec.ticks.len()];
+        let mut bytes = Vec::new();
+        write_rec(&mut bytes, &rec).unwrap();
+        append_duplicate_v7_section(
+            &mut bytes,
+            SECTION_MOVEMENT_EXTRAS,
+            rec.movement_extras.len(),
+            &build_movement_extra_section(&rec).unwrap(),
+        );
+
+        let err = read_rec(&mut &bytes[..]).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("duplicate v7 section movement extras"));
     }
 
     #[test]
@@ -1799,6 +1843,23 @@ mod tests {
         let player_len = u16::from_le_bytes(bytes[offset..offset + 2].try_into().unwrap()) as usize;
         offset += 2 + player_len;
         offset
+    }
+
+    fn append_duplicate_v7_section(
+        bytes: &mut Vec<u8>,
+        section_id: u32,
+        element_count: usize,
+        payload: &[u8],
+    ) {
+        let section_count_offset = v7_section_count_offset(bytes);
+        let section_count = u32::from_le_bytes(
+            bytes[section_count_offset..section_count_offset + 4]
+                .try_into()
+                .unwrap(),
+        );
+        bytes[section_count_offset..section_count_offset + 4]
+            .copy_from_slice(&(section_count + 1).to_le_bytes());
+        write_section(bytes, section_id, element_count, payload).unwrap();
     }
 
     fn subtick_bit_eq(a: &SubtickMove, b: &SubtickMove) -> bool {

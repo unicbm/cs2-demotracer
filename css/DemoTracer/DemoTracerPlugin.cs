@@ -3721,8 +3721,15 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     {
         if (slot < 0)
             return false;
+        if (_loadedSlots.Contains(slot) ||
+            _loadedReplays.ContainsKey(slot) ||
+            _queuedNadeStartTokens.ContainsKey(slot))
+        {
+            return true;
+        }
+
         var state = BotControllerNative.GetReplayState(slot);
-        return state.Playing || _queuedNadeStartTokens.ContainsKey(slot);
+        return state.Playing || state.Total > 0;
     }
 
     private bool IsDemoTracerBot(int slot)
