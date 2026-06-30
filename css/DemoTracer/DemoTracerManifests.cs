@@ -212,7 +212,7 @@ public sealed partial class DemoTracerPlugin
         [JsonPropertyName("class")]
         public string Class { get; set; } = "unknown";
 
-        public uint BestEquipmentValue => Math.Max(RoundStartEquipmentValue, EquipmentValueTotal);
+        public uint MatchEquipmentValue => RoundStartEquipmentValue;
     }
 
     private sealed class ManifestFile

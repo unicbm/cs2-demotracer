@@ -114,10 +114,14 @@ round hint，用于经济/手枪局匹配，不是 manifest source round。
 实现方式：
 
 - 读取 `pool_manifest.json`。
-- 在 `round_freeze_end` 时读取当前 T/CT 装备价值。
-- 根据手枪局状态和双方经济相似度选择 candidate round。
-- 加载选中的 round 并立即启动 replay。
-- 记录近期用过的 candidate，减少重复选择。
+- 在 `round_start` 时读取当前 T/CT 装备价值和账户钱，先选择 candidate、加载 replay，
+  并设置 native buy skip，避免 vanilla bot 购买和 replay loadout 打架。
+- 手枪局严格只匹配 demo round 0/12。
+- 非手枪局会先构建软经济匹配候选集，再叠加近期 candidate / 近期 demo 惩罚，
+  最后从最佳窗口里带权随机抽取，而不是固定拿最近邻。
+- 经济匹配允许有限的“向上反事实”：当前较弱 buy 可以抽到武器或道具更好的开局路线；
+  当前较强 buy 抽到更穷路线会被加重惩罚。
+- 在 `round_freeze_end` 启动已经准备好的 replay。
 
 当你希望本地游戏不断从一组 demo 中挑相似开局路线，而不是固定播放一个 demo 时，用这个。
 
@@ -458,8 +462,13 @@ active replay slots。
 接触检测实现：
 
 - 使用 bullet damage / player hurt 事件，以及 replay bot 是否看见敌人的检查。
+- contact handoff 会停止 replay control、释放 native locks，并重置 replay 持有的 bot
+  状态。handoff 后的开火交给正常 CS2 bot AI；DemoTracer 不运行 CSGO-style combat
+  executor。
 - replay 刚开始有很短 grace window，避免启动瞬间误触发。
-- 释放 slot 时会重置 native locks 和 bot brain 状态。
+- `threat_360_los=true` 时，360 threat 在 `threat_360_range` 内要求 LOS；近距离
+  LOS threat 立即触发，更远的 LOS threat 需要短暂 hold。`threat_360_los=false`
+  时，完整 360 range 仍是实验性的 noLOS 触发。
 
 ## 诊断
 

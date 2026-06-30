@@ -123,10 +123,17 @@ Arms economy-matched playback from a converted map pool without restarting.
 Implementation:
 
 - Reads `pool_manifest.json`.
-- On `round_freeze_end`, snapshots current T/CT equipment value.
-- Selects a candidate round by pistol-round status and economy similarity.
-- Loads that candidate round and starts replay immediately.
-- Tracks recently used candidates to reduce repeated picks.
+- On `round_start`, snapshots current T/CT equipment value plus available
+  account money, picks a candidate, loads it, and sets native buy skip before
+  vanilla bot buying can fight the replay loadout.
+- Strictly keeps pistol rounds on demo round 0/12.
+- For non-pistol rounds, builds a soft economy-matched candidate set, applies
+  recent-candidate and recent-demo penalties, and samples from the best window
+  instead of always taking the nearest neighbor.
+- The economy match allows limited upward counterfactuals, so a weaker current
+  buy can still draw a stronger opening route with better weapons or utility;
+  drawing a poorer route from a stronger current buy is penalized.
+- Starts the prepared replay on `round_freeze_end`.
 
 Use this when you want a local game to keep choosing similar opening routes from
 a pool instead of replaying one fixed demo.
@@ -522,9 +529,15 @@ all active replay slots even when scope is `slot`.
 Contact implementation:
 
 - Uses bullet damage/hurt events and replay-bot enemy visibility checks.
+- On contact, DemoTracer stops replay control, releases native locks, and resets
+  replay-owned bot state. Post-handoff fighting is left to the normal CS2 bot AI;
+  DemoTracer does not run a CSGO-style combat executor.
 - Ignores the first short replay grace window after start to avoid immediate
   false handoff.
-- Resets native locks and bot brain state when releasing a slot.
+- With `threat_360_los=true`, 360 threats require line of sight across
+  `threat_360_range`; close LOS threats trigger immediately, while farther LOS
+  threats require a short hold. With `threat_360_los=false`, the full configured
+  360 range remains an experimental no-LOS trigger.
 
 ## Diagnostics
 

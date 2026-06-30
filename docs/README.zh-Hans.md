@@ -356,7 +356,8 @@ dtr_go round "<输出目录>\<demo-id>\manifest.json" 12
 dtr_go pool "<输出目录>\mirage_pool\pool_manifest.json" 0
 ```
 
-round 0 和 round 12 只会匹配 demo 的 round 0/12 手枪局；其他回合会按双方当前装备价值粗略匹配 eco / force / full。
+round 0 和 round 12 只会匹配 demo 的 round 0/12 手枪局；其他回合使用软经济匹配、
+近期抽取惩罚和带权随机采样，并允许有限“向上反事实”，让较弱当前 buy 也能抽到更强的开局路线。
 
 查看状态：
 

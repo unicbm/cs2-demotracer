@@ -347,11 +347,7 @@ public sealed partial class DemoTracerPlugin
     [ConsoleCommand("dtr_stop_pool", "dtr_stop_pool")]
     public void StopPoolCommand(CCSPlayerController? player, CommandInfo command)
     {
-        _poolActive = false;
-        _poolManifest = null;
-        _poolManifestPath = string.Empty;
-        _poolRoundIndex = 0;
-        _poolUsedCandidates.Clear();
+        StopPoolState();
         command.ReplyToCommand("dtr: pool stopped");
     }
 
@@ -401,46 +397,48 @@ public sealed partial class DemoTracerPlugin
         _poolManifestPath = poolPath;
         _poolManifest = pool;
         _poolRoundIndex = startRound;
-        _poolUsedCandidates.Clear();
+        ClearPoolRecentHistory();
+        ClearPoolPreparedState();
         _poolActive = pool.Candidates.Count > 0;
 
         command.ReplyToCommand(
             _poolActive
                 ? restart
                     ? $"[DTR OK] Planned POOL. pool_manifest=\"{poolPath}\"; server_round={_poolRoundIndex}; restart=now."
-                    : $"[DTR OK] Armed POOL. pool_manifest=\"{poolPath}\"; server_round={_poolRoundIndex}; waiting for next round_start/freeze_end."
+                    : $"[DTR OK] Armed POOL. pool_manifest=\"{poolPath}\"; server_round={_poolRoundIndex}; waiting for next round_start."
                 : "dtr: pool manifest has no candidates");
         if (_poolActive)
         {
-            command.ReplyToCommand("[DTR WARN] Pool currently selects candidates at round_freeze_end; bounded freeze pre-roll is skipped for pool rounds.");
+            command.ReplyToCommand("[DTR OK] Pool candidates are prepared at round_start; economy matching uses that snapshot.");
             IssueRestartIfRequested(command, restart);
         }
     }
 
-    private void StartNextPoolRound()
+    private bool PrepareNextPoolRound(string prepareReason)
     {
         var pool = _poolManifest;
         if (pool == null || pool.Candidates.Count == 0)
         {
             _poolActive = false;
             Server.PrintToConsole("dtr: pool stopped, no candidates");
-            return;
+            return false;
         }
+
+        if (_poolPrepared && _poolPreparedRoundIndex == _poolRoundIndex)
+            return true;
 
         if (!TryChoosePoolCandidate(pool, _poolRoundIndex, out var candidate, out var reason) ||
             candidate == null)
         {
             Server.PrintToConsole($"dtr: pool skipped round {_poolRoundIndex}: {reason}");
-            _poolRoundIndex++;
-            return;
+            return false;
         }
 
         var poolDir = Path.GetDirectoryName(Path.GetFullPath(_poolManifestPath)) ?? ".";
         if (!TryResolveChildPathUnderRoot(poolDir, candidate.Manifest, out var manifestPath, out var pathError))
         {
             Server.PrintToConsole($"dtr: pool skipped round {_poolRoundIndex}: {pathError}");
-            _poolRoundIndex++;
-            return;
+            return false;
         }
 
         var load = LoadRound(manifestPath, candidate.SourceRound);
@@ -448,20 +446,38 @@ public sealed partial class DemoTracerPlugin
         {
             Server.PrintToConsole(
                 $"dtr: pool failed round {_poolRoundIndex}: {load.Message}; candidate={candidate.DemoStem} r{candidate.SourceRound}");
-            _poolRoundIndex++;
-            return;
+            return false;
         }
 
         PreloadLoadedReplays();
-        var play = StartLoaded(loop: false);
-        var key = PoolCandidateKey(candidate);
-        _poolUsedCandidates.Add(key);
-        if (_poolUsedCandidates.Count > Math.Max(64, pool.Candidates.Count / 2))
-            _poolUsedCandidates.Clear();
+        MarkPoolCandidateUsed(candidate, pool);
+        _poolPrepared = true;
+        _poolPreparedRoundIndex = _poolRoundIndex;
+        _poolPreparedLabel =
+            $"{candidate.DemoStem} r{candidate.SourceRound} ({reason}); {load.Message}";
 
         Server.PrintToConsole(
-            $"dtr: pool round {_poolRoundIndex} -> {candidate.DemoStem} r{candidate.SourceRound} ({reason}); {load.Message}; {play}");
-        _poolRoundIndex++;
+            $"dtr: prepared pool round {_poolRoundIndex} on {prepareReason} -> {_poolPreparedLabel}");
+        return true;
+    }
+
+    private void StartPreparedPoolRound()
+    {
+        if (!_poolPrepared)
+        {
+            Server.PrintToConsole($"dtr: pool skipped start for round {_poolRoundIndex}: not prepared at round_start");
+            _poolRoundIndex++;
+            ClearPoolPreparedState();
+            return;
+        }
+
+        var roundIndex = _poolPreparedRoundIndex;
+        var label = _poolPreparedLabel;
+        var play = StartLoaded(loop: false);
+
+        Server.PrintToConsole($"dtr: pool round {roundIndex} start on round_freeze_end -> {label}; {play}");
+        _poolRoundIndex = Math.Max(_poolRoundIndex, roundIndex + 1);
+        ClearPoolPreparedState();
     }
 
     private bool TryChoosePoolCandidate(
@@ -475,7 +491,7 @@ public sealed partial class DemoTracerPlugin
         var tEconomy = SnapshotCurrentTeamEconomy(CsTeam.Terrorist, pistolRound);
         var ctEconomy = SnapshotCurrentTeamEconomy(CsTeam.CounterTerrorist, pistolRound);
 
-        long bestScore = long.MaxValue;
+        var ratings = new List<PoolCandidateRating>();
         foreach (var candidate in pool.Candidates)
         {
             if (candidate.PistolRound != pistolRound)
@@ -485,14 +501,10 @@ public sealed partial class DemoTracerPlugin
             if (!pistolRound && candidate.SourceRound is 0 or 12)
                 continue;
 
-            var score = ScorePoolCandidate(candidate, tEconomy, ctEconomy, roundIndex);
-            if (score >= bestScore)
-                continue;
-            bestScore = score;
-            selected = candidate;
+            ratings.Add(ScorePoolCandidate(candidate, tEconomy, ctEconomy, roundIndex));
         }
 
-        if (selected == null)
+        if (ratings.Count == 0)
         {
             reason = pistolRound
                 ? "no pistol candidates from source round 0/12"
@@ -500,27 +512,124 @@ public sealed partial class DemoTracerPlugin
             return false;
         }
 
+        ratings.Sort(static (left, right) => left.Score.CompareTo(right.Score));
+        var window = BuildPoolCandidateWindow(ratings);
+        var chosen = ChooseWeightedPoolCandidate(window);
+        selected = chosen.Candidate;
+
         reason =
-            $"target T={tEconomy.Class}:{tEconomy.EquipmentValue} CT={ctEconomy.Class}:{ctEconomy.EquipmentValue}, score={bestScore}";
+            $"target T={FormatTeamEconomySnapshot(tEconomy)} CT={FormatTeamEconomySnapshot(ctEconomy)}, " +
+            $"selected_score={chosen.Score}, best={ratings[0].Score}, candidates={ratings.Count}, sampled={window.Count}, " +
+            FormatPoolCounterfactual(chosen);
         return true;
     }
 
-    private long ScorePoolCandidate(
+    private PoolCandidateRating ScorePoolCandidate(
         RoundPoolCandidate candidate,
         TeamEconomySnapshot targetT,
         TeamEconomySnapshot targetCt,
         int roundIndex)
     {
-        var score = 0L;
-        score += Math.Abs((long)candidate.TEconomy.BestEquipmentValue - targetT.EquipmentValue);
-        score += Math.Abs((long)candidate.CtEconomy.BestEquipmentValue - targetCt.EquipmentValue);
-        score += EconomyClassPenalty(candidate.TEconomy.Class, targetT.Class);
-        score += EconomyClassPenalty(candidate.CtEconomy.Class, targetCt.Class);
-        score += Math.Abs(candidate.SourceRound - (roundIndex % 24)) * 25L;
+        var tScore = ScorePoolTeamEconomy(candidate.TEconomy, targetT, out var tRankDelta);
+        var ctScore = ScorePoolTeamEconomy(candidate.CtEconomy, targetCt, out var ctRankDelta);
+        var economyScore = tScore + ctScore;
+        var recentPenalty = 0L;
         if (_poolUsedCandidates.Contains(PoolCandidateKey(candidate)))
-            score += 10_000L;
-        score += StableHash(PoolCandidateKey(candidate), roundIndex) % 997;
+            recentPenalty += 25_000L;
+        if (_poolRecentManifests.Contains(PoolManifestKey(candidate)))
+            recentPenalty += 6_500L;
+
+        var score = economyScore + recentPenalty;
+        score += Math.Abs(candidate.SourceRound - (roundIndex % 24)) * 10L;
+        score += StableHash(PoolCandidateKey(candidate), roundIndex) % 211;
+
+        var upwardSides = (tRankDelta > 0 ? 1 : 0) + (ctRankDelta > 0 ? 1 : 0);
+        var downwardSides = (tRankDelta < 0 ? 1 : 0) + (ctRankDelta < 0 ? 1 : 0);
+        return new PoolCandidateRating(candidate, score, economyScore, recentPenalty, upwardSides, downwardSides);
+    }
+
+    private static long ScorePoolTeamEconomy(
+        PoolTeamEconomy candidate,
+        TeamEconomySnapshot target,
+        out int rankDelta)
+    {
+        var candidateValue = candidate.MatchEquipmentValue;
+        var valueDelta = (long)candidateValue - target.MatchValue;
+        var score = valueDelta >= 0
+            ? valueDelta * 55L / 100L
+            : (-valueDelta * 155L / 100L) + 1_200L;
+
+        var candidateRank = EconomyClassRank(candidate.Class);
+        var targetRank = EconomyClassRank(target.Class);
+        rankDelta = candidateRank - targetRank;
+        if (IsUnknownEconomyClass(candidate.Class) || IsUnknownEconomyClass(target.Class))
+            return score + 1_500L;
+        if (rankDelta == 0)
+            return score;
+        if (rankDelta > 0)
+        {
+            score += rankDelta switch
+            {
+                1 => 450L,
+                2 => 1_100L,
+                _ => 2_400L
+            };
+            return score;
+        }
+
+        score += (-rankDelta) switch
+        {
+            1 => 3_500L,
+            2 => 8_500L,
+            _ => 14_000L
+        };
         return score;
+    }
+
+    private static List<PoolCandidateRating> BuildPoolCandidateWindow(IReadOnlyList<PoolCandidateRating> ratings)
+    {
+        var targetSize = ClampInt(ratings.Count / 6, 8, 32);
+        targetSize = Math.Min(targetSize, ratings.Count);
+        var window = new List<PoolCandidateRating>(targetSize);
+        for (var i = 0; i < targetSize; i++)
+            window.Add(ratings[i]);
+        return window;
+    }
+
+    private static PoolCandidateRating ChooseWeightedPoolCandidate(IReadOnlyList<PoolCandidateRating> window)
+    {
+        var bestScore = window[0].Score;
+        var totalWeight = 0.0;
+        Span<double> weights = window.Count <= 64
+            ? stackalloc double[window.Count]
+            : new double[window.Count];
+
+        for (var i = 0; i < window.Count; i++)
+        {
+            var distance = Math.Max(0L, window[i].Score - bestScore);
+            var weight = 1.0 / Math.Pow(1.0 + (distance / 2_500.0), 1.35);
+            weights[i] = weight;
+            totalWeight += weight;
+        }
+
+        var roll = Random.Shared.NextDouble() * totalWeight;
+        for (var i = 0; i < window.Count; i++)
+        {
+            roll -= weights[i];
+            if (roll <= 0.0)
+                return window[i];
+        }
+
+        return window[^1];
+    }
+
+    private static string FormatPoolCounterfactual(PoolCandidateRating rating)
+    {
+        if (rating.DownwardSides > 0)
+            return $"counterfactual=down:{rating.DownwardSides}";
+        if (rating.UpwardSides > 0)
+            return $"counterfactual=up:{rating.UpwardSides}";
+        return "counterfactual=matched";
     }
 
     private TeamEconomySnapshot SnapshotCurrentTeamEconomy(CsTeam team, bool pistolRound)
@@ -529,8 +638,11 @@ public sealed partial class DemoTracerPlugin
             .Where(bot => bot.Team == team && bot.PawnIsAlive)
             .ToList();
         uint equipment = 0;
+        uint money = 0;
         foreach (var bot in bots)
         {
+            money = SaturatingAdd(money, ReadReplayTargetMoney(bot));
+
             if (bot.PlayerPawn is not { IsValid: true, Value.IsValid: true })
                 continue;
 
@@ -547,9 +659,44 @@ public sealed partial class DemoTracerPlugin
             }
         }
 
-        var economyClass = ClassifyEconomy(bots.Count, equipment, pistolRound);
-        return new TeamEconomySnapshot(equipment, economyClass);
+        var matchValue = EstimateTeamBuyPower(equipment, money, bots.Count, pistolRound);
+        var economyClass = ClassifyEconomy(bots.Count, matchValue, pistolRound);
+        return new TeamEconomySnapshot(equipment, money, matchValue, economyClass);
     }
+
+    private static uint ReadReplayTargetMoney(CCSPlayerController bot)
+    {
+        try
+        {
+            var money = bot.InGameMoneyServices;
+            if (money == null)
+                return 0;
+            var account = Math.Max(money.Account, money.StartAccount);
+            return account > 0 ? (uint)account : 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private static uint EstimateTeamBuyPower(uint equipment, uint money, int players, bool pistolRound)
+    {
+        if (pistolRound || players <= 0)
+            return equipment;
+
+        var cappedSpendable = Math.Min(money, (uint)players * 5_500U);
+        return SaturatingAdd(equipment, cappedSpendable);
+    }
+
+    private static uint SaturatingAdd(uint left, uint right)
+    {
+        var sum = (ulong)left + right;
+        return sum > uint.MaxValue ? uint.MaxValue : (uint)sum;
+    }
+
+    private static string FormatTeamEconomySnapshot(TeamEconomySnapshot snapshot)
+        => $"{snapshot.Class}:eq{snapshot.EquipmentValue}/cash{snapshot.MoneyTotal}/buy{snapshot.MatchValue}";
 
     private static string ClassifyEconomy(int players, uint equipment, bool pistolRound)
     {
@@ -591,10 +738,68 @@ public sealed partial class DemoTracerPlugin
         };
     }
 
+    private void MarkPoolCandidateUsed(RoundPoolCandidate candidate, RoundPoolManifest pool)
+    {
+        AddRecentPoolKey(
+            _poolRecentCandidateQueue,
+            _poolUsedCandidates,
+            PoolCandidateKey(candidate),
+            ClampInt(pool.Candidates.Count / 5, 16, 96));
+        AddRecentPoolKey(
+            _poolRecentManifestQueue,
+            _poolRecentManifests,
+            PoolManifestKey(candidate),
+            ClampInt(pool.Candidates.Count / 40, 6, 16));
+    }
+
+    private void ClearPoolRecentHistory()
+    {
+        _poolUsedCandidates.Clear();
+        _poolRecentCandidateQueue.Clear();
+        _poolRecentManifests.Clear();
+        _poolRecentManifestQueue.Clear();
+    }
+
+    private void ClearPoolPreparedState()
+    {
+        _poolPrepared = false;
+        _poolPreparedRoundIndex = -1;
+        _poolPreparedLabel = string.Empty;
+    }
+
+    private static void AddRecentPoolKey(Queue<string> queue, HashSet<string> set, string key, int limit)
+    {
+        queue.Enqueue(key);
+        set.Add(key);
+        while (queue.Count > limit)
+        {
+            var evicted = queue.Dequeue();
+            if (!queue.Contains(evicted))
+                set.Remove(evicted);
+        }
+    }
+
+    private static bool IsUnknownEconomyClass(string value)
+        => value.Equals("unknown", StringComparison.OrdinalIgnoreCase);
+
+    private static int ClampInt(int value, int min, int max)
+        => Math.Min(max, Math.Max(min, value));
+
     private static bool IsPistolRoundIndex(int round) => round is 0 or 12;
 
     private static string PoolCandidateKey(RoundPoolCandidate candidate)
         => $"{candidate.Manifest}|{candidate.SourceRound}";
+
+    private static string PoolManifestKey(RoundPoolCandidate candidate)
+        => candidate.Manifest;
+
+    private readonly record struct PoolCandidateRating(
+        RoundPoolCandidate Candidate,
+        long Score,
+        long EconomyScore,
+        long RecentPenalty,
+        int UpwardSides,
+        int DownwardSides);
 
     private static int StableHash(string value, int seed)
     {
@@ -613,7 +818,8 @@ public sealed partial class DemoTracerPlugin
         _poolManifest = null;
         _poolManifestPath = string.Empty;
         _poolRoundIndex = 0;
-        _poolUsedCandidates.Clear();
+        ClearPoolRecentHistory();
+        ClearPoolPreparedState();
         InvalidateFreezePreroll();
     }
 

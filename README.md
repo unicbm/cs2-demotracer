@@ -655,7 +655,13 @@ For a Mirage pool:
 dtr_go pool "<output-dir>\mirage_pool\pool_manifest.json" 0
 ```
 
-Round 0 and round 12 only match pistol-round candidates from demo round 0 or 12. Other rounds are matched by each side's current equipment value.
+Round 0 and round 12 only match pistol-round candidates from demo round 0 or
+12. Other rounds use soft economy matching with recent-pick penalties and
+weighted random sampling, allowing limited upward counterfactuals so weaker
+current buys can still draw stronger opening routes.
+Pool rounds are prepared at `round_start` from current equipment plus account
+money, then started at `round_freeze_end`; this lets DemoTracer set native buy
+skip before vanilla bot buying can add extra weapons.
 
 Useful checks:
 

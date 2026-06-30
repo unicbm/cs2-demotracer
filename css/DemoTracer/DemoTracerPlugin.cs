@@ -110,7 +110,13 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private string _poolManifestPath = string.Empty;
     private RoundPoolManifest? _poolManifest;
     private int _poolRoundIndex;
+    private bool _poolPrepared;
+    private int _poolPreparedRoundIndex = -1;
+    private string _poolPreparedLabel = string.Empty;
     private readonly HashSet<string> _poolUsedCandidates = new();
+    private readonly Queue<string> _poolRecentCandidateQueue = new();
+    private readonly HashSet<string> _poolRecentManifests = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Queue<string> _poolRecentManifestQueue = new();
     private ReplayRoundScoreboard? _loadedRoundScoreboard;
     private bool _weaponAlignEnabled = true;
     private bool _projectileAlignEnabled = true;
@@ -1217,7 +1223,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (StopReplayStateForRoundBoundary("round_start"))
             Server.PrintToConsole("[DTR WARN] round_start stopped stale DTR replay state");
 
-        if ((_sequenceActive || _armed) && IsWarmupPeriod())
+        if ((_sequenceActive || _poolActive || _armed) && IsWarmupPeriod())
         {
             Server.PrintToConsole("[DTR ERR] 热身阶段无法进行回放");
             StopAllState("warmup_block");
@@ -1233,6 +1239,11 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         {
             if (PrepareArmedRound("round_start"))
                 ScheduleFreezePrerollStart(_armedLabel);
+        }
+        else if (_poolActive)
+        {
+            if (PrepareNextPoolRound("round_start"))
+                ScheduleFreezePrerollStart($"pool round {_poolPreparedRoundIndex}");
         }
 
         return HookResult.Continue;
@@ -1258,7 +1269,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
         if (_poolActive)
         {
-            Server.NextFrame(StartNextPoolRound);
+            Server.NextFrame(StartPreparedPoolRound);
             return HookResult.Continue;
         }
 
@@ -4576,7 +4587,11 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private readonly record struct TrackedDroppedReplayItem(int SourceSlot, int WeaponDefIndex, IntPtr Handle);
 
-    private readonly record struct TeamEconomySnapshot(uint EquipmentValue, string Class);
+    private readonly record struct TeamEconomySnapshot(
+        uint EquipmentValue,
+        uint MoneyTotal,
+        uint MatchValue,
+        string Class);
 
     private sealed class NadeCycleState(
         int token,
