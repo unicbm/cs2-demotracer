@@ -718,8 +718,58 @@ For normal use, export the recommended rounds only.
 - Windows x64 local CS2 is the primary target. Linux may work from source, but
   Linux converter/runtime packages are not currently maintained release targets.
 - The server should run the same map and have enough bots.
-- `.dtr` uses a lossless compressed BotController-compatible replay format with demo-derived projectile metadata, player-scoped high-fidelity events, and inventory snapshots. Full offline usercmd reconstruction is future work.
-- Some weapon/loadout details are still limited by CS2 slot behavior, especially default pistols.
+- `.dtr` uses a lossless compressed BotController-compatible replay format with
+  demo-derived projectile metadata, player-scoped high-fidelity events, and
+  inventory snapshots. Full offline usercmd reconstruction is future work.
+- If other plugins also interfere with native bot AI, unexpected bot buying or
+  inventory behavior can happen. DTR replay is slot-bound, not weapon-bound, so
+  a bot in a replay slot can have a primary weapon while still following an ECO
+  route and acting with pistol-era demo inputs. DemoTracer currently preserves
+  the demo's firing and weapon-slot switching behavior instead of hooking it
+  away. Treat this as expected current behavior, not a replay bug.
+- If you replay a match where you were one of the original demo players, the
+  server can contain both your real player and a bot that looks like you. In
+  that case, avoid CS2-Bot-Hider: it can create a bot with the same SteamID and
+  avatar as you, which may confuse TAB scoreboard and related UI surfaces. This
+  usually should not crash the game, but the presentation can be wrong.
+- Avatar overrides come from PNG data exposed by demo metadata. The current
+  override path is still coarse and may write observer slots or apply the wrong
+  team/player avatar, including cases where a player receives the opponent's
+  avatar. This is known and needs a more precise fix.
+- BotHider rewrites the visible SteamID and in-game bot display name, but it
+  does not change the bot name that CS2 native logic considers authoritative.
+  A bot can display donk's avatar and SteamID while `bot_kick donk` still does
+  not target it; use the corresponding kickid-style command instead. One
+  possible future approach is strict botprofile ID matching before BotHider setup
+  and DTR slot assignment, but large community demo sets can have duplicate or
+  complex player names. CS2 botprofile matching is also case-insensitive, so
+  `NiKo` and `niko` collapse to the same bot name. Adding SteamID suffixes or
+  extra botprofile edits would add complexity and increase the profile database
+  footprint, so DemoTracer does not do this for now.
+- Handoff can be imperfect during complex behavior, such as Dust2 mid-door AWP
+  duels. A handoff can make native AI abandon an angle instead of shooting. The
+  current implementation intentionally keeps the handoff logic simple, using the
+  RayTrace API and native visibility checks, because heavier heuristics are easy
+  to make confusing and hard to maintain.
+- Boosts and other player-on-player arrangements are replayed from recorded
+  position and velocity. If a human replaces the lower bot in a boost, the upper
+  bot can appear to float because the DTR bot is constrained to the demo's
+  original movement state. Reconstructing stable key intent from demo position
+  and velocity is non-unique, and small errors cause drift, so these cases are
+  not special-cased.
+- HLTV and most professional demos are expected to use solid teammates
+  (`mp_solid_teammates 1`), where players cannot pass through each other. Bots
+  usually do not get stuck because of this. Demos from casual-like modes where
+  players can pass through teammates can behave differently.
+- Projectile alignment is not guaranteed to match the demo perfectly in every
+  case, although most throws should behave correctly. Molotovs/incendiaries are
+  the highest-variance case: tiny parameter differences can rarely create a
+  reproducible mismatch where the demo player was not burned but the DTR replay
+  is.
+- Bot cosmetics are restored as closely as practical and are usually fine, but
+  sticker evidence is limited by demoparser behavior and by CS2's richer sticker
+  coordinate/rotation model. DemoTracer uses a revised sticker extraction path,
+  but exact sticker placement and rotation are not guaranteed for every item.
 - Cosmetic/econ export and runtime alignment are explicit opt-in features; see
   [Cosmetic Alignment and GSLT Safety](#cosmetic-alignment-and-gslt-safety).
 - This is for local servers, research, content creation, and plugin development. It is not intended for matchmaking or cheating.

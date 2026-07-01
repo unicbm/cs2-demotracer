@@ -408,8 +408,44 @@ dtr_stop_all
 - 目前主要面向 Windows x64 本地 CS2 环境。Linux 可以尝试从源码构建，
   但 converter/runtime 的 Linux 发布包目前不是维护目标。
 - 需要同一张地图，并且服务器里要有足够的 bot。
-- `.dtr` 是无损压缩的 BotController 兼容 replay 格式，并包含 demo 原始投掷物元数据、按玩家记录的高保真事件、库存快照和 v7 command frame 输入证据。
-- 某些武器和默认手枪配置在 CS2 里比较麻烦，目前优先保证不崩服和基本行为正确。
+- `.dtr` 是无损压缩的 BotController 兼容 replay 格式，并包含 demo 原始投掷物元数据、
+  按玩家记录的高保真事件、库存快照和 v7 command frame 输入证据。完整离线还原
+  usercmd 仍然是未来工作。
+- 如果加载了其他干预 native bot AI 的插件，可能出现预期外的 bot 购买或库存行为。
+  DTR 本质上是 slot 绑定，不是武器绑定，所以可能出现这个 slot 的 bot 有主武器，
+  但依然按照 ECO 路线和手枪时代的 demo 输入行动。本插件目前会保留原本 demo
+  中的开枪和切 weapon slot 行为，而不是 hook 掉它们；这不是回放 bug，而是当前行为。
+- 如果用户要重玩自己原本就在场的 demo，场上会同时有一个像自己的 bot 和一个本人。
+  这种情况下建议不要使用 CS2-Bot-Hider，因为会出现一个 SteamID 和头像都和你相同的
+  bot，可能造成 TAB 记分板等 UI 显示异常。一般不应导致游戏崩溃，但显示会很怪。
+- 头像覆写来自 demo 元数据提供的 PNG。当前覆写逻辑还比较粗，可能出现 OB 位也被写，
+  或玩家被写成对方头像的情况。这是已知问题，也是真正需要修复的地方。
+- BotHider 本质上改写可见 SteamID 和 bot 游戏内显示名，但没有改变“游戏 native 认定”
+  的 bot 名字。也就是说，一个 bot 可能显示为 donk 的头像和 SteamID，但
+  `bot_kick donk` 不生效，需要用对应 kickid 类指令定向踢出。一个可能的未来方案是
+  先按 botprofile 严格匹配 id 正确的 bot，再进行 BotHider 设置和对应 slot 的 DTR
+  执行；但大量社区 demo 里玩家 id 可能重名或包含复杂字符，预先写 botprofile 会让
+  数据库体积迅速膨胀。CS2 的 botprofile 本质上又不区分大小写，`NiKo` 和 `niko`
+  会被认为是同一个 bot。除非加入额外后缀和 SteamID 区分，但这会增加插件复杂度，
+  还要额外修改 botprofile，所以目前暂时不做。
+- 已经观察到当 bot 做一些复杂行为，例如 Dust2 中门对狙时，handoff 可能导致的结果
+  不是开枪，而是 native AI 放弃架点。由于目前缺乏简单算法来决定如何优雅 handoff
+  给 native AI，为了避免过多启发式让行为变得混乱和难以维护，目前只提供基于
+  RayTrace API 和原生 visible 检测的简单方案。有能力的用户可以尝试优化这一层。
+- 例如双架 boost 行为，如果真人玩家取代了原本应该在下面的 bot，上面的 bot 可能出现
+  反物理悬空。这是因为执行 DTR 的 bot 会被约束到 demo 对应的 velocity 和 position，
+  不一定尊重当前游戏物理引擎。从 demo 提取的 position/velocity 反推按键意图本质上
+  非唯一且不稳定，任何错位都会导致回放漂移，所以目前没有针对这些情况写特判，优先
+  遵守 demo 原本意图。
+- HLTV 比赛和大部分职业比赛理论上都是 solid teammates，也就是 `mp_solid_teammates 1`，
+  不允许队友互相穿过。通常 bot 不会因此卡住，除非 demo 原本来自一些玩家可以互相
+  穿过的休闲模式或类似规则环境。
+- 目前并不是所有投掷物都能 100% 符合 demo，但绝大多数不会出错。自由度较高的是燃烧弹，
+  可能因为各种参数的微小偏差，出现 demo 恰好烧不到、DTR 执行却被烧的情况。该情况
+  可复现，但罕见。
+- bot 的饰品已经尽量恢复到正常显示，大部分情况下也不会有问题。但由于 demoparser
+  对贴纸解析有问题，目前方案使用了我们自己修订过的提取路径，不能保证所有贴纸都完全
+  匹配，尤其是 CS2 允许有坐标和旋转这些复杂 sticker 式样。
 - 饰品/econ 导出和 runtime 对齐都是显式 opt-in；见
   [饰品对齐与 GSLT 风险](#饰品对齐与-gslt-风险)。
 - 这个工具不是作弊工具，也不会接入匹配服务器；它面向本地服务器、研究和内容制作。
