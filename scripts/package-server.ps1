@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.3.5",
+    [string]$Version = "0.3.6",
     [string]$Configuration = "Release",
     [string]$OutputRoot = "dist",
     [string]$RuntimePackage = "runtime\BotController\build\package",
@@ -41,9 +41,24 @@ function Invoke-Checked([string]$Command, [string[]]$Arguments) {
     }
 }
 
+function Test-DotnetHasSdk([string]$Command) {
+    try {
+        $sdks = & $Command --list-sdks 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            return $false
+        }
+        return $null -ne ($sdks | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)
+    } catch {
+        return $false
+    }
+}
+
 function Resolve-DotnetPath([string]$PreferredPath) {
     if (-not [string]::IsNullOrWhiteSpace($PreferredPath)) {
-        return $PreferredPath
+        if (Test-DotnetHasSdk $PreferredPath) {
+            return $PreferredPath
+        }
+        throw "dotnet SDK not found at preferred path: $PreferredPath"
     }
 
     $candidates = @()
@@ -57,17 +72,17 @@ function Resolve-DotnetPath([string]$PreferredPath) {
     $candidates += "C:\Program Files\dotnet\dotnet.exe"
     $candidates += "C:\Program Files (x86)\dotnet\dotnet.exe"
 
-    foreach ($candidate in $candidates) {
-        if (Test-Path -LiteralPath $candidate) {
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if (Test-DotnetHasSdk $candidate) {
             return $candidate
         }
     }
 
     $command = Get-Command dotnet.exe -CommandType Application -ErrorAction SilentlyContinue
-    if ($command) {
+    if ($command -and (Test-DotnetHasSdk $command.Source)) {
         return $command.Source
     }
-    return "dotnet"
+    throw "dotnet SDK not found. Install a .NET SDK or pass -DotnetPath to a dotnet.exe with SDKs installed."
 }
 
 if ($BuildRuntime) {
@@ -128,7 +143,7 @@ platform: windows-x64
 bundled_botcontroller_abi: 16
 expected_demotracer_native_abi: 16
 dtr_reader: 3..7
-demotracer_api: 3
+demotracer_api: 4
 
 Install target:
 Copy this package's addons directory into your CS2 server game/csgo directory.
@@ -184,7 +199,7 @@ from this package.
 - Required BotController native ABI: 16
 - Bundled BotController native ABI: 16
 - Supported `.dtr` reader versions: 3..7
-- DemoTracer companion API: 3
+- DemoTracer companion API: 4
 - Maintained runtime platform: Windows x64
 
 ## Dependencies

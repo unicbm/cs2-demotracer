@@ -1,8 +1,9 @@
 param(
-    [string]$Version = "0.3.5",
+    [string]$Version = "0.3.6",
     [string]$Configuration = "Release",
     [string]$OutputRoot = "dist",
     [string]$DotnetPath = "",
+    [string]$RuntimePackage = "runtime\BotController\build\package",
     [switch]$SkipConverterBuild,
     [switch]$BuildRuntime,
     [switch]$SkipCssBuild,
@@ -28,6 +29,7 @@ $serverArgs = @{
     Configuration = $Configuration
     OutputRoot = $OutputRoot
     DotnetPath = $DotnetPath
+    RuntimePackage = $RuntimePackage
 }
 if ($BuildRuntime) {
     $serverArgs.BuildRuntime = $true
