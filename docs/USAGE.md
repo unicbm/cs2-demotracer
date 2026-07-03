@@ -1,7 +1,8 @@
 # Usage
 
-This document keeps detailed converter usage separate from the root README. For
-CS2 server console commands, see [`COMMANDS.md`](COMMANDS.md).
+This document covers converter workflows, the GUI, pool conversion, Demo2Nade,
+and local API usage. For CS2 server console commands, see
+[`COMMANDS.md`](COMMANDS.md).
 
 ## 1. Convert A Demo To Round Replays
 

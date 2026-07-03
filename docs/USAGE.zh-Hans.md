@@ -1,7 +1,7 @@
 # 使用说明
 
-这份文档补充 README 里的步骤，重点写转换器和本地 Rust API。CS2 服务器控制台指令见
-[`COMMANDS.zh-Hans.md`](COMMANDS.zh-Hans.md)。
+这份文档说明 converter 工作流、GUI、pool conversion、Demo2Nade 和本地 Rust API。
+CS2 服务器控制台指令见 [`COMMANDS.zh-Hans.md`](COMMANDS.zh-Hans.md)。
 
 ## 1. 转换 demo 为回合 replay
 

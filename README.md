@@ -4,13 +4,15 @@ Trace CS2 demos into bot-executable route replays.
 
 **Language:** English | [简体中文](docs/README.zh-Hans.md)
 
-Convert CS2 match demos into route replay files, then play those rounds back through bots on a local CS2 server.
-
-If this project helps you, please consider giving it a star. It makes the project easier for other CS2 tool/plugin developers to find.
+CS2 DemoTracer converts CS2 `.dem` files into compact `.dtr` replay files, then
+plays those routes back through bots on a local CS2 server. The normal converter
+path is a packaged Windows x64 CLI/GUI; Python, Node.js, Conda, and game-server
+plugins are not required for conversion.
 
 ## Demo
 
-First-person spectator view stays synchronized while bots replay converted CS2 demo movement, view angles, firing, and weapon state.
+First-person spectator view stays synchronized while bots replay converted demo
+movement, view angles, firing, weapon state, and projectile alignment.
 
 <table>
   <tr>
@@ -37,365 +39,45 @@ First-person spectator view stays synchronized while bots replay converted CS2 d
 
 ## What It Does
 
-CS2 DemoTracer takes a `.dem` file, analyzes its rounds, and exports compressed `.dtr` route replay files for each player.
+- Converts CS2 match demos into `.dtr` route replay files, one player/side/round
+  at a time.
+- Replays demo movement, view angles, crouch/jump state, firing, weapon switching,
+  and selected high-fidelity metadata through local CS2 bots.
+- Exports optional Demo2Nade grenade clips for local utility libraries.
+- Can align loadout, projectiles, crosshair, scoreboard presentation, and
+  demo-backed cosmetics when those modes are explicitly enabled.
 
-The converter is native Rust. Normal conversion does not require Python,
-Node.js, Conda, virtualenvs, or game-server plugins: download the packaged
-Windows x64 converter zip, use either the CLI or GUI executable, point it at a
-demo, and validate the generated output. Batch conversion is designed for local
-CPU/disk throughput; actual speed depends on demo length, storage, and selected
-export scope.
+This is local replay tooling for research, content creation, and plugin
+development. It is not intended for matchmaking or cheating.
 
-In a local CS2 server, the runtime and CounterStrikeSharp plugin can then make bots replay the demo player's movement, view angles, jumping, crouching, firing, and basic weapon switching.
+## Dependencies
 
-It can also export short grenade throw clips with minimal player context. This
-Demo2Nade path turns demo throws into `.dtr` clips plus a typed manifest, so
-other local tools can index, query, and replay real pro utility throws.
+Conversion only needs the release converter package.
 
-This is still an MVP, but the full demo -> replay -> in-game bot playback loop is already working.
+In-game playback needs a local Windows x64 CS2 server with:
 
-Detailed converter usage is in [`docs/USAGE.md`](docs/USAGE.md). Server command
-details are documented in [`docs/COMMANDS.md`](docs/COMMANDS.md).
+- [Metamod:Source](https://www.sourcemm.net/)
+- [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp)
+- The DemoTracer server bundle, which includes the `BotController` Metamod
+  runtime, `DemoTracer` CounterStrikeSharp plugin, `DemoTracerApi.dll`, and
+  sanitized example config.
 
-## Cosmetic Alignment and GSLT Safety
+Optional integrations:
 
-> [!IMPORTANT]
-> Cosmetic, custom-name, sticker, and charm metadata are never exported by default.
-> Normal `convert` output is the recommended safe path.
->
-> Export that metadata only when you intentionally pass `--export-cosmetics`,
-> `--acknowledge-cosmetic-gslt-risk`, and
-> `--accept-cosmetic-export-disclaimer`; stickers also require
-> `--export-stickers`, and charms also require `--export-charms`. Runtime
-> cosmetic, sticker, and charm alignment are default-off and consume only demo
-> evidence from the manifest.
->
-> This feature is for local/private replay fidelity. A listen/practice server
-> usually has less GSLT exposure than a dedicated server, but bot-only inventory
-> mutation is not a Valve policy exemption if humans can observe, control,
-> possess, inspect, or otherwise use bots with simulated items. On dedicated,
-> community, or public servers, treat cosmetic/inventory simulation as
-> operator-risk under Valve's [Game Server Operation Guidelines](https://blog.counter-strike.net/server_guidelines/)
-> and Steam [game server account](https://steamcommunity.com/dev/managegameservers)
-> rules.
+- [CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider), for BotHider-managed
+  replay slots plus demo display-name, SteamID64, and avatar identity alignment.
+- [Ray-Trace](https://github.com/FUNPLAY-pro-CS2/Ray-Trace), or another provider
+  exposing `raytrace:craytraceinterface`, for stricter line-of-sight filtering
+  in handoff 360 threat detection. DemoTracer works without it and reports the
+  status through `dtr_doctor`.
 
-## `.dtr` Format Contract
+The server bundle does not include Metamod:Source, CounterStrikeSharp,
+CS2-Bot-Hider, or a RayTrace provider. Full dependency notes are in
+[`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md).
 
-`.dtr` is the native replay file consumed by DemoTracer's CounterStrikeSharp
-loader and BotController runtime. This section is the public binary contract;
-format changes should update this section in the same commit.
+## Quick Start
 
-All values are little-endian. v7 is the current writer format. The runtime
-reader also accepts v3-v6 files for backward compatibility. v3 does not contain
-projectile metadata; v3/v4 files have
-`play_start_tick_index = 0`; v3-v5 files have no high-fidelity metadata JSON
-blob. v7 files require the matching server bundle with BotController native ABI
-16 and extended replay capability.
-
-The format is lossless: movement snapshots, projectile events, high-fidelity
-metadata, subtick records, and command-frame data are written with their
-original `f32`, integer, or UTF-8 JSON values. v7 stores payloads as ordered
-sections so future optional replay evidence can be skipped by older v7-aware
-readers.
-
-### Header
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| magic | 8 bytes | `CSDTRREC` |
-| version | `u32` | `7` |
-| tick_rate | `f32` | Demo tickrate estimate |
-| round | `u32` | `total_rounds_played` window |
-| side | `u8` | `2=T`, `3=CT`, `0=unknown` |
-| flags | `u32` | Reserved |
-| steam_id | `u64` | Player SteamID64 |
-| tick_count | `u32` | Number of replay ticks |
-| subtick_count | `u32` | Number of subtick moves |
-| projectile_count | `u32` | Number of replay projectile events |
-| play_start_tick_index | `u32` | First tick to simulate when playback starts; v5+ only |
-| metadata_json_len | `u32` | Byte length of high-fidelity metadata JSON; v6+ only |
-| map | `u16 len + utf8` | Map name |
-| player_name | `u16 len + utf8` | Demo player name |
-| section_count | `u32` | v7 only; number of section records that follow |
-
-For v3-v6 legacy files, the header instead continues after `player_name` with
-`codec: u8`, `body_uncompressed_len: u64`, `body_compressed_len: u64`, followed
-by a single Brotli-compressed legacy body.
-
-Round replay v5+ files may store up to 10 seconds of same-round freeze-time
-context before `play_start_tick_index`. Playback still begins at
-`round_freeze_end`; the pre-start context is used to preserve held grenade
-button state without replaying arbitrarily long paused freeze time.
-
-### v7 Sections
-
-Each v7 section is:
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| section_id | `u32` | Known IDs listed below |
-| section_version | `u32` | `1` for current section layouts |
-| codec | `u8` | `0 = none`; readers may also accept `1 = Brotli` |
-| pad | 3 bytes | Must be ignored by readers |
-| flags | `u32` | Reserved |
-| element_count | `u32` | Logical item count |
-| uncompressed_len | `u64` | Expected decoded payload byte length |
-| compressed_len | `u64` | Stored payload byte length |
-| payload | bytes | Raw or compressed section payload |
-
-Required sections:
-
-| ID | Section | Count | Bytes Each |
-| ---: | --- | ---: | ---: |
-| 1 | `MovementSnapshotV3` chain | `0 if tick_count == 0, else tick_count + 1` | 92 |
-| 2 | tick metadata | `tick_count` | 8 |
-| 5 | `SubtickMoveV3` | `subtick_count` | 28 |
-
-Optional sections:
-
-| ID | Section | Count | Bytes Each |
-| ---: | --- | ---: | ---: |
-| 3 | `ProjectileEventV4` | `projectile_count` | 48 |
-| 4 | `HighFidelityMetadataV6` | `0 or 1` | UTF-8 JSON |
-| 6 | `CommandFrameV1` | `tick_count` | 68 |
-| 7 | `MovementExtraV1` | `tick_count` | 48 |
-
-Unknown section IDs must be skipped using `compressed_len`. Duplicate known
-sections are invalid. Missing required sections are invalid. Optional
-tick-aligned sections may be omitted; when present, their `element_count` must
-equal `tick_count`.
-
-### v3-v6 Legacy Body
-
-After legacy body decompression, the body layout is:
-
-| Part | Count | Bytes Each |
-| --- | ---: | ---: |
-| `MovementSnapshotV3` | `0 if tick_count == 0, else tick_count + 1` | 92 |
-| tick metadata | `tick_count` | 8 |
-| `ProjectileEventV4` | `projectile_count` | 48 |
-| `HighFidelityMetadataV6` | `metadata_json_len` | UTF-8 JSON |
-| `SubtickMoveV3` | `subtick_count` | 28 |
-
-Tick metadata is:
-
-| Field | Type |
-| --- | --- |
-| weapon_def_index | `i32` |
-| num_subtick | `u32` |
-
-Reconstruct replay ticks as:
-
-- `tick[i].pre = snapshots[i]`
-- `tick[i].post = snapshots[i + 1]`
-- `tick[i].weapon_def_index = metadata[i].weapon_def_index`
-- `tick[i].num_subtick = metadata[i].num_subtick`
-
-The sum of all `num_subtick` values must equal header `subtick_count`.
-
-### ProjectileEventV4
-
-Projectile events store demo-derived projectile state for runtime alignment and
-utility clip export. The converter emits grenade projectile events for smoke,
-flash, HE, molotov/incendiary, and decoy throws when the demo has valid
-projectile data. Older v3 files have no projectile event section.
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| tick_index | `u32` | |
-| weapon_def_index | `i32` | |
-| kind | `u8` | `0=unknown`, `1=smoke`, `2=flash`, `3=he`, `4=molotov/incendiary`, `5=decoy` |
-| pad | 3 bytes | |
-| initial_position | `f32[3]` | |
-| initial_velocity | `f32[3]` | |
-| detonation_position | `f32[3]` | |
-
-### HighFidelityMetadataV6
-
-v6+ files may include a UTF-8 JSON blob. In v3-v6 legacy files it appears after
-projectile events and before subtick moves inside the Brotli body. In v7 it is
-section ID `4`. The top-level object is:
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| schema_version | `u32` | Current metadata schema is `2` |
-| events | array | Player-scoped high-fidelity events |
-| inventory_snapshots | array | Inventory state after inventory changes |
-
-`events` are stored in the `.dtr` file for the player they affect, so
-equipment/C4 events are not blindly executed ten times. Event `kind` values are:
-`bomb_initial_owner`, `item_drop`, `item_pickup`, `item_transfer`, `bomb_drop`,
-`bomb_pickup`, `bomb_beginplant`, `bomb_planted`, `weapon_fire`,
-`player_hurt`, `player_death`, `round_start`, and `round_freeze_end`.
-
-Equipment events include `tick_index`, absolute demo `tick`, actor/target
-SteamID64 where known, normalized `weapon_def_index`, optional `item_name`, and
-post-event item counts when the converter can infer them. C4-specific events
-use `weapon_def_index = 49`. Combat events are record-only for now: the CSS
-plugin loads them for diagnostics/future behavior, but does not force damage or
-death.
-
-`inventory_snapshots` are also player-scoped and are written only when the
-player inventory changes. Each snapshot contains normalized weapon def counts,
-the active weapon def, armor value, helmet state, and defuser state. The CSS
-plugin does not use snapshots to repair inventory every replay tick; they are a
-contract for validation, diagnostics, and future higher-fidelity playback.
-
-### CommandFrameV1
-
-This optional v7 section records demo-backed usercmd evidence for each replay
-tick. Fields missing from the parser are written with defaults and omitted from
-the `fields` bitset.
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| forward_move | `f32` | Present when bit `0` is set |
-| left_move | `f32` | Present when bit `1` is set |
-| up_move | `f32` | Present when bit `2` is set |
-| view_angles | `f32[3]` | pitch/yaw/roll; present when bit `3` is set |
-| buttons | `u64[3]` | buttonstate0/1/2; present when bit `4` is set |
-| mouse_dx | `i32` | Present with mouse bit `5` |
-| mouse_dy | `i32` | Present with mouse bit `5` |
-| weapon_select | `i32` | Raw demo command value; present when bit `6` is set |
-| fields | `u32` | Presence bitset |
-| left_hand_desired | `u8` | Present when bit `7` is set |
-| pad | 3 bytes | |
-
-BotController uses movement, view, button, mouse, and left-hand command fields
-when available. Runtime weapon selection still resolves from recorded weapon
-definition to a live bot entity index instead of trusting raw demo entity IDs.
-
-### MovementExtraV1
-
-This optional v7 section carries offset-backed movement internals when the
-converter/runtime has evidence and a matching capability gate. Missing offset
-support means the section is omitted.
-
-| Field | Type |
-| --- | --- |
-| fields | `u32` |
-| jump_pressed_time | `f32` |
-| last_duck_time | `f32` |
-| last_actual_jump_press_tick | `i32` |
-| last_actual_jump_press_frac | `f32` |
-| last_usable_jump_press_tick | `i32` |
-| last_usable_jump_press_frac | `f32` |
-| last_landed_tick | `i32` |
-| last_landed_frac | `f32` |
-| last_landed_velocity | `f32[3]` |
-
-### MovementSnapshotV3
-
-This layout is `92` bytes with `Pack=4`.
-
-| Field | Type |
-| --- | --- |
-| origin | `f32[3]` |
-| velocity | `f32[3]` |
-| angles | `f32[3]` pitch/yaw/roll |
-| entity_flags | `u32` |
-| move_type | `u8` |
-| pad | 3 bytes |
-| buttons | `u64` |
-| buttons1 | `u64` |
-| buttons2 | `u64` |
-| duck_amount | `f32` |
-| duck_speed | `f32` |
-| ladder_normal | `f32[3]` |
-| ducked | `u8` |
-| ducking | `u8` |
-| desires_duck | `u8` |
-| actual_move_type | `u8` |
-
-### SubtickMoveV3
-
-| Field | Type |
-| --- | --- |
-| when | `f32` |
-| button | `u32` |
-| pressed | `f32` |
-| analog_forward | `f32` |
-| analog_left | `f32` |
-| pitch_delta | `f32` |
-| yaw_delta | `f32` |
-
-### Parser Checklist
-
-1. Read and validate magic `CSDTRREC`.
-2. Require `version == 7` for current writer output, or accept `version == 3`
-   through `6` for backward compatibility.
-3. Read `tick_count`, `subtick_count`, `projectile_count`,
-   `play_start_tick_index`, `metadata_json_len`, `map`, and `player_name`. For
-   v3, treat `projectile_count` as `0`; for v3/v4, treat
-   `play_start_tick_index` as `0`; for v3-v5, treat `metadata_json_len` as `0`.
-4. For v7, read `section_count`, parse known sections, and skip unknown
-   sections using `compressed_len`.
-5. For v7, require snapshot, tick metadata, and subtick sections; require
-   projectile/high-fidelity sections when their header counts are non-zero.
-6. For v3-v6, require legacy `codec == 1`, verify legacy body length, then
-   Brotli-decompress exactly `body_compressed_len` bytes.
-7. Rebuild ticks from the snapshot chain and metadata.
-8. Sum all tick `num_subtick` values and verify it equals `subtick_count`.
-9. If `metadata_json_len > 0`, parse exactly that many bytes as UTF-8 JSON.
-10. For non-empty replays, require `play_start_tick_index < tick_count`.
-
-## Who This Is For
-
-- People who want to replay pro match movement inside a local CS2 server.
-- People who want a fast CLI pipeline for `.dem` -> `.dtr` conversion.
-- People building a local library of real grenade throws from CS2 demos.
-- Developers building CS2 route replay, bot playback, or demo analysis tooling.
-
-## Requirements
-
-- Windows x64 for the primary packaged converter.
-- Linux may work when built from source, but packaged Linux binaries are not a
-  maintained release target yet.
-- Rust only if building the converter from source.
-- A local Windows x64 CS2 server if you want in-game playback.
-- Metamod:Source installed in that CS2 server.
-- CounterStrikeSharp installed in that CS2 server.
-- The DemoTracer server bundle's `BotController` Metamod runtime installed and
-  loaded with the bundled `gamedata.json`.
-- The DemoTracer CounterStrikeSharp plugin installed under
-  `addons/counterstrikesharp/plugins/DemoTracer`.
-- Optional: CS2-Bot-Hider if you want BotHider-managed replay slots, display
-  name/SteamID64 identity alignment, or demo avatar override alignment.
-
-The converter release zip contains `cs2-demotracer.exe` for CLI workflows and
-`cs2-demotracer-gui.exe` for the native single-demo Windows GUI. Python and
-Node.js are not required for normal conversion; the playback plugins are only
-needed when loading generated `.dtr` files in CS2.
-
-If you only want to test plugin playback, download the pre-converted Mirage sample pack from the release assets: [`cs2-demotracer-sample-spirit-vs-falcons-m2-mirage-full.zip`](https://github.com/unicbm/cs2-demotracer/releases/download/v0.1.3/cs2-demotracer-sample-spirit-vs-falcons-m2-mirage-full.zip). Unzip it and run playback from the included `manifest.json`.
-
-## API Boundaries
-
-`runtime/BotController/scripts/BotController.NativeApi.cs` is the low-level C#
-P/Invoke binding for the native BotController replay runtime. Use it only for
-low-level BotController tools that intentionally work with native replay
-buffers and engine primitives.
-
-BotController also exposes optional `BotController_SetUsercmdMovementIntent`
-and `BotController_ClearUsercmdMovementIntent` native exports for short-lived
-WASD/duck/jump-style usercmd movement leases. `BotController_SetLeftHandIntent`
-and `BotController_ClearLeftHandIntent` are compatibility aliases for older
-left-hand movement callers. These are low-level input primitives, not
-DemoTracer companion API or movement policy. The runtime applies only movement
-button bits (WASD, duck, jump) and ignores attack/weapon/aim-style input. Active
-DTR replay owns its replay slot; loading, starting, stopping, finishing, or
-clearing replay state clears any movement intent on that slot.
-
-Companion CounterStrikeSharp plugins that integrate with DemoTracer replay state
-should depend on `css/DemoTracerApi/IDemoTracerApi.cs` through the
-`demotracer:api` plugin capability. They should not copy DemoTracer's internal
-interop layer or depend on `.dtr` replay struct layout. Direct BotController
-native calls are reserved for low-level runtime integrations that intentionally
-target BotController engine primitives, such as usercmd movement intent.
-
-## Convert One Demo
-
-Open PowerShell:
+Convert and validate a demo:
 
 ```powershell
 cs2-demotracer.exe inspect --demo "<demo.dem>"
@@ -403,187 +85,7 @@ cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>"
 cs2-demotracer.exe validate --input "<output-dir>"
 ```
 
-Common conversion options:
-
-```powershell
-cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>" --rounds 0,1,5-8
-cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>" --side t
-cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>" --full-round
-cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>" --freeze-preroll-seconds 10
-```
-
-`inspect` prints the map, tick rate, row count, and recommended/suspicious round table. `convert` exports recommended rounds by default. Use `--include-suspicious` only when you intentionally want suspicious rounds. By default, exported replays stop before the C4 plant begins; use `--full-round` for full-round export. Round replay exports keep at most 10 seconds of same-round freeze-time context by default, controlled by `--freeze-preroll-seconds`.
-
-Cosmetic/econ metadata is not exported by default. The default output does not
-contain manifest `cosmetics` blocks and is the recommended safe export path. If
-you intentionally want demo-observed weapon paint, knife, glove metadata, and
-stable weapon/knife custom names in the manifest, conversion requires all three
-explicit flags:
-
-```powershell
-cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>" --export-cosmetics --acknowledge-cosmetic-gslt-risk --accept-cosmetic-export-disclaimer
-```
-
-Weapon sticker metadata is a separate opt-in on top of cosmetic export:
-
-```powershell
-cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>" --export-cosmetics --export-stickers --acknowledge-cosmetic-gslt-risk --accept-cosmetic-export-disclaimer
-```
-
-Weapon charm/keychain metadata is also a separate opt-in on top of cosmetic
-export:
-
-```powershell
-cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>" --export-cosmetics --export-charms --acknowledge-cosmetic-gslt-risk --accept-cosmetic-export-disclaimer
-```
-
-`convert-pool` uses the same three flags when you intentionally want cosmetic
-metadata in pool replay manifests, and also accepts `--export-stickers` and
-`--export-charms`.
-
-The output looks like this:
-
-```text
-output/<demo-id>/manifest.json
-output/<demo-id>/avatars/<sha256>.<ext>
-output/<demo-id>/round00/t/<player>.dtr
-output/<demo-id>/round00/ct/<player>.dtr
-output/<demo-id>/round01/...
-```
-
-`<demo-id>` is `<demo-stem>-<hash12>`, where `hash12` is derived from the demo file contents. This prevents repeated event/map names from overwriting each other.
-
-`avatars/` is present only when the demo contains server-provided avatar
-overrides. `manifest.json` records the SteamID64-to-avatar mapping and remains
-the easiest file to use for playback.
-
-At playback time, DemoTracer can apply those PNGs as server avatar overrides for
-matching BotHider-managed replay bots. The native runtime enables
-`sv_reliableavatardata` and writes `ServerAvatarOverrides`; this is only an
-in-server presentation override, not a change to any player's real Steam avatar.
-The recommended runtime mode is `dtr_replay_identity avatar`, which binds the
-PNG to a synthetic DTR SteamID64 for that replay slot instead of the real demo
-player SteamID64.
-
-For users who do not write Rust, [`examples/`](examples/) contains small Python
-and Node.js scripts that call the CLI, locate the generated `manifest.json`, and
-print a CS2 console command. These are integration examples, not stable language
-bindings.
-
-An interactive prompt is also available:
-
-```powershell
-cs2-demotracer.exe wizard
-```
-
-The packaged Windows converter zip also includes a native GUI:
-
-```powershell
-.\cs2-demotracer-gui.exe
-```
-
-When building from source:
-
-```powershell
-cd converter
-cargo run --release --features gui --bin cs2-demotracer-gui
-```
-
-The GUI is a pure Rust `egui` workbench for the single-demo path: choose or
-drop a `.dem`, choose an output folder, inspect round quality, select rounds,
-convert, validate, and copy the generated CS2 console command. It supports
-English/Simplified Chinese UI text and system/light/dark themes. Cosmetic/sticker/charm
-export remains default-off and requires explicit risk confirmation before it can
-be enabled. Batch pool conversion and Demo2Nade remain CLI-only in v1.
-
-## Batch Convert A Map Pool
-
-If you have many demos, you can build a replay pool and let the plugin choose a similar round by economy:
-
-```powershell
-cs2-demotracer.exe convert-pool --demo-dir "<demo-root>" --output "<output-dir>\mirage_pool" --map de_mirage --recursive
-```
-
-This writes:
-
-```text
-<output-dir>/mirage_pool/pool_manifest.json
-<output-dir>/mirage_pool/replays/<demo-id>/manifest.json
-<output-dir>/mirage_pool/replays/<demo-id>/roundNN/...
-```
-
-`convert-pool` filters by map, converts each matching demo, and records economy metadata for round selection.
-
-## Export Grenade Clips With Demo2Nade
-
-Demo2Nade exports each real demo grenade throw as a short `.dtr` clip with
-player movement and view context around the release tick. Defaults are `1.0s`
-before release and `0.5s` after release.
-
-```powershell
-cs2-demotracer.exe convert-nades --demo "<demo.dem>" --output "<output-dir>\nades"
-cs2-demotracer.exe convert-nades --demo "<demo.dem>" --output "<output-dir>\nades" --side t --rounds 0,1,5-8 --pre-roll 1.0 --post-roll 0.5
-```
-
-This writes:
-
-```text
-<output-dir>/nades/<demo-id>/nade_manifest.json
-<output-dir>/nades/<demo-id>/nade_manifest.json.br
-<output-dir>/nades/<demo-id>/nades/<side>/<phase>/<kind>/<clip-id>.dtr
-```
-
-`phase` is `opening`, `combat`, or `retake`. The `opening` window defaults to
-20 seconds after freeze time ends and can be changed with `--opening-seconds`.
-
-To build a local map-indexed utility library from many demos:
-
-```powershell
-cs2-demotracer.exe convert-nades-library --demo-dir "<demo-root>" --output "<output-dir>\nade_library" --recursive --jobs 8
-```
-
-This writes per-demo clips under `demos/`, map manifests under `maps/<map>/`,
-and a top-level `nade_library.json(.br)`. The library command deduplicates near
-identical clips by default; pass `--no-dedupe` to keep every source throw.
-
-Rust callers can use the local API directly:
-
-```rust
-use cs2_demotracer::prelude::*;
-
-let mut request = NadeClipExportRequest::new("match.dem", "out/nades");
-request.context = NadeContextOptions {
-    pre_roll_seconds: 1.0,
-    post_roll_seconds: 0.5,
-    opening_seconds: 20.0,
-};
-
-let report = export_nade_clips_from_demo_path(&request)?;
-println!("clips={}", report.clips_written);
-```
-
-See [`docs/USAGE.md`](docs/USAGE.md#demo2nade-grenade-clips) for the full CLI
-and Rust API examples.
-
-## Play In CS2
-
-Make sure your local CS2 server has loaded:
-
-- Metamod:Source
-- CounterStrikeSharp
-- the DemoTracer Metamod runtime plugin: `BotController`
-- the DemoTracer CounterStrikeSharp plugin: `DemoTracer`
-
-The server bundle includes `BotController`, `DemoTracer`, `DemoTracerApi.dll`,
-`skins_en.json`, and the sanitized example config. It does not include
-Metamod:Source, CounterStrikeSharp, or CS2-Bot-Hider. BotHider is optional:
-movement replay, weapon/loadout alignment, projectile alignment, and handoff do
-not depend on it. The default `dtr_replay_identity steam` writes demo names and
-SteamID64 values for BotHider-managed bot slots; explicit
-`dtr_replay_identity avatar` writes demo-provided team/event PNG avatar
-overrides through synthetic DTR SteamID64 keys.
-
-In the server console:
+Play a converted manifest on a local server:
 
 ```text
 css_plugins reload DemoTracer
@@ -591,208 +93,99 @@ dtr_config_status
 dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
 ```
 
-`seq` means "play a sequence starting from a manifest source round"; the final
-`0` is `from_source_round=0`, not "play only round 0". Use
-`dtr_go round "<manifest.json>" 0` for single-round playback.
+`seq` starts a sequence from a source round. Use
+`dtr_go round "<manifest.json>" 0` for a single source round.
 
-Replay identity is `steam` by default. When BotHider is managing the replay bot
-slots, loading a manifest writes demo names and SteamID64 values. Use explicit
-`dtr_replay_identity avatar` when you also want demo-provided avatar PNG
-overrides, such as team/event logos, while avoiding real-player SteamID64 avatar
-key collisions. `dtr_replay_identity full` keeps the legacy real-SteamID avatar
-override path.
+More commands:
 
-Runtime defaults can be kept in `demotracer.config.json` next to
-`DemoTracer.dll`. Start from `demotracer.config.example.json`, then run
-`dtr_config_reload` after editing it. Console commands such as `dtr_set handoff`
-still work as temporary overrides for the currently running plugin.
+- Converter usage: [`docs/USAGE.md`](docs/USAGE.md)
+- Server commands: [`docs/COMMANDS.md`](docs/COMMANDS.md)
+- Examples: [`examples/`](examples/)
 
-When full-round playback starts, DemoTracer treats the selected replay bots as
-being reset to the replay round start: alive replay bots are restored to 100 HP,
-dead replay bots are respawned before playback, and weapon/loadout sync only
-removes weapons that DemoTracer itself actively drops while replacing a bot's
-slot. It does not sweep unrelated world pickups.
+## Cosmetic Alignment and GSLT Safety
 
-`dtr_align projectiles on` uses demo projectile metadata where post-spawn
-alignment is stable. Fire grenades keep CS2's native projectile and inferno
-behavior, because mutating molotov/incendiary projectiles after spawn can break
-valid burns.
+> [!IMPORTANT]
+> Cosmetic, custom-name, sticker, and charm metadata are never exported by
+> default. Normal `convert` output is the recommended safe path.
+>
+> Export that metadata only when you intentionally pass `--export-cosmetics`,
+> `--acknowledge-cosmetic-gslt-risk`, and
+> `--accept-cosmetic-export-disclaimer`; stickers also require
+> `--export-stickers`, and charms also require `--export-charms`. Runtime
+> cosmetic, sticker, and charm alignment are also default-off and consume only
+> demo evidence from the manifest.
+>
+> This feature is for local/private replay fidelity. Bot-only inventory mutation
+> is not a Valve policy exemption if humans can observe, control, possess,
+> inspect, or otherwise use bots with simulated items. On dedicated, community,
+> or public servers, treat cosmetic/inventory simulation as operator-risk under
+> Valve's [Game Server Operation Guidelines](https://blog.counter-strike.net/server_guidelines/)
+> and Steam [game server account](https://steamcommunity.com/dev/managegameservers)
+> rules.
 
-`dtr_cosmetics basic` is an optional, default-off high-risk cosmetic replay mode.
-It has no effect unless the manifest was exported with the explicit cosmetic
-flags above. When evidence exists, it only applies demo-observed weapon paint,
-knife, glove metadata, and stable weapon/knife custom names to safe replay
-bots. By default it does not randomize cosmetics or read profile databases, and
-does not apply stickers unless sticker export and `dtr_cosmetics stickers on`
-are also enabled. It does not apply charms unless charm export and
-`dtr_cosmetics charms on` are also enabled. It can apply demo-observed StatTrak
-item quality (`quality=9`) for exported weapon cosmetics. When a demo StatTrak
-counter is not exposed, runtime writes a display counter of `0` so CS2 can
-select the StatTrak counter model; this does not invent a demo kill count. It
-never clears bot-native cosmetics for missing evidence when
-`dtr_cosmetics preserve_native on` is enabled. It never randomizes cosmetics or
-applies agents.
-Bot-only
-mutation is not a policy exemption: if human players can observe, control,
-possess, inspect, or otherwise use bots carrying
-simulated cosmetics, treat the server as exposed to cosmetic/inventory policy
-risk.
+## `.dtr` Format Contract
 
-`dtr_cosmetics stickers on` is an additional default-off sub-mode under
-cosmetic replay. It requires `dtr_cosmetics basic` and a manifest
-exported with `--export-stickers`; it applies only stable demo-observed weapon
-sticker slot/id/wear/offset metadata to safe replay bots.
+`.dtr` is the native replay file consumed by DemoTracer's CounterStrikeSharp
+loader and BotController runtime. Detailed binary layout is documented in
+[`docs/FORMAT.md`](docs/FORMAT.md).
 
-`dtr_cosmetics charms on` is another default-off sub-mode under cosmetic
-replay. It requires `dtr_cosmetics basic` and a manifest exported with
-`--export-charms`; it applies only stable demo-observed weapon charm/keychain
-slot 0 id, offset, optional seed, optional highlight, and optional charm sticker
-metadata to safe replay bots.
+- Magic: `CSDTRREC`
+- Current writer format: `.dtr` v7
+- Runtime reader support: v3 through v7
+- Current manifest ABI: 17
+- Current BotController native ABI: 16
+- Current DemoTracer companion API: 4
+- Endianness: little-endian
+- Current v7 layout: section container with required movement snapshot, tick
+  metadata, and subtick sections; optional projectile, high-fidelity metadata,
+  command-frame, and movement-extra sections.
 
-`dtr_align crosshair on` is on by default. It applies only a
-stable demo-observed `crosshair_code` to a human viewer while they are watching
-a safe replay bot in-eye, then restores the viewer's original crosshair when
-they leave that replay POV.
+The format is lossless for stored replay evidence: movement snapshots,
+projectile events, high-fidelity metadata, subtick records, and command-frame
+data retain their original `f32`, integer, or UTF-8 JSON values. Detailed binary
+layout is documented in [`docs/FORMAT.md`](docs/FORMAT.md).
 
-`dtr_align left_hand off` disables replay writes of `.dtr`
-`left_hand_desired` command frames for newly loaded replays. This lowers replay
-fidelity, but significantly improves handoff smoothness when a left-hand replay
-bot would otherwise switch back to the server default right-hand viewmodel after
-handoff.
+## Documentation
 
-To start a sequence from a later source round:
+- Docs index: [`docs/README.md`](docs/README.md)
+- Usage: [`docs/USAGE.md`](docs/USAGE.md)
+- Server commands: [`docs/COMMANDS.md`](docs/COMMANDS.md)
+- Dependencies: [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md)
+- File format: [`docs/FORMAT.md`](docs/FORMAT.md)
+- Limitations: [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md)
 
-```text
-dtr_go seq "<output-dir>\<demo-id>\manifest.json" 12
-```
+## Repository Layout
 
-To play only one source round:
-
-```text
-dtr_go round "<output-dir>\<demo-id>\manifest.json" 12
-```
-
-Round-start replay is the supported playback path. Even with `--full-round`,
-server playback starts from `round_start` / freeze time and lets CS2 simulate
-the round forward normally. `--full-round` only controls whether exported
-`.dtr` files keep data beyond the opening route.
-
-For a Mirage pool:
-
-```text
-dtr_go pool "<output-dir>\mirage_pool\pool_manifest.json" 0
-```
-
-Round 0 and round 12 only match pistol-round candidates from demo round 0 or
-12. Other rounds use soft economy matching with recent-pick penalties and
-weighted random sampling, allowing limited upward counterfactuals so weaker
-current buys can still draw stronger opening routes.
-Pool rounds are prepared at `round_start` from current equipment plus account
-money, then started at `round_freeze_end`; this lets DemoTracer set native buy
-skip before vanilla bot buying can add extra weapons.
-
-Useful checks:
-
-```text
-bc_status
-bc_replay_pov spectated
-bc_perf 1
-dtr_status 0
-dtr_status
-dtr_runtime
-dtr_bots
-```
-
-Stop playback:
-
-```text
-dtr_stop_all
-```
-
-## Round Quality
-
-The converter marks rounds as recommended or suspicious.
-
-Suspicious rounds usually mean:
-
-- fewer than 10 available players
-- wrong T/CT player counts
-- abnormally short round window
-- broken reconnect data
-- post-match garbage rounds at the end of the demo
-
-For normal use, export the recommended rounds only.
-
-## Current Limitations
-
-- Windows x64 local CS2 is the primary target. Linux may work from source, but
-  Linux converter/runtime packages are not currently maintained release targets.
-- The server should run the same map and have enough bots.
-- Route playback is high-fidelity, but it is not full offline usercmd
-  reconstruction.
-- Projectile, handoff, boost, BotHider identity, avatar, and cosmetic alignment
-  have known edge cases.
-- Cosmetic/econ export and runtime alignment are explicit opt-in features with
-  operator risk; see
-  [Cosmetic Alignment and GSLT Safety](#cosmetic-alignment-and-gslt-safety).
-- This is for local servers, research, content creation, and plugin development.
-  It is not intended for matchmaking or cheating.
-
-For detailed known limitations and edge cases, see
-[`docs/LIMITATIONS.md`](docs/LIMITATIONS.md).
-
-## Advanced CLI
-
-```powershell
-cd cs2-demotracer\converter
-cargo test
-cargo run --release -- inspect --demo <demo.dem>
-cargo run --release -- convert --demo <demo.dem> --output <output-dir>
-cargo run --release -- convert-pool --demo-dir <demo-root> --output <output-dir> --map de_mirage --recursive
-cargo run --release -- convert-nades --demo <demo.dem> --output <output-dir>
-cargo run --release -- convert-nades-library --demo-dir <demo-root> --output <output-dir> --recursive
-cargo run --release -- validate --input <output-dir>
-cargo run --release -- wizard
-```
-
-Repository layout:
-
-- `converter/`: Rust CLI, local Rust API, prompt-style wizard converter, and Demo2Nade export code.
-- `runtime/BotController/`: CS2 Metamod runtime.
-- `css/DemoTracer/`: CounterStrikeSharp control plugin.
-- `css/DemoTracerApi/`: API contract for companion CounterStrikeSharp plugins.
-- `docs/`: extra docs.
-- `examples/`: Python and Node.js CLI integration examples.
-- `third_party/`: vendored third-party source and upstream license files.
+- `converter/`: Rust CLI, GUI, local Rust API, pool conversion, and Demo2Nade.
+- `runtime/BotController/`: CS2 Metamod runtime used by the server bundle.
+- `css/DemoTracer/`: CounterStrikeSharp playback plugin.
+- `css/DemoTracerApi/`: companion-plugin API contract.
+- `docs/`: maintained usage, reference, format, and dependency docs.
+- `examples/`: small Python and Node.js CLI integration examples.
+- `third_party/`: vendored third-party source and license files.
 
 ## Acknowledgements
 
 CS2 DemoTracer builds on several excellent open-source projects.
 
-Without [XBribo/CS2-Bot-Controller](https://github.com/XBribo/CS2-Bot-Controller),
-the runtime bot replay path would not have been possible. It provides the
-AGPL-3.0 BotController foundation for replay hooks, recording, input injection,
-and weapon locking.
-
-Thank you to [XBribo/CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider)
-for the BotHider integration path used for managed bot detection, display-name
-alignment, and SteamID64 alignment.
-
-Thank you to [LaihoE/demoparser](https://github.com/LaihoE/demoparser) for the
-Rust CS2 demo parser used by the converter. The vendored source is preserved
-under `third_party/demoparser` with upstream license and README files.
-
-Thank you to [csgowiki/minidemo-encoder](https://github.com/csgowiki/minidemo-encoder)
-for historical `.dem -> replay file` workflow inspiration. No Go source from
-that project is copied.
-
-CS2 DemoTracer also uses [Metamod:Source](https://github.com/alliedmodders/metamod-source)
-and [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp) for
-the runtime/plugin stack.
+- [XBribo/CS2-Bot-Controller](https://github.com/XBribo/CS2-Bot-Controller)
+  provides the AGPL-3.0 BotController foundation for replay hooks, recording,
+  input injection, and weapon locking.
+- [XBribo/CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider) provides the
+  integration path used for managed bot detection, display-name alignment, and
+  SteamID64 alignment.
+- [LaihoE/demoparser](https://github.com/LaihoE/demoparser) provides the Rust
+  CS2 demo parser used by the converter. The vendored source is preserved under
+  `third_party/demoparser`.
+- [csgowiki/minidemo-encoder](https://github.com/csgowiki/minidemo-encoder)
+  provided historical `.dem -> replay file` workflow inspiration. No Go source
+  from that project is copied.
+- [Metamod:Source](https://github.com/alliedmodders/metamod-source) and
+  [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp) provide
+  the runtime/plugin stack.
 
 ## License
 
-CS2 DemoTracer is AGPL-3.0-only. See `LICENSE` for the full license text.
-
-Vendored third-party components keep their upstream license files under
+CS2 DemoTracer is AGPL-3.0-only. See [`LICENSE`](LICENSE) for the full license
+text. Vendored third-party components keep their upstream license files under
 `third_party/`.

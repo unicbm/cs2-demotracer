@@ -154,7 +154,7 @@ function main() {
   console.log(`rounds: ${rounds}`);
   console.log(`files: ${files}`);
   console.log("CS2 console:");
-  console.log(`dtr_load_round "${consoleQuotePath(manifest)}" ${firstRound(args.rounds)}; dtr_play_loaded 0; dtr_status 0`);
+  console.log(`dtr_go round "${consoleQuotePath(manifest)}" ${firstRound(args.rounds)}; dtr_status 0`);
 }
 
 try {

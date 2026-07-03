@@ -1,8 +1,6 @@
 # Limitations
 
-This document tracks detailed known limitations and edge cases. The root
-README keeps the short version for readers deciding whether DemoTracer fits
-their use case.
+This document tracks known limitations and edge cases.
 
 ## Platform And Server Scope
 

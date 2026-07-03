@@ -88,16 +88,22 @@ Validates and arms a manifest sequence, then issues `mp_restartgame 1`.
 `from_source_round` defaults to `0` and means "start the sequence at this demo
 source round", not "play only this round".
 
+Direct restart alias: `dtr_seq_restart <manifest.json> [from_source_round]`.
+
 ### `dtr_go round <manifest.json> <source_round>`
 
 Validates and arms exactly one demo source round, then issues
 `mp_restartgame 1`. This does not advance to later manifest rounds.
+
+Direct restart alias: `dtr_round_restart <manifest.json> <source_round>`.
 
 ### `dtr_go pool <pool_manifest.json> [server_round]`
 
 Validates and arms a pool plan, then issues `mp_restartgame 1`. `server_round`
 is a local server round hint for economy/pistol matching, not a manifest source
 round.
+
+Direct restart alias: `dtr_pool_restart <pool_manifest.json> [server_round]`.
 
 ## Sequence Playback
 
@@ -126,6 +132,8 @@ not change plugin settings. It only stops future sequence scheduling; use
 ### `dtr_arm pool <pool_manifest.json> [server_round]`
 
 Arms economy-matched playback from a converted map pool without restarting.
+
+Compatibility alias: `dtr_run_pool <pool_manifest.json> [server_round]`.
 
 Implementation:
 
@@ -187,6 +195,8 @@ Before starting, the plugin preloads replay loadouts and start weapons when
 This is a manual/debug command. It bypasses lifecycle-safe `round_start` and
 `round_freeze_end` alignment.
 
+Legacy alias: `dtr_play_loaded [loop:0|1]`.
+
 ### `dtr_load slot <slot> <absolute-or-game-path.dtr>`
 
 Loads a single `.dtr` file into one bot slot. This is a low-level manual command
@@ -198,16 +208,28 @@ for experiments. It does not get manifest-only metadata such as `player_name`,
 Starts replay for one loaded slot, after checking that the target is still a
 safe bot target.
 
-### `dtr_stop slot <slot>`
+### `dtr_stop <sequence|pool|replay|slot|all> ...`
 
-Stops replay on one slot and releases runtime locks, pending alignments, buy
-plans, and replay brain state for that slot.
+Stops selected scheduling or replay state:
+
+- `dtr_stop sequence` or `dtr_stop seq`: stop future manifest-sequence
+  scheduling.
+- `dtr_stop pool`: stop future pool selection.
+- `dtr_stop replay` or `dtr_stop loaded`: stop all currently loaded/running
+  replay slots.
+- `dtr_stop slot <slot>`: stop one replay slot and release runtime locks,
+  pending alignments, buy plans, and replay brain state for that slot.
+- `dtr_stop all`: stop all DemoTracer replay state.
+
+Legacy alias: `dtr_stop <slot>` for `dtr_stop slot <slot>`.
 
 ### `dtr_stop_all`
 
 Stops all currently loaded slots and disables active sequence/pool/armed state.
 Loaded slot metadata may remain in memory; use `dtr_unload` when you want to
 remove a specific loaded replay from a slot.
+
+This is a legacy convenience alias for `dtr_stop all`.
 
 ### `dtr_unload <slot>`
 
@@ -249,6 +271,11 @@ clips. This is mainly for local library inspection. `all` includes opening
 clips; the current cycle parser does not expose a separate `opening` filter. It
 does not move the bot between lineup starts; choose clips whose start positions
 are suitable for your current test setup.
+
+### `dtr_stop_nade_cycle`
+
+Stops the active nade cycle, if one is running, and stops the current cycle
+replay slot.
 
 ## Replay Fidelity: `dtr_align`
 
@@ -573,6 +600,19 @@ Contact implementation:
   `threat_360_range`; close LOS threats trigger immediately, while farther LOS
   threats require a short hold. With `threat_360_los=false`, the full configured
   360 range remains an experimental no-LOS trigger.
+
+### `dtr_handoff_360 [0|1] [range] [los|nolos]`
+
+Controls the 360-degree threat trigger used by contact handoff.
+
+- `0`/`off`: disable 360 threat handoff.
+- `1`/`on`: enable 360 threat handoff.
+- `range`: threat radius in game units, clamped by the plugin.
+- `los`/`raytrace`: require RayTrace line of sight when a RayTrace provider is
+  available.
+- `nolos`: use proximity only; this is more experimental.
+
+The command prints the effective setting and current RayTrace status.
 
 ## Diagnostics
 

@@ -81,7 +81,7 @@ def main() -> None:
     print(f"rounds: {len(rounds)}")
     print(f"files: {len(files)}")
     print("CS2 console:")
-    print(f'dtr_load_round "{console_quote_path(manifest)}" {first_round(args.rounds)}; dtr_play_loaded 0; dtr_status 0')
+    print(f'dtr_go round "{console_quote_path(manifest)}" {first_round(args.rounds)}; dtr_status 0')
 
 
 if __name__ == "__main__":
