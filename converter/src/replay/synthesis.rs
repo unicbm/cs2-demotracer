@@ -282,7 +282,7 @@ fn is_cs2_knife_def_index(def: i32) -> bool {
     // CS2 demos can report the active knife as the equipped cosmetic item
     // definition. BotController treats canonical def 42 as "the bot's own
     // knife", so the file format stores every knife variant as 42.
-    def == 42 || def == 59 || (500..600).contains(&def)
+    def == 41 || def == 42 || def == 59 || (500..600).contains(&def)
 }
 
 #[cfg(test)]
@@ -425,13 +425,15 @@ mod tests {
     #[test]
     fn synthesis_canonicalizes_knife_def_indices() {
         let rec = synthesize_player_rec(
-            &[row(10, 508), row(11, 508), row(12, 7)],
+            &[row(10, 41), row(11, 526), row(12, 508), row(13, 7)],
             "de_nuke",
             64.0,
             1,
         )
         .unwrap();
         assert_eq!(rec.ticks[0].weapon_def_index, 42);
+        assert_eq!(rec.ticks[1].weapon_def_index, 42);
+        assert_eq!(rec.ticks[2].weapon_def_index, 42);
     }
 
     #[test]

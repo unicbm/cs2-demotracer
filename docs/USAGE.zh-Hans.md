@@ -266,8 +266,9 @@ CS2-Bot-Hider。BotHider 是可选依赖，只用于 BotHider 管理的 replay s
 饰品对齐是可选功能，默认关闭。只有 round manifest 是用 `--export-cosmetics` 和两个
 风险确认 flag 导出，并且里面确实有 `cosmetics` 证据时，它才会生效。生效时
 DemoTracer 也只会把 demo 观测到的武器 paint、刀、手套元数据，以及稳定的武器/刀具
-custom name 应用到安全 replay bot。它不会随机分配饰品，不会读取 profile/database，
-也不会应用探员。它可以应用 demo 观测到的 StatTrak/暗金武器质量 (`quality=9`)；
+custom name 应用到安全 replay bot。默认不会随机分配饰品，不会读取 profile/database，
+也不会应用探员。它可以应用 demo 观测到的
+StatTrak/暗金武器质量 (`quality=9`)；
 如果 demo 没暴露 StatTrak 计数器，runtime 会写显示用 `0`，让 CS2 选择带计数器的
 StatTrak 模型，但这不代表伪造了 demo 击杀数。武器贴纸需要额外的
 `--export-stickers` 转换 flag 和 runtime 的 `dtr_cosmetics stickers on`。武器挂件/keychain

@@ -15,6 +15,7 @@
     "preset": "off"
   },
   "cosmetics": {
-    "preset": "off"
+    "preset": "off",
+    "preserve_native": false
   }
 }

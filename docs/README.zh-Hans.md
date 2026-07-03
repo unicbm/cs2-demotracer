@@ -58,6 +58,9 @@ demo 长度、存储和导出范围。
 > metadata；贴纸还必须额外传入 `--export-stickers`，挂件还必须额外传入
 > `--export-charms`。runtime 里的饰品、贴纸和挂件对齐也默认关闭，并且只消费
 > manifest 里的 demo 证据。
+> 如果服务器已经接受 bot 饰品风险，可以用 `dtr_cosmetics preserve_native on`
+> 保留缺少 demo 证据时 bot 原本由 CS2/服务器提供的 native 饰品；默认不会随机生成饰品，
+> 也不会读取 profile 或 inventory database。
 >
 > 这个功能只面向本地/私有 replay fidelity。listen/practice server 的 GSLT
 > 暴露面通常低于 dedicated server，但只写 bot 不是 Valve policy 豁免；如果人类
@@ -329,7 +332,7 @@ dtr_go seq "<输出目录>\<demo-id>\manifest.json" 0
 `dtr_cosmetics basic` 是可选且默认关闭的高风险饰品 replay 模式。只有 manifest
 是用上面的显式饰品导出 flag 生成，并且里面确实有 `cosmetics` 证据时，它才会生效。
 生效时也只把 demo 观测到的武器 paint、刀、手套元数据，以及稳定的武器/刀具 custom
-name 应用到安全 replay bot；它不会随机分配饰品，不读取 profile/database，也不会应用
+name 应用到安全 replay bot；默认不会随机分配饰品，不读取 profile/database，也不会应用
 贴纸，除非 manifest 是用 `--export-stickers` 导出且 runtime 也开启了
 `dtr_cosmetics stickers on`；也不会应用挂件，除非 manifest 是用
 `--export-charms` 导出且 runtime 也开启了 `dtr_cosmetics charms on`。它可以应用

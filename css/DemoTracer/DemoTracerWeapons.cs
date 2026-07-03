@@ -116,7 +116,7 @@ public sealed partial class DemoTracerPlugin
 
     private static int NormalizeWeaponDefIndex(int weaponDefIndex)
     {
-        if (weaponDefIndex == 42 || weaponDefIndex == 59 ||
+        if (weaponDefIndex is 41 or 42 or 59 ||
             weaponDefIndex is >= 500 and < 600)
             return 42;
         return weaponDefIndex;
@@ -257,6 +257,7 @@ public sealed partial class DemoTracerPlugin
             "weapon_scar20" => 38,
             "weapon_sg556" => 39,
             "weapon_ssg08" => 40,
+            "weapon_knifegg" => 41,
             "weapon_knife" => 42,
             "weapon_flashbang" => 43,
             "weapon_hegrenade" => 44,
@@ -265,10 +266,31 @@ public sealed partial class DemoTracerPlugin
             "weapon_decoy" => 47,
             "weapon_incgrenade" => 48,
             "weapon_c4" => 49,
+            "weapon_knife_t" => 59,
             "weapon_m4a1_silencer" => 60,
             "weapon_usp_silencer" => 61,
             "weapon_cz75a" => 63,
             "weapon_revolver" => 64,
+            "weapon_bayonet" => 500,
+            "weapon_knife_css" => 503,
+            "weapon_knife_flip" => 505,
+            "weapon_knife_gut" => 506,
+            "weapon_knife_karambit" => 507,
+            "weapon_knife_m9_bayonet" => 508,
+            "weapon_knife_tactical" => 509,
+            "weapon_knife_falchion" => 512,
+            "weapon_knife_survival_bowie" => 514,
+            "weapon_knife_butterfly" => 515,
+            "weapon_knife_push" => 516,
+            "weapon_knife_cord" => 517,
+            "weapon_knife_canis" => 518,
+            "weapon_knife_ursus" => 519,
+            "weapon_knife_gypsy_jackknife" => 520,
+            "weapon_knife_outdoor" => 521,
+            "weapon_knife_stiletto" => 522,
+            "weapon_knife_widowmaker" => 523,
+            "weapon_knife_skeleton" => 525,
+            "weapon_knife_kukri" => 526,
             _ => -1
         };
     }

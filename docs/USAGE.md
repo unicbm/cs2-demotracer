@@ -283,8 +283,8 @@ Cosmetic alignment is optional and off by default. It has no effect unless the
 round manifest was exported with `--export-cosmetics` plus the two risk
 acknowledgement flags. When evidence exists, DemoTracer applies only
 demo-observed weapon paint, knife, glove metadata, and stable weapon/knife
-custom names to safe replay bots. It does not randomize cosmetics, read profile
-databases, or apply agents. It can apply demo-observed StatTrak item quality
+custom names to safe replay bots. By default it does not randomize cosmetics,
+read profile databases, or apply agents. It can apply demo-observed StatTrak item quality
 (`quality=9`) for exported weapon cosmetics. When a demo StatTrak counter is
 not exposed, runtime writes a display counter of `0` so CS2 can select the
 StatTrak counter model; this does not invent a demo kill count. Weapon stickers

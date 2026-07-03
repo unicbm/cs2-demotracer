@@ -2383,7 +2383,7 @@ fn glove_cosmetic_paint_spec(
 }
 
 fn normalize_weapon_def_index(def: i32) -> i32 {
-    if def == 42 || def == 59 || (500..600).contains(&def) {
+    if def == 41 || def == 42 || def == 59 || (500..600).contains(&def) {
         42
     } else {
         def
@@ -2447,7 +2447,7 @@ fn is_weapon_cosmetic_def_index(def: i32) -> bool {
 }
 
 fn is_knife_cosmetic_def_index(def: i32) -> bool {
-    def == 42 || def == 59 || (500..600).contains(&def)
+    def == 41 || def == 42 || def == 59 || (500..600).contains(&def)
 }
 
 fn is_plausible_glove_item_def_index(def: i32) -> bool {

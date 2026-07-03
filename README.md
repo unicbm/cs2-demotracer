@@ -622,14 +622,17 @@ valid burns.
 It has no effect unless the manifest was exported with the explicit cosmetic
 flags above. When evidence exists, it only applies demo-observed weapon paint,
 knife, glove metadata, and stable weapon/knife custom names to safe replay
-bots. It does not randomize cosmetics, does not read profile databases, and
+bots. By default it does not randomize cosmetics or read profile databases, and
 does not apply stickers unless sticker export and `dtr_cosmetics stickers on`
 are also enabled. It does not apply charms unless charm export and
 `dtr_cosmetics charms on` are also enabled. It can apply demo-observed StatTrak
 item quality (`quality=9`) for exported weapon cosmetics. When a demo StatTrak
 counter is not exposed, runtime writes a display counter of `0` so CS2 can
 select the StatTrak counter model; this does not invent a demo kill count. It
-never applies agents. Bot-only
+never clears bot-native cosmetics for missing evidence when
+`dtr_cosmetics preserve_native on` is enabled. It never randomizes cosmetics or
+applies agents.
+Bot-only
 mutation is not a policy exemption: if human players can observe, control,
 possess, inspect, or otherwise use bots carrying
 simulated cosmetics, treat the server as exposed to cosmetic/inventory policy

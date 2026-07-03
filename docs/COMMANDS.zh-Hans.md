@@ -49,7 +49,8 @@ DemoTracer 会从 `DemoTracer.dll` 同目录读取可选的 `demotracer.config.j
     "preset": "off"
   },
   "cosmetics": {
-    "preset": "off"
+    "preset": "off",
+    "preserve_native": false
   }
 }
 ```
@@ -285,6 +286,7 @@ dtr_cosmetics gloves <on|off>
 dtr_cosmetics names <on|off>
 dtr_cosmetics stickers <on|off>
 dtr_cosmetics charms <on|off>
+dtr_cosmetics preserve_native <on|off>
 ```
 
 Preset：
@@ -292,6 +294,11 @@ Preset：
 - `weapons`：只应用武器皮肤和武器 custom name。
 - `basic`：武器、刀、手套和 custom name；不应用贴纸和挂件。
 - `full`：`basic` 加贴纸和挂件。
+
+`preserve_native` 是给已经接受 bot 饰品风险的服务器运营者用的本地策略。开启后，
+DemoTracer 不会因为缺少对应 demo 证据就清掉 bot 原本由 CS2/服务器提供的 native 饰品。
+目前它主要影响 `gloves` 开启但 replay 没有手套证据的情况：不再主动清空 bot 手套。
+它不会随机生成饰品，也不会读取 profile 或 inventory database。
 
 ## Handoff / Partial / Identity 和旧命令 alias
 
@@ -372,6 +379,10 @@ Preset：
   如果 manifest 没有非负 `stattrak_counter`，runtime 会写显示用 `0` 来请求
   StatTrak 计数器模型；这不是 demo 击杀数断言。
 - 缺失、为 0、互相矛盾或当前不支持的 demo 证据会直接跳过。
+- 默认情况下，如果开启了手套对齐而 manifest 没有手套证据，runtime 仍会清掉 replay
+  bot 手套以匹配“无证据”。如果希望保留服务器本来给 bot 的饰品，用
+  `dtr_cosmetics preserve_native on`，或在配置里写
+  `"cosmetics": { "preserve_native": true }`。
 - 这是面向本地/私有验证的 replay fidelity 功能。
 - listen/practice server 未必有专用服同样的 GSLT 暴露面，但只写 bot 不是规则豁免；
   如果真人玩家可以观察、接管、持有、检视或以其他方式使用这些 bot 物品外观，就应按
@@ -437,8 +448,7 @@ pool plan 需要重新加载后才会应用。
 
 用 `avatar` 可以应用 manifest 里的 PNG 头像覆写，例如队伍/赛事 logo，但不会把真实
 选手 SteamID64 当作头像覆写 key。这个模式会给 replay bot 写入一个 DTR 合成
-SteamID64，并把对应 PNG 绑定到这个合成 key。如果某个玩家没有头像证据，`avatar`
-会对该 slot 回退到普通 `steam` 行为。
+SteamID64；如果有匹配的头像证据，就把对应 PNG 绑定到这个合成 key。
 
 只有明确想走旧路径时才用 `full`：真实 demo SteamID64 加 demo PNG 头像覆写，并且
 头像覆写仍按真实 SteamID64 keyed。

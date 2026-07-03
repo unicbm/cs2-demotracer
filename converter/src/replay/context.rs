@@ -95,7 +95,7 @@ pub(crate) fn replay_loadout(row: &ParsedPlayerTick) -> ReplayLoadout {
 }
 
 fn normalize_weapon_def_index(def: i32) -> i32 {
-    if def == 42 || def == 59 || (500..600).contains(&def) {
+    if def == 41 || def == 42 || def == 59 || (500..600).contains(&def) {
         42
     } else {
         def

@@ -55,7 +55,8 @@ only; it is not written into `.dtr` files or manifests.
     "preset": "off"
   },
   "cosmetics": {
-    "preset": "off"
+    "preset": "off",
+    "preserve_native": false
   }
 }
 ```
@@ -316,6 +317,7 @@ dtr_cosmetics gloves <on|off>
 dtr_cosmetics names <on|off>
 dtr_cosmetics stickers <on|off>
 dtr_cosmetics charms <on|off>
+dtr_cosmetics preserve_native <on|off>
 ```
 
 Presets:
@@ -323,6 +325,13 @@ Presets:
 - `weapons`: weapon paint and weapon custom names only.
 - `basic`: weapons, knives, gloves, and custom names; no stickers or charms.
 - `full`: `basic` plus stickers and charms.
+
+`preserve_native` is an opt-in server-local policy for operators who already
+accept bot cosmetic risk. When enabled, DemoTracer does not clear bot-native
+cosmetics just because matching demo evidence is absent. Today this mainly
+prevents glove clearing when `gloves` is enabled and a replay has no glove
+evidence. It does not randomize cosmetics and does not read a profile or
+inventory database.
 
 ## Handoff / Partial / Identity And Legacy Aliases
 
@@ -409,8 +418,8 @@ Implementation when enabled:
   `dtr_set align charms on` still work.
 - Applies only to safe replay bot slots after weapon/loadout alignment has
   confirmed the replay inventory path.
-- Never picks random cosmetics, never reads a server profile/database, and never
-  applies to real human players.
+- Never picks random cosmetics, never reads a server profile/database, and
+  never applies to real human players.
 
 Important limits:
 
@@ -420,6 +429,10 @@ Important limits:
   `stattrak_counter`, runtime writes display counter `0` to request the
   StatTrak counter model; this is not a demo kill-count claim.
 - Missing, zero, contradictory, or unsupported demo evidence is skipped.
+- By default, enabling glove alignment still clears replay bot gloves when the
+  manifest has no glove evidence. Use `dtr_cosmetics preserve_native on` or
+  config `"cosmetics": { "preserve_native": true }` if server-provided bot
+  cosmetics should be left alone when evidence is missing.
 - This is a replay-fidelity feature intended for local/private validation.
 - A local listen/practice server may not have the same GSLT exposure as a
   dedicated server, but bot-only cosmetic mutation is not a policy exemption if
@@ -500,9 +513,9 @@ SteamID64 updates for BotHider-managed bot slots using the demo player's
 
 Use `avatar` to apply manifest PNG avatar overrides, such as team/event logos,
 without using the real player SteamID64 as the avatar override key. In this
-mode DemoTracer writes a synthetic DTR SteamID64 to the replay bot and writes the
-matching PNG override to that synthetic key. If a player has no avatar override
-evidence, `avatar` falls back to the normal `steam` behavior for that slot.
+mode DemoTracer writes a synthetic DTR SteamID64 to the replay bot. When matching
+avatar override evidence exists, it writes the PNG override to that synthetic
+key.
 
 Use `full` only when you explicitly want the legacy path: real demo SteamID64
 plus demo-provided avatar override keyed by that real SteamID64.
