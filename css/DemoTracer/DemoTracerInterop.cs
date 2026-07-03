@@ -68,6 +68,60 @@ internal static partial class BotControllerNative
     public static bool HasUsercmdMovementIntentCapability
         => (Capabilities & CapabilityUsercmdMovementIntent) == CapabilityUsercmdMovementIntent;
 
+    public static bool HasVoiceSendCapability
+        => (Capabilities & CapabilityVoiceSend) == CapabilityVoiceSend;
+
+    public static bool CanSendVoice
+    {
+        get
+        {
+            if (!HasVoiceSendCapability)
+                return false;
+            try
+            {
+                return BotController_CanSendVoice() == 1;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+
+    public static int VoiceStatus
+    {
+        get
+        {
+            if (!HasVoiceSendCapability)
+                return -10;
+            try
+            {
+                return BotController_GetVoiceStatus();
+            }
+            catch (EntryPointNotFoundException)
+            {
+                return CanSendVoice ? 0 : -9;
+            }
+            catch
+            {
+                return -8;
+            }
+        }
+    }
+
+    public static string VoiceStatusText
+        => VoiceStatus switch
+        {
+            0 => "available",
+            -1 => "no_engine",
+            -2 => "no_network_messages",
+            -3 => "no_voice_message",
+            -8 => "status_error",
+            -9 => CanSendVoice ? "available_legacy" : "missing_legacy",
+            -10 => "missing_capability",
+            _ => $"status_{VoiceStatus}",
+        };
+
     public static bool HasUsercmdMovementIntentExports => ProbeUsercmdMovementIntentExports();
 
     public static bool HasLeftHandIntentAliasExports => ProbeLeftHandIntentAliasExports();
@@ -96,8 +150,56 @@ internal static partial class BotControllerNative
             return $"expected_abi={ExpectedAbiVersion} runtime_abi={AbiVersion} abi_minor={abiInfo.AbiMinor} " +
                    $"compatible={IsCompatible} caps=0x{Capabilities:X} missing=0x{MissingRequiredCapabilities:X} " +
                    $"build={BuildId} usercmd_movement_intent={UsercmdMovementIntentStatus} " +
+                   $"voice_send={VoiceStatusText} " +
                    $"left_hand_alias={HasLeftHandIntentAliasExports} dtr_reader={MinRecFormatVersion}..{RecFormatVersion} " +
                    $"platform={RuntimePlatformName} api={DemoTracerApiVersion}";
+        }
+    }
+
+    public static int SendVoiceFrame(
+        int recipientSlot,
+        int senderClient,
+        ulong senderXuid,
+        byte[] audio,
+        int sampleRate,
+        float voiceLevel,
+        int sequenceBytes = -1,
+        int sectionNumber = -1,
+        int uncompressedSampleOffset = -1,
+        uint numPackets = 0,
+        uint[]? packetOffsets = null,
+        int tick = -1,
+        int audibleMask = 1)
+    {
+        if (!ValidSlot(recipientSlot) || senderClient < 0 || audio.Length == 0)
+            return -2;
+        packetOffsets ??= [];
+        try
+        {
+            return BotController_SendVoiceFrame(
+                recipientSlot,
+                senderClient,
+                senderXuid,
+                audio,
+                audio.Length,
+                sampleRate,
+                voiceLevel,
+                sequenceBytes,
+                sectionNumber,
+                uncompressedSampleOffset,
+                numPackets,
+                packetOffsets,
+                packetOffsets.Length,
+                tick,
+                audibleMask);
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return -7;
+        }
+        catch
+        {
+            return -8;
         }
     }
 

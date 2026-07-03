@@ -1127,6 +1127,7 @@ public sealed partial class DemoTracerPlugin
 
         var slot = candidate.Slot;
         var userId = candidate.UserId.Value;
+        StopVoiceTestPlayback("dtr_kick", printSummary: false);
         if (IsNadeCycleSlot(slot))
             StopNadeCycle("dtr_kick", stopCurrent: false);
 
@@ -1175,6 +1176,7 @@ public sealed partial class DemoTracerPlugin
         var ok = BotControllerNative.UnloadReplay(slot);
         if (ok)
         {
+            StopVoiceTestPlayback("unload", printSummary: false);
             if (IsNadeCycleSlot(slot))
                 StopNadeCycle("manual_unload", stopCurrent: false);
             _loadedSlots.Remove(slot);

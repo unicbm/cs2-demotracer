@@ -78,6 +78,7 @@ impl<'a> SecondPassParser<'a> {
             match cmd {
                 EntityCmd::Delete => {
                     self.projectiles.remove(&entity_id);
+                    self.projectile_record_indices.remove(&entity_id);
                     if let Some(entry) = self.entities.get_mut(entity_id as usize) {
                         *entry = None;
                     }

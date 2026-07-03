@@ -4,6 +4,7 @@
 #include "MotionRecorder.h"
 #include "InputInjector.h"
 #include "BuyControllerState.h"
+#include "VoiceSender.h"
 
 #include <cstdint>
 #include <cstring>
@@ -28,6 +29,7 @@ namespace
     constexpr uint64_t kCapabilityControllerBotOffset = 1ULL << 7;
     constexpr uint64_t kCapabilityExtendedReplay = 1ULL << 8;
     constexpr uint64_t kCapabilityUsercmdMovementIntent = 1ULL << 9;
+    constexpr uint64_t kCapabilityVoiceSend = 1ULL << 10;
     constexpr uint64_t kBotControllerCapabilities =
         kCapabilityReplaySlotState |
         kCapabilityStartReplayAt |
@@ -38,7 +40,8 @@ namespace
         kCapabilityBuyPlan |
         kCapabilityControllerBotOffset |
         kCapabilityExtendedReplay |
-        kCapabilityUsercmdMovementIntent;
+        kCapabilityUsercmdMovementIntent |
+        kCapabilityVoiceSend;
 
 #pragma pack(push, 4)
     struct BotControllerAbiInfo
@@ -114,6 +117,51 @@ extern "C" __declspec(dllexport) uint64_t BotController_GetCapabilities()
 extern "C" __declspec(dllexport) const char *BotController_GetBuildId()
 {
     return BOTCONTROLLER_BUILD_ID;
+}
+
+extern "C" __declspec(dllexport) int BotController_CanSendVoice()
+{
+    return BotController::VoiceSender::IsAvailable() ? 1 : 0;
+}
+
+extern "C" __declspec(dllexport) int BotController_GetVoiceStatus()
+{
+    return BotController::VoiceSender::GetStatus();
+}
+
+extern "C" __declspec(dllexport) int BotController_SendVoiceFrame(
+    int recipientSlot,
+    int senderClient,
+    uint64_t senderXuid,
+    const uint8_t *audio,
+    int audioBytes,
+    int sampleRate,
+    float voiceLevel,
+    int sequenceBytes,
+    int sectionNumber,
+    int uncompressedSampleOffset,
+    uint32_t numPackets,
+    const uint32_t *packetOffsets,
+    int packetOffsetCount,
+    int tick,
+    int audibleMask)
+{
+    return BotController::VoiceSender::SendVoiceFrame(
+        recipientSlot,
+        senderClient,
+        senderXuid,
+        audio,
+        audioBytes,
+        sampleRate,
+        voiceLevel,
+        sequenceBytes,
+        sectionNumber,
+        uncompressedSampleOffset,
+        numPackets,
+        packetOffsets,
+        packetOffsetCount,
+        tick,
+        audibleMask);
 }
 
 extern "C" __declspec(dllexport) int BotController_SetControllerControllingBotOffset(int offset)

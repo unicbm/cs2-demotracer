@@ -33,6 +33,7 @@ pub struct ParserInputs<'a> {
     pub wanted_events: Vec<String>,
     pub parse_ents: bool,
     pub parse_projectiles: bool,
+    pub collect_projectile_records: bool,
     pub parse_grenades: bool,
     pub only_header: bool,
     pub only_convars: bool,

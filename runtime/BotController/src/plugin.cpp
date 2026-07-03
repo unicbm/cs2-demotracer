@@ -10,6 +10,7 @@
 #include <icvar.h>
 #include <convar.h>
 #include <interfaces/interfaces.h>
+#include <networksystem/inetworkmessages.h>
 #include <networkstringtabledefs.h>
 
 #include <nlohmann/json.hpp>
@@ -20,6 +21,7 @@
 #include "BotController.h"
 #include "InputInjector.h"
 #include "MotionRecorder.h"
+#include "VoiceSender.h"
 #include "dispatch.h"
 #include "WeaponLockerState.h"
 #include "BotControllerState.h"
@@ -117,6 +119,22 @@ bool BotControllerPlugin::Load(PluginId id, ISmmAPI *ismm,
     }
     BotController::Dispatch::g_pGameClients =
         static_cast<ISource2GameClients *>(serverIface);
+    auto *networkMessages = static_cast<INetworkMessages *>(
+        ismm->GetEngineFactory()(NETWORKMESSAGES_INTERFACE_VERSION, nullptr));
+    if (!networkMessages)
+    {
+        networkMessages = static_cast<INetworkMessages *>(
+            ismm->GetServerFactory()(NETWORKMESSAGES_INTERFACE_VERSION, nullptr));
+    }
+    BotController::VoiceSender::SetInterfaces(
+        BotController::Dispatch::g_pEngine,
+        networkMessages);
+    if (!networkMessages)
+    {
+        BotController::DebugOut(
+            "[BotController] WARN: network messages interface unavailable; "
+            "voice send disabled\n");
+    }
 
     std::string gamedataPath = ComputeGamedataPath();
     if (gamedataPath.empty())
@@ -194,6 +212,7 @@ bool BotControllerPlugin::Unload(char * /*error*/, size_t /*maxlen*/)
     BotController::BotControllerState::ClearAllJump();
     BotController::Dispatch::g_pEngine = nullptr;
     BotController::Dispatch::g_pGameClients = nullptr;
+    BotController::VoiceSender::SetInterfaces(nullptr, nullptr);
     BotController::Commands::g_pEngine = nullptr;
     BotController::Commands::g_pStringTables = nullptr;
     ConVar_Unregister();

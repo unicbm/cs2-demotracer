@@ -1193,7 +1193,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                         ? $"pool server_round={_poolRoundIndex} candidates={_poolManifest?.Candidates.Count ?? 0}"
                         : "none";
             command.ReplyToCommand(
-                $"[DTR OK] status plan={plan} loaded_slots={_loadedSlots.Count} settings identity={ReplayIdentityModeName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} cosmetics={FormatOnOff(_cosmeticAlignEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)} scoreboard={FormatOnOff(_scoreboardAlignEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} allow_partial={FormatOnOff(_partialReplayEnabled)} mp_freezetime={(float.IsFinite(freezeTime) ? freezeTime.ToString("F2", CultureInfo.InvariantCulture) : "unknown")} {(string.IsNullOrEmpty(freezeReason) ? "" : freezeReason)} {FormatCosmeticStatusCounts()} {FormatCrosshairStatusCounts()} {FormatScoreboardStatusCounts()}");
+                $"[DTR OK] status plan={plan} loaded_slots={_loadedSlots.Count} settings identity={ReplayIdentityModeName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} cosmetics={FormatOnOff(_cosmeticAlignEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)} scoreboard={FormatOnOff(_scoreboardAlignEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} allow_partial={FormatOnOff(_partialReplayEnabled)} {FormatVoiceAutoStatusInline()} mp_freezetime={(float.IsFinite(freezeTime) ? freezeTime.ToString("F2", CultureInfo.InvariantCulture) : "unknown")} {(string.IsNullOrEmpty(freezeReason) ? "" : freezeReason)} {FormatCosmeticStatusCounts()} {FormatCrosshairStatusCounts()} {FormatScoreboardStatusCounts()}");
             return;
         }
 
@@ -1208,7 +1208,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             ? $" pool_next={_poolRoundIndex}"
             : string.Empty;
         command.ReplyToCommand(
-            $"dtr: abi={BotControllerNative.AbiVersion} slot={slot} playing={state.Playing} cursor={state.Cursor} total={state.Total} handoff={FormatHandoffMode(_handoffMode)} scope={(_handoffAllSlots ? "all" : "slot")} handoff_360={_handoffThreat360Enabled}:{_handoffThreat360Range.ToString("F0", CultureInfo.InvariantCulture)} los={_handoffThreat360LosEnabled}:{_rayTraceLosProbe.ProbeStatus} partial={_partialReplayEnabled} identity={ReplayIdentityModeName()} projectile_align={_projectileAlignEnabled} cosmetic_align={_cosmeticAlignEnabled} sticker_align={_stickerAlignEnabled} charm_align={_charmAlignEnabled} preserve_native={_preserveNativeBotCosmetics} crosshair_align={_crosshairAlignEnabled} left_hand_desired={_leftHandDesiredEnabled} scoreboard_align={_scoreboardAlignEnabled}{sequence}{pool}");
+            $"dtr: abi={BotControllerNative.AbiVersion} slot={slot} playing={state.Playing} cursor={state.Cursor} total={state.Total} handoff={FormatHandoffMode(_handoffMode)} scope={(_handoffAllSlots ? "all" : "slot")} handoff_360={_handoffThreat360Enabled}:{_handoffThreat360Range.ToString("F0", CultureInfo.InvariantCulture)} los={_handoffThreat360LosEnabled}:{_rayTraceLosProbe.ProbeStatus} partial={_partialReplayEnabled} identity={ReplayIdentityModeName()} projectile_align={_projectileAlignEnabled} cosmetic_align={_cosmeticAlignEnabled} sticker_align={_stickerAlignEnabled} charm_align={_charmAlignEnabled} preserve_native={_preserveNativeBotCosmetics} crosshair_align={_crosshairAlignEnabled} left_hand_desired={_leftHandDesiredEnabled} scoreboard_align={_scoreboardAlignEnabled} {FormatVoiceAutoStatusInline()}{sequence}{pool}");
     }
 
     [ConsoleCommand("dtr_runtime", "dtr_runtime")]
@@ -1477,6 +1477,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (!_mapActive || _lifecycleResetInProgress)
             return;
 
+        ProcessVoiceTestPlayback();
         ProcessPendingProjectileAlign();
 
         if (_utilityTraceEnabled && _nadeCycle == null)
@@ -2618,7 +2619,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 .ToList();
             if (roundFiles.Count == 0)
                 return LoadRoundResult.Fail($"dtr: manifest has no files for round {round}");
-            var roundScoreboard = manifest.Rounds.FirstOrDefault(item => item.Round == round)?.Scoreboard;
+            var roundMetadata = manifest.Rounds.FirstOrDefault(item => item.Round == round);
+            var roundScoreboard = roundMetadata?.Scoreboard;
 
             var allTFiles = SortReplayFilesForScoreboard(roundFiles, "t");
             var allCtFiles = SortReplayFilesForScoreboard(roundFiles, "ct");
@@ -2652,10 +2654,18 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             if (!LoadSide(ctAssignments, manifestDir, avatarOverrides, loaded, out loadError))
                 return FailLoadRoundAfterPartialLoad(round, loadError);
 
+            var voice = ConfigureLoadedAutoVoiceClip(
+                resolvedManifestPath,
+                round,
+                roundMetadata,
+                manifest.TickRate);
             var partial = skippedT > 0 || skippedCt > 0
                 ? $" partial replay skipped T={skippedT}/CT={skippedCt}"
                 : string.Empty;
-            return LoadRoundResult.Success($"dtr: loaded {loaded.Count} replays for round {round}{partial}: {string.Join(", ", loaded)}");
+            var voiceStatus = string.IsNullOrWhiteSpace(voice)
+                ? string.Empty
+                : $" voice={voice}";
+            return LoadRoundResult.Success($"dtr: loaded {loaded.Count} replays for round {round}{partial}{voiceStatus}: {string.Join(", ", loaded)}");
         }
         catch (Exception ex)
         {
@@ -3303,7 +3313,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 ok++;
             }
         }
-        return $"dtr: started {ok}/{_loadedSlots.Count} loaded slots, loop={loop}";
+        var voice = TryStartLoadedAutoVoicePlayback(anchor, freezeTimeSeconds, ok);
+        return $"dtr: started {ok}/{_loadedSlots.Count} loaded slots, loop={loop}{voice}";
     }
 
     private bool StartReplayForSlot(int slot, bool loop)
@@ -3597,6 +3608,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     {
         var trackedSlots = _loadedSlots.ToHashSet();
         StopNadeCycle("unload_all", stopCurrent: false);
+        StopVoiceTestPlayback("unload_all", printSummary: false);
+        ClearLoadedAutoVoiceClip();
         foreach (var slot in _loadedSlots.ToArray())
         {
             BotControllerNative.StopReplay(slot);
@@ -3660,11 +3673,13 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                                  _lastPlayingSlots.Count > 0 ||
                                  _queuedNadeStartTokens.Count > 0 ||
                                  _pendingProjectileAlign.Count > 0 ||
+                                 _voiceTestPlayback != null ||
                                  _nadeCycle != null ||
                                  _armed ||
                                  _sequenceActive ||
                                  _poolActive;
 
+            StopVoiceTestPlayback(reason, printSummary: false);
             _nadeCycle = null;
             _nextNadeCycleToken++;
             _nextNadeStartToken++;
@@ -3678,6 +3693,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 _ = BotControllerNative.SetReplayPovMask(0);
             }
             _lastReplayPovMask = 0;
+            ClearLoadedAutoVoiceClip();
 
             _loadedSlots.Clear();
             _demoTracerOwnedSlots.Clear();
@@ -3767,6 +3783,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private void StopLoadedReplaySlots(string reason)
     {
         StopNadeCycle(reason, stopCurrent: false);
+        StopVoiceTestPlayback(reason, printSummary: false);
         foreach (var slot in _loadedSlots.ToArray())
         {
             BotControllerNative.StopReplay(slot);
@@ -3796,6 +3813,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private void StopAllState(string reason)
     {
         StopLoadedReplaySlots(reason);
+        ClearLoadedAutoVoiceClip();
         _armed = false;
         _armedPrepared = false;
         _armedManifestPath = string.Empty;
@@ -3840,6 +3858,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private void StopOneSlot(CommandInfo command, int slot, string reason)
     {
+        StopVoiceTestPlayback(reason, printSummary: false);
         var ok = BotControllerNative.StopReplay(slot);
         ReleaseReplaySlot(slot, reason);
         if (IsNadeCycleSlot(slot))

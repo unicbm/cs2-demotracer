@@ -4377,6 +4377,7 @@ mod tests {
             bomb_planted_ticks: Vec::new(),
             rows: vec![sample_row(100), sample_row(164)],
             projectiles: Vec::new(),
+            voice_frames: Vec::new(),
             events: Vec::new(),
             avatar_overrides: Vec::new(),
             econ_items: Vec::new(),

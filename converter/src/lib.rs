@@ -16,6 +16,7 @@ pub mod rec_writer;
 mod replay;
 pub mod synthesis;
 pub mod validate;
+pub mod voice_export;
 mod workflows;
 
 pub mod dtr {

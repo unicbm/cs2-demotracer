@@ -2,6 +2,11 @@ use crate::model::ParsedDemo;
 use crate::{Error, Result};
 use std::path::Path;
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ReadDemoOptions {
+    pub collect_voice: bool,
+}
+
 #[cfg(feature = "demoparser")]
 mod demoparser_impl {
     use super::*;
@@ -9,11 +14,13 @@ mod demoparser_impl {
     use crate::model::{
         AvatarImageFormat, ParsedAvatarOverride, ParsedEconItem, ParsedGameEvent,
         ParsedInventoryWeaponAttribute, ParsedInventoryWeaponCosmetic, ParsedPlayerTick,
-        ParsedProjectile, ParsedWeaponSticker, ProjectileEffectSource, ProjectileKind, SubtickMove,
+        ParsedProjectile, ParsedVoiceFrame, ParsedWeaponSticker, ProjectileEffectSource,
+        ProjectileKind, SubtickMove,
     };
     use ahash::AHashMap;
     use parser::first_pass::parser_settings::{rm_user_friendly_names, ParserInputs};
     use parser::parse_demo::{Parser, ParsingMode};
+    use parser::second_pass::collect_data::ProjectileRecord;
     use parser::second_pass::game_events::GameEvent;
     use parser::second_pass::parser_settings::create_huffman_lookup_table;
     use parser::second_pass::variants::{PropColumn, VarVec, Variant};
@@ -21,16 +28,29 @@ mod demoparser_impl {
     use std::fs;
 
     pub fn read_demo(path: &Path) -> Result<ParsedDemo> {
+        read_demo_with_options(path, ReadDemoOptions::default())
+    }
+
+    pub fn read_demo_with_options(path: &Path, options: ReadDemoOptions) -> Result<ParsedDemo> {
         let bytes = fs::read(path).map_err(|e| io_error(path, e))?;
         let stem = path
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("demo")
             .to_string();
-        read_demo_bytes(&bytes, &stem, &path.display().to_string())
+        read_demo_bytes_with_options(&bytes, &stem, &path.display().to_string(), options)
     }
 
     pub fn read_demo_bytes(bytes: &[u8], stem: &str, display_path: &str) -> Result<ParsedDemo> {
+        read_demo_bytes_with_options(bytes, stem, display_path, ReadDemoOptions::default())
+    }
+
+    fn read_demo_bytes_with_options(
+        bytes: &[u8],
+        stem: &str,
+        display_path: &str,
+        options: ReadDemoOptions,
+    ) -> Result<ParsedDemo> {
         let wanted_props = vec![
             "X",
             "Y",
@@ -155,6 +175,7 @@ mod demoparser_impl {
             ],
             parse_ents: true,
             parse_projectiles: false,
+            collect_projectile_records: true,
             parse_grenades: false,
             only_header: false,
             only_convars: false,
@@ -341,7 +362,41 @@ mod demoparser_impl {
         bomb_planted_ticks.sort_unstable();
         bomb_planted_ticks.dedup();
         let events = parse_game_events(&output.game_events);
-        let projectiles = parse_projectiles(bytes, tick_rate, &output.game_events)?;
+        let projectiles =
+            parse_projectile_records(&output.projectiles, tick_rate, &output.game_events);
+        let mut voice_frames = Vec::new();
+        if options.collect_voice {
+            for (tick, msg) in &output.voice_data {
+                let Some(audio) = msg.audio.as_ref() else {
+                    continue;
+                };
+                let Some(data) = audio.voice_data.as_ref() else {
+                    continue;
+                };
+                if data.is_empty() {
+                    continue;
+                }
+                let xuid = msg.xuid.unwrap_or_default();
+                if xuid == 0 {
+                    continue;
+                }
+                voice_frames.push(ParsedVoiceFrame {
+                    tick: *tick,
+                    xuid,
+                    client: msg.client.unwrap_or(-1),
+                    format: audio.format.unwrap_or_default(),
+                    sample_rate: audio.sample_rate,
+                    voice_level: audio.voice_level,
+                    sequence_bytes: audio.sequence_bytes,
+                    section_number: audio.section_number,
+                    uncompressed_sample_offset: audio.uncompressed_sample_offset,
+                    num_packets: audio.num_packets,
+                    packet_offsets: audio.packet_offsets.clone(),
+                    audio: data.to_vec(),
+                });
+            }
+            voice_frames.sort_by_key(|frame| (frame.xuid, frame.tick));
+        }
         let avatar_overrides = parse_avatar_overrides(output.server_avatar_overrides);
         let econ_items = parse_econ_items(output.skins);
 
@@ -356,6 +411,7 @@ mod demoparser_impl {
             bomb_planted_ticks,
             rows,
             projectiles,
+            voice_frames,
             events,
             avatar_overrides,
             econ_items,
@@ -438,6 +494,7 @@ mod demoparser_impl {
             wanted_events: Vec::new(),
             parse_ents: false,
             parse_projectiles: false,
+            collect_projectile_records: false,
             parse_grenades: false,
             only_header: true,
             only_convars: false,
@@ -454,73 +511,29 @@ mod demoparser_impl {
         Ok(header.get("map_name").cloned())
     }
 
-    fn parse_projectiles(
-        bytes: &[u8],
+    fn parse_projectile_records(
+        records: &[ProjectileRecord],
         tick_rate: f32,
         game_events: &[GameEvent],
-    ) -> Result<Vec<ParsedProjectile>> {
-        let wanted_props = vec![
-            "Grenade.m_vInitialPosition",
-            "Grenade.m_vInitialVelocity",
-            "Grenade.m_vSmokeDetonationPos",
-            "Grenade.m_nBounces",
-        ]
-        .into_iter()
-        .map(str::to_string)
-        .collect::<Vec<_>>();
-
-        let real_props =
-            rm_user_friendly_names(&wanted_props).map_err(|e| Error::Parser(format!("{e:?}")))?;
-        let mut real_name_to_og_name = AHashMap::default();
-        for (real, friendly) in real_props.iter().zip(&wanted_props) {
-            real_name_to_og_name.insert(real.clone(), friendly.clone());
-        }
-
-        let huf = create_huffman_lookup_table();
-        let settings = ParserInputs {
-            real_name_to_og_name,
-            wanted_players: vec![],
-            wanted_player_props: real_props,
-            wanted_other_props: vec![],
-            wanted_prop_states: AHashMap::default(),
-            wanted_ticks: vec![],
-            wanted_events: vec![],
-            parse_ents: true,
-            parse_projectiles: true,
-            parse_grenades: false,
-            only_header: false,
-            only_convars: false,
-            huffman_lookup_table: &huf,
-            order_by_steamid: false,
-            list_props: false,
-            fallback_bytes: None,
-        };
-        let mut parser = Parser::new(settings, ParsingMode::Normal);
-        let output = parser
-            .parse_demo(bytes)
-            .map_err(|e| Error::Parser(format!("{e:?}")))?;
-
-        let columns = output_columns(&output);
-        let len = columns.values().map(|c| c.len()).max().unwrap_or_default();
+    ) -> Vec<ParsedProjectile> {
         let mut grouped: AHashMap<ProjectileKey, ProjectileCandidate> = AHashMap::default();
-        for idx in 0..len {
-            let steam_id = get_u64(&columns, "steamid", idx).unwrap_or_default();
+        for record in records {
+            let steam_id = record.steamid.unwrap_or_default();
             if steam_id == 0 {
                 continue;
             }
-            let tick = get_i32(&columns, "tick", idx).unwrap_or_default();
-            let grenade_type = get_string(&columns, "grenade_type", idx).unwrap_or_default();
-            let initial_position = match get_vec3(&columns, "Grenade.m_vInitialPosition", idx) {
+            let tick = record.tick.unwrap_or_default();
+            let grenade_type = record.grenade_type.clone().unwrap_or_default();
+            let initial_position = match record.initial_position {
                 Some(value) if vec3_is_meaningful(value) => value,
                 _ => continue,
             };
-            let initial_velocity = match get_vec3(&columns, "Grenade.m_vInitialVelocity", idx) {
+            let initial_velocity = match record.initial_velocity {
                 Some(value) if vec3_is_meaningful(value) => value,
                 _ => continue,
             };
-            let detonation_position =
-                get_vec3(&columns, "Grenade.m_vSmokeDetonationPos", idx).unwrap_or_default();
-            let entity_id = get_i32(&columns, "grenade_entity_id", idx).unwrap_or_default();
+            let detonation_position = record.smoke_detonation_position.unwrap_or_default();
+            let entity_id = record.entity_id.unwrap_or_default();
             let key =
                 ProjectileKey::new(steam_id, &grenade_type, initial_position, initial_velocity);
             let entry = grouped.entry(key).or_insert_with(|| ProjectileCandidate {
@@ -528,7 +541,7 @@ mod demoparser_impl {
                 projectile: ParsedProjectile {
                     tick,
                     steam_id,
-                    name: get_string(&columns, "name", idx).unwrap_or_default(),
+                    name: record.name.clone().unwrap_or_default(),
                     kind: ProjectileKind::from_grenade_type(&grenade_type),
                     weapon_def_index: ProjectileKind::weapon_def_index_from_grenade_type(
                         &grenade_type,
@@ -561,7 +574,7 @@ mod demoparser_impl {
             .map(|candidate| candidate.projectile)
             .collect::<Vec<_>>();
         projectiles.sort_by_key(|projectile| (projectile.tick, projectile.steam_id));
-        Ok(projectiles)
+        projectiles
     }
 
     #[derive(Clone, Debug)]
@@ -839,18 +852,6 @@ mod demoparser_impl {
                 .or_else(|| event_field_i32(event, "damage")),
             health: event_field_i32(event, "health"),
         })
-    }
-
-    fn output_columns<'a>(
-        output: &'a parser::parse_demo::DemoOutput,
-    ) -> AHashMap<String, &'a PropColumn> {
-        let mut columns = AHashMap::default();
-        for info in &output.prop_controller.prop_infos {
-            if let Some(column) = output.df.get(&info.id) {
-                columns.insert(info.prop_friendly_name.clone(), column);
-            }
-        }
-        columns
     }
 
     #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -1402,9 +1403,16 @@ pub use demoparser_impl::read_demo;
 pub use demoparser_impl::read_demo_bytes;
 #[cfg(feature = "demoparser")]
 pub use demoparser_impl::read_demo_header_map_bytes;
+#[cfg(feature = "demoparser")]
+pub use demoparser_impl::read_demo_with_options;
 
 #[cfg(not(feature = "demoparser"))]
 pub fn read_demo(_path: &Path) -> Result<ParsedDemo> {
+    Err(Error::FeatureDisabled("demoparser"))
+}
+
+#[cfg(not(feature = "demoparser"))]
+pub fn read_demo_with_options(_path: &Path, _options: ReadDemoOptions) -> Result<ParsedDemo> {
     Err(Error::FeatureDisabled("demoparser"))
 }
 

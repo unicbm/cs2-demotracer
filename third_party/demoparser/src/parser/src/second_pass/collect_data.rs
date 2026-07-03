@@ -50,6 +50,22 @@ pub struct ProjectileRecord {
     pub tick: Option<i32>,
     pub grenade_type: Option<String>,
     pub entity_id: Option<i32>,
+    pub initial_position: Option<[f32; 3]>,
+    pub initial_velocity: Option<[f32; 3]>,
+    pub smoke_detonation_position: Option<[f32; 3]>,
+    pub bounces: Option<i32>,
+}
+
+fn variant_to_f32(value: &Option<Variant>) -> Option<f32> {
+    match value {
+        Some(Variant::F32(value)) => Some(*value),
+        _ => None,
+    }
+}
+
+fn projectile_vec3_is_meaningful(value: [f32; 3]) -> bool {
+    value.iter().all(|coordinate| coordinate.is_finite())
+        && value.iter().any(|coordinate| coordinate.abs() > f32::EPSILON)
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -222,8 +238,11 @@ impl<'a> SecondPassParser<'a> {
             }
         }
         if self.parse_projectiles {
-            self.collect_projectiles();
+            self.collect_projectiles(true);
             return;
+        }
+        if self.collect_projectile_records {
+            self.collect_projectiles(false);
         }
         // iterate every player and every wanted prop name
         // if either one is missing then push None to output
@@ -388,9 +407,15 @@ impl<'a> SecondPassParser<'a> {
         None
     }
 
-    pub fn collect_projectiles(&mut self) {
-        for projectile_entid in &self.projectiles {
-            let grenade_type = match self.find_grenade_type(projectile_entid) {
+    pub fn collect_projectiles(&mut self, write_output: bool) {
+        let projectile_ids = self.projectiles.iter().copied().collect::<Vec<_>>();
+        for projectile_entid in projectile_ids {
+            if !write_output {
+                self.collect_projectile_record_once(projectile_entid);
+                continue;
+            }
+
+            let grenade_type = match self.find_grenade_type(&projectile_entid) {
                 Some(t) => {
                     if !t.contains("Projectile") && !self.parse_grenades {
                         continue;
@@ -400,23 +425,52 @@ impl<'a> SecondPassParser<'a> {
                 }
                 None => continue,
             };
-            let steamid = match self.find_thrower_steamid(projectile_entid) {
+            let steamid = match self.find_thrower_steamid(&projectile_entid) {
                 Ok(u) => u,
                 _ => continue,
             };
-            let name = match self.find_thrower_name(projectile_entid) {
+            let name = match self.find_thrower_name(&projectile_entid) {
                 Ok(x) => x,
                 _ => continue,
             };
             // Projectiles are the only ones with coordinates others map to 0.0, map them to None as it is clearer.
             let (x, y, z) = if grenade_type.contains("Project") {
-                let x = self.collect_cell_coordinate_grenade(CoordinateAxis::X, projectile_entid).ok();
-                let y = self.collect_cell_coordinate_grenade(CoordinateAxis::Y, projectile_entid).ok();
-                let z = self.collect_cell_coordinate_grenade(CoordinateAxis::Z, projectile_entid).ok();
+                let x = self.collect_cell_coordinate_grenade(CoordinateAxis::X, &projectile_entid).ok();
+                let y = self.collect_cell_coordinate_grenade(CoordinateAxis::Y, &projectile_entid).ok();
+                let z = self.collect_cell_coordinate_grenade(CoordinateAxis::Z, &projectile_entid).ok();
                 (x, y, z)
             } else {
                 (None, None, None)
             };
+
+            self.projectile_records.push(ProjectileRecord {
+                steamid: Some(steamid),
+                name: Some(name.clone()),
+                x: variant_to_f32(&x),
+                y: variant_to_f32(&y),
+                z: variant_to_f32(&z),
+                tick: Some(self.tick),
+                grenade_type: Some(grenade_type.clone()),
+                entity_id: Some(projectile_entid),
+                initial_position: self.collect_projectile_vec3(
+                    self.prop_controller.special_ids.grenade_initial_position,
+                    &projectile_entid,
+                ),
+                initial_velocity: self.collect_projectile_vec3(
+                    self.prop_controller.special_ids.initial_velocity,
+                    &projectile_entid,
+                ),
+                smoke_detonation_position: self.collect_projectile_vec3(
+                    self.prop_controller
+                        .special_ids
+                        .grenade_smoke_detonation_position,
+                    &projectile_entid,
+                ),
+                bounces: self.collect_projectile_i32(
+                    self.prop_controller.special_ids.grenade_bounces,
+                    &projectile_entid,
+                ),
+            });
 
             // Insert these always
             let pairs = vec![
@@ -424,7 +478,7 @@ impl<'a> SecondPassParser<'a> {
                 (STEAMID_ID, Some(Variant::U64(steamid))),
                 (NAME_ID, Some(Variant::String(name))),
                 (TICK_ID, Some(Variant::I32(self.tick))),
-                (ENTITY_ID_ID, Some(Variant::I32(*projectile_entid))),
+                (ENTITY_ID_ID, Some(Variant::I32(projectile_entid))),
                 (GRENADE_X, x),
                 (GRENADE_Y, y),
                 (GRENADE_Z, z),
@@ -459,6 +513,131 @@ impl<'a> SecondPassParser<'a> {
                     }
                 }
             }
+        }
+    }
+
+    fn collect_projectile_record_once(&mut self, projectile_entid: i32) {
+        if let Some(index) = self
+            .projectile_record_indices
+            .get(&projectile_entid)
+            .copied()
+        {
+            self.update_projectile_record_effects(index, projectile_entid);
+            return;
+        }
+
+        let initial_position = match self.collect_projectile_vec3(
+            self.prop_controller.special_ids.grenade_initial_position,
+            &projectile_entid,
+        ) {
+            Some(value) if projectile_vec3_is_meaningful(value) => value,
+            _ => return,
+        };
+        let initial_velocity = match self.collect_projectile_vec3(
+            self.prop_controller.special_ids.initial_velocity,
+            &projectile_entid,
+        ) {
+            Some(value) if projectile_vec3_is_meaningful(value) => value,
+            _ => return,
+        };
+        let grenade_type = match self.find_grenade_type(&projectile_entid) {
+            Some(t) => {
+                if !t.contains("Projectile") && !self.parse_grenades {
+                    return;
+                }
+                t
+            }
+            None => return,
+        };
+        let steamid = match self.find_thrower_steamid(&projectile_entid) {
+            Ok(value) => value,
+            _ => return,
+        };
+        let name = match self.find_thrower_name(&projectile_entid) {
+            Ok(value) => value,
+            _ => return,
+        };
+        let (x, y, z) = if grenade_type.contains("Project") {
+            let x = self
+                .collect_cell_coordinate_grenade(CoordinateAxis::X, &projectile_entid)
+                .ok();
+            let y = self
+                .collect_cell_coordinate_grenade(CoordinateAxis::Y, &projectile_entid)
+                .ok();
+            let z = self
+                .collect_cell_coordinate_grenade(CoordinateAxis::Z, &projectile_entid)
+                .ok();
+            (x, y, z)
+        } else {
+            (None, None, None)
+        };
+
+        let index = self.projectile_records.len();
+        self.projectile_records.push(ProjectileRecord {
+            steamid: Some(steamid),
+            name: Some(name),
+            x: variant_to_f32(&x),
+            y: variant_to_f32(&y),
+            z: variant_to_f32(&z),
+            tick: Some(self.tick),
+            grenade_type: Some(grenade_type),
+            entity_id: Some(projectile_entid),
+            initial_position: Some(initial_position),
+            initial_velocity: Some(initial_velocity),
+            smoke_detonation_position: self.collect_projectile_vec3(
+                self.prop_controller
+                    .special_ids
+                    .grenade_smoke_detonation_position,
+                &projectile_entid,
+            ),
+            bounces: self.collect_projectile_i32(
+                self.prop_controller.special_ids.grenade_bounces,
+                &projectile_entid,
+            ),
+        });
+        self.projectile_record_indices
+            .insert(projectile_entid, index);
+        self.update_projectile_record_effects(index, projectile_entid);
+    }
+
+    fn update_projectile_record_effects(&mut self, index: usize, projectile_entid: i32) {
+        let smoke_detonation_position = self.collect_projectile_vec3(
+            self.prop_controller
+                .special_ids
+                .grenade_smoke_detonation_position,
+            &projectile_entid,
+        );
+        let bounces = self.collect_projectile_i32(
+            self.prop_controller.special_ids.grenade_bounces,
+            &projectile_entid,
+        );
+
+        if let Some(record) = self.projectile_records.get_mut(index) {
+            if smoke_detonation_position
+                .is_some_and(projectile_vec3_is_meaningful)
+            {
+                record.smoke_detonation_position = smoke_detonation_position;
+            }
+            if bounces.is_some() {
+                record.bounces = bounces;
+            }
+        }
+    }
+
+    fn collect_projectile_vec3(&self, prop_id: Option<u32>, entity_id: &i32) -> Option<[f32; 3]> {
+        let prop_id = prop_id?;
+        match self.get_prop_from_ent(&prop_id, entity_id).ok()? {
+            Variant::VecXYZ(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    fn collect_projectile_i32(&self, prop_id: Option<u32>, entity_id: &i32) -> Option<i32> {
+        let prop_id = prop_id?;
+        match self.get_prop_from_ent(&prop_id, entity_id).ok()? {
+            Variant::I32(value) => Some(value),
+            Variant::U32(value) => Some(value as i32),
+            _ => None,
         }
     }
 

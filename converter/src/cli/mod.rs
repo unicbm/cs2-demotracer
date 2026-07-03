@@ -3,11 +3,11 @@ use cs2_demotracer::api::{
     build_nade_library_with_progress, export_nade_clips_from_demo_path, NadeClipExportRequest,
     NadeContextOptions, NadeDedupeOptions, NadeLibraryExportRequest,
 };
-use cs2_demotracer::demo_reader::read_demo;
+use cs2_demotracer::demo_reader::{read_demo, read_demo_with_options, ReadDemoOptions};
 use cs2_demotracer::export::{
-    export_demo, parse_round_list, ConvertOptions, DEFAULT_FREEZE_PREROLL_SECONDS,
+    export_demo, parse_round_list, ConversionReport, ConvertOptions, DEFAULT_FREEZE_PREROLL_SECONDS,
 };
-use cs2_demotracer::model::{Side, SubtickMode};
+use cs2_demotracer::model::{ParsedDemo, Side, SubtickMode};
 use cs2_demotracer::nade_export::{
     DEFAULT_OPENING_SECONDS, DEFAULT_POST_ROLL_SECONDS, DEFAULT_PRE_ROLL_SECONDS,
 };
@@ -15,6 +15,10 @@ use cs2_demotracer::nade_library::print_nade_library_progress;
 use cs2_demotracer::pool::{build_round_pool, BuildPoolOptions};
 use cs2_demotracer::quality::{analyze_demo, AnalysisOptions};
 use cs2_demotracer::validate::validate_dtr_path;
+use cs2_demotracer::voice_export::{
+    export_voice_clip, export_voice_clips_from_parsed, VoiceClipExportRequest,
+    VoiceClipWindowExport, VoiceParsedBatchExportRequest,
+};
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
@@ -108,6 +112,11 @@ enum Command {
         max_round_seconds: f32,
         #[arg(long)]
         full_round: bool,
+        #[arg(
+            long,
+            help = "Write compact demo voice sidecar files under voice/roundXX.dtv for automatic runtime playback."
+        )]
+        export_voice: bool,
         #[arg(long, default_value_t = SubtickMode::Auto)]
         subticks: SubtickMode,
         #[arg(long, default_value_t = DEFAULT_FREEZE_PREROLL_SECONDS)]
@@ -194,6 +203,25 @@ enum Command {
     Validate {
         #[arg(long)]
         input: PathBuf,
+    },
+    /// Export an explicit opt-in continuous voice clip sidecar for local replay tests.
+    ExportVoiceClip {
+        #[arg(long)]
+        demo: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long)]
+        xuid: Option<u64>,
+        #[arg(long)]
+        client: Option<i32>,
+        #[arg(long)]
+        all_speakers: bool,
+        #[arg(long)]
+        start_tick: Option<i32>,
+        #[arg(long, default_value_t = 8.0)]
+        seconds: f32,
+        #[arg(long, default_value_t = 64.0)]
+        tick_rate: f32,
     },
     /// Run the interactive conversion wizard.
     Wizard,
@@ -284,6 +312,7 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
             include_suspicious,
             max_round_seconds,
             full_round,
+            export_voice,
             subticks,
             freeze_preroll_seconds,
             export_cosmetics,
@@ -300,7 +329,12 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
                     acknowledge_cosmetic_gslt_risk,
                     accept_cosmetic_export_disclaimer,
                 )?;
-            let parsed = read_demo(&demo)?;
+            let parsed = read_demo_with_options(
+                &demo,
+                ReadDemoOptions {
+                    collect_voice: export_voice,
+                },
+            )?;
             let selected_rounds = rounds.as_deref().map(parse_round_list).transpose()?;
             let report = export_demo(
                 &parsed,
@@ -328,6 +362,10 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
                 report.root.display()
             );
             println!("manifest {}", report.manifest_path.display());
+            if export_voice {
+                let reports = export_round_voice_sidecars(&parsed, &report)?;
+                println!("voice sidecars {}", reports);
+            }
         }
         Command::ConvertNades {
             demo,
@@ -469,11 +507,103 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
             let count = validate_dtr_path(&input)?;
             println!("validated {count} .dtr files");
         }
+        Command::ExportVoiceClip {
+            demo,
+            output,
+            xuid,
+            client,
+            all_speakers,
+            start_tick,
+            seconds,
+            tick_rate,
+        } => {
+            let report = export_voice_clip(&VoiceClipExportRequest {
+                demo,
+                output,
+                xuid,
+                client,
+                all_speakers,
+                start_tick,
+                duration_seconds: seconds,
+                tick_rate,
+            })?;
+            println!(
+                "voice clip frames={} speakers={} xuid={} client={} ticks {}..{} duration={:.2}s",
+                report.frame_count,
+                report.speaker_count,
+                report.selected_xuid,
+                report.selected_client,
+                report.start_tick,
+                report.end_tick,
+                report.duration_seconds
+            );
+            println!("voice clip {}", report.path.display());
+        }
         Command::Wizard => {
             run_wizard()?;
         }
     }
     Ok(())
+}
+
+fn export_round_voice_sidecars(
+    parsed: &ParsedDemo,
+    report: &ConversionReport,
+) -> cs2_demotracer::Result<usize> {
+    let tick_rate = report.manifest.tick_rate.max(1.0);
+    let windows = report
+        .manifest
+        .rounds
+        .iter()
+        .filter(|round| round.files > 0)
+        .map(|round| {
+            let duration_seconds =
+                if round.duration_seconds.is_finite() && round.duration_seconds > 0.0 {
+                    round.duration_seconds
+                } else {
+                    (round.end_tick - round.start_tick).max(1) as f32 / tick_rate
+                };
+            VoiceClipWindowExport {
+                output: report
+                    .root
+                    .join("voice")
+                    .join(format!("round{:02}.dtv", round.round)),
+                start_tick: Some(round.start_tick),
+                duration_seconds,
+            }
+        })
+        .collect::<Vec<_>>();
+    if windows.is_empty() {
+        return Ok(0);
+    }
+
+    match export_voice_clips_from_parsed(
+        parsed,
+        &VoiceParsedBatchExportRequest {
+            xuid: None,
+            client: None,
+            all_speakers: true,
+            tick_rate,
+            windows,
+        },
+    ) {
+        Ok(reports) => {
+            for voice in &reports {
+                println!(
+                    "voice sidecar {} frames={} speakers={} duration={:.2}s",
+                    voice.path.display(),
+                    voice.frame_count,
+                    voice.speaker_count,
+                    voice.duration_seconds
+                );
+            }
+            Ok(reports.len())
+        }
+        Err(err) => {
+            eprintln!("warning: voice sidecar export skipped: {err}");
+            Ok(0)
+        }
+    }
 }
 
 fn run_wizard() -> cs2_demotracer::Result<()> {

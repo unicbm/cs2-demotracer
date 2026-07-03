@@ -21,6 +21,8 @@ endforeach()
 
 if(NOT PROTO_DIR OR NOT EXISTS "${PROTO_DIR}/network_connection.proto" OR
    NOT EXISTS "${PROTO_DIR}/networkbasetypes.proto" OR
+   NOT EXISTS "${PROTO_DIR}/netmessages.proto" OR
+   NOT EXISTS "${PROTO_DIR}/source2_steam_stats.proto" OR
    NOT EXISTS "${PROTO_DIR}/usercmd.proto" OR
    NOT EXISTS "${PROTO_DIR}/cs_usercmd.proto")
     set(PROTO_STAGE "${CMAKE_BINARY_DIR}/proto_stage")
@@ -28,6 +30,8 @@ if(NOT PROTO_DIR OR NOT EXISTS "${PROTO_DIR}/network_connection.proto" OR
     set(PROTO_SOURCE_FILES
         "${HL2SDK}/common/network_connection.proto"
         "${HL2SDK}/common/networkbasetypes.proto"
+        "${HL2SDK}/common/netmessages.proto"
+        "${HL2SDK}/common/source2_steam_stats.proto"
         "${HL2SDK}/game/shared/usercmd.proto"
         "${HL2SDK}/game/shared/cs/cs_usercmd.proto")
     foreach(src ${PROTO_SOURCE_FILES})
@@ -53,7 +57,7 @@ if(NOT PROTOC_VER MATCHES "libprotoc 3\\.21\\.")
 endif()
 message(STATUS "protoc: ${PROTOC_EXE} (${PROTOC_VER})")
 
-set(PROTO_FILES network_connection.proto networkbasetypes.proto usercmd.proto cs_usercmd.proto)
+set(PROTO_FILES network_connection.proto networkbasetypes.proto netmessages.proto source2_steam_stats.proto usercmd.proto cs_usercmd.proto)
 set(GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${GENERATED_DIR}")
 set(PROTO_SRCS "")
@@ -142,6 +146,7 @@ add_library(BotController SHARED
     src/BotController/BotControllerState.cpp
     src/BotRecorder/InputInjector.cpp
     src/BotRecorder/MotionRecorder.cpp
+    src/VoiceSender/VoiceSender.cpp
     src/common/sig_scan.cpp
     src/common/version_targets.cpp
     src/common/platform.cpp
@@ -160,6 +165,7 @@ target_include_directories(BotController PRIVATE
     src/BuyController
     src/BotController
     src/BotRecorder
+    src/VoiceSender
     ${CMAKE_SOURCE_DIR}/third_party
     ${GENERATED_DIR}
     ${HL2SDK}/thirdparty/protobuf-3.21.8/src

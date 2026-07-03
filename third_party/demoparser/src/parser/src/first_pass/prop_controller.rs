@@ -509,6 +509,12 @@ impl PropController {
                 "m_bIsIncGrenade" => self.special_ids.is_incendiary_grenade = Some(id),
                 "m_hOwnerEntity" => self.special_ids.h_owner_entity = Some(id),
                 "m_nOwnerId" => self.special_ids.grenade_owner_id = Some(id),
+                "m_vInitialPosition" => self.special_ids.grenade_initial_position = Some(id),
+                "m_vInitialVelocity" => self.special_ids.initial_velocity = Some(id),
+                "m_vSmokeDetonationPos" => {
+                    self.special_ids.grenade_smoke_detonation_position = Some(id)
+                }
+                "m_nBounces" => self.special_ids.grenade_bounces = Some(id),
                 "CBodyComponentBaseAnimGraph.m_vecX" => self.special_ids.m_vec_x_grenade = Some(id),
                 "CBodyComponentBaseAnimGraph.m_vecY" => self.special_ids.m_vec_y_grenade = Some(id),
                 "CBodyComponentBaseAnimGraph.m_vecZ" => self.special_ids.m_vec_z_grenade = Some(id),

@@ -23,6 +23,30 @@ internal static partial class BotControllerNative
     private static extern IntPtr BotController_GetBuildId();
 
     [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_CanSendVoice();
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_GetVoiceStatus();
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_SendVoiceFrame(
+        int recipientSlot,
+        int senderClient,
+        ulong senderXuid,
+        [In] byte[] audio,
+        int audioBytes,
+        int sampleRate,
+        float voiceLevel,
+        int sequenceBytes,
+        int sectionNumber,
+        int uncompressedSampleOffset,
+        uint numPackets,
+        [In] uint[] packetOffsets,
+        int packetOffsetCount,
+        int tick,
+        int audibleMask);
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
     private static extern int BotController_SetControllerControllingBotOffset(int offset);
 
     [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]

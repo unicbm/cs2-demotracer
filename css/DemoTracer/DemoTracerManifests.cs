@@ -20,6 +20,9 @@ public sealed partial class DemoTracerPlugin
         [JsonPropertyName("map")]
         public string Map { get; set; } = string.Empty;
 
+        [JsonPropertyName("tick_rate")]
+        public float TickRate { get; set; }
+
         [JsonPropertyName("files")]
         public List<ManifestFile> Files { get; set; } = new();
 
@@ -37,8 +40,23 @@ public sealed partial class DemoTracerPlugin
         [JsonPropertyName("round")]
         public int Round { get; set; }
 
+        [JsonPropertyName("recording_start_tick")]
+        public int RecordingStartTick { get; set; }
+
+        [JsonPropertyName("start_tick")]
+        public int StartTick { get; set; }
+
+        [JsonPropertyName("end_tick")]
+        public int EndTick { get; set; }
+
+        [JsonPropertyName("original_end_tick")]
+        public int OriginalEndTick { get; set; }
+
         [JsonPropertyName("bomb_planted_tick")]
         public int? BombPlantedTick { get; set; }
+
+        [JsonPropertyName("freeze_preroll_ticks")]
+        public int FreezePrerollTicks { get; set; }
 
         [JsonPropertyName("bomb_planted_seconds_after_live")]
         public float? BombPlantedSecondsAfterLive { get; set; }

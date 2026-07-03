@@ -435,9 +435,26 @@ pub struct ParsedDemo {
     pub bomb_planted_ticks: Vec<i32>,
     pub rows: Vec<ParsedPlayerTick>,
     pub projectiles: Vec<ParsedProjectile>,
+    pub voice_frames: Vec<ParsedVoiceFrame>,
     pub events: Vec<ParsedGameEvent>,
     pub avatar_overrides: Vec<ParsedAvatarOverride>,
     pub econ_items: Vec<ParsedEconItem>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct ParsedVoiceFrame {
+    pub tick: i32,
+    pub xuid: u64,
+    pub client: i32,
+    pub format: i32,
+    pub sample_rate: Option<u32>,
+    pub voice_level: Option<f32>,
+    pub sequence_bytes: Option<i32>,
+    pub section_number: Option<u32>,
+    pub uncompressed_sample_offset: Option<u32>,
+    pub num_packets: Option<u32>,
+    pub packet_offsets: Vec<u32>,
+    pub audio: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
