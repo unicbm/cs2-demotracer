@@ -17,7 +17,11 @@ $outputRootPath = Join-Path $repoRoot $OutputRoot
 $packageName = "cs2-demotracer-server-v$Version-windows-x64"
 $stageRoot = Join-Path $outputRootPath $packageName
 $zipPath = Join-Path $outputRootPath "$packageName.zip"
-$runtimeRoot = Join-Path $repoRoot $RuntimePackage
+$runtimeRoot = if ([System.IO.Path]::IsPathRooted($RuntimePackage)) {
+    $RuntimePackage
+} else {
+    Join-Path $repoRoot $RuntimePackage
+}
 $cssOut = Join-Path $repoRoot "css\DemoTracer\bin\$Configuration\net8.0"
 $apiOut = Join-Path $repoRoot "css\DemoTracerApi\bin\$Configuration\net8.0"
 
@@ -62,13 +66,13 @@ function Resolve-DotnetPath([string]$PreferredPath) {
     }
 
     $candidates = @()
-    if ($env:DOTNET_ROOT) {
-        $candidates += (Join-Path $env:DOTNET_ROOT "dotnet.exe")
-    }
+    $candidates += (Join-Path $env:USERPROFILE ".dotnet\dotnet.exe")
     if ($env:DOTNET_ROOT_X64) {
         $candidates += (Join-Path $env:DOTNET_ROOT_X64 "dotnet.exe")
     }
-    $candidates += (Join-Path $env:USERPROFILE ".dotnet\dotnet.exe")
+    if ($env:DOTNET_ROOT) {
+        $candidates += (Join-Path $env:DOTNET_ROOT "dotnet.exe")
+    }
     $candidates += "C:\Program Files\dotnet\dotnet.exe"
     $candidates += "C:\Program Files (x86)\dotnet\dotnet.exe"
 
