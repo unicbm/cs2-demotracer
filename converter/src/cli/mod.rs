@@ -62,7 +62,7 @@ enum Command {
         freeze_preroll_seconds: f32,
         #[arg(
             long,
-            help = "Write demo-observed weapon/knife/glove cosmetic metadata into manifest JSON; default is no cosmetic export."
+            help = "Write demo-observed weapon/knife/glove/agent cosmetic metadata into manifest JSON; default is no cosmetic export."
         )]
         export_cosmetics: bool,
         #[arg(
@@ -122,7 +122,7 @@ enum Command {
         freeze_preroll_seconds: f32,
         #[arg(
             long,
-            help = "Write demo-observed weapon/knife/glove cosmetic metadata into manifest JSON; default is no cosmetic export."
+            help = "Write demo-observed weapon/knife/glove/agent cosmetic metadata into manifest JSON; default is no cosmetic export."
         )]
         export_cosmetics: bool,
         #[arg(
@@ -699,7 +699,7 @@ fn validate_cosmetic_export_consent(
 
     if export_cosmetics && (!acknowledge_gslt_risk || !accept_disclaimer) {
         return Err(cs2_demotracer::Error::InvalidDemo(
-            "--export-cosmetics writes demo-observed weapon/knife/glove cosmetic metadata into manifest JSON and requires both --acknowledge-cosmetic-gslt-risk and --accept-cosmetic-export-disclaimer. --export-stickers adds weapon sticker metadata and --export-charms adds weapon charm/keychain metadata under the same risk gate. Use cosmetic export/alignment only where you have assessed Valve server guideline and GSLT risk.".to_string(),
+            "--export-cosmetics writes demo-observed weapon/knife/glove/agent cosmetic metadata into manifest JSON and requires both --acknowledge-cosmetic-gslt-risk and --accept-cosmetic-export-disclaimer. --export-stickers adds weapon sticker metadata and --export-charms adds weapon charm/keychain metadata under the same risk gate. Use cosmetic export/alignment only where you have assessed Valve server guideline and GSLT risk.".to_string(),
         ));
     }
 

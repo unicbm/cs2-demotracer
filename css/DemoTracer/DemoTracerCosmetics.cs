@@ -153,7 +153,7 @@ public sealed partial class DemoTracerPlugin
         if (cosmetics.Knife is { } knife &&
             IsValidItemCosmetic(knife) &&
             knife.ItemDefIndex is { } knifeDef &&
-            IsKnifeCosmeticDefIndex(knifeDef))
+            IsExactKnifeCosmeticDefIndex(knifeDef))
         {
             normalized.Knife = CloneItemCosmetic(knife);
         }
@@ -164,6 +164,11 @@ public sealed partial class DemoTracerPlugin
              IsPlausibleCosmeticItemDefIndex(glove.ItemDefIndex.Value)))
         {
             normalized.Glove = CloneItemCosmetic(glove);
+        }
+
+        if (NormalizeAgentCosmetic(cosmetics.Agent) is { } agent)
+        {
+            normalized.Agent = agent;
         }
 
         normalized.Weapons = normalized.Weapons
@@ -185,13 +190,28 @@ public sealed partial class DemoTracerPlugin
             CustomName = NormalizeCosmeticCustomName(source.CustomName)
         };
 
+    private static ReplayAgentCosmetic? NormalizeAgentCosmetic(ReplayAgentCosmetic? source)
+    {
+        if (source == null || source.ItemDefIndex == 0)
+            return null;
+        var modelPath = NormalizeAgentModelPath(source.ModelPath);
+        if (modelPath == null)
+            return null;
+        return new ReplayAgentCosmetic
+        {
+            ItemDefIndex = source.ItemDefIndex,
+            ModelPath = modelPath,
+            Name = NormalizeAgentName(source.Name)
+        };
+    }
+
     private static ulong CosmeticEvidenceKey(ulong steamId, int slot)
         => steamId != 0 ? steamId : 18_000_000_000_000_000_000UL + (uint)Math.Clamp(slot, 0, MaxPlayerSlots - 1);
 
     private void RememberReplayCosmeticEvidence(int slot, LoadedReplay replay)
     {
         if (replay.UtilityOnly ||
-            (replay.Cosmetics.Knife == null && replay.Cosmetics.Glove == null))
+            (replay.Cosmetics.Knife == null && replay.Cosmetics.Glove == null && replay.Cosmetics.Agent == null))
         {
             return;
         }
@@ -212,13 +232,16 @@ public sealed partial class DemoTracerPlugin
             evidence.Knife = CloneItemCosmetic(replay.Cosmetics.Knife);
         if (replay.Cosmetics.Glove != null)
             evidence.Glove = CloneItemCosmetic(replay.Cosmetics.Glove);
+        if (replay.Cosmetics.Agent != null)
+            evidence.Agent = NormalizeAgentCosmetic(replay.Cosmetics.Agent);
     }
 
     private static bool HasCosmeticEvidence(ReplayCosmetics? cosmetics)
         => cosmetics != null &&
            ((cosmetics.Weapons?.Count ?? 0) > 0 ||
             cosmetics.Knife != null ||
-            cosmetics.Glove != null);
+            cosmetics.Glove != null ||
+            cosmetics.Agent != null);
 
     private static bool IsValidWeaponCosmetic(ReplayWeaponCosmetic cosmetic)
         => cosmetic.PaintKit > 0 && cosmetic.Wear is >= 0.0f and <= 1.0f && float.IsFinite(cosmetic.Wear);
@@ -330,6 +353,42 @@ public sealed partial class DemoTracerPlugin
         return cleaned.Length == 0 ? null : cleaned;
     }
 
+    private static string? NormalizeAgentName(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+        var cleaned = value.Trim().ToLowerInvariant();
+        if (cleaned.Length is 0 or > 128 ||
+            cleaned.Any(ch => !char.IsAsciiLetterOrDigit(ch) && ch != '_'))
+        {
+            return null;
+        }
+        return cleaned;
+    }
+
+    private static string? NormalizeAgentModelPath(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+        var path = value.Trim().Replace('/', '\\').ToLowerInvariant();
+        if (path.Length is < 24 or > 160 ||
+            !path.StartsWith("agents\\models\\", StringComparison.Ordinal) ||
+            !path.EndsWith(".vmdl", StringComparison.Ordinal) ||
+            path.Contains("..", StringComparison.Ordinal) ||
+            path.Contains(':', StringComparison.Ordinal) ||
+            path.Contains('\0'))
+        {
+            return null;
+        }
+
+        foreach (var ch in path)
+        {
+            if (!char.IsAsciiLetterOrDigit(ch) && ch is not ('_' or '\\' or '.' or '-'))
+                return null;
+        }
+        return path;
+    }
+
     private static bool IsWeaponCosmeticDefIndex(int weaponDefIndex)
         => IsKnownWeaponDefIndex(weaponDefIndex) &&
            weaponDefIndex is not 31 and not 42 and not 43 and not 44 and not 45 and not 46 and not 47 and not 48 and not 49;
@@ -380,14 +439,15 @@ public sealed partial class DemoTracerPlugin
         var counts = CountLoadedCosmeticEvidence();
         var cached = CountCachedCosmeticEvidence();
         return
-            $"cosmetics_evidence={counts.Files} cosmetic_weapons={counts.Weapons} cosmetic_knives={counts.Knives} cosmetic_gloves={counts.Gloves} cached_players={cached.Players} cached_knives={cached.Knives} cached_gloves={cached.Gloves} sticker_evidence={counts.Stickers} charm_evidence={counts.Charms} applied={_cosmeticAppliedCount} skipped={_cosmeticSkippedCount} sticker_applied={_stickerAppliedCount} sticker_skipped={_stickerSkippedCount} charm_applied={_charmAppliedCount} charm_skipped={_charmSkippedCount}";
+            $"cosmetics_evidence={counts.Files} cosmetic_weapons={counts.Weapons} cosmetic_knives={counts.Knives} cosmetic_gloves={counts.Gloves} cosmetic_agents={counts.Agents} cached_players={cached.Players} cached_knives={cached.Knives} cached_gloves={cached.Gloves} cached_agents={cached.Agents} sticker_evidence={counts.Stickers} charm_evidence={counts.Charms} applied={_cosmeticAppliedCount} skipped={_cosmeticSkippedCount} sticker_applied={_stickerAppliedCount} sticker_skipped={_stickerSkippedCount} charm_applied={_charmAppliedCount} charm_skipped={_charmSkippedCount}";
     }
 
-    private (int Players, int Knives, int Gloves) CountCachedCosmeticEvidence()
+    private (int Players, int Knives, int Gloves, int Agents) CountCachedCosmeticEvidence()
     {
         var players = 0;
         var knives = 0;
         var gloves = 0;
+        var agents = 0;
 
         foreach (var evidence in _cosmeticEvidenceByKey.Values)
         {
@@ -399,17 +459,20 @@ public sealed partial class DemoTracerPlugin
                 knives++;
             if (evidence.Glove != null)
                 gloves++;
+            if (evidence.Agent != null)
+                agents++;
         }
 
-        return (players, knives, gloves);
+        return (players, knives, gloves, agents);
     }
 
-    private (int Files, int Weapons, int Knives, int Gloves, int Stickers, int Charms) CountLoadedCosmeticEvidence()
+    private (int Files, int Weapons, int Knives, int Gloves, int Agents, int Stickers, int Charms) CountLoadedCosmeticEvidence()
     {
         var files = 0;
         var weapons = 0;
         var knives = 0;
         var gloves = 0;
+        var agents = 0;
         var stickers = 0;
         var charms = 0;
 
@@ -426,9 +489,11 @@ public sealed partial class DemoTracerPlugin
                 knives++;
             if (replay.Cosmetics.Glove != null)
                 gloves++;
+            if (replay.Cosmetics.Agent != null)
+                agents++;
         }
 
-        return (files, weapons, knives, gloves, stickers, charms);
+        return (files, weapons, knives, gloves, agents, stickers, charms);
     }
 
     private void ApplyLoadedReplayCosmeticsForSlot(int slot, LoadedReplay replay)
@@ -452,7 +517,16 @@ public sealed partial class DemoTracerPlugin
 
         var applied = 0;
         var skipped = 0;
-        if (WeaponCosmeticFeatureEnabled())
+        if (_cosmeticAgentsEnabled &&
+            TryGetAgentCosmeticForSlot(slot, player, out var agentCosmetic))
+        {
+            if (TryApplyAgentCosmetic(player, pawn, agentCosmetic))
+                applied++;
+            else
+                skipped++;
+        }
+
+        if (_weaponAlignEnabled && WeaponCosmeticFeatureEnabled())
         {
             foreach (var cosmetic in replay.Cosmetics.Weapons)
             {
@@ -469,7 +543,8 @@ public sealed partial class DemoTracerPlugin
             }
         }
 
-        if (_cosmeticKnivesEnabled &&
+        if (_weaponAlignEnabled &&
+            _cosmeticKnivesEnabled &&
             TryGetKnifeCosmeticForSlot(slot, player, out var knifeCosmetic, out var knifeSteamId))
         {
             var appliedKnife = false;
@@ -496,7 +571,7 @@ public sealed partial class DemoTracerPlugin
                 ScheduleCachedKnifeCosmeticRetry(slot, knifeCosmetic, knifeSteamId, framesRemaining: appliedKnife ? 2 : 4);
         }
 
-        if (_cosmeticGlovesEnabled)
+        if (_weaponAlignEnabled && _cosmeticGlovesEnabled)
         {
             if (TryGetGloveCosmeticForSlot(slot, player, out var gloveCosmetic, out _))
             {
@@ -691,7 +766,7 @@ public sealed partial class DemoTracerPlugin
 
     private void ScheduleCachedCosmeticRepairForSlot(int slot)
     {
-        if ((!_cosmeticKnivesEnabled && !_cosmeticGlovesEnabled) || !_weaponAlignEnabled)
+        if (!_cosmeticAgentsEnabled && !_cosmeticKnivesEnabled && !_cosmeticGlovesEnabled)
             return;
 
         AddTimer(0.05f, () => ApplyCachedCosmeticsForSlot(slot), TimerFlags.STOP_ON_MAPCHANGE);
@@ -700,8 +775,7 @@ public sealed partial class DemoTracerPlugin
 
     private void ApplyCachedCosmeticsForSlot(int slot)
     {
-        if ((!_cosmeticKnivesEnabled && !_cosmeticGlovesEnabled) ||
-            !_weaponAlignEnabled ||
+        if ((!_cosmeticAgentsEnabled && !_cosmeticKnivesEnabled && !_cosmeticGlovesEnabled) ||
             !IsReplaySlotStillSafe(slot))
         {
             return;
@@ -714,6 +788,16 @@ public sealed partial class DemoTracerPlugin
 
         var hasEvidence = TryResolvePlayerCosmeticEvidence(slot, player, out _, out _);
         if (!hasEvidence)
+            return;
+
+        if (_cosmeticAgentsEnabled &&
+            TryGetAgentCosmeticForSlot(slot, player, out var agentCosmetic) &&
+            TryApplyAgentCosmetic(player, pawn, agentCosmetic))
+        {
+            _cosmeticAppliedCount++;
+        }
+
+        if (!_weaponAlignEnabled)
             return;
 
         if (_cosmeticGlovesEnabled &&
@@ -843,6 +927,30 @@ public sealed partial class DemoTracerPlugin
         }
 
         replaySteamId = 0;
+        cosmetic = null!;
+        return false;
+    }
+
+    private bool TryGetAgentCosmeticForSlot(
+        int slot,
+        CCSPlayerController player,
+        out ReplayAgentCosmetic cosmetic)
+    {
+        if (_loadedReplays.TryGetValue(slot, out var replay) &&
+            !replay.UtilityOnly &&
+            replay.Cosmetics.Agent != null)
+        {
+            cosmetic = replay.Cosmetics.Agent;
+            return true;
+        }
+
+        if (TryResolvePlayerCosmeticEvidence(slot, player, out _, out var evidence) &&
+            evidence.Agent != null)
+        {
+            cosmetic = evidence.Agent;
+            return true;
+        }
+
         cosmetic = null!;
         return false;
     }
@@ -995,6 +1103,8 @@ public sealed partial class DemoTracerPlugin
                 applyCustomName: _cosmeticNamesEnabled);
             if (!knifeOk)
                 ScheduleCachedKnifeCosmeticRetry(slot, knifeCosmetic, knifeSteamId, framesRemaining: 8);
+            else
+                ScheduleCachedKnifeCosmeticRetry(slot, knifeCosmetic, knifeSteamId, framesRemaining: 3);
             if (countResult)
             {
                 if (knifeOk)
@@ -1124,9 +1234,9 @@ public sealed partial class DemoTracerPlugin
                 else
                 {
                     _cosmeticSkippedCount++;
-                    if (isReplayKnifeCosmetic && knifeCosmetic != null)
-                        ScheduleCachedKnifeCosmeticRetry(slot, knifeCosmetic, replaySteamId, framesRemaining: 8);
                 }
+                if (isReplayKnifeCosmetic && knifeCosmetic != null)
+                    ScheduleCachedKnifeCosmeticRetry(slot, knifeCosmetic, replaySteamId, framesRemaining: applied ? 3 : 8);
 
                 Server.NextFrame(() =>
                 {
@@ -1260,6 +1370,62 @@ public sealed partial class DemoTracerPlugin
         }
 
         return false;
+    }
+
+    private bool TryApplyAgentCosmetic(
+        CCSPlayerController player,
+        CCSPlayerPawn pawn,
+        ReplayAgentCosmetic cosmetic)
+    {
+        if (!_cosmeticAgentsEnabled ||
+            !IsReplaySlotStillSafe(player.Slot) ||
+            NormalizeAgentModelPath(cosmetic.ModelPath) is not { } modelPath)
+        {
+            return false;
+        }
+
+        try
+        {
+            ApplyAgentModel(pawn, modelPath);
+            Server.NextFrame(() => ApplyAgentModelForSlot(player.Slot, modelPath));
+            AddTimer(0.20f, () => ApplyAgentModelForSlot(player.Slot, modelPath), TimerFlags.STOP_ON_MAPCHANGE);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Server.PrintToConsole($"dtr: agent model apply failed slot={player.Slot} model={modelPath}: {ex.Message}");
+            return false;
+        }
+    }
+
+    private void ApplyAgentModelForSlot(int slot, string modelPath)
+    {
+        if (!_cosmeticAgentsEnabled || !IsReplaySlotStillSafe(slot))
+            return;
+
+        var player = Utilities.GetPlayerFromSlot(slot);
+        var pawn = player?.PlayerPawn.Value;
+        if (player is not { IsValid: true, PawnIsAlive: true } || pawn is not { IsValid: true })
+            return;
+
+        try
+        {
+            ApplyAgentModel(pawn, modelPath);
+        }
+        catch (Exception ex)
+        {
+            Server.PrintToConsole($"dtr: agent model delayed apply failed slot={slot} model={modelPath}: {ex.Message}");
+        }
+    }
+
+    private static void ApplyAgentModel(CCSPlayerPawn pawn, string modelPath)
+    {
+        Server.PrecacheModel(modelPath);
+        pawn.SetModel(modelPath);
+        Utilities.SetStateChanged(pawn, "CBaseEntity", "m_CBodyComponent");
+        var color = pawn.Render;
+        pawn.Render = System.Drawing.Color.FromArgb(255, color.R, color.G, color.B);
+        Utilities.SetStateChanged(pawn, "CBaseModelEntity", "m_clrRender");
     }
 
     private bool TryApplyWeaponCosmetic(
@@ -1914,8 +2080,9 @@ public sealed partial class DemoTracerPlugin
         public ulong ReplaySteamId { get; private set; } = replaySteamId;
         public ReplayItemCosmetic? Knife { get; set; }
         public ReplayItemCosmetic? Glove { get; set; }
+        public ReplayAgentCosmetic? Agent { get; set; }
 
-        public bool HasPositiveEvidence => Knife != null || Glove != null;
+        public bool HasPositiveEvidence => Knife != null || Glove != null || Agent != null;
 
         public bool IsEmpty => !HasPositiveEvidence;
 

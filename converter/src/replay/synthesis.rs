@@ -322,6 +322,8 @@ mod tests {
             inventory_as_ids: Vec::new(),
             inventory_weapon_cosmetics: Vec::new(),
             music_kit_id: None,
+            agent_item_def_index: None,
+            agent_skin: None,
             active_weapon_paint_kit: None,
             active_weapon_paint_seed: None,
             active_weapon_paint_wear: None,

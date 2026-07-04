@@ -272,6 +272,8 @@ public sealed partial class DemoTracerPlugin
             _cosmeticGlovesEnabled = cosmetics.Gloves.Value;
         if (cosmetics.Names.HasValue)
             _cosmeticNamesEnabled = cosmetics.Names.Value;
+        if (cosmetics.Agents.HasValue)
+            _cosmeticAgentsEnabled = cosmetics.Agents.Value;
         if (cosmetics.Stickers.HasValue)
             SetStickerAlignEnabled(cosmetics.Stickers.Value);
         if (cosmetics.Charms.HasValue)
@@ -347,7 +349,7 @@ public sealed partial class DemoTracerPlugin
         reply($"{prefix} playback identity={ReplayIdentityModeName()} allow_partial={FormatOnOff(_partialReplayEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} handoff_360={FormatOnOff(_handoffThreat360Enabled)} range={_handoffThreat360Range.ToString("F0", CultureInfo.InvariantCulture)} los={FormatOnOff(_handoffThreat360LosEnabled)}");
         reply($"{prefix} fidelity preset={AlignPresetName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand={FormatOnOff(_leftHandDesiredEnabled)}");
         reply($"{prefix} match preset={(_scoreboardAlignEnabled ? "scoreboard" : "off")} scoreboard={FormatOnOff(_scoreboardAlignEnabled)}");
-        reply($"{prefix} cosmetics preset={CosmeticPresetName()} risk={FormatOnOff(_cosmeticAlignEnabled)} weapons={FormatOnOff(_cosmeticWeaponsEnabled)} knives={FormatOnOff(_cosmeticKnivesEnabled)} gloves={FormatOnOff(_cosmeticGlovesEnabled)} names={FormatOnOff(_cosmeticNamesEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)}");
+        reply($"{prefix} cosmetics preset={CosmeticPresetName()} risk={FormatOnOff(_cosmeticAlignEnabled)} weapons={FormatOnOff(_cosmeticWeaponsEnabled)} knives={FormatOnOff(_cosmeticKnivesEnabled)} gloves={FormatOnOff(_cosmeticGlovesEnabled)} names={FormatOnOff(_cosmeticNamesEnabled)} agents={FormatOnOff(_cosmeticAgentsEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)}");
     }
 
     private static bool TryParseReplayIdentityMode(string value, out ReplayIdentityMode mode)
@@ -481,6 +483,9 @@ public sealed partial class DemoTracerPlugin
 
         [JsonPropertyName("names")]
         public bool? Names { get; set; }
+
+        [JsonPropertyName("agents")]
+        public bool? Agents { get; set; }
 
         [JsonPropertyName("stickers")]
         public bool? Stickers { get; set; }

@@ -56,8 +56,8 @@ demo 里确实有语音，就写出 `.dtv` sidecar；如果导出了语音，复
 带 `dtr_voice_auto on`。
 
 饰品/econ 元数据默认绝不导出，所以普通 manifest 不包含 `cosmetics` block。若明确要导出
-demo 观测到的武器 paint、刀具、手套元数据，以及稳定的武器/刀具 custom name，必须同时
-传入三个 flag：
+demo 观测到的武器 paint、刀具、手套、探员模型元数据，以及稳定的武器/刀具 custom name，
+必须同时传入三个 flag：
 
 ```powershell
 cs2-demotracer.exe convert --demo <demo.dem> --output <输出目录> --export-cosmetics --acknowledge-cosmetic-gslt-risk --accept-cosmetic-export-disclaimer
@@ -287,8 +287,8 @@ CS2-Bot-Hider。BotHider 是可选依赖，只用于 BotHider 管理的 replay s
 饰品对齐是可选功能，默认关闭。只有 round manifest 是用 `--export-cosmetics` 和两个
 风险确认 flag 导出，并且里面确实有 `cosmetics` 证据时，它才会生效。生效时
 DemoTracer 也只会把 demo 观测到的武器 paint、刀、手套元数据，以及稳定的武器/刀具
-custom name 应用到安全 replay bot。默认不会随机分配饰品，不会读取 profile/database，
-也不会应用探员。它可以应用 demo 观测到的
+custom name 和探员模型证据应用到安全 replay bot。默认不会随机分配饰品，不会读取
+profile/database，也不会应用非 demo 证据的探员。它可以应用 demo 观测到的
 StatTrak/暗金武器质量 (`quality=9`)；
 如果 demo 没暴露 StatTrak 计数器，runtime 会写显示用 `0`，让 CS2 选择带计数器的
 StatTrak 模型，但这不代表伪造了 demo 击杀数。武器贴纸需要额外的

@@ -61,8 +61,8 @@ sidecars were exported.
 
 Cosmetic/econ metadata is not exported by default, so normal manifests contain
 no `cosmetics` blocks. To intentionally export demo-observed weapon paint,
-knife, glove metadata, and stable weapon/knife custom names, you must pass all
-three flags:
+knife, glove, agent model metadata, and stable weapon/knife custom names, you
+must pass all three flags:
 
 ```powershell
 cs2-demotracer.exe convert --demo <demo.dem> --output <output-dir> --export-cosmetics --acknowledge-cosmetic-gslt-risk --accept-cosmetic-export-disclaimer
@@ -307,15 +307,16 @@ not the preferred quick-start path. Nade manifests use `dtr_list_nades` and
 Cosmetic alignment is optional and off by default. It has no effect unless the
 round manifest was exported with `--export-cosmetics` plus the two risk
 acknowledgement flags. When evidence exists, DemoTracer applies only
-demo-observed weapon paint, knife, glove metadata, and stable weapon/knife
-custom names to safe replay bots. By default it does not randomize cosmetics,
-read profile databases, or apply agents. It can apply demo-observed StatTrak item quality
-(`quality=9`) for exported weapon cosmetics. When a demo StatTrak counter is
-not exposed, runtime writes a display counter of `0` so CS2 can select the
-StatTrak counter model; this does not invent a demo kill count. Weapon stickers
-require the extra `--export-stickers` converter flag and
-`dtr_cosmetics stickers on` at runtime. Weapon charms/keychains require the
-extra `--export-charms` converter flag and `dtr_cosmetics charms on` at runtime.
+demo-observed weapon paint, knife, glove metadata, agent model evidence, and
+stable weapon/knife custom names to safe replay bots. By default it does not
+randomize cosmetics, read profile databases, or apply non-demo agents. It can
+apply demo-observed StatTrak item quality (`quality=9`) for exported weapon
+cosmetics. When a demo StatTrak counter is not exposed, runtime writes a display
+counter of `0` so CS2 can select the StatTrak counter model; this does not
+invent a demo kill count. Weapon stickers require the extra `--export-stickers`
+converter flag and `dtr_cosmetics stickers on` at runtime. Weapon
+charms/keychains require the extra `--export-charms` converter flag and
+`dtr_cosmetics charms on` at runtime.
 
 This feature is intended for local/private replay validation. A local listen
 server may not have the same GSLT exposure as a dedicated server, but bot-only

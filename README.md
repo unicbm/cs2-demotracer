@@ -119,15 +119,15 @@ More commands:
 ## Cosmetic Alignment and GSLT Safety
 
 > [!IMPORTANT]
-> Cosmetic, custom-name, sticker, and charm metadata are never exported by
+> Cosmetic, custom-name, sticker, charm, and agent model metadata are never exported by
 > default. Normal `convert` output is the recommended safe path.
 >
 > Export that metadata only when you intentionally pass `--export-cosmetics`,
 > `--acknowledge-cosmetic-gslt-risk`, and
 > `--accept-cosmetic-export-disclaimer`; stickers also require
 > `--export-stickers`, and charms also require `--export-charms`. Runtime
-> cosmetic, sticker, and charm alignment are also default-off and consume only
-> demo evidence from the manifest.
+> cosmetic, agent, sticker, and charm alignment are also default-off and consume
+> only demo evidence from the manifest.
 >
 > This feature is for local/private replay fidelity. Bot-only inventory mutation
 > is not a Valve policy exemption if humans can observe, control, possess,

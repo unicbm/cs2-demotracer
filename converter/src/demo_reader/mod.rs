@@ -78,6 +78,8 @@ mod demoparser_impl {
             "inventory_as_ids",
             "inventory_weapon_cosmetics",
             "music_kit_id",
+            "agent_skin",
+            "CCSPlayerController.m_nPawnCharacterDefIndex",
             "active_weapon_original_owner",
             "item_id_high",
             "item_id_low",
@@ -267,6 +269,13 @@ mod demoparser_impl {
                 )
                 .unwrap_or_default(),
                 music_kit_id: get_u32(&columns, "music_kit_id", idx).filter(|value| *value != 0),
+                agent_item_def_index: get_u32(
+                    &columns,
+                    "CCSPlayerController.m_nPawnCharacterDefIndex",
+                    idx,
+                )
+                .filter(|value| *value != 0),
+                agent_skin: get_string(&columns, "agent_skin", idx).and_then(normalize_agent_skin),
                 active_weapon_paint_kit: get_u32(&columns, "weapon_skin_id", idx),
                 active_weapon_paint_seed: get_u32(&columns, "weapon_paint_seed", idx),
                 active_weapon_paint_wear: get_f32(&columns, "weapon_float", idx),
@@ -1289,6 +1298,19 @@ mod demoparser_impl {
         } else {
             Some(trimmed.to_string())
         }
+    }
+
+    fn normalize_agent_skin(value: String) -> Option<String> {
+        let trimmed = value.trim();
+        if trimmed.is_empty()
+            || trimmed.len() > 128
+            || !trimmed
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        {
+            return None;
+        }
+        Some(trimmed.to_ascii_lowercase())
     }
 
     fn normalize_custom_name(value: String) -> Option<String> {

@@ -597,6 +597,8 @@ pub struct ParsedPlayerTick {
     pub inventory_as_ids: Vec<i32>,
     pub inventory_weapon_cosmetics: Vec<ParsedInventoryWeaponCosmetic>,
     pub music_kit_id: Option<u32>,
+    pub agent_item_def_index: Option<u32>,
+    pub agent_skin: Option<String>,
     pub active_weapon_paint_kit: Option<u32>,
     pub active_weapon_paint_seed: Option<u32>,
     pub active_weapon_paint_wear: Option<f32>,
@@ -1011,11 +1013,16 @@ pub struct ReplayCosmetics {
     pub knife: Option<ReplayItemCosmetic>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub glove: Option<ReplayItemCosmetic>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent: Option<ReplayAgentCosmetic>,
 }
 
 impl ReplayCosmetics {
     pub fn is_empty(&self) -> bool {
-        self.weapons.is_empty() && self.knife.is_none() && self.glove.is_none()
+        self.weapons.is_empty()
+            && self.knife.is_none()
+            && self.glove.is_none()
+            && self.agent.is_none()
     }
 }
 
@@ -1080,6 +1087,14 @@ pub struct ReplayItemCosmetic {
     pub wear: f32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_name: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ReplayAgentCosmetic {
+    pub item_def_index: u32,
+    pub model_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

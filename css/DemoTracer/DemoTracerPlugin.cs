@@ -134,6 +134,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private bool _cosmeticKnivesEnabled;
     private bool _cosmeticGlovesEnabled;
     private bool _cosmeticNamesEnabled;
+    private bool _cosmeticAgentsEnabled;
     private bool _preserveNativeBotCosmetics;
     private bool _stickerAlignEnabled;
     private bool _charmAlignEnabled;
@@ -436,7 +437,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         }
     }
 
-    [ConsoleCommand("dtr_cosmetics", "dtr_cosmetics [status|off|weapons|basic|full|weapons|knives|gloves|names|stickers|charms|preserve_native] [on|off]")]
+    [ConsoleCommand("dtr_cosmetics", "dtr_cosmetics [status|off|weapons|basic|full|weapons|knives|gloves|names|agents|stickers|charms|preserve_native] [on|off]")]
     public void CosmeticsCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount < 2 ||
@@ -489,6 +490,10 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             case "name":
             case "custom_name":
             case "custom-name":
+            case "agents":
+            case "agent":
+            case "models":
+            case "model":
             case "stickers":
             case "sticker":
             case "charms":
@@ -513,7 +518,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             default:
                 command.ReplyToCommand($"[DTR ERR] unknown dtr_cosmetics preset: {mode}");
                 command.ReplyToCommand("usage: dtr_cosmetics [status|off|weapons|basic|full]");
-                command.ReplyToCommand("usage: dtr_cosmetics <weapons|knives|gloves|names|stickers|charms|preserve_native> <on|off>");
+                command.ReplyToCommand("usage: dtr_cosmetics <weapons|knives|gloves|names|agents|stickers|charms|preserve_native> <on|off>");
                 command.ReplyToCommand("hint: scoreboard moved to dtr_match");
                 return;
         }
@@ -851,7 +856,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private void ReplyCosmeticsStatus(Action<string> reply)
     {
         reply($"[DTR COSMETICS] preset={CosmeticPresetName()} risk={FormatOnOff(_cosmeticAlignEnabled)}");
-        reply($"[DTR COSMETICS] weapons={FormatOnOff(_cosmeticWeaponsEnabled)} knives={FormatOnOff(_cosmeticKnivesEnabled)} gloves={FormatOnOff(_cosmeticGlovesEnabled)} names={FormatOnOff(_cosmeticNamesEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)}");
+        reply($"[DTR COSMETICS] weapons={FormatOnOff(_cosmeticWeaponsEnabled)} knives={FormatOnOff(_cosmeticKnivesEnabled)} gloves={FormatOnOff(_cosmeticGlovesEnabled)} names={FormatOnOff(_cosmeticNamesEnabled)} agents={FormatOnOff(_cosmeticAgentsEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)}");
         reply($"[DTR COSMETICS] {FormatCosmeticStatusCounts()}");
     }
 
@@ -875,6 +880,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 _cosmeticKnivesEnabled = false;
                 _cosmeticGlovesEnabled = false;
                 _cosmeticNamesEnabled = false;
+                _cosmeticAgentsEnabled = false;
                 _stickerAlignEnabled = false;
                 _charmAlignEnabled = false;
                 break;
@@ -883,6 +889,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 _cosmeticKnivesEnabled = false;
                 _cosmeticGlovesEnabled = false;
                 _cosmeticNamesEnabled = true;
+                _cosmeticAgentsEnabled = false;
                 _stickerAlignEnabled = false;
                 _charmAlignEnabled = false;
                 break;
@@ -891,6 +898,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 _cosmeticKnivesEnabled = true;
                 _cosmeticGlovesEnabled = true;
                 _cosmeticNamesEnabled = true;
+                _cosmeticAgentsEnabled = true;
                 _stickerAlignEnabled = false;
                 _charmAlignEnabled = false;
                 break;
@@ -899,6 +907,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 _cosmeticKnivesEnabled = true;
                 _cosmeticGlovesEnabled = true;
                 _cosmeticNamesEnabled = true;
+                _cosmeticAgentsEnabled = true;
                 _stickerAlignEnabled = true;
                 _charmAlignEnabled = true;
                 break;
@@ -937,6 +946,12 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             case "custom-name":
                 _cosmeticNamesEnabled = enabled;
                 break;
+            case "agents":
+            case "agent":
+            case "models":
+            case "model":
+                _cosmeticAgentsEnabled = enabled;
+                break;
             case "stickers":
             case "sticker":
                 SetStickerAlignEnabled(enabled);
@@ -970,17 +985,17 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (!AnyCosmeticFeatureEnabled())
             return "off";
         if (_cosmeticWeaponsEnabled && !_cosmeticKnivesEnabled && !_cosmeticGlovesEnabled &&
-            _cosmeticNamesEnabled && !_stickerAlignEnabled && !_charmAlignEnabled)
+            _cosmeticNamesEnabled && !_cosmeticAgentsEnabled && !_stickerAlignEnabled && !_charmAlignEnabled)
         {
             return "weapons";
         }
         if (_cosmeticWeaponsEnabled && _cosmeticKnivesEnabled && _cosmeticGlovesEnabled &&
-            _cosmeticNamesEnabled && !_stickerAlignEnabled && !_charmAlignEnabled)
+            _cosmeticNamesEnabled && _cosmeticAgentsEnabled && !_stickerAlignEnabled && !_charmAlignEnabled)
         {
             return "basic";
         }
         if (_cosmeticWeaponsEnabled && _cosmeticKnivesEnabled && _cosmeticGlovesEnabled &&
-            _cosmeticNamesEnabled && _stickerAlignEnabled && _charmAlignEnabled)
+            _cosmeticNamesEnabled && _cosmeticAgentsEnabled && _stickerAlignEnabled && _charmAlignEnabled)
         {
             return "full";
         }
@@ -988,7 +1003,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     private bool AnyBaseCosmeticsEnabled()
-        => _cosmeticWeaponsEnabled || _cosmeticKnivesEnabled || _cosmeticGlovesEnabled || _cosmeticNamesEnabled;
+        => _cosmeticWeaponsEnabled || _cosmeticKnivesEnabled || _cosmeticGlovesEnabled || _cosmeticNamesEnabled || _cosmeticAgentsEnabled;
 
     private bool AnyCosmeticFeatureEnabled()
         => AnyBaseCosmeticsEnabled() || _stickerAlignEnabled || _charmAlignEnabled;
@@ -1193,7 +1208,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                         ? $"pool server_round={_poolRoundIndex} candidates={_poolManifest?.Candidates.Count ?? 0}"
                         : "none";
             command.ReplyToCommand(
-                $"[DTR OK] status plan={plan} loaded_slots={_loadedSlots.Count} settings identity={ReplayIdentityModeName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} cosmetics={FormatOnOff(_cosmeticAlignEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)} scoreboard={FormatOnOff(_scoreboardAlignEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} allow_partial={FormatOnOff(_partialReplayEnabled)} {FormatVoiceAutoStatusInline()} mp_freezetime={(float.IsFinite(freezeTime) ? freezeTime.ToString("F2", CultureInfo.InvariantCulture) : "unknown")} {(string.IsNullOrEmpty(freezeReason) ? "" : freezeReason)} {FormatCosmeticStatusCounts()} {FormatCrosshairStatusCounts()} {FormatScoreboardStatusCounts()}");
+                $"[DTR OK] status plan={plan} loaded_slots={_loadedSlots.Count} settings identity={ReplayIdentityModeName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} cosmetics={FormatOnOff(_cosmeticAlignEnabled)} agents={FormatOnOff(_cosmeticAgentsEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)} scoreboard={FormatOnOff(_scoreboardAlignEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} allow_partial={FormatOnOff(_partialReplayEnabled)} {FormatVoiceAutoStatusInline()} mp_freezetime={(float.IsFinite(freezeTime) ? freezeTime.ToString("F2", CultureInfo.InvariantCulture) : "unknown")} {(string.IsNullOrEmpty(freezeReason) ? "" : freezeReason)} {FormatCosmeticStatusCounts()} {FormatCrosshairStatusCounts()} {FormatScoreboardStatusCounts()}");
             return;
         }
 
@@ -1208,7 +1223,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             ? $" pool_next={_poolRoundIndex}"
             : string.Empty;
         command.ReplyToCommand(
-            $"dtr: abi={BotControllerNative.AbiVersion} slot={slot} playing={state.Playing} cursor={state.Cursor} total={state.Total} handoff={FormatHandoffMode(_handoffMode)} scope={(_handoffAllSlots ? "all" : "slot")} handoff_360={_handoffThreat360Enabled}:{_handoffThreat360Range.ToString("F0", CultureInfo.InvariantCulture)} los={_handoffThreat360LosEnabled}:{_rayTraceLosProbe.ProbeStatus} partial={_partialReplayEnabled} identity={ReplayIdentityModeName()} projectile_align={_projectileAlignEnabled} cosmetic_align={_cosmeticAlignEnabled} sticker_align={_stickerAlignEnabled} charm_align={_charmAlignEnabled} preserve_native={_preserveNativeBotCosmetics} crosshair_align={_crosshairAlignEnabled} left_hand_desired={_leftHandDesiredEnabled} scoreboard_align={_scoreboardAlignEnabled} {FormatVoiceAutoStatusInline()}{sequence}{pool}");
+            $"dtr: abi={BotControllerNative.AbiVersion} slot={slot} playing={state.Playing} cursor={state.Cursor} total={state.Total} handoff={FormatHandoffMode(_handoffMode)} scope={(_handoffAllSlots ? "all" : "slot")} handoff_360={_handoffThreat360Enabled}:{_handoffThreat360Range.ToString("F0", CultureInfo.InvariantCulture)} los={_handoffThreat360LosEnabled}:{_rayTraceLosProbe.ProbeStatus} partial={_partialReplayEnabled} identity={ReplayIdentityModeName()} projectile_align={_projectileAlignEnabled} cosmetic_align={_cosmeticAlignEnabled} agent_align={_cosmeticAgentsEnabled} sticker_align={_stickerAlignEnabled} charm_align={_charmAlignEnabled} preserve_native={_preserveNativeBotCosmetics} crosshair_align={_crosshairAlignEnabled} left_hand_desired={_leftHandDesiredEnabled} scoreboard_align={_scoreboardAlignEnabled} {FormatVoiceAutoStatusInline()}{sequence}{pool}");
     }
 
     [ConsoleCommand("dtr_runtime", "dtr_runtime")]
@@ -1237,7 +1252,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         command.ReplyToCommand(
             $"[DTR DOCTOR] bots players T={tPlayers}/CT={ctPlayers} strict_bots={strictBots} bot_hider_managed={managedBots} safe_replay_targets={replayTargets.Count}");
         command.ReplyToCommand(
-            $"[DTR DOCTOR] replay loaded={_loadedSlots.Count} playing={loadedPlaying} identity={ReplayIdentityModeName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} cosmetics={FormatOnOff(_cosmeticAlignEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)} scoreboard={FormatOnOff(_scoreboardAlignEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} partial={FormatOnOff(_partialReplayEnabled)} raytrace={_rayTraceLosProbe.ProbeStatus} {FormatCosmeticStatusCounts()} {FormatCrosshairStatusCounts()} {FormatScoreboardStatusCounts()}");
+            $"[DTR DOCTOR] replay loaded={_loadedSlots.Count} playing={loadedPlaying} identity={ReplayIdentityModeName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} cosmetics={FormatOnOff(_cosmeticAlignEnabled)} agents={FormatOnOff(_cosmeticAgentsEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)} scoreboard={FormatOnOff(_scoreboardAlignEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} partial={FormatOnOff(_partialReplayEnabled)} raytrace={_rayTraceLosProbe.ProbeStatus} {FormatCosmeticStatusCounts()} {FormatCrosshairStatusCounts()} {FormatScoreboardStatusCounts()}");
 
         if (command.ArgCount >= 2)
             ReplyDoctorManifest(command, command.GetArg(1));
@@ -3103,7 +3118,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             }
         }
 
-        if (_cosmeticAlignEnabled && _weaponAlignEnabled)
+        if (_cosmeticAlignEnabled && (_weaponAlignEnabled || _cosmeticAgentsEnabled))
         {
             foreach (var slot in _loadedSlots)
             {

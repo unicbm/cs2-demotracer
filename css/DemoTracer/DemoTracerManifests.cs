@@ -366,6 +366,9 @@ public sealed partial class DemoTracerPlugin
 
         [JsonPropertyName("glove")]
         public ReplayItemCosmetic? Glove { get; set; }
+
+        [JsonPropertyName("agent")]
+        public ReplayAgentCosmetic? Agent { get; set; }
     }
 
     private sealed class ReplayWeaponCosmetic
@@ -483,6 +486,18 @@ public sealed partial class DemoTracerPlugin
 
         [JsonPropertyName("custom_name")]
         public string? CustomName { get; set; }
+    }
+
+    private sealed class ReplayAgentCosmetic
+    {
+        [JsonPropertyName("item_def_index")]
+        public uint ItemDefIndex { get; set; }
+
+        [JsonPropertyName("model_path")]
+        public string ModelPath { get; set; } = string.Empty;
+
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
     }
 
     private const int NadeManifestFormatVersion = 1;

@@ -81,11 +81,11 @@ server bundle 自带：
 
 ## GSLT 和饰品边界
 
-饰品、custom name、sticker、charm metadata 默认不导出。只有显式传入
+饰品、custom name、sticker、charm、探员模型 metadata 默认不导出。只有显式传入
 `--export-cosmetics`、`--acknowledge-cosmetic-gslt-risk` 和
 `--accept-cosmetic-export-disclaimer` 时才会导出；sticker/charm 还需要额外
 `--export-stickers` / `--export-charms`。
 
-runtime 侧的 cosmetic/sticker/charm alignment 也默认关闭，只消费 manifest 里的
+runtime 侧的 cosmetic/agent/sticker/charm alignment 也默认关闭，只消费 manifest 里的
 demo 证据。bot-only inventory mutation 不等于 Valve policy exemption；如果真人可以
 观察、控制、占有、inspect 或使用这些 bot，就按服务器运营者风险处理。

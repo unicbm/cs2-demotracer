@@ -56,6 +56,7 @@ only; it is not written into `.dtr` files or manifests.
   },
   "cosmetics": {
     "preset": "off",
+    "agents": false,
     "preserve_native": false
   }
 }
@@ -73,7 +74,7 @@ matching legacy fields.
 | --- | --- | --- |
 | `dtr_align default` | on | Replay fidelity: weapons/loadout, projectiles, crosshair, and left-hand desired writes. |
 | `dtr_match off` | off | Match presentation sync, including scoreboard/KDA/MVP/team score. |
-| `dtr_cosmetics off` | off | High-risk cosmetic evidence replay for skins, knives, gloves, names, stickers, and charms. |
+| `dtr_cosmetics off` | off | High-risk cosmetic evidence replay for skins, knives, gloves, names, agents, stickers, and charms. |
 | `dtr_handoff` | `death_contact_c4 slot` | Release the contacted/dead replay slot after contact or death; C4 planted releases all active replay slots. |
 | `dtr_partial` | `1` | Allow replay with fewer bots than manifest players. |
 | `dtr_replay_identity` | `steam` | Write demo name and SteamID64 through BotHider-managed replay bot slots when available. Team/event avatar PNGs require explicit `avatar`; `full` keeps the legacy real-SteamID avatar path. |
@@ -342,6 +343,7 @@ dtr_cosmetics weapons <on|off>
 dtr_cosmetics knives <on|off>
 dtr_cosmetics gloves <on|off>
 dtr_cosmetics names <on|off>
+dtr_cosmetics agents <on|off>
 dtr_cosmetics stickers <on|off>
 dtr_cosmetics charms <on|off>
 dtr_cosmetics preserve_native <on|off>
@@ -350,7 +352,8 @@ dtr_cosmetics preserve_native <on|off>
 Presets:
 
 - `weapons`: weapon paint and weapon custom names only.
-- `basic`: weapons, knives, gloves, and custom names; no stickers or charms.
+- `basic`: weapons, knives, gloves, custom names, and demo-backed agent models;
+  no stickers or charms.
 - `full`: `basic` plus stickers and charms.
 
 `preserve_native` is an opt-in server-local policy for operators who already
@@ -435,6 +438,8 @@ Implementation when enabled:
   where the demo exposes it. If
   demoparser exposes glove item def/paint/wear but no glove seed, the converter
   writes deterministic seed `0` for that glove.
+- Supports demo-backed agent model evidence when the manifest contains
+  `cosmetics.agent`; `dtr_cosmetics agents off` disables this component.
 - Weapon stickers are not part of this legacy command alone. They require
   `--export-stickers` during conversion and `dtr_cosmetics stickers on` at
   runtime. Legacy aliases `dtr_sticker_align 1` and
@@ -450,7 +455,6 @@ Implementation when enabled:
 
 Important limits:
 
-- Agents are not applied.
 - StatTrak is limited to demo-observed weapon cosmetic evidence:
   `quality=9` may be applied. If the manifest has no nonnegative
   `stattrak_counter`, runtime writes display counter `0` to request the
@@ -481,9 +485,9 @@ Implementation when enabled:
   weapon cosmetics.
 - Supports sticker slot, sticker id, wear, offset x, offset y, rotation, and
   raw scale metadata.
-- Does not apply schema or agents. Charms/keychains use
-  `dtr_charm_align`. StatTrak comes from weapon cosmetic evidence, not sticker
-  alignment.
+- Does not apply schema. Agent models use `dtr_cosmetics agents`.
+  Charms/keychains use `dtr_charm_align`. StatTrak comes from weapon cosmetic
+  evidence, not sticker alignment.
 - Sticker write failures are counted as skipped stickers and do not roll back
   weapon paint, knife, glove, or custom-name alignment.
 
@@ -499,8 +503,8 @@ Implementation when enabled:
   replay weapon cosmetics.
 - Supports charm slot 0 id, offset x, offset y, offset z, optional seed,
   optional highlight, and optional charm sticker id.
-- Does not apply random charms, profile/database inventory, agents, or
-  unsupported charm slots.
+- Does not apply random charms, profile/database inventory, or unsupported charm
+  slots. Agent models use `dtr_cosmetics agents`.
 - Charm write failures are counted as skipped charms and do not roll back weapon
   paint, knife, glove, custom-name, StatTrak, or sticker alignment.
 

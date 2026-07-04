@@ -4,11 +4,11 @@ use crate::model::{
     public_demo_path, ConversionManifest, ConvertedFile, ConvertedRound, EconomyClass,
     HighFidelityMetadata, ManifestAvatarOverride, ParsedAvatarOverride, ParsedDemo, ParsedEconItem,
     ParsedGameEvent, ParsedInventoryWeaponAttribute, ParsedInventoryWeaponCosmetic,
-    ParsedPlayerTick, ParsedProjectile, ParsedWeaponSticker, ReplayCosmetics, ReplayHifiEvent,
-    ReplayHifiEventKind, ReplayInventoryItemCount, ReplayInventorySnapshot, ReplayItemCosmetic,
-    ReplayPlayerScoreboard, ReplayRoundScoreboard, ReplayView, ReplayWeaponCharm,
-    ReplayWeaponCosmetic, ReplayWeaponSticker, RoundSummary, Side, SubtickMode, TeamEconomy,
-    DEMOTRACER_ABI, DTR_FORMAT_VERSION,
+    ParsedPlayerTick, ParsedProjectile, ParsedWeaponSticker, ReplayAgentCosmetic, ReplayCosmetics,
+    ReplayHifiEvent, ReplayHifiEventKind, ReplayInventoryItemCount, ReplayInventorySnapshot,
+    ReplayItemCosmetic, ReplayPlayerScoreboard, ReplayRoundScoreboard, ReplayView,
+    ReplayWeaponCharm, ReplayWeaponCosmetic, ReplayWeaponSticker, RoundSummary, Side, SubtickMode,
+    TeamEconomy, DEMOTRACER_ABI, DTR_FORMAT_VERSION,
 };
 use crate::rec_writer::write_rec;
 use crate::replay::context::{
@@ -1616,6 +1616,9 @@ fn replay_cosmetics_at(
     let play_start = (play_start_tick_index as usize).min(rows.len().saturating_sub(1));
     let active_rows = rows.get(play_start..).unwrap_or(rows);
     let mut cosmetics = replay_active_cosmetics(active_rows, export_stickers).unwrap_or_default();
+    if let Some(agent) = replay_agent_cosmetic(rows) {
+        cosmetics.agent = Some(agent);
+    }
     if let Some(glove) = econ_glove {
         cosmetics.glove = Some(glove.clone());
     }
@@ -1635,6 +1638,85 @@ fn replay_cosmetics_at(
         .weapons
         .sort_by_key(|weapon| weapon.weapon_def_index);
     (!cosmetics.is_empty()).then_some(cosmetics)
+}
+
+const AGENT_MODEL_FAMILIES: &[&str] = &[
+    "ctm_diver",
+    "ctm_fbi",
+    "ctm_gendarmerie",
+    "ctm_gign",
+    "ctm_gsg9",
+    "ctm_heavy",
+    "ctm_idf",
+    "ctm_sas",
+    "ctm_st6",
+    "ctm_swat",
+    "tm_anarchist",
+    "tm_balkan",
+    "tm_jungle_raider",
+    "tm_jumpsuit",
+    "tm_leet",
+    "tm_phoenix_heavy",
+    "tm_phoenix",
+    "tm_pirate",
+    "tm_professional",
+    "tm_separatist",
+];
+
+fn replay_agent_cosmetic(rows: &[&ParsedPlayerTick]) -> Option<ReplayAgentCosmetic> {
+    let mut item_defs = BTreeSet::new();
+    let mut names = BTreeSet::new();
+    let mut model_paths = BTreeSet::new();
+
+    for row in rows {
+        if row.steam_id == 0 {
+            continue;
+        }
+        let Some(item_def) = row.agent_item_def_index.filter(|value| *value != 0) else {
+            continue;
+        };
+        let Some(name) = row.agent_skin.as_deref() else {
+            continue;
+        };
+        let Some(model_path) = agent_model_path_from_name(name) else {
+            continue;
+        };
+        item_defs.insert(item_def);
+        names.insert(name.to_string());
+        model_paths.insert(model_path);
+    }
+
+    if item_defs.len() != 1 || model_paths.len() != 1 {
+        return None;
+    }
+
+    Some(ReplayAgentCosmetic {
+        item_def_index: *item_defs.iter().next()?,
+        model_path: model_paths.into_iter().next()?,
+        name: (names.len() == 1)
+            .then(|| names.into_iter().next())
+            .flatten(),
+    })
+}
+
+fn agent_model_path_from_name(name: &str) -> Option<String> {
+    let normalized = name.trim().to_ascii_lowercase();
+    let stem = normalized.strip_prefix("customplayer_")?;
+    if stem == "t_map_based" || stem == "ct_map_based" {
+        return None;
+    }
+    if !stem
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    {
+        return None;
+    }
+
+    let family = AGENT_MODEL_FAMILIES
+        .iter()
+        .filter(|family| stem == **family || stem.starts_with(&format!("{family}_")))
+        .max_by_key(|family| family.len())?;
+    Some(format!("agents\\models\\{family}\\{stem}.vmdl"))
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -1720,7 +1802,7 @@ fn replay_active_cosmetics(
         }
 
         let raw_def = row.item_def_idx;
-        if is_knife_cosmetic_def_index(raw_def) {
+        if is_exact_knife_cosmetic_def_index(raw_def) {
             if let Some(spec) = cosmetic_paint_spec(
                 row.active_weapon_paint_kit,
                 row.active_weapon_paint_seed,
@@ -2450,6 +2532,10 @@ fn is_knife_cosmetic_def_index(def: i32) -> bool {
     def == 41 || def == 42 || def == 59 || (500..600).contains(&def)
 }
 
+fn is_exact_knife_cosmetic_def_index(def: i32) -> bool {
+    is_knife_cosmetic_def_index(def) && !matches!(def, 41 | 42 | 59)
+}
+
 fn is_plausible_glove_item_def_index(def: i32) -> bool {
     (5027..=5035).contains(&def)
 }
@@ -2835,6 +2921,57 @@ mod tests {
         let memory = export_memory(parsed);
 
         assert_eq!(memory.manifest.files[0].music_kit_id, Some(42));
+    }
+
+    #[test]
+    fn manifest_includes_stable_agent_cosmetic() {
+        let mut parsed = sample_demo();
+        parsed.rows = vec![
+            ParsedPlayerTick {
+                agent_item_def_index: Some(4713),
+                agent_skin: Some("customplayer_ctm_swat_variantg".to_string()),
+                ..sample_row(100)
+            },
+            ParsedPlayerTick {
+                agent_item_def_index: Some(4713),
+                agent_skin: Some("customplayer_ctm_swat_variantg".to_string()),
+                ..sample_row(164)
+            },
+        ];
+
+        let memory = export_memory_with_cosmetics(parsed);
+        let agent = memory.manifest.files[0]
+            .cosmetics
+            .as_ref()
+            .and_then(|cosmetics| cosmetics.agent.as_ref())
+            .expect("agent cosmetic exported");
+
+        assert_eq!(agent.item_def_index, 4713);
+        assert_eq!(
+            agent.name.as_deref(),
+            Some("customplayer_ctm_swat_variantg")
+        );
+        assert_eq!(
+            agent.model_path,
+            "agents\\models\\ctm_swat\\ctm_swat_variantg.vmdl"
+        );
+    }
+
+    #[test]
+    fn agent_model_path_uses_known_family_prefixes() {
+        assert_eq!(
+            agent_model_path_from_name("customplayer_tm_jungle_raider_variantb2").as_deref(),
+            Some("agents\\models\\tm_jungle_raider\\tm_jungle_raider_variantb2.vmdl")
+        );
+        assert_eq!(
+            agent_model_path_from_name("customplayer_tm_professional_varf1").as_deref(),
+            Some("agents\\models\\tm_professional\\tm_professional_varf1.vmdl")
+        );
+        assert_eq!(
+            agent_model_path_from_name("customplayer_tm_phoenix_heavy").as_deref(),
+            Some("agents\\models\\tm_phoenix_heavy\\tm_phoenix_heavy.vmdl")
+        );
+        assert_eq!(agent_model_path_from_name("customplayer_t_map_based"), None);
     }
 
     #[test]
@@ -3521,6 +3658,22 @@ mod tests {
             ..sample_row(164)
         };
         let rows = vec![&active_false_positive];
+
+        let cosmetics = replay_cosmetics_at(&rows, &rows, 0, None, true, false);
+
+        assert!(cosmetics.is_none());
+    }
+
+    #[test]
+    fn default_knife_paint_false_positive_is_skipped() {
+        let default_knife_false_positive = ParsedPlayerTick {
+            item_def_idx: 42,
+            active_weapon_paint_kit: Some(572),
+            active_weapon_paint_seed: Some(525),
+            active_weapon_paint_wear: Some(0.026_503_133),
+            ..sample_row(164)
+        };
+        let rows = vec![&default_knife_false_positive];
 
         let cosmetics = replay_cosmetics_at(&rows, &rows, 0, None, true, false);
 
@@ -4432,6 +4585,8 @@ mod tests {
             inventory_as_ids: vec![7],
             inventory_weapon_cosmetics: Vec::new(),
             music_kit_id: None,
+            agent_item_def_index: None,
+            agent_skin: None,
             active_weapon_paint_kit: None,
             active_weapon_paint_seed: None,
             active_weapon_paint_wear: None,
