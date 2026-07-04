@@ -7,9 +7,9 @@ use crate::model::{
     ParsedPlayerTick, ParsedProjectile, ParsedWeaponSticker, ReplayAgentCosmetic,
     ReplayChatMessage, ReplayCosmetics, ReplayHifiEvent, ReplayHifiEventKind,
     ReplayInventoryItemCount, ReplayInventorySnapshot, ReplayItemCosmetic, ReplayPlayerScoreboard,
-    ReplayRoundScoreboard, ReplayView, ReplayWeaponCharm, ReplayWeaponCosmetic,
-    ReplayWeaponSticker, RoundSummary, Side, SubtickMode, TeamEconomy, DEMOTRACER_ABI,
-    DTR_FORMAT_VERSION,
+    ReplayRoundScoreboard, ReplayScoreboardFlair, ReplayView, ReplayWeaponCharm,
+    ReplayWeaponCosmetic, ReplayWeaponSticker, RoundSummary, Side, SubtickMode, TeamEconomy,
+    DEMOTRACER_ABI, DTR_FORMAT_VERSION,
 };
 use crate::rec_writer::write_rec;
 use crate::replay::context::{
@@ -402,6 +402,7 @@ fn export_demo_to_memory_inner(
                 inventory_snapshot_count: rec.high_fidelity.inventory_snapshots.len(),
                 loadout: replay_loadout(play_start_row),
                 music_kit_id: stable_music_kit_id(&player_rows),
+                scoreboard_flair: stable_scoreboard_flair(&player_rows),
                 cosmetics: if options.export_cosmetics {
                     replay_cosmetics_at(
                         &player_rows,
@@ -2283,6 +2284,24 @@ fn stable_music_kit_id(rows: &[&ParsedPlayerTick]) -> Option<u32> {
     }
 }
 
+fn stable_scoreboard_flair(rows: &[&ParsedPlayerTick]) -> Option<ReplayScoreboardFlair> {
+    let mut values = BTreeSet::new();
+    for row in rows {
+        let Some(flair) = row.scoreboard_flair else {
+            continue;
+        };
+        values.insert(ReplayScoreboardFlair {
+            item_def_index: flair.item_def_index,
+        });
+    }
+
+    if values.len() == 1 {
+        values.iter().next().copied()
+    } else {
+        None
+    }
+}
+
 fn combine_item_id(high: Option<u32>, low: Option<u32>) -> Option<u64> {
     Some((u64::from(high?) << 32) | u64::from(low?))
 }
@@ -2787,7 +2806,8 @@ mod tests {
     use super::*;
     use crate::model::{
         AvatarImageFormat, Cs2Rec, ParsedAvatarOverride, ParsedDemo, ParsedEconItem,
-        ParsedGameEvent, ParsedInventoryWeaponCosmetic, ParsedWeaponSticker, ReplayTick,
+        ParsedGameEvent, ParsedInventoryWeaponCosmetic, ParsedScoreboardFlair, ParsedWeaponSticker,
+        ReplayTick,
     };
     use crate::rec_writer::read_rec;
     use crate::replay::context::{
@@ -3014,6 +3034,60 @@ mod tests {
         let memory = export_memory(parsed);
 
         assert_eq!(memory.manifest.files[0].music_kit_id, Some(42));
+    }
+
+    #[test]
+    fn manifest_includes_stable_scoreboard_flair() {
+        let mut parsed = sample_demo();
+        parsed.rows = vec![
+            ParsedPlayerTick {
+                scoreboard_flair: Some(ParsedScoreboardFlair {
+                    item_def_index: 4974,
+                }),
+                ..sample_row(100)
+            },
+            ParsedPlayerTick {
+                scoreboard_flair: Some(ParsedScoreboardFlair {
+                    item_def_index: 4974,
+                }),
+                ..sample_row(164)
+            },
+        ];
+
+        let memory = export_memory(parsed);
+
+        assert_eq!(
+            memory.manifest.files[0]
+                .scoreboard_flair
+                .as_ref()
+                .map(|flair| flair.item_def_index),
+            Some(4974)
+        );
+    }
+
+    #[test]
+    fn manifest_includes_empty_scoreboard_flair_evidence() {
+        let mut parsed = sample_demo();
+        parsed.rows = vec![
+            ParsedPlayerTick {
+                scoreboard_flair: Some(ParsedScoreboardFlair { item_def_index: 0 }),
+                ..sample_row(100)
+            },
+            ParsedPlayerTick {
+                scoreboard_flair: Some(ParsedScoreboardFlair { item_def_index: 0 }),
+                ..sample_row(164)
+            },
+        ];
+
+        let memory = export_memory(parsed);
+
+        assert_eq!(
+            memory.manifest.files[0]
+                .scoreboard_flair
+                .as_ref()
+                .map(|flair| flair.item_def_index),
+            Some(0)
+        );
     }
 
     #[test]
@@ -4808,6 +4882,7 @@ mod tests {
             inventory_as_ids: vec![7],
             inventory_weapon_cosmetics: Vec::new(),
             music_kit_id: None,
+            scoreboard_flair: None,
             agent_item_def_index: None,
             agent_skin: None,
             active_weapon_paint_kit: None,

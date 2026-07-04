@@ -7,6 +7,17 @@ namespace DemoTracer;
 
 public sealed partial class DemoTracerPlugin
 {
+    private static ReplayScoreboardFlair? NormalizeReplayScoreboardFlair(ReplayScoreboardFlair? flair)
+    {
+        if (flair == null)
+            return null;
+
+        return new ReplayScoreboardFlair
+        {
+            ItemDefIndex = flair.ItemDefIndex <= ushort.MaxValue ? flair.ItemDefIndex : 0
+        };
+    }
+
     private static ReplayPlayerScoreboard NormalizeReplayScoreboard(ReplayPlayerScoreboard? scoreboard)
     {
         if (scoreboard == null)
@@ -224,11 +235,15 @@ public sealed partial class DemoTracerPlugin
         }
     }
 
-    private static void TrySetScoreboardStateChanged(CBaseEntity entity, string className, string fieldName)
+    private static void TrySetScoreboardStateChanged(
+        CBaseEntity entity,
+        string className,
+        string fieldName,
+        int extraOffset = 0)
     {
         try
         {
-            Utilities.SetStateChanged(entity, className, fieldName);
+            Utilities.SetStateChanged(entity, className, fieldName, extraOffset);
         }
         catch
         {

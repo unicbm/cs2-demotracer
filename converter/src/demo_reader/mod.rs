@@ -14,8 +14,8 @@ mod demoparser_impl {
     use crate::model::{
         AvatarImageFormat, ParsedAvatarOverride, ParsedEconItem, ParsedGameEvent,
         ParsedInventoryWeaponAttribute, ParsedInventoryWeaponCosmetic, ParsedPlayerTick,
-        ParsedProjectile, ParsedVoiceFrame, ParsedWeaponSticker, ProjectileEffectSource,
-        ProjectileKind, SubtickMove,
+        ParsedProjectile, ParsedScoreboardFlair, ParsedVoiceFrame, ParsedWeaponSticker,
+        ProjectileEffectSource, ProjectileKind, SubtickMove,
     };
     use ahash::AHashMap;
     use parser::first_pass::parser_settings::{rm_user_friendly_names, ParserInputs};
@@ -78,6 +78,7 @@ mod demoparser_impl {
             "inventory_as_ids",
             "inventory_weapon_cosmetics",
             "music_kit_id",
+            "CCSPlayerController.CCSPlayerController_InventoryServices.m_rank",
             "agent_skin",
             "CCSPlayerController.m_nPawnCharacterDefIndex",
             "active_weapon_original_owner",
@@ -271,6 +272,7 @@ mod demoparser_impl {
                 )
                 .unwrap_or_default(),
                 music_kit_id: get_u32(&columns, "music_kit_id", idx).filter(|value| *value != 0),
+                scoreboard_flair: get_scoreboard_flair(&columns, idx),
                 agent_item_def_index: get_u32(
                     &columns,
                     "CCSPlayerController.m_nPawnCharacterDefIndex",
@@ -1381,6 +1383,20 @@ mod demoparser_impl {
             })
             .collect::<Vec<_>>();
         (!parsed.is_empty()).then_some(parsed)
+    }
+
+    fn get_scoreboard_flair(
+        columns: &AHashMap<String, &PropColumn>,
+        idx: usize,
+    ) -> Option<ParsedScoreboardFlair> {
+        let item_def_index = get_u64(
+            columns,
+            "CCSPlayerController.CCSPlayerController_InventoryServices.m_rank",
+            idx,
+        )
+        .and_then(|value| u32::try_from(value).ok())?;
+
+        Some(ParsedScoreboardFlair { item_def_index })
     }
 
     fn combine_item_id(high: Option<u32>, low: Option<u32>) -> Option<u64> {

@@ -265,6 +265,9 @@ public sealed partial class DemoTracerPlugin
         [JsonPropertyName("music_kit_id")]
         public uint? MusicKitId { get; set; }
 
+        [JsonPropertyName("scoreboard_flair")]
+        public ReplayScoreboardFlair? ScoreboardFlair { get; set; }
+
         [JsonPropertyName("cosmetics")]
         public ReplayCosmetics? Cosmetics { get; set; }
 
@@ -315,6 +318,12 @@ public sealed partial class DemoTracerPlugin
     {
         [JsonPropertyName("crosshair_code")]
         public string? CrosshairCode { get; set; }
+    }
+
+    private sealed class ReplayScoreboardFlair
+    {
+        [JsonPropertyName("item_def_index")]
+        public uint ItemDefIndex { get; set; }
     }
 
     private sealed class ReplayRoundScoreboard

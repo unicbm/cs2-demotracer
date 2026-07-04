@@ -4,6 +4,7 @@ using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Modules.Cvars;
 using CounterStrikeSharp.API.Modules.Memory;
+using CounterStrikeSharp.API.Modules.Timers;
 using CounterStrikeSharp.API.Modules.Utils;
 using CounterStrikeSharp.API;
 using DemoTracerApi;
@@ -90,6 +91,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private readonly HashSet<int> _cosmeticSyncedSlots = new();
     private readonly Dictionary<int, AppliedActiveWeaponCosmetic> _activeWeaponCosmetics = new();
     private readonly HashSet<int> _scoreboardSyncedSlots = new();
+    private readonly HashSet<int> _replayScoreboardFlairSyncedSlots = new();
     private readonly Dictionary<int, string?> _viewerOriginalCrosshairCodes = new();
     private readonly Dictionary<int, string> _viewerAppliedCrosshairCodes = new();
     private readonly BotHiderMemoryProbe _botHiderProbe = new();
@@ -2745,6 +2747,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 file.PreloadWeaponDefIndices,
                 file.Loadout,
                 NormalizeMusicKitId(file.MusicKitId),
+                file.ScoreboardFlair,
                 file.Cosmetics,
                 file.View,
                 file.Scoreboard,
@@ -2872,6 +2875,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             else if (useSyntheticAvatarSteamId && hasAvatarOverride)
                 ScheduleReplayAvatarOverride(slot, file, displaySteamId, manifestDir, avatarOverrides);
         }
+        ScheduleReplayScoreboardFlair(slot, file);
         if (writeSteamId && useSyntheticAvatarSteamId)
         {
             Server.PrintToConsole(
@@ -2884,6 +2888,133 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                     ? $"dtr: replay identity queued slot={slot} player={file.PlayerName} sid={file.SteamId}"
                     : $"dtr: replay identity queued slot={slot} player={file.PlayerName}");
         }
+    }
+
+    private bool ReplayIdentityShouldApplyScoreboardFlair()
+        => _replayIdentityMode is ReplayIdentityMode.Steam or ReplayIdentityMode.Avatar or ReplayIdentityMode.Full;
+
+    private void ScheduleReplayScoreboardFlair(int slot, ManifestFile file)
+    {
+        if (!ReplayIdentityShouldApplyScoreboardFlair() || file.ScoreboardFlair == null)
+            return;
+
+        var flair = NormalizeReplayScoreboardFlair(file.ScoreboardFlair);
+        if (flair == null)
+            return;
+
+        var generation = CurrentReplayIdentityGeneration(slot);
+        var playerName = file.PlayerName;
+        Server.NextFrame(() => TryApplyReplayScoreboardFlair(slot, playerName, flair, generation, announce: true));
+        AddTimer(
+            0.10f,
+            () => TryApplyReplayScoreboardFlair(slot, playerName, flair, generation, announce: false),
+            TimerFlags.STOP_ON_MAPCHANGE);
+        AddTimer(
+            0.35f,
+            () => TryApplyReplayScoreboardFlair(slot, playerName, flair, generation, announce: false),
+            TimerFlags.STOP_ON_MAPCHANGE);
+    }
+
+    private void TryApplyReplayScoreboardFlair(
+        int slot,
+        string playerName,
+        ReplayScoreboardFlair flair,
+        long generation,
+        bool announce)
+    {
+        if (!IsReplayIdentityGenerationCurrent(slot, generation) ||
+            !_loadedReplays.TryGetValue(slot, out var replay) ||
+            replay.ScoreboardFlair == null ||
+            replay.ScoreboardFlair.ItemDefIndex != flair.ItemDefIndex ||
+            !IsReplaySlotStillSafe(slot) ||
+            !_botHiderProbe.IsManagedBot(slot))
+        {
+            return;
+        }
+
+        if (TrySetReplayScoreboardFlairValue(slot, flair.ItemDefIndex, out var error))
+        {
+            _replayScoreboardFlairSyncedSlots.Add(slot);
+            if (announce)
+            {
+                Server.PrintToConsole(
+                    $"dtr: replay flair applied slot={slot} player={playerName} def={flair.ItemDefIndex}");
+            }
+            return;
+        }
+
+        if (announce && !string.IsNullOrWhiteSpace(error))
+        {
+            Server.PrintToConsole(
+                $"dtr: replay flair skipped slot={slot} player={playerName} def={flair.ItemDefIndex}: {error}");
+        }
+    }
+
+    private bool TrySetReplayScoreboardFlairValue(
+        int slot,
+        uint itemDefIndex,
+        out string? error)
+    {
+        error = null;
+        if (!IsReplaySlotStillSafe(slot) || !_botHiderProbe.IsManagedBot(slot))
+            return false;
+
+        var player = Utilities.GetPlayerFromSlot(slot);
+        if (player is not { IsValid: true })
+            return false;
+
+        try
+        {
+            var inventory = player.InventoryServices;
+            if (inventory == null)
+                return false;
+
+            var ranks = inventory.Rank;
+            if (ranks.Length == 0)
+            {
+                error = "rank span is empty";
+                return false;
+            }
+
+            for (var i = 0; i < ranks.Length; i++)
+                SetReplayScoreboardFlairRank(player, ranks, i, itemDefIndex);
+            TrySetScoreboardStateChanged(player, "CCSPlayerController", "m_pInventoryServices");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+    }
+
+    private static void SetReplayScoreboardFlairRank(
+        CCSPlayerController player,
+        Span<MedalRank_t> ranks,
+        int index,
+        uint itemDefIndex)
+    {
+        ranks[index] = (MedalRank_t)itemDefIndex;
+        TrySetScoreboardStateChanged(
+            player,
+            "CCSPlayerController_InventoryServices",
+            "m_rank",
+            index * sizeof(uint));
+    }
+
+    private void ClearLoadedReplayScoreboardFlairs()
+    {
+        foreach (var slot in _replayScoreboardFlairSyncedSlots.ToArray())
+            ClearReplayScoreboardFlairForSlot(slot);
+        _replayScoreboardFlairSyncedSlots.Clear();
+    }
+
+    private void ClearReplayScoreboardFlairForSlot(int slot)
+    {
+        if (!_replayScoreboardFlairSyncedSlots.Remove(slot))
+            return;
+
+        _ = TrySetReplayScoreboardFlairValue(slot, 0, out _);
     }
 
     private void RememberReplayDisplaySteamId(int slot, ulong demoSteamId, ulong displaySteamId)
@@ -3636,6 +3767,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         StopVoiceTestPlayback("unload_all", printSummary: false);
         ClearLoadedAutoVoiceClip();
         ClearLoadedAutoChat();
+        ClearLoadedReplayScoreboardFlairs();
         foreach (var slot in _loadedSlots.ToArray())
         {
             BotControllerNative.StopReplay(slot);
@@ -3713,6 +3845,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             _nextNadeCycleToken++;
             _nextNadeStartToken++;
             InvalidateFreezePreroll();
+            ClearLoadedReplayScoreboardFlairs();
 
             if (BotControllerNative.IsCompatible)
             {
@@ -4111,6 +4244,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private void ForgetLoadedReplayMetadata(int slot)
     {
+        ClearReplayScoreboardFlairForSlot(slot);
         InvalidateReplayIdentityGeneration(slot);
         _loadedReplays.Remove(slot);
         _lastEnsuredWeaponDef.Remove(slot);
@@ -4138,6 +4272,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         IReadOnlyList<int>? manifestPreloadWeaponDefIndices = null,
         ReplayLoadoutSnapshot? loadout = null,
         int musicKitId = 0,
+        ReplayScoreboardFlair? scoreboardFlair = null,
         ReplayCosmetics? cosmetics = null,
         ReplayView? view = null,
         ReplayPlayerScoreboard? scoreboard = null,
@@ -4178,6 +4313,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             hasLoadout,
             normalizedLoadout,
             NormalizeMusicKitId(musicKitId),
+            NormalizeReplayScoreboardFlair(scoreboardFlair),
             normalizedCosmetics,
             normalizedView,
             normalizedScoreboard,
@@ -4899,6 +5035,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         bool HasLoadout,
         ReplayLoadoutSnapshot Loadout,
         int MusicKitId,
+        ReplayScoreboardFlair? ScoreboardFlair,
         ReplayCosmetics Cosmetics,
         ReplayView View,
         ReplayPlayerScoreboard Scoreboard,

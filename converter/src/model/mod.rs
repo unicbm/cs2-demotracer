@@ -560,6 +560,11 @@ pub struct ParsedInventoryWeaponCosmetic {
     pub stickers: Vec<ParsedWeaponSticker>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct ParsedScoreboardFlair {
+    pub item_def_index: u32,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ParsedInventoryWeaponAttribute {
     pub definition_index: u32,
@@ -600,6 +605,7 @@ pub struct ParsedPlayerTick {
     pub inventory_as_ids: Vec<i32>,
     pub inventory_weapon_cosmetics: Vec<ParsedInventoryWeaponCosmetic>,
     pub music_kit_id: Option<u32>,
+    pub scoreboard_flair: Option<ParsedScoreboardFlair>,
     pub agent_item_def_index: Option<u32>,
     pub agent_skin: Option<String>,
     pub active_weapon_paint_kit: Option<u32>,
@@ -940,6 +946,8 @@ pub struct ConvertedFile {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub music_kit_id: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub scoreboard_flair: Option<ReplayScoreboardFlair>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cosmetics: Option<ReplayCosmetics>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub view: Option<ReplayView>,
@@ -965,6 +973,11 @@ impl ReplayView {
     pub fn is_empty(&self) -> bool {
         self.crosshair_code.is_none()
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct ReplayScoreboardFlair {
+    pub item_def_index: u32,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
