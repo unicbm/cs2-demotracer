@@ -55,6 +55,8 @@ Copy-RequiredFile (Join-Path $repoRoot "README.md") (Join-Path $stageRoot "READM
 Copy-RequiredFile (Join-Path $repoRoot "docs\README.zh-Hans.md") (Join-Path $stageRoot "docs\README.zh-Hans.md")
 Copy-RequiredFile (Join-Path $repoRoot "docs\USAGE.md") (Join-Path $stageRoot "docs\USAGE.md")
 Copy-RequiredFile (Join-Path $repoRoot "docs\USAGE.zh-Hans.md") (Join-Path $stageRoot "docs\USAGE.zh-Hans.md")
+Copy-RequiredFile (Join-Path $repoRoot "docs\VOICE.md") (Join-Path $stageRoot "docs\VOICE.md")
+Copy-RequiredFile (Join-Path $repoRoot "docs\VOICE.zh-Hans.md") (Join-Path $stageRoot "docs\VOICE.zh-Hans.md")
 Copy-RequiredFile (Join-Path $repoRoot "LICENSE") (Join-Path $stageRoot "LICENSE")
 
 $gitCommit = "unknown"
@@ -104,6 +106,9 @@ Or run the CLI:
 .\cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>"
 .\cs2-demotracer.exe validate --input "<output-dir>"
 ```
+
+To export demo-backed in-game voice sidecars for automatic server playback, add
+`--export-voice`. See `docs/VOICE.md` and `docs/VOICE.zh-Hans.md`.
 
 Generated replay output is consumed by the CS2 DemoTracer server bundle.
 '@

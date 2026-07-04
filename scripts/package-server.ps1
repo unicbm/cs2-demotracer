@@ -131,6 +131,8 @@ if ($IncludeSymbols) {
 New-Item -ItemType Directory -Force -Path (Join-Path $stageRoot "docs") | Out-Null
 Copy-RequiredFile (Join-Path $repoRoot "docs\COMMANDS.md") (Join-Path $stageRoot "docs\COMMANDS.md")
 Copy-RequiredFile (Join-Path $repoRoot "docs\COMMANDS.zh-Hans.md") (Join-Path $stageRoot "docs\COMMANDS.zh-Hans.md")
+Copy-RequiredFile (Join-Path $repoRoot "docs\VOICE.md") (Join-Path $stageRoot "docs\VOICE.md")
+Copy-RequiredFile (Join-Path $repoRoot "docs\VOICE.zh-Hans.md") (Join-Path $stageRoot "docs\VOICE.zh-Hans.md")
 Copy-RequiredFile (Join-Path $repoRoot "LICENSE") (Join-Path $stageRoot "LICENSE")
 
 $gitCommit = "unknown"
@@ -187,6 +189,13 @@ If `runtime_abi` is lower than `16`, the server is still loading an old
 `addons/BotController/gamedata.json`, and `addons/metamod/BotController.vdf`
 from this package.
 
+## Voice Replay
+
+Voice playback uses demo-backed `.dtv` sidecars exported by the converter with
+`--export-voice`. Keep `voice/roundXX.dtv` next to the matching manifest output
+and enable `dtr_voice_auto on` before `dtr_go seq` or `dtr_go round`. See
+`docs/VOICE.md` and `docs/VOICE.zh-Hans.md`.
+
 ## Contents
 
 - `addons/BotController/bin/win64/BotController.dll`
@@ -197,6 +206,8 @@ from this package.
   - `skins_en.json` legacy cosmetic model lookup
 - `docs/COMMANDS.md`
 - `docs/COMMANDS.zh-Hans.md`
+- `docs/VOICE.md`
+- `docs/VOICE.zh-Hans.md`
 
 ## Compatibility
 

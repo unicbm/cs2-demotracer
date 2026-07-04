@@ -41,6 +41,8 @@ movement, view angles, firing, weapon state, and projectile alignment.
 
 - Converts CS2 match demos into `.dtr` route replay files, one player/side/round
   at a time.
+- Optionally exports demo-backed in-game voice sidecars under `voice/roundXX.dtv`
+  when the source demo contains usable voice data.
 - Replays demo movement, view angles, crouch/jump state, firing, weapon switching,
   and selected high-fidelity metadata through local CS2 bots.
 - Exports optional Demo2Nade grenade clips for local utility libraries.
@@ -85,11 +87,22 @@ cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>"
 cs2-demotracer.exe validate --input "<output-dir>"
 ```
 
+To export demo-backed in-game voice for automatic replay, add `--export-voice`:
+
+```powershell
+cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>" --export-voice
+```
+
+This writes `voice/roundXX.dtv` sidecars next to the converted round replay
+files. Not every demo contains voice; community, FACEIT, and 5E demos are more
+likely to include it. See [`docs/VOICE.md`](docs/VOICE.md).
+
 Play a converted manifest on a local server:
 
 ```text
 css_plugins reload DemoTracer
 dtr_config_status
+dtr_voice_auto on
 dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
 ```
 
@@ -99,6 +112,7 @@ dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
 More commands:
 
 - Converter usage: [`docs/USAGE.md`](docs/USAGE.md)
+- Voice export and replay: [`docs/VOICE.md`](docs/VOICE.md)
 - Server commands: [`docs/COMMANDS.md`](docs/COMMANDS.md)
 - Examples: [`examples/`](examples/)
 

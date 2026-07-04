@@ -17,6 +17,12 @@ cs2-demotracer.exe inspect --demo <demo.dem>
 cs2-demotracer.exe convert --demo <demo.dem> --output <输出目录>
 ```
 
+转换推荐回合并导出 demo 自带游戏内语音：
+
+```powershell
+cs2-demotracer.exe convert --demo <demo.dem> --output <输出目录> --export-voice
+```
+
 校验输出：
 
 ```powershell
@@ -33,11 +39,17 @@ freeze time 开始播放，让 CS2 自己正常模拟后续回合状态。
 常用选项：
 
 ```powershell
+cs2-demotracer.exe convert --demo <demo.dem> --output <输出目录> --export-voice
 cs2-demotracer.exe convert --demo <demo.dem> --output <输出目录> --rounds 0,1,2,5-8
 cs2-demotracer.exe convert --demo <demo.dem> --output <输出目录> --side t
 cs2-demotracer.exe convert --demo <demo.dem> --output <输出目录> --include-suspicious
 cs2-demotracer.exe convert --demo <demo.dem> --output <输出目录> --freeze-preroll-seconds 10
 ```
+
+`--export-voice` 会写出 `voice/roundXX.dtv`，用于 runtime 自动语音回放。它只在
+demo 本身录到了游戏内语音时生效。社区服、FACEIT、5E demo 更可能包含语音；
+被平台剥离 voice data 的 demo 不会生成语音 sidecar。完整流程见
+[语音导出和回放](VOICE.zh-Hans.md)。
 
 饰品/econ 元数据默认绝不导出，所以普通 manifest 不包含 `cosmetics` block。若明确要导出
 demo 观测到的武器 paint、刀具、手套元数据，以及稳定的武器/刀具 custom name，必须同时
@@ -59,9 +71,11 @@ manifest.json
 avatars/<sha256>.<ext>
 round00/t/*.dtr
 round00/ct/*.dtr
+voice/round00.dtv
 ```
 
 实际输出目录名会是 `<demo-stem>-<hash12>`；`hash12` 来自 demo 文件内容，用来避免同名 demo 互相覆盖。
+`voice/` 只在传入 `--export-voice` 且 demo 含有可用 voice frame 时生成。
 `avatars/` 只在 demo 包含比赛服务器头像覆写时生成；manifest 会记录每个头像对应的 SteamID64。
 显式把 replay identity 设为 `avatar` 时，DemoTracer 会用 DTR 合成 SteamID64 key
 把匹配的 PNG 头像覆写应用到 BotHider 管理的 replay bot，并由 native runtime 启用

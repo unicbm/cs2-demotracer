@@ -6,6 +6,7 @@ CS2 服务器里让 bot 执行这些路线。
 ## 先看这些
 
 - [使用说明](USAGE.zh-Hans.md)：converter CLI、GUI、pool、Demo2Nade 和服务器播放流程。
+- [语音导出和回放](VOICE.zh-Hans.md)：`--export-voice`、`.dtv` sidecar、自动播放和排错。
 - [命令参考](COMMANDS.zh-Hans.md)：`dtr_` 指令、状态检查和诊断输出。
 - [依赖说明](DEPENDENCIES.md)：必需依赖、server bundle 自带内容、BotHider/RayTrace
   等可选集成边界。
@@ -14,6 +15,7 @@ CS2 服务器里让 bot 执行这些路线。
 英文参考：
 
 - [Usage](USAGE.md)
+- [Voice Export and Replay](VOICE.md)
 - [Commands](COMMANDS.md)
 - [Format Contract](FORMAT.md)
 
@@ -27,11 +29,21 @@ cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>"
 cs2-demotracer.exe validate --input "<output-dir>"
 ```
 
+要导出 demo 自带游戏内语音，加 `--export-voice`：
+
+```powershell
+cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>" --export-voice
+```
+
+这会生成 `voice/roundXX.dtv` sidecar。不是所有 demo 都有语音；社区服、FACEIT、
+5E demo 更可能包含。详见 [语音导出和回放](VOICE.zh-Hans.md)。
+
 在本地 CS2 服务器播放：
 
 ```text
 css_plugins reload DemoTracer
 dtr_config_status
+dtr_voice_auto on
 dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
 ```
 

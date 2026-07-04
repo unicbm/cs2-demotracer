@@ -18,6 +18,12 @@ Convert recommended rounds:
 cs2-demotracer.exe convert --demo <demo.dem> --output <output-dir>
 ```
 
+Convert recommended rounds and export demo-backed in-game voice sidecars:
+
+```powershell
+cs2-demotracer.exe convert --demo <demo.dem> --output <output-dir> --export-voice
+```
+
 Validate the output:
 
 ```powershell
@@ -36,11 +42,17 @@ simulation to create later round state.
 Useful options:
 
 ```powershell
+cs2-demotracer.exe convert --demo <demo.dem> --output <output-dir> --export-voice
 cs2-demotracer.exe convert --demo <demo.dem> --output <output-dir> --rounds 0,1,2,5-8
 cs2-demotracer.exe convert --demo <demo.dem> --output <output-dir> --side t
 cs2-demotracer.exe convert --demo <demo.dem> --output <output-dir> --include-suspicious
 cs2-demotracer.exe convert --demo <demo.dem> --output <output-dir> --freeze-preroll-seconds 10
 ```
+
+`--export-voice` writes `voice/roundXX.dtv` files for automatic runtime voice
+playback. It only works when the demo contains recorded in-game voice data.
+Community, FACEIT, and 5E demos are more likely to include it than demos whose
+platform stripped voice data. See [`VOICE.md`](VOICE.md) for the full workflow.
 
 Cosmetic/econ metadata is not exported by default, so normal manifests contain
 no `cosmetics` blocks. To intentionally export demo-observed weapon paint,
@@ -64,10 +76,13 @@ manifest.json
 avatars/<sha256>.<ext>
 round00/t/*.dtr
 round00/ct/*.dtr
+voice/round00.dtv
 ```
 
 The actual output root is `<demo-stem>-<hash12>`, where `hash12` is derived from
 the demo contents to avoid overwriting unrelated demos with similar names.
+`voice/` is written only when `--export-voice` is set and the demo contains
+usable voice frames.
 `avatars/` is written only when the demo contains server-provided avatar
 override images; the manifest records which SteamID64 each image came from.
 When replay identity is explicitly set to `avatar`, DemoTracer applies matching
