@@ -41,6 +41,7 @@ only; it is not written into `.dtr` files or manifests.
 {
   "identity": "steam",
   "allow_partial": true,
+  "chat_auto": true,
   "handoff": {
     "mode": "death_contact_c4",
     "scope": "slot",
@@ -77,6 +78,7 @@ matching legacy fields.
 | `dtr_cosmetics off` | off | High-risk cosmetic evidence replay for skins, knives, gloves, names, agents, stickers, and charms. |
 | `dtr_handoff` | `death_contact_c4 slot` | Release the contacted/dead replay slot after contact or death; C4 planted releases all active replay slots. |
 | `dtr_partial` | `1` | Allow replay with fewer bots than manifest players. |
+| `dtr_chat_auto` | `on` | Replay demo chat messages from manifest metadata on the same round timeline. |
 | `dtr_replay_identity` | `steam` | Write demo name and SteamID64 through BotHider-managed replay bot slots when available. Team/event avatar PNGs require explicit `avatar`; `full` keeps the legacy real-SteamID avatar path. |
 | `dtr_util_trace` | `0` | Utility CSV trace disabled. |
 | `bc_replay_pov` | `spectated` | Publish expensive native first-person POV updates only for replay bots watched in-eye. |
@@ -368,6 +370,32 @@ inventory database.
 The old `dtr_set align ...` and direct `dtr_*_align` commands remain accepted
 for existing scripts during the beta migration window. New users should prefer
 `dtr_align`, `dtr_match`, and `dtr_cosmetics`.
+
+### `dtr_chat_auto [status|on|off]`
+
+Controls automatic demo chat playback. It is on by default.
+
+When enabled, manifest `rounds[].chat_messages` metadata is scheduled against
+the same live/freezetime anchor used for voice playback. Player chat is issued
+by the matching safe replay bot through `say` or `say_team`; server/admin chat
+is printed as a global DemoTracer server message. Messages whose sender cannot
+be matched to a currently loaded safe replay bot are skipped.
+
+Text chat is an instantaneous event. Messages that are earlier than the active
+playback anchor, such as freezetime messages when replay starts from live, are
+emitted once at playback start instead of being dropped. Voice playback remains
+strictly time-windowed.
+
+Observer visibility follows CS2 server chat policy. For local replay tests where
+spectators should receive native player text chat, set `sv_full_alltalk 1`.
+`sv_allchat 1` by itself is not sufficient for spectator visibility.
+
+### `dtr_chat_test <loaded|any|slot> [all|team] <message>`
+
+Sends one diagnostic chat line from a replay bot without using manifest timing.
+`loaded` chooses the first currently loaded safe replay bot, `any` chooses any
+safe bot, and a numeric value targets that slot. The command uses the same
+server-side `say` / `say_team` path as automatic chat playback.
 
 ### `dtr_weapon_align <0|1>`
 

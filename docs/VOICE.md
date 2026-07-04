@@ -77,7 +77,7 @@ dtr_go seq "<manifest.json>" 0
 A practical full-fidelity local test command is:
 
 ```text
-dtr_replay_identity avatar; dtr_align full; dtr_match full; dtr_cosmetics full; dtr_partial 1; dtr_handoff death_contact_c4 slot; dtr_voice_auto on; dtr_go seq "<manifest.json>" 0
+dtr_replay_identity steam; dtr_align full; dtr_match full; dtr_cosmetics full; dtr_partial 1; dtr_handoff death_contact_c4 slot; dtr_voice_auto on; dtr_go seq "<manifest.json>" 0
 ```
 
 When a source round starts, DemoTracer looks for `voice/roundXX.dtv` near the

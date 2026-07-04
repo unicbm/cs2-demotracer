@@ -4,11 +4,12 @@ use crate::model::{
     public_demo_path, ConversionManifest, ConvertedFile, ConvertedRound, EconomyClass,
     HighFidelityMetadata, ManifestAvatarOverride, ParsedAvatarOverride, ParsedDemo, ParsedEconItem,
     ParsedGameEvent, ParsedInventoryWeaponAttribute, ParsedInventoryWeaponCosmetic,
-    ParsedPlayerTick, ParsedProjectile, ParsedWeaponSticker, ReplayAgentCosmetic, ReplayCosmetics,
-    ReplayHifiEvent, ReplayHifiEventKind, ReplayInventoryItemCount, ReplayInventorySnapshot,
-    ReplayItemCosmetic, ReplayPlayerScoreboard, ReplayRoundScoreboard, ReplayView,
-    ReplayWeaponCharm, ReplayWeaponCosmetic, ReplayWeaponSticker, RoundSummary, Side, SubtickMode,
-    TeamEconomy, DEMOTRACER_ABI, DTR_FORMAT_VERSION,
+    ParsedPlayerTick, ParsedProjectile, ParsedWeaponSticker, ReplayAgentCosmetic,
+    ReplayChatMessage, ReplayCosmetics, ReplayHifiEvent, ReplayHifiEventKind,
+    ReplayInventoryItemCount, ReplayInventorySnapshot, ReplayItemCosmetic, ReplayPlayerScoreboard,
+    ReplayRoundScoreboard, ReplayView, ReplayWeaponCharm, ReplayWeaponCosmetic,
+    ReplayWeaponSticker, RoundSummary, Side, SubtickMode, TeamEconomy, DEMOTRACER_ABI,
+    DTR_FORMAT_VERSION,
 };
 use crate::rec_writer::write_rec;
 use crate::replay::context::{
@@ -281,6 +282,8 @@ fn export_demo_to_memory_inner(
         let t_economy = team_economy(round_rows, round.start_tick, end_tick, 2, pistol_round);
         let ct_economy = team_economy(round_rows, round.start_tick, end_tick, 3, pistol_round);
         let round_scoreboard = replay_round_scoreboard(round_rows);
+        let round_chat_messages =
+            replay_chat_messages(parsed, recording_start_tick, end_tick, round_rows);
         let first_file_index = manifest.files.len();
 
         let mut players: BTreeMap<u64, Vec<&ParsedPlayerTick>> = BTreeMap::new();
@@ -457,6 +460,7 @@ fn export_demo_to_memory_inner(
                 t_economy,
                 ct_economy,
                 scoreboard: round_scoreboard,
+                chat_messages: round_chat_messages,
                 files,
             });
         }
@@ -1561,6 +1565,79 @@ fn replay_round_scoreboard(round_rows: &[&ParsedPlayerTick]) -> Option<ReplayRou
         t_team_name,
         ct_team_name,
     })
+}
+
+fn replay_chat_messages(
+    parsed: &ParsedDemo,
+    start_tick: i32,
+    end_tick: i32,
+    round_rows: &[&ParsedPlayerTick],
+) -> Vec<ReplayChatMessage> {
+    let mut names_by_steam_id = BTreeMap::new();
+    for &row in round_rows {
+        if row.steam_id != 0 && !row.name.trim().is_empty() {
+            names_by_steam_id
+                .entry(row.steam_id)
+                .or_insert_with(|| row.name.trim().to_string());
+        }
+    }
+
+    let mut seen = BTreeSet::new();
+    let mut messages = Vec::new();
+    for event in &parsed.events {
+        if event.tick < start_tick || event.tick > end_tick {
+            continue;
+        }
+        let Some(text) = event.chat_text.as_deref().and_then(clean_replay_chat_text) else {
+            continue;
+        };
+        let scope = clean_replay_chat_scope(event.chat_scope.as_deref());
+        let sender_steam_id = event.user_steam_id.unwrap_or_default();
+        if sender_steam_id == 0 && scope != "server" {
+            continue;
+        }
+        let key = (event.tick, sender_steam_id, scope.clone(), text.clone());
+        if !seen.insert(key) {
+            continue;
+        }
+        messages.push(ReplayChatMessage {
+            tick: event.tick,
+            sender_steam_id,
+            sender_name: names_by_steam_id.get(&sender_steam_id).cloned(),
+            scope,
+            text,
+        });
+    }
+
+    messages.sort_by(|left, right| {
+        (left.tick, left.sender_steam_id, &left.scope, &left.text).cmp(&(
+            right.tick,
+            right.sender_steam_id,
+            &right.scope,
+            &right.text,
+        ))
+    });
+    messages
+}
+
+fn clean_replay_chat_text(value: &str) -> Option<String> {
+    let cleaned = value
+        .trim()
+        .chars()
+        .filter(|ch| !ch.is_control() || *ch == '\t')
+        .take(256)
+        .collect::<String>()
+        .trim()
+        .to_string();
+    (!cleaned.is_empty()).then_some(cleaned)
+}
+
+fn clean_replay_chat_scope(value: Option<&str>) -> String {
+    match value.unwrap_or("all").trim().to_ascii_lowercase().as_str() {
+        "team" => "team".to_string(),
+        "server" | "admin" => "server".to_string(),
+        _ => "all".to_string(),
+    }
 }
 
 fn replay_player_scoreboard(rows: &[&ParsedPlayerTick]) -> Option<ReplayPlayerScoreboard> {
@@ -2694,7 +2771,7 @@ mod tests {
     use super::*;
     use crate::model::{
         AvatarImageFormat, Cs2Rec, ParsedAvatarOverride, ParsedDemo, ParsedEconItem,
-        ParsedInventoryWeaponCosmetic, ParsedWeaponSticker, ReplayTick,
+        ParsedGameEvent, ParsedInventoryWeaponCosmetic, ParsedWeaponSticker, ReplayTick,
     };
     use crate::rec_writer::read_rec;
     use crate::replay::context::{
@@ -3120,6 +3197,84 @@ mod tests {
         assert!(memory.manifest.files[0].cosmetics.is_none());
         let json = serde_json::to_string(&memory.manifest.files[0]).unwrap();
         assert!(!json.contains("cosmetics"));
+    }
+
+    #[test]
+    fn manifest_includes_demo_chat_messages() {
+        let mut parsed = sample_demo();
+        parsed.events = vec![
+            ParsedGameEvent {
+                tick: 120,
+                name: "chat_message".to_string(),
+                user_steam_id: Some(76561198000000001),
+                chat_scope: Some("team".to_string()),
+                chat_text: Some("  hello\u{0007} team  ".to_string()),
+                ..ParsedGameEvent::default()
+            },
+            ParsedGameEvent {
+                tick: 120,
+                name: "chat_message".to_string(),
+                user_steam_id: Some(76561198000000001),
+                chat_scope: Some("team".to_string()),
+                chat_text: Some("hello team".to_string()),
+                ..ParsedGameEvent::default()
+            },
+            ParsedGameEvent {
+                tick: 132,
+                name: "server_message".to_string(),
+                chat_scope: Some("server".to_string()),
+                chat_text: Some("admin pause".to_string()),
+                ..ParsedGameEvent::default()
+            },
+        ];
+
+        let memory = export_memory(parsed);
+        let chat = &memory.manifest.rounds[0].chat_messages;
+
+        assert_eq!(chat.len(), 2);
+        assert_eq!(chat[0].tick, 120);
+        assert_eq!(chat[0].sender_steam_id, 76561198000000001);
+        assert_eq!(chat[0].sender_name.as_deref(), Some("alpha"));
+        assert_eq!(chat[0].scope, "team");
+        assert_eq!(chat[0].text, "hello team");
+        assert_eq!(chat[1].tick, 132);
+        assert_eq!(chat[1].sender_steam_id, 0);
+        assert_eq!(chat[1].scope, "server");
+        assert_eq!(chat[1].text, "admin pause");
+    }
+
+    #[test]
+    fn manifest_skips_invalid_demo_chat_messages() {
+        let mut parsed = sample_demo();
+        parsed.events = vec![
+            ParsedGameEvent {
+                tick: 120,
+                name: "chat_message".to_string(),
+                user_steam_id: None,
+                chat_scope: Some("all".to_string()),
+                chat_text: Some("orphan".to_string()),
+                ..ParsedGameEvent::default()
+            },
+            ParsedGameEvent {
+                tick: 128,
+                name: "chat_message".to_string(),
+                user_steam_id: Some(76561198000000001),
+                chat_scope: Some("all".to_string()),
+                chat_text: Some(" \u{0008}\t ".to_string()),
+                ..ParsedGameEvent::default()
+            },
+            ParsedGameEvent {
+                tick: 240,
+                name: "server_message".to_string(),
+                chat_scope: Some("server".to_string()),
+                chat_text: Some("after round".to_string()),
+                ..ParsedGameEvent::default()
+            },
+        ];
+
+        let memory = export_memory(parsed);
+
+        assert!(memory.manifest.rounds[0].chat_messages.is_empty());
     }
 
     #[test]

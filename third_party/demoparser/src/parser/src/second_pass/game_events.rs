@@ -995,8 +995,28 @@ impl<'a> SecondPassParser<'a> {
         fields.push(self.create_player_steamid_field(entity_id, "user"));
         fields.extend(self.find_extra_props_events(entity_id, "user"));
         fields.push(EventField {
+            data: Some(Variant::Bool(chat_msg.chat())),
+            name: "chat".to_string(),
+        });
+        fields.push(EventField {
+            data: Some(Variant::String(chat_msg.messagename().to_owned())),
+            name: "chat_message_name".to_string(),
+        });
+        fields.push(EventField {
+            data: Some(Variant::String(chat_msg.param1().to_owned())),
+            name: "chat_param1".to_string(),
+        });
+        fields.push(EventField {
             data: Some(Variant::String(chat_msg.param2().to_owned())),
             name: "chat_message".to_string(),
+        });
+        fields.push(EventField {
+            data: Some(Variant::String(chat_msg.param3().to_owned())),
+            name: "chat_param3".to_string(),
+        });
+        fields.push(EventField {
+            data: Some(Variant::String(chat_msg.param4().to_owned())),
+            name: "chat_param4".to_string(),
         });
         fields.push(EventField {
             data: Some(Variant::I32(self.tick)),

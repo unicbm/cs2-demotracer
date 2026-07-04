@@ -527,6 +527,9 @@ pub struct ParsedGameEvent {
     pub entity_id: Option<i32>,
     pub damage: Option<i32>,
     pub health: Option<i32>,
+    pub chat_text: Option<String>,
+    pub chat_scope: Option<String>,
+    pub chat_message_name: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -889,6 +892,8 @@ pub struct ConvertedRound {
     pub ct_economy: TeamEconomy,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scoreboard: Option<ReplayRoundScoreboard>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chat_messages: Vec<ReplayChatMessage>,
     pub files: usize,
 }
 
@@ -1003,6 +1008,16 @@ impl ReplayPlayerScoreboard {
             && self.assists.is_none()
             && self.mvps.is_none()
     }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ReplayChatMessage {
+    pub tick: i32,
+    pub sender_steam_id: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sender_name: Option<String>,
+    pub scope: String,
+    pub text: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

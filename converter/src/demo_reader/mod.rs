@@ -167,6 +167,8 @@ mod demoparser_impl {
                 "weapon_fire".to_string(),
                 "player_hurt".to_string(),
                 "player_death".to_string(),
+                "chat_message".to_string(),
+                "server_message".to_string(),
                 "smokegrenade_detonate".to_string(),
                 "flashbang_detonate".to_string(),
                 "hegrenade_detonate".to_string(),
@@ -798,6 +800,20 @@ mod demoparser_impl {
         }
     }
 
+    fn event_field_bool(event: &GameEvent, name: &str) -> Option<bool> {
+        match event_field(event, name)? {
+            Variant::Bool(value) => Some(*value),
+            Variant::I32(value) => Some(*value != 0),
+            Variant::U32(value) => Some(*value != 0),
+            Variant::String(value) => match value.trim().to_ascii_lowercase().as_str() {
+                "1" | "true" | "yes" | "on" => Some(true),
+                "0" | "false" | "no" | "off" => Some(false),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     fn event_field_string(event: &GameEvent, name: &str) -> Option<String> {
         match event_field(event, name)? {
             Variant::String(value) => Some(value.clone()),
@@ -836,10 +852,34 @@ mod demoparser_impl {
                 | "weapon_fire"
                 | "player_hurt"
                 | "player_death"
+                | "chat_message"
+                | "server_message"
         );
         if !supported {
             return None;
         }
+        let chat_text = match event.name.as_str() {
+            "chat_message" => event_field_string(event, "chat_message"),
+            "server_message" => event_field_string(event, "server_message"),
+            _ => None,
+        }
+        .and_then(normalize_chat_text);
+        if matches!(event.name.as_str(), "chat_message" | "server_message") && chat_text.is_none() {
+            return None;
+        }
+        let chat_message_name =
+            event_field_string(event, "chat_message_name").and_then(normalize_chat_message_name);
+        let chat_flag = event_field_bool(event, "chat");
+        if event.name == "chat_message"
+            && !is_supported_chat_message(chat_message_name.as_deref(), chat_flag)
+        {
+            return None;
+        }
+        let chat_scope = match event.name.as_str() {
+            "server_message" => Some("server".to_string()),
+            "chat_message" => Some(infer_chat_scope(chat_message_name.as_deref())),
+            _ => None,
+        };
 
         Some(ParsedGameEvent {
             tick: event.tick,
@@ -860,7 +900,63 @@ mod demoparser_impl {
             damage: event_field_i32(event, "dmg_health")
                 .or_else(|| event_field_i32(event, "damage")),
             health: event_field_i32(event, "health"),
+            chat_text,
+            chat_scope,
+            chat_message_name,
         })
+    }
+
+    fn normalize_chat_text(value: String) -> Option<String> {
+        let cleaned = value
+            .trim()
+            .chars()
+            .filter(|ch| !ch.is_control() || *ch == '\t')
+            .take(256)
+            .collect::<String>()
+            .trim()
+            .to_string();
+        (!cleaned.is_empty()).then_some(cleaned)
+    }
+
+    fn normalize_chat_message_name(value: String) -> Option<String> {
+        let cleaned = value
+            .trim()
+            .chars()
+            .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_' || *ch == '#')
+            .take(96)
+            .collect::<String>();
+        (!cleaned.is_empty()).then_some(cleaned)
+    }
+
+    fn is_supported_chat_message(message_name: Option<&str>, chat: Option<bool>) -> bool {
+        if chat == Some(true) {
+            return true;
+        }
+        let normalized = message_name
+            .unwrap_or_default()
+            .trim_start_matches('#')
+            .to_ascii_lowercase();
+        normalized.contains("chat") || normalized.contains("server") || normalized.contains("admin")
+    }
+
+    fn infer_chat_scope(message_name: Option<&str>) -> String {
+        let normalized = message_name
+            .unwrap_or_default()
+            .trim_start_matches('#')
+            .to_ascii_lowercase();
+        if normalized.contains("server") || normalized.contains("admin") {
+            return "server".to_string();
+        }
+        if normalized.contains("all") {
+            return "all".to_string();
+        }
+        if normalized.contains("team")
+            || normalized.contains("chat_t")
+            || normalized.contains("chat_ct")
+        {
+            return "team".to_string();
+        }
+        "all".to_string()
     }
 
     #[derive(Clone, Debug, Eq, Hash, PartialEq)]

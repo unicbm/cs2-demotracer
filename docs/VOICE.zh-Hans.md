@@ -72,7 +72,7 @@ dtr_go seq "<manifest.json>" 0
 完整本地测试 preset：
 
 ```text
-dtr_replay_identity avatar; dtr_align full; dtr_match full; dtr_cosmetics full; dtr_partial 1; dtr_handoff death_contact_c4 slot; dtr_voice_auto on; dtr_go seq "<manifest.json>" 0
+dtr_replay_identity steam; dtr_align full; dtr_match full; dtr_cosmetics full; dtr_partial 1; dtr_handoff death_contact_c4 slot; dtr_voice_auto on; dtr_go seq "<manifest.json>" 0
 ```
 
 某个 source round 开始时，DemoTracer 会在 manifest 附近查找

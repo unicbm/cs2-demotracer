@@ -66,6 +66,9 @@ public sealed partial class DemoTracerPlugin
 
         [JsonPropertyName("scoreboard")]
         public ReplayRoundScoreboard? Scoreboard { get; set; }
+
+        [JsonPropertyName("chat_messages")]
+        public List<ReplayChatMessage> ChatMessages { get; set; } = new();
     }
 
     private sealed class NadeManifest
@@ -354,6 +357,24 @@ public sealed partial class DemoTracerPlugin
 
         [JsonPropertyName("mvps")]
         public int? MVPs { get; set; }
+    }
+
+    private sealed class ReplayChatMessage
+    {
+        [JsonPropertyName("tick")]
+        public int Tick { get; set; }
+
+        [JsonPropertyName("sender_steam_id")]
+        public ulong SenderSteamId { get; set; }
+
+        [JsonPropertyName("sender_name")]
+        public string? SenderName { get; set; }
+
+        [JsonPropertyName("scope")]
+        public string Scope { get; set; } = "all";
+
+        [JsonPropertyName("text")]
+        public string Text { get; set; } = string.Empty;
     }
 
     private sealed class ReplayCosmetics
