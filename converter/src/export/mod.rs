@@ -1893,43 +1893,44 @@ fn replay_active_cosmetics(
         } else {
             let def = normalize_weapon_def_index(raw_def);
             if is_weapon_cosmetic_def_index(def) {
-                if let Some(spec) = cosmetic_paint_spec(
-                    row.active_weapon_paint_kit,
-                    row.active_weapon_paint_seed,
-                    row.active_weapon_paint_wear,
-                ) {
-                    if valid_weapon_cosmetic_paint(def, spec.paint_kit) {
-                        weapon_specs.entry(def).or_default().insert(spec);
-                    }
-                }
-                if let Some(name) = active_cosmetic_custom_name(row) {
-                    weapon_custom_names.entry(def).or_default().insert(name);
-                }
-                if let Some(owner) = row
-                    .active_weapon_original_owner_steam_id
-                    .filter(|value| *value != 0)
-                {
-                    weapon_original_owners.entry(def).or_default().insert(owner);
-                }
-                if let Some(account_id) = row
-                    .active_weapon_item_account_id
-                    .filter(|value| *value != 0)
-                {
-                    weapon_account_ids
-                        .entry(def)
-                        .or_default()
-                        .insert(account_id);
-                }
-                if let Some(item_id) = row.active_weapon_item_id.filter(|value| *value != 0) {
-                    weapon_item_ids.entry(def).or_default().insert(item_id);
-                }
-                if export_stickers {
-                    match active_cosmetic_sticker_set(row) {
-                        Some(stickers) => {
-                            weapon_stickers.entry(def).or_default().insert(stickers);
+                if has_trusted_active_weapon_cosmetic_identity(row) {
+                    if let Some(spec) = cosmetic_paint_spec(
+                        row.active_weapon_paint_kit,
+                        row.active_weapon_paint_seed,
+                        row.active_weapon_paint_wear,
+                    ) {
+                        if valid_weapon_cosmetic_paint(def, spec.paint_kit) {
+                            weapon_specs.entry(def).or_default().insert(spec);
                         }
-                        None => {
-                            weapon_stickers_missing.insert(def);
+                    }
+                    if let Some(name) = active_cosmetic_custom_name(row) {
+                        weapon_custom_names.entry(def).or_default().insert(name);
+                    }
+                    if let Some(owner) = row
+                        .active_weapon_original_owner_steam_id
+                        .filter(|value| *value != 0)
+                    {
+                        weapon_original_owners.entry(def).or_default().insert(owner);
+                    }
+                    if let Some(account_id) =
+                        row.active_weapon_item_account_id.filter(|value| *value > 1)
+                    {
+                        weapon_account_ids
+                            .entry(def)
+                            .or_default()
+                            .insert(account_id);
+                    }
+                    if let Some(item_id) = row.active_weapon_item_id.filter(|value| *value != 0) {
+                        weapon_item_ids.entry(def).or_default().insert(item_id);
+                    }
+                    if export_stickers {
+                        match active_cosmetic_sticker_set(row) {
+                            Some(stickers) => {
+                                weapon_stickers.entry(def).or_default().insert(stickers);
+                            }
+                            None => {
+                                weapon_stickers_missing.insert(def);
+                            }
                         }
                     }
                 }
@@ -2092,6 +2093,9 @@ fn inventory_weapon_cosmetics_for_row(
         if !is_weapon_cosmetic_def_index(def) {
             continue;
         }
+        if !has_trusted_inventory_weapon_cosmetic_identity(item) {
+            continue;
+        }
         if let Some(spec) = inventory_cosmetic_paint_spec(item) {
             if valid_weapon_cosmetic_paint(def, spec.paint_kit) {
                 weapon_specs.entry(def).or_default().insert(spec);
@@ -2188,6 +2192,18 @@ fn inventory_stattrak_counter(item: &ParsedInventoryWeaponCosmetic) -> Option<i3
         .iter()
         .find(|attribute| attribute.definition_index == 80)
         .and_then(|attribute| i32::try_from(attribute.raw_value_bits).ok())
+}
+
+fn has_trusted_inventory_weapon_cosmetic_identity(item: &ParsedInventoryWeaponCosmetic) -> bool {
+    combine_item_id(item.item_id_high, item.item_id_low).is_some_and(|value| value != 0)
+        || item.item_account_id.is_some_and(|value| value > 1)
+}
+
+fn has_trusted_active_weapon_cosmetic_identity(row: &ParsedPlayerTick) -> bool {
+    row.active_weapon_item_id.is_some_and(|value| value != 0)
+        || row
+            .active_weapon_item_account_id
+            .is_some_and(|value| value > 1)
 }
 
 fn active_cosmetic_custom_name(row: &ParsedPlayerTick) -> Option<String> {
@@ -2916,7 +2932,7 @@ mod tests {
     fn manifest_includes_demo_backed_cosmetics() {
         let mut parsed = sample_demo();
         parsed.rows = vec![
-            ParsedPlayerTick {
+            active_weapon_identity(ParsedPlayerTick {
                 item_def_idx: 7,
                 inventory_as_ids: vec![7, 61],
                 active_weapon_paint_kit: Some(180),
@@ -2929,7 +2945,7 @@ mod tests {
                 glove_paint_seed: Some(4),
                 glove_paint_wear: Some(0.2),
                 ..sample_row(100)
-            },
+            }),
             ParsedPlayerTick {
                 item_def_idx: 508,
                 inventory_as_ids: vec![7, 61],
@@ -3463,7 +3479,7 @@ mod tests {
     fn conflicting_custom_name_only_skips_custom_name() {
         let mut parsed = sample_demo();
         parsed.rows = vec![
-            ParsedPlayerTick {
+            active_weapon_identity(ParsedPlayerTick {
                 item_def_idx: 7,
                 active_weapon_paint_kit: Some(180),
                 active_weapon_paint_seed: Some(12),
@@ -3471,8 +3487,8 @@ mod tests {
                 active_weapon_custom_name: Some("first".to_string()),
                 active_weapon_stickers: Vec::new(),
                 ..sample_row(100)
-            },
-            ParsedPlayerTick {
+            }),
+            active_weapon_identity(ParsedPlayerTick {
                 item_def_idx: 7,
                 active_weapon_paint_kit: Some(180),
                 active_weapon_paint_seed: Some(12),
@@ -3480,7 +3496,7 @@ mod tests {
                 active_weapon_custom_name: Some("second".to_string()),
                 active_weapon_stickers: Vec::new(),
                 ..sample_row(164)
-            },
+            }),
         ];
 
         let memory = export_memory_with_cosmetics(parsed);
@@ -3498,22 +3514,22 @@ mod tests {
     fn sticker_export_is_default_off_under_cosmetics() {
         let mut parsed = sample_demo();
         parsed.rows = vec![
-            ParsedPlayerTick {
+            active_weapon_identity(ParsedPlayerTick {
                 item_def_idx: 7,
                 active_weapon_paint_kit: Some(180),
                 active_weapon_paint_seed: Some(12),
                 active_weapon_paint_wear: Some(0.125),
                 active_weapon_stickers: vec![sticker(0, 477, 0.05, 0.1, 0.2)],
                 ..sample_row(100)
-            },
-            ParsedPlayerTick {
+            }),
+            active_weapon_identity(ParsedPlayerTick {
                 item_def_idx: 7,
                 active_weapon_paint_kit: Some(180),
                 active_weapon_paint_seed: Some(12),
                 active_weapon_paint_wear: Some(0.125),
                 active_weapon_stickers: vec![sticker(0, 477, 0.05, 0.1, 0.2)],
                 ..sample_row(164)
-            },
+            }),
         ];
 
         let memory = export_memory_with_cosmetics(parsed);
@@ -3532,7 +3548,7 @@ mod tests {
     fn stable_weapon_stickers_are_serialized_when_enabled() {
         let mut parsed = sample_demo();
         parsed.rows = vec![
-            ParsedPlayerTick {
+            active_weapon_identity(ParsedPlayerTick {
                 item_def_idx: 7,
                 active_weapon_paint_kit: Some(180),
                 active_weapon_paint_seed: Some(12),
@@ -3542,8 +3558,8 @@ mod tests {
                     sticker_with_transform(0, 477, 0.05, 0.1, 0.2, 1.35, 27.5),
                 ],
                 ..sample_row(100)
-            },
-            ParsedPlayerTick {
+            }),
+            active_weapon_identity(ParsedPlayerTick {
                 item_def_idx: 7,
                 active_weapon_paint_kit: Some(180),
                 active_weapon_paint_seed: Some(12),
@@ -3553,7 +3569,7 @@ mod tests {
                     sticker_with_transform(0, 477, 0.05, 0.1, 0.2, 1.35, 27.5),
                 ],
                 ..sample_row(164)
-            },
+            }),
         ];
 
         let memory = export_memory_with_stickers(parsed);
@@ -3820,6 +3836,52 @@ mod tests {
     }
 
     #[test]
+    fn weak_inventory_weapon_identity_does_not_export_weapon_cosmetic() {
+        let weak_inventory_false_positive = ParsedInventoryWeaponCosmetic {
+            item_def_index: 61,
+            item_account_id: Some(1),
+            original_owner_xuid: Some(76561198422853814),
+            paint_kit: 705,
+            paint_seed: 186,
+            paint_wear: 0.377_419_86,
+            ..Default::default()
+        };
+        let row = ParsedPlayerTick {
+            steam_id: 76561198422853814,
+            item_def_idx: 61,
+            inventory_as_ids: vec![61],
+            inventory_weapon_cosmetics: vec![weak_inventory_false_positive],
+            ..sample_row(164)
+        };
+        let rows = vec![&row];
+
+        let cosmetics = replay_cosmetics_at(&rows, &rows, 0, None, true, false);
+
+        assert!(cosmetics.is_none());
+    }
+
+    #[test]
+    fn weak_active_weapon_identity_does_not_export_weapon_cosmetic() {
+        let active_false_positive = ParsedPlayerTick {
+            steam_id: 76561198422853814,
+            item_def_idx: 61,
+            inventory_as_ids: vec![61],
+            active_weapon_paint_kit: Some(705),
+            active_weapon_paint_seed: Some(186),
+            active_weapon_paint_wear: Some(0.377_419_86),
+            active_weapon_original_owner_steam_id: Some(76561198422853814),
+            active_weapon_item_account_id: Some(1),
+            active_weapon_item_id: None,
+            ..sample_row(164)
+        };
+        let rows = vec![&active_false_positive];
+
+        let cosmetics = replay_cosmetics_at(&rows, &rows, 0, None, true, false);
+
+        assert!(cosmetics.is_none());
+    }
+
+    #[test]
     fn default_knife_paint_false_positive_is_skipped() {
         let default_knife_false_positive = ParsedPlayerTick {
             item_def_idx: 42,
@@ -3856,22 +3918,22 @@ mod tests {
     fn conflicting_weapon_stickers_only_skip_stickers() {
         let mut parsed = sample_demo();
         parsed.rows = vec![
-            ParsedPlayerTick {
+            active_weapon_identity(ParsedPlayerTick {
                 item_def_idx: 7,
                 active_weapon_paint_kit: Some(180),
                 active_weapon_paint_seed: Some(12),
                 active_weapon_paint_wear: Some(0.125),
                 active_weapon_stickers: vec![sticker(0, 477, 0.05, 0.1, 0.2)],
                 ..sample_row(100)
-            },
-            ParsedPlayerTick {
+            }),
+            active_weapon_identity(ParsedPlayerTick {
                 item_def_idx: 7,
                 active_weapon_paint_kit: Some(180),
                 active_weapon_paint_seed: Some(12),
                 active_weapon_paint_wear: Some(0.125),
                 active_weapon_stickers: vec![sticker(0, 478, 0.05, 0.1, 0.2)],
                 ..sample_row(164)
-            },
+            }),
         ];
 
         let memory = export_memory_with_stickers(parsed);
@@ -3889,7 +3951,7 @@ mod tests {
     fn invalid_weapon_stickers_are_skipped() {
         let mut parsed = sample_demo();
         parsed.rows = vec![
-            ParsedPlayerTick {
+            active_weapon_identity(ParsedPlayerTick {
                 item_def_idx: 7,
                 active_weapon_paint_kit: Some(180),
                 active_weapon_paint_seed: Some(12),
@@ -3899,15 +3961,15 @@ mod tests {
                     sticker(0, 478, 0.05, 0.1, 0.2),
                 ],
                 ..sample_row(100)
-            },
-            ParsedPlayerTick {
+            }),
+            active_weapon_identity(ParsedPlayerTick {
                 item_def_idx: 7,
                 active_weapon_paint_kit: Some(180),
                 active_weapon_paint_seed: Some(12),
                 active_weapon_paint_wear: Some(0.125),
                 active_weapon_stickers: vec![sticker(5, 477, f32::NAN, 0.1, 0.2)],
                 ..sample_row(164)
-            },
+            }),
         ];
 
         let memory = export_memory_with_stickers(parsed);
@@ -3924,22 +3986,22 @@ mod tests {
     fn missing_weapon_stickers_skip_stickers_only() {
         let mut parsed = sample_demo();
         parsed.rows = vec![
-            ParsedPlayerTick {
+            active_weapon_identity(ParsedPlayerTick {
                 item_def_idx: 7,
                 active_weapon_paint_kit: Some(180),
                 active_weapon_paint_seed: Some(12),
                 active_weapon_paint_wear: Some(0.125),
                 active_weapon_stickers: vec![sticker(0, 477, 0.05, 0.1, 0.2)],
                 ..sample_row(100)
-            },
-            ParsedPlayerTick {
+            }),
+            active_weapon_identity(ParsedPlayerTick {
                 item_def_idx: 7,
                 active_weapon_paint_kit: Some(180),
                 active_weapon_paint_seed: Some(12),
                 active_weapon_paint_wear: Some(0.125),
                 active_weapon_stickers: Vec::new(),
                 ..sample_row(164)
-            },
+            }),
         ];
 
         let memory = export_memory_with_stickers(parsed);
@@ -4578,9 +4640,9 @@ mod tests {
     ) -> ParsedInventoryWeaponCosmetic {
         ParsedInventoryWeaponCosmetic {
             item_def_index,
-            item_id_high: None,
-            item_id_low: None,
-            item_account_id: None,
+            item_id_high: Some(29),
+            item_id_low: Some(u32::try_from(item_def_index).unwrap_or_default()),
+            item_account_id: Some(29164525),
             original_owner_xuid: None,
             paint_kit,
             paint_seed,
@@ -4637,6 +4699,12 @@ mod tests {
 
     fn export_memory_with_charms(parsed: ParsedDemo) -> MemoryConversionReport {
         export_memory_with_options(parsed, true, false, true)
+    }
+
+    fn active_weapon_identity(mut row: ParsedPlayerTick) -> ParsedPlayerTick {
+        row.active_weapon_item_account_id = Some(29164525);
+        row.active_weapon_item_id = Some((8_u64 << 32) | 9);
+        row
     }
 
     fn export_memory_with_options(

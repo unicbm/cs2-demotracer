@@ -88,6 +88,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private readonly Dictionary<uint, UtilityProjectileTrace> _utilityTraceProjectiles = new();
     private readonly HashSet<int> _musicKitSyncedSlots = new();
     private readonly HashSet<int> _cosmeticSyncedSlots = new();
+    private readonly Dictionary<int, AppliedActiveWeaponCosmetic> _activeWeaponCosmetics = new();
     private readonly HashSet<int> _scoreboardSyncedSlots = new();
     private readonly Dictionary<int, string?> _viewerOriginalCrosshairCodes = new();
     private readonly Dictionary<int, string> _viewerAppliedCrosshairCodes = new();
@@ -1038,6 +1039,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _rebuiltInventorySlots.Clear();
         _lastReplayWeaponDef.Clear();
         _lastLockedWeaponTarget.Clear();
+        _activeWeaponCosmetics.Clear();
         foreach (var slot in _loadedSlots)
             BotControllerNative.UnlockWeaponSlot(slot);
     }
@@ -1571,6 +1573,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 _lastReplayWeaponDef.Remove(slot);
                 continue;
             }
+            ApplyActiveReplayWeaponCosmeticForSlot(slot, weaponDefIndex, force: false, scheduleNextFrame: true);
             if (_lastReplayWeaponDef.TryGetValue(slot, out var lastDef) &&
                 lastDef == weaponDefIndex)
                 continue;
@@ -3611,6 +3614,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 _lastLockedWeaponTarget.Remove(slot);
                 _cosmeticSyncedSlots.Remove(slot);
                 _cosmeticHeartbeatTokens.Remove(slot);
+                _activeWeaponCosmetics.Remove(slot);
                 respawned++;
             }
             catch (Exception ex)
@@ -3642,10 +3646,12 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _loadedSlots.Clear();
         _demoTracerOwnedSlots.Clear();
         _loadedReplays.Clear();
+        ResetCosmeticEvidenceCache();
         _lastEnsuredWeaponDef.Clear();
         _lastReplayWeaponDef.Clear();
         _lastLockedWeaponTarget.Clear();
         _pendingWeaponAlign.Clear();
+        _activeWeaponCosmetics.Clear();
         _projectileAlignNextBySlot.Clear();
         _replayIdentityGenerationBySlot.Clear();
         _pendingProjectileAlign.Clear();
@@ -3818,6 +3824,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _lastReplayWeaponDef.Clear();
         _lastLockedWeaponTarget.Clear();
         _pendingWeaponAlign.Clear();
+        _activeWeaponCosmetics.Clear();
         _projectileAlignNextBySlot.Clear();
         _pendingProjectileAlign.Clear();
         _queuedNadeStartTokens.Clear();
@@ -3931,6 +3938,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _lastReplayWeaponDef.Remove(slot);
         _lastLockedWeaponTarget.Remove(slot);
         _pendingWeaponAlign.Remove(slot);
+        _activeWeaponCosmetics.Remove(slot);
         _projectileAlignNextBySlot.Remove(slot);
         _replayHifiEventNextBySlot.Remove(slot);
         _queuedNadeStartTokens.Remove(slot);
@@ -4115,6 +4123,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _musicKitSyncedSlots.Remove(slot);
         _cosmeticSyncedSlots.Remove(slot);
         _cosmeticHeartbeatTokens.Remove(slot);
+        _activeWeaponCosmetics.Remove(slot);
+        _slotCosmeticEvidenceKeys.Remove(slot);
         _scoreboardSyncedSlots.Remove(slot);
         KillTrackedReplayDropsForSlot(slot, "forget_replay");
     }
@@ -4184,6 +4194,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _lastEnsuredWeaponDef.Remove(slot);
         _lastReplayWeaponDef.Remove(slot);
         _lastLockedWeaponTarget.Remove(slot);
+        _activeWeaponCosmetics.Remove(slot);
         _projectileAlignNextBySlot[slot] = 0;
         _replayHifiEventNextBySlot[slot] = 0;
         _rebuiltInventorySlots.Remove(slot);
@@ -4609,6 +4620,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         {
             _lastReplayWeaponDef[slot] = normalized;
             ApplyReplayWeaponCosmeticForSlot(slot, normalized);
+            ScheduleActiveReplayWeaponCosmeticNextFrame(slot, normalized);
         }
         else if (!allowSlotReplacement)
         {
@@ -4707,6 +4719,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 _lastEnsuredWeaponDef.Remove(slot);
                 return false;
             }
+            ScheduleActiveReplayWeaponCosmeticNextFrame(slot, normalized);
         }
 
         Server.PrintToConsole($"dtr: aligned slot={slot} def={normalized} item={className}");
@@ -4908,6 +4921,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         ulong SteamId);
 
     private readonly record struct PendingWeaponAlign(int WeaponDefIndex, bool ForceSwitch);
+
+    private readonly record struct AppliedActiveWeaponCosmetic(int WeaponDefIndex, nint WeaponHandle);
 
     private readonly record struct PendingBulletHit(int AttackerSlot, float Time);
 

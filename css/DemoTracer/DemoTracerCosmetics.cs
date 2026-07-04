@@ -3,6 +3,7 @@ using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Memory;
 using CounterStrikeSharp.API.Modules.Memory.DynamicFunctions;
 using CounterStrikeSharp.API.Modules.Timers;
+using CounterStrikeSharp.API.Modules.Utils;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -210,9 +211,9 @@ public sealed partial class DemoTracerPlugin
 
     private void RememberReplayCosmeticEvidence(int slot, LoadedReplay replay)
     {
-        if (replay.UtilityOnly ||
-            (replay.Cosmetics.Knife == null && replay.Cosmetics.Glove == null && replay.Cosmetics.Agent == null))
+        if (replay.UtilityOnly)
         {
+            _slotCosmeticEvidenceKeys.Remove(slot);
             return;
         }
 
@@ -228,12 +229,15 @@ public sealed partial class DemoTracerPlugin
             evidence.RememberReplaySteamId(replay.SteamId);
         }
 
-        if (replay.Cosmetics.Knife != null)
-            evidence.Knife = CloneItemCosmetic(replay.Cosmetics.Knife);
-        if (replay.Cosmetics.Glove != null)
-            evidence.Glove = CloneItemCosmetic(replay.Cosmetics.Glove);
-        if (replay.Cosmetics.Agent != null)
-            evidence.Agent = NormalizeAgentCosmetic(replay.Cosmetics.Agent);
+        evidence.Knife = replay.Cosmetics.Knife != null
+            ? CloneItemCosmetic(replay.Cosmetics.Knife)
+            : null;
+        evidence.Glove = replay.Cosmetics.Glove != null
+            ? CloneItemCosmetic(replay.Cosmetics.Glove)
+            : null;
+        evidence.Agent = replay.Cosmetics.Agent != null
+            ? NormalizeAgentCosmetic(replay.Cosmetics.Agent)
+            : null;
     }
 
     private static bool HasCosmeticEvidence(ReplayCosmetics? cosmetics)
@@ -403,6 +407,7 @@ public sealed partial class DemoTracerPlugin
     {
         _cosmeticSyncedSlots.Clear();
         _cosmeticHeartbeatTokens.Clear();
+        _activeWeaponCosmetics.Clear();
         if (resetCounters)
         {
             _cosmeticAppliedCount = 0;
@@ -512,8 +517,21 @@ public sealed partial class DemoTracerPlugin
             return;
         var hasCachedPositiveEvidence = TryResolvePlayerCosmeticEvidence(slot, player, out _, out var cachedEvidence) &&
                                         cachedEvidence.HasPositiveEvidence;
-        if (!hasCosmeticEvidence && !hasCachedPositiveEvidence)
+        var shouldResetMissingKnife = _weaponAlignEnabled &&
+                                      _cosmeticKnivesEnabled &&
+                                      !_preserveNativeBotCosmetics &&
+                                      replay.Cosmetics.Knife == null;
+        var shouldResetMissingGlove = _weaponAlignEnabled &&
+                                      _cosmeticGlovesEnabled &&
+                                      !_preserveNativeBotCosmetics &&
+                                      replay.Cosmetics.Glove == null;
+        if (!hasCosmeticEvidence &&
+            !hasCachedPositiveEvidence &&
+            !shouldResetMissingKnife &&
+            !shouldResetMissingGlove)
+        {
             return;
+        }
 
         var applied = 0;
         var skipped = 0;
@@ -570,6 +588,13 @@ public sealed partial class DemoTracerPlugin
             else
                 ScheduleCachedKnifeCosmeticRetry(slot, knifeCosmetic, knifeSteamId, framesRemaining: appliedKnife ? 2 : 4);
         }
+        else if (shouldResetMissingKnife && TryFindReplayKnife(pawn, out var knife))
+        {
+            if (TryClearKnifeCosmetic(player, knife))
+                applied++;
+            else
+                skipped++;
+        }
 
         if (_weaponAlignEnabled && _cosmeticGlovesEnabled)
         {
@@ -580,7 +605,7 @@ public sealed partial class DemoTracerPlugin
                 else
                     skipped++;
             }
-            else if (hasCosmeticEvidence && !_preserveNativeBotCosmetics)
+            else if (shouldResetMissingGlove)
             {
                 if (TryClearGloveCosmetic(player, pawn))
                     applied++;
@@ -636,12 +661,13 @@ public sealed partial class DemoTracerPlugin
         var pawn = player?.PlayerPawn.Value;
         if (player is { IsValid: true, PawnIsAlive: true } && pawn is { IsValid: true })
         {
-            foreach (var cosmetic in replay.Cosmetics.Weapons)
-            {
-                if (TryFindReplayWeaponByDefIndex(pawn, cosmetic.WeaponDefIndex, out var weapon))
-                    _ = TryApplyWeaponCosmetic(player, weapon, cosmetic, replay.SteamId, countStickerStats: false);
-            }
-
+            var activeWeapon = pawn.WeaponServices?.ActiveWeapon.Value;
+            if (activeWeapon is { IsValid: true })
+                ApplyActiveReplayWeaponCosmeticForSlot(
+                    slot,
+                    WeaponDefIndex(activeWeapon),
+                    force: false,
+                    scheduleNextFrame: true);
         }
 
         if (attemptsRemaining == 1)
@@ -677,11 +703,11 @@ public sealed partial class DemoTracerPlugin
                 return;
             }
 
-            if (TryFindReplayWeaponByDefIndex(refreshedPawn, cosmetic.WeaponDefIndex, out var refreshedWeapon) &&
-                _loadedReplays.TryGetValue(slot, out var replay))
-            {
-                _ = TryApplyWeaponCosmetic(refreshedPlayer, refreshedWeapon, cosmetic, replay.SteamId);
-            }
+            ApplyActiveReplayWeaponCosmeticForSlot(
+                slot,
+                cosmetic.WeaponDefIndex,
+                force: false,
+                scheduleNextFrame: true);
 
             ScheduleReplayWeaponCosmeticRetry(slot, cosmetic, framesRemaining - 1);
         });
@@ -829,21 +855,26 @@ public sealed partial class DemoTracerPlugin
         out ulong key,
         out PlayerCosmeticEvidence evidence)
     {
-        if (_loadedReplays.TryGetValue(slot, out var replay) && !replay.UtilityOnly)
+        if (_loadedReplays.TryGetValue(slot, out var replay))
         {
+            if (replay.UtilityOnly)
+            {
+                key = 0;
+                evidence = null!;
+                return false;
+            }
+
             key = CosmeticEvidenceKey(replay.SteamId, slot);
             if (_cosmeticEvidenceByKey.TryGetValue(key, out evidence!))
                 return true;
+
+            key = 0;
+            evidence = null!;
+            return false;
         }
 
-        var playerSteamId = NormalizeOptionalULong(player.SteamID);
-        if (playerSteamId.HasValue)
-        {
-            key = CosmeticEvidenceKey(playerSteamId.Value, slot);
-            if (_cosmeticEvidenceByKey.TryGetValue(key, out evidence!))
-                return true;
-        }
-
+        // After a replay releases, SteamID can be synthetic or stale while bots are reused.
+        // Only an explicit slot binding may drive cached knife/glove/agent repair.
         if (_slotCosmeticEvidenceKeys.TryGetValue(slot, out key) &&
             _cosmeticEvidenceByKey.TryGetValue(key, out evidence!))
         {
@@ -957,34 +988,98 @@ public sealed partial class DemoTracerPlugin
 
     private void ApplyReplayWeaponCosmeticForSlot(int slot, int weaponDefIndex)
     {
+        _ = TryApplyReplayWeaponCosmeticForSlot(
+            slot,
+            weaponDefIndex,
+            activeOnly: false,
+            forceActive: false,
+            countResult: true);
+    }
+
+    private void ApplyActiveReplayWeaponCosmeticForSlot(
+        int slot,
+        int weaponDefIndex,
+        bool force,
+        bool scheduleNextFrame)
+    {
+        if (TryApplyReplayWeaponCosmeticForSlot(
+                slot,
+                weaponDefIndex,
+                activeOnly: true,
+                forceActive: force,
+                countResult: false) &&
+            scheduleNextFrame)
+        {
+            ScheduleActiveReplayWeaponCosmeticNextFrame(slot, NormalizeWeaponDefIndex(weaponDefIndex));
+        }
+    }
+
+    private void ScheduleActiveReplayWeaponCosmeticNextFrame(int slot, int weaponDefIndex)
+    {
+        Server.NextFrame(() =>
+            ApplyActiveReplayWeaponCosmeticForSlot(
+                slot,
+                weaponDefIndex,
+                force: true,
+                scheduleNextFrame: false));
+    }
+
+    private bool TryApplyReplayWeaponCosmeticForSlot(
+        int slot,
+        int weaponDefIndex,
+        bool activeOnly,
+        bool forceActive,
+        bool countResult)
+    {
         if (!WeaponCosmeticFeatureEnabled() ||
             !_loadedReplays.TryGetValue(slot, out var replay) ||
             replay.UtilityOnly ||
             !HasCosmeticEvidence(replay.Cosmetics) ||
             !IsReplaySlotStillSafe(slot))
         {
-            return;
+            return false;
         }
 
+        var normalized = NormalizeWeaponDefIndex(weaponDefIndex);
         var cosmetic = replay.Cosmetics.Weapons
-            .FirstOrDefault(weapon => weapon.WeaponDefIndex == NormalizeWeaponDefIndex(weaponDefIndex));
+            .FirstOrDefault(weapon => weapon.WeaponDefIndex == normalized);
         if (cosmetic == null)
-            return;
+            return false;
 
         var player = Utilities.GetPlayerFromSlot(slot);
         var pawn = player?.PlayerPawn.Value;
         if (player is not { IsValid: true, PawnIsAlive: true } || pawn is not { IsValid: true })
-            return;
+            return false;
 
-        if (TryFindReplayWeaponByDefIndex(pawn, cosmetic.WeaponDefIndex, out var weapon) &&
-            TryApplyWeaponCosmetic(player, weapon, cosmetic, replay.SteamId))
+        var isActiveWeapon = TryFindActiveReplayWeaponByDefIndex(pawn, normalized, out var weapon);
+        if (!isActiveWeapon && activeOnly)
+            return false;
+        if (!isActiveWeapon && !TryFindReplayWeaponByDefIndex(pawn, normalized, out weapon))
+            return false;
+
+        var weaponHandle = weapon.Handle;
+        if (isActiveWeapon &&
+            !forceActive &&
+            _activeWeaponCosmetics.TryGetValue(slot, out var applied) &&
+            applied.WeaponDefIndex == normalized &&
+            applied.WeaponHandle == weaponHandle)
         {
-            _cosmeticAppliedCount++;
+            return false;
         }
-        else
+
+        var ok = TryApplyWeaponCosmetic(player, weapon, cosmetic, replay.SteamId, countStickerStats: countResult);
+        if (ok)
         {
+            if (isActiveWeapon)
+                _activeWeaponCosmetics[slot] = new AppliedActiveWeaponCosmetic(normalized, weaponHandle);
+            if (countResult)
+                _cosmeticAppliedCount++;
+            return true;
+        }
+
+        if (countResult)
             _cosmeticSkippedCount++;
-        }
+        return false;
     }
 
     private HookResult OnGiveNamedItemPostForCosmetics(DynamicHook hook)
@@ -1311,6 +1406,9 @@ public sealed partial class DemoTracerPlugin
             return false;
         }
 
+        if (TryFindActiveReplayWeaponByDefIndex(pawn, weaponDefIndex, out weapon))
+            return true;
+
         foreach (var handle in pawn.WeaponServices.MyWeapons)
         {
             var candidate = handle.Value;
@@ -1322,6 +1420,32 @@ public sealed partial class DemoTracerPlugin
                 weapon = candidate;
                 return true;
             }
+        }
+
+        return false;
+    }
+
+    private static bool TryFindActiveReplayWeaponByDefIndex(
+        CCSPlayerPawn pawn,
+        int weaponDefIndex,
+        out CBasePlayerWeapon weapon)
+    {
+        weapon = null!;
+        if (!TryGetWeaponClassByDefIndex(weaponDefIndex, out var className) ||
+            pawn.WeaponServices == null)
+        {
+            return false;
+        }
+
+        var activeWeapon = pawn.WeaponServices.ActiveWeapon.Value;
+        if (activeWeapon == null || !activeWeapon.IsValid)
+            return false;
+
+        if (WeaponClassMatches(activeWeapon.DesignerName, className) ||
+            WeaponDefIndex(activeWeapon) == NormalizeWeaponDefIndex(weaponDefIndex))
+        {
+            weapon = activeWeapon;
+            return true;
         }
 
         return false;
@@ -1570,6 +1694,69 @@ public sealed partial class DemoTracerPlugin
             return false;
         }
     }
+
+    private bool TryClearKnifeCosmetic(CCSPlayerController player, CBasePlayerWeapon knife)
+    {
+        try
+        {
+            ClearKnifeEconItem(player, knife);
+            AddTimer(0.10f, () => ClearKnifeCosmeticForSlot(player.Slot), TimerFlags.STOP_ON_MAPCHANGE);
+            AddTimer(0.25f, () => ClearKnifeCosmeticForSlot(player.Slot), TimerFlags.STOP_ON_MAPCHANGE);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Server.PrintToConsole($"dtr: knife cosmetic clear failed slot={player.Slot}: {ex.Message}");
+            return false;
+        }
+    }
+
+    private void ClearKnifeCosmeticForSlot(int slot)
+    {
+        try
+        {
+            if (!_cosmeticKnivesEnabled || _preserveNativeBotCosmetics || !IsReplaySlotStillSafe(slot))
+                return;
+
+            var player = Utilities.GetPlayerFromSlot(slot);
+            var pawn = player?.PlayerPawn.Value;
+            if (player is not { IsValid: true, PawnIsAlive: true } || pawn is not { IsValid: true })
+                return;
+
+            if (TryFindReplayKnife(pawn, out var knife))
+                ClearKnifeEconItem(player, knife);
+        }
+        catch (Exception ex)
+        {
+            Server.PrintToConsole($"dtr: knife cosmetic delayed clear failed slot={slot}: {ex.Message}");
+        }
+    }
+
+    private static void ClearKnifeEconItem(CCSPlayerController player, CBasePlayerWeapon knife)
+    {
+        var item = knife.AttributeManager.Item;
+        var defaultDef = DefaultKnifeDefIndexForPlayer(player);
+        knife.AcceptInput("ChangeSubclass", value: defaultDef.ToString(CultureInfo.InvariantCulture));
+        item.ItemDefinitionIndex = (ushort)defaultDef;
+        item.EntityQuality = 0;
+        item.AccountID = AccountIdForReplayPlayer(player, replaySteamId: null);
+        SetReplayEconItemId(item, 0);
+        item.CustomName = string.Empty;
+        item.AttributeList.Attributes.RemoveAll();
+        item.NetworkedDynamicAttributes.Attributes.RemoveAll();
+        knife.FallbackPaintKit = 0;
+        knife.FallbackSeed = 0;
+        knife.FallbackWear = 0.0f;
+        knife.FallbackStatTrak = 0;
+        TrySetOriginalOwnerXuid(knife, null);
+        MarkWeaponPaintStateChanged(knife);
+        Utilities.SetStateChanged(knife, "CEconEntity", "m_nFallbackStatTrak");
+        Utilities.SetStateChanged(knife, "CEconEntity", "m_AttributeManager");
+        knife.AcceptInput("SetBodygroup", value: "body,0");
+    }
+
+    private static int DefaultKnifeDefIndexForPlayer(CCSPlayerController player)
+        => player.Team == CsTeam.Terrorist ? 59 : 42;
 
     private bool TryClearGloveCosmetic(CCSPlayerController player, CCSPlayerPawn pawn)
     {
