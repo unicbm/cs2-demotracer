@@ -309,8 +309,10 @@ round manifest was exported with `--export-cosmetics` plus the two risk
 acknowledgement flags. When evidence exists, DemoTracer applies only
 demo-observed weapon paint, knife, glove metadata, agent model evidence, and
 stable weapon/knife custom names to safe replay bots. By default it does not
-randomize cosmetics, read profile databases, or apply non-demo agents. It can
-apply demo-observed StatTrak item quality (`quality=9`) for exported weapon
+randomize cosmetics, read profile databases, or apply non-demo agents. When
+`cosmetics.agent` evidence is present and `dtr_cosmetics agents` is enabled,
+it can change the matching safe replay bot slot to the demo-backed agent model.
+It can apply demo-observed StatTrak item quality (`quality=9`) for exported weapon
 cosmetics. When a demo StatTrak counter is not exposed, runtime writes a display
 counter of `0` so CS2 can select the StatTrak counter model; this does not
 invent a demo kill count. Weapon stickers require the extra `--export-stickers`

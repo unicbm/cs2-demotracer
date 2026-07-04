@@ -128,6 +128,8 @@ More commands:
 > `--export-stickers`, and charms also require `--export-charms`. Runtime
 > cosmetic, agent, sticker, and charm alignment are also default-off and consume
 > only demo evidence from the manifest.
+> When `cosmetics.agent` evidence exists and agent alignment is enabled,
+> DemoTracer changes that safe replay bot slot to the demo-backed agent model.
 >
 > This feature is for local/private replay fidelity. Bot-only inventory mutation
 > is not a Valve policy exemption if humans can observe, control, possess,

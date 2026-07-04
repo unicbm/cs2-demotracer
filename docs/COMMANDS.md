@@ -468,6 +468,8 @@ Implementation when enabled:
   writes deterministic seed `0` for that glove.
 - Supports demo-backed agent model evidence when the manifest contains
   `cosmetics.agent`; `dtr_cosmetics agents off` disables this component.
+  When enabled, the matching safe replay bot slot is changed to that
+  demo-backed agent model.
 - Weapon stickers are not part of this legacy command alone. They require
   `--export-stickers` during conversion and `dtr_cosmetics stickers on` at
   runtime. Legacy aliases `dtr_sticker_align 1` and

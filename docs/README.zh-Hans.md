@@ -87,5 +87,7 @@ server bundle 自带：
 `--export-stickers` / `--export-charms`。
 
 runtime 侧的 cosmetic/agent/sticker/charm alignment 也默认关闭，只消费 manifest 里的
-demo 证据。bot-only inventory mutation 不等于 Valve policy exemption；如果真人可以
-观察、控制、占有、inspect 或使用这些 bot，就按服务器运营者风险处理。
+demo 证据。有 `cosmetics.agent` 证据且开启 agent alignment 时，DemoTracer 会把该安全
+replay bot slot 换成 demo 对应的探员模型。bot-only inventory mutation 不等于
+Valve policy exemption；如果真人可以观察、控制、占有、inspect 或使用这些 bot，
+就按服务器运营者风险处理。

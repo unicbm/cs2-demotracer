@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.3.7-beta.1",
+    [string]$Version = "0.3.7",
     [string]$Configuration = "Release",
     [string]$OutputRoot = "dist",
     [string]$RuntimePackage = "runtime\BotController\build\package",
@@ -196,6 +196,13 @@ Voice playback uses demo-backed `.dtv` sidecars exported by the converter with
 and enable `dtr_voice_auto on` before `dtr_go seq` or `dtr_go round`. See
 `docs/VOICE.md` and `docs/VOICE.zh-Hans.md`.
 
+## Chat Replay
+
+Text chat is stored in `manifest.json` as `rounds[].chat_messages` and replays
+through CS2's native `say` / `say_team` path when `dtr_chat_auto on` is enabled
+(default). For spectator testing of native player text chat, set
+`sv_full_alltalk 1`; `sv_allchat 1` by itself is not enough.
+
 ## Contents
 
 - `addons/BotController/bin/win64/BotController.dll`
@@ -237,6 +244,8 @@ Optional:
 - CS2-Bot-Hider, only for BotHider-managed replay slots and identity alignment
   features such as demo display names, SteamID64 alignment, and demo avatar
   override alignment.
+- Demo-backed agent model evidence can change the matching safe replay bot slot
+  to the demo agent model when `dtr_cosmetics agents` is enabled.
 '@
 $readme = $readme.Replace("__VERSION__", $Version)
 Set-Content -LiteralPath (Join-Path $stageRoot "README.md") -Value $readme -Encoding UTF8
