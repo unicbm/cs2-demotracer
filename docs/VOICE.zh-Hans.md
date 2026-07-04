@@ -21,6 +21,10 @@ cs2-demotracer.exe convert --demo "<demo.dem>" --output "<输出目录>" --expor
 
 `voice/roundXX.dtv` 是自动语音回放需要的文件。只复制 `.dtr` 不会带上语音。
 
+GUI 里 `导出语音(若有)` 默认开启。解析阶段会收集 voice metadata；转换阶段如果 demo
+里有可用语音，就写出 `.dtv` sidecar；导出成功后，复制出来的控制台指令会自动带
+`dtr_voice_auto on`。
+
 ## 什么 demo 会有语音
 
 不是所有 demo 都录了游戏内语音。语音导出需要 demo 中存在可用的

@@ -54,6 +54,11 @@ playback. It only works when the demo contains recorded in-game voice data.
 Community, FACEIT, and 5E demos are more likely to include it than demos whose
 platform stripped voice data. See [`VOICE.md`](VOICE.md) for the full workflow.
 
+In the GUI, `Export voice if present` is enabled by default. The GUI parses
+voice metadata during Analyze, writes `.dtv` sidecars during Convert when voice
+is present, and adds `dtr_voice_auto on` to copied console commands when voice
+sidecars were exported.
+
 Cosmetic/econ metadata is not exported by default, so normal manifests contain
 no `cosmetics` blocks. To intentionally export demo-observed weapon paint,
 knife, glove metadata, and stable weapon/knife custom names, you must pass all
@@ -68,6 +73,10 @@ To include stable weapon sticker slot/id/wear/offset metadata, also pass
 and optional seed/highlight/sticker metadata, also pass `--export-charms`.
 `convert-pool` accepts the same flags and otherwise keeps every replay manifest
 cosmetic-free.
+
+In the GUI, cosmetic export is one high-risk main option. Sticker and charm
+export are saved sub-options under the cosmetic details menu because partial
+cosmetic export does not make runtime cosmetic alignment a GSLT-safe operation.
 
 The most important files are:
 

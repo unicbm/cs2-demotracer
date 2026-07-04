@@ -1,3 +1,4 @@
+use crate::export::ConversionReport;
 use crate::model::{ParsedDemo, ParsedVoiceFrame};
 use crate::{io_error, Error, Result};
 use std::path::PathBuf;
@@ -695,4 +696,47 @@ pub fn export_voice_clips_from_parsed(
     request: &VoiceParsedBatchExportRequest,
 ) -> Result<Vec<VoiceClipExportReport>> {
     imp::export_voice_clips_from_parsed(parsed_demo, request)
+}
+
+pub fn export_round_voice_sidecars(
+    parsed_demo: &ParsedDemo,
+    report: &ConversionReport,
+) -> Result<Vec<VoiceClipExportReport>> {
+    let tick_rate = report.manifest.tick_rate.max(1.0);
+    let windows = report
+        .manifest
+        .rounds
+        .iter()
+        .filter(|round| round.files > 0)
+        .map(|round| {
+            let duration_seconds =
+                if round.duration_seconds.is_finite() && round.duration_seconds > 0.0 {
+                    round.duration_seconds
+                } else {
+                    (round.end_tick - round.start_tick).max(1) as f32 / tick_rate
+                };
+            VoiceClipWindowExport {
+                output: report
+                    .root
+                    .join("voice")
+                    .join(format!("round{:02}.dtv", round.round)),
+                start_tick: Some(round.start_tick),
+                duration_seconds,
+            }
+        })
+        .collect::<Vec<_>>();
+    if windows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    export_voice_clips_from_parsed(
+        parsed_demo,
+        &VoiceParsedBatchExportRequest {
+            xuid: None,
+            client: None,
+            all_speakers: true,
+            tick_rate,
+            windows,
+        },
+    )
 }

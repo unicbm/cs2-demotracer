@@ -5,9 +5,9 @@ use cs2_demotracer::api::{
 };
 use cs2_demotracer::demo_reader::{read_demo, read_demo_with_options, ReadDemoOptions};
 use cs2_demotracer::export::{
-    export_demo, parse_round_list, ConversionReport, ConvertOptions, DEFAULT_FREEZE_PREROLL_SECONDS,
+    export_demo, parse_round_list, ConvertOptions, DEFAULT_FREEZE_PREROLL_SECONDS,
 };
-use cs2_demotracer::model::{ParsedDemo, Side, SubtickMode};
+use cs2_demotracer::model::{Side, SubtickMode};
 use cs2_demotracer::nade_export::{
     DEFAULT_OPENING_SECONDS, DEFAULT_POST_ROLL_SECONDS, DEFAULT_PRE_ROLL_SECONDS,
 };
@@ -16,8 +16,7 @@ use cs2_demotracer::pool::{build_round_pool, BuildPoolOptions};
 use cs2_demotracer::quality::{analyze_demo, AnalysisOptions};
 use cs2_demotracer::validate::validate_dtr_path;
 use cs2_demotracer::voice_export::{
-    export_voice_clip, export_voice_clips_from_parsed, VoiceClipExportRequest,
-    VoiceClipWindowExport, VoiceParsedBatchExportRequest,
+    export_round_voice_sidecars, export_voice_clip, VoiceClipExportRequest,
 };
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 use std::collections::{BTreeMap, BTreeSet};
@@ -363,8 +362,24 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
             );
             println!("manifest {}", report.manifest_path.display());
             if export_voice {
-                let reports = export_round_voice_sidecars(&parsed, &report)?;
-                println!("voice sidecars {}", reports);
+                match export_round_voice_sidecars(&parsed, &report) {
+                    Ok(reports) => {
+                        for voice in &reports {
+                            println!(
+                                "voice sidecar {} frames={} speakers={} duration={:.2}s",
+                                voice.path.display(),
+                                voice.frame_count,
+                                voice.speaker_count,
+                                voice.duration_seconds
+                            );
+                        }
+                        println!("voice sidecars {}", reports.len());
+                    }
+                    Err(err) => {
+                        eprintln!("warning: voice sidecar export skipped: {err}");
+                        println!("voice sidecars 0");
+                    }
+                }
             }
         }
         Command::ConvertNades {
@@ -544,66 +559,6 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
         }
     }
     Ok(())
-}
-
-fn export_round_voice_sidecars(
-    parsed: &ParsedDemo,
-    report: &ConversionReport,
-) -> cs2_demotracer::Result<usize> {
-    let tick_rate = report.manifest.tick_rate.max(1.0);
-    let windows = report
-        .manifest
-        .rounds
-        .iter()
-        .filter(|round| round.files > 0)
-        .map(|round| {
-            let duration_seconds =
-                if round.duration_seconds.is_finite() && round.duration_seconds > 0.0 {
-                    round.duration_seconds
-                } else {
-                    (round.end_tick - round.start_tick).max(1) as f32 / tick_rate
-                };
-            VoiceClipWindowExport {
-                output: report
-                    .root
-                    .join("voice")
-                    .join(format!("round{:02}.dtv", round.round)),
-                start_tick: Some(round.start_tick),
-                duration_seconds,
-            }
-        })
-        .collect::<Vec<_>>();
-    if windows.is_empty() {
-        return Ok(0);
-    }
-
-    match export_voice_clips_from_parsed(
-        parsed,
-        &VoiceParsedBatchExportRequest {
-            xuid: None,
-            client: None,
-            all_speakers: true,
-            tick_rate,
-            windows,
-        },
-    ) {
-        Ok(reports) => {
-            for voice in &reports {
-                println!(
-                    "voice sidecar {} frames={} speakers={} duration={:.2}s",
-                    voice.path.display(),
-                    voice.frame_count,
-                    voice.speaker_count,
-                    voice.duration_seconds
-                );
-            }
-            Ok(reports.len())
-        }
-        Err(err) => {
-            eprintln!("warning: voice sidecar export skipped: {err}");
-            Ok(0)
-        }
-    }
 }
 
 fn run_wizard() -> cs2_demotracer::Result<()> {

@@ -23,6 +23,11 @@ This writes compact per-round voice sidecars next to the `.dtr` replay files:
 `voice/roundXX.dtv` is required for automatic voice playback. Copying only the
 `.dtr` files is not enough.
 
+In the GUI, `Export voice if present` is enabled by default. Analyze collects
+voice metadata, Convert writes `.dtv` sidecars when the demo has usable voice,
+and copied console commands include `dtr_voice_auto on` after voice sidecars are
+exported.
+
 ## When Voice Is Available
 
 Not every demo records in-game voice. Voice export needs usable

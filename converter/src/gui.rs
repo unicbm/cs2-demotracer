@@ -1,5 +1,5 @@
 use crate::demo_id::output_demo_id;
-use crate::demo_reader::read_demo;
+use crate::demo_reader::{read_demo_with_options, ReadDemoOptions};
 use crate::export::{
     export_demo_with_progress, ConversionProgress, ConversionReport, ConvertOptions,
     DEFAULT_FREEZE_PREROLL_SECONDS,
@@ -7,6 +7,7 @@ use crate::export::{
 use crate::model::{DemoAnalysis, ParsedDemo, RoundStatus, Side, SubtickMode};
 use crate::quality::{analyze_demo, AnalysisOptions};
 use crate::validate::validate_dtr_path;
+use crate::voice_export::export_round_voice_sidecars;
 use eframe::egui::{
     self, Color32, FontData, FontDefinitions, FontFamily, FontId, RichText, ScrollArea, TextStyle,
 };
@@ -95,10 +96,14 @@ struct GuiSettings {
     include_suspicious: bool,
     full_round: bool,
     freeze_preroll_seconds: f32,
-    sync_scoreboard: bool,
+    #[serde(default = "default_true")]
+    export_voice: bool,
     export_cosmetics: bool,
+    #[serde(default = "default_true")]
     export_stickers: bool,
+    #[serde(default = "default_true")]
     export_charms: bool,
+    cosmetics_open: bool,
     advanced_open: bool,
     activity_open: bool,
 }
@@ -114,14 +119,19 @@ impl Default for GuiSettings {
             include_suspicious: false,
             full_round: false,
             freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
-            sync_scoreboard: false,
+            export_voice: true,
             export_cosmetics: false,
-            export_stickers: false,
-            export_charms: false,
+            export_stickers: true,
+            export_charms: true,
+            cosmetics_open: false,
             advanced_open: false,
             activity_open: false,
         }
     }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 struct DemoTracerGui {
@@ -220,12 +230,6 @@ impl DemoTracerGui {
             self.error = Some("Choose an output directory.".to_string());
             return;
         }
-        if self.settings.export_stickers && !self.settings.export_cosmetics {
-            self.settings.export_stickers = false;
-        }
-        if self.settings.export_charms && !self.settings.export_cosmetics {
-            self.settings.export_charms = false;
-        }
         if !cosmetic_export_ready(&self.settings, self.cosmetic_acknowledged) {
             self.show_cosmetic_disclaimer = true;
             self.cosmetic_confirmation.clear();
@@ -246,6 +250,7 @@ impl DemoTracerGui {
         let pending = PendingConversion {
             parsed,
             options,
+            export_voice: self.settings.export_voice,
             overwrite_root: root.clone(),
         };
         if root.exists() {
@@ -282,8 +287,8 @@ impl DemoTracerGui {
             subtick_mode: SubtickMode::Auto,
             freeze_preroll_seconds: self.settings.freeze_preroll_seconds,
             export_cosmetics: self.settings.export_cosmetics,
-            export_stickers: self.settings.export_stickers,
-            export_charms: self.settings.export_charms,
+            export_stickers: self.settings.export_cosmetics && self.settings.export_stickers,
+            export_charms: self.settings.export_cosmetics && self.settings.export_charms,
             analysis: AnalysisOptions::default(),
         }
     }
@@ -328,9 +333,19 @@ impl DemoTracerGui {
                         self.progress.apply_conversion_event(&event);
                         self.push_log(format_progress_event(&event));
                     }
-                    WorkerMessage::ConversionComplete { report, validated } => {
+                    WorkerMessage::ConversionComplete {
+                        report,
+                        validated,
+                        voice_requested,
+                        voice_sidecars,
+                    } => {
                         self.progress.finish("Conversion complete");
-                        self.result = Some(ConversionResultView::from_report(report, validated));
+                        self.result = Some(ConversionResultView::from_report(
+                            report,
+                            validated,
+                            voice_requested,
+                            voice_sidecars,
+                        ));
                         self.error = None;
                         clear_receiver = true;
                     }
@@ -367,10 +382,6 @@ impl DemoTracerGui {
     fn save_settings(&mut self) {
         self.settings.freeze_preroll_seconds =
             self.settings.freeze_preroll_seconds.clamp(0.0, 120.0);
-        if !self.settings.export_cosmetics {
-            self.settings.export_stickers = false;
-            self.settings.export_charms = false;
-        }
         if let Err(err) = save_settings(&self.settings) {
             self.push_log(format!("settings not saved: {err}"));
         }
@@ -448,11 +459,14 @@ impl eframe::App for DemoTracerGui {
         egui::CentralPanel::default().show(ctx, |ui| {
             let available = ui.available_size();
             let advanced_height = if self.settings.advanced_open {
+                let mut height = 120.0;
                 if self.settings.export_cosmetics {
-                    176.0
-                } else {
-                    118.0
+                    height += 54.0;
+                    if self.settings.cosmetics_open {
+                        height += 34.0;
+                    }
                 }
+                height
             } else {
                 32.0
             };
@@ -933,13 +947,10 @@ impl DemoTracerGui {
                 let root_text = result.root.display().to_string();
                 let root_path = result.root.clone();
                 let first_round = self.first_selected_or_exported_round();
-                let sync_scoreboard = self.settings.sync_scoreboard;
-                let round_command = result.console_round_command(first_round, sync_scoreboard);
-                let seq_command = result.console_seq_command(first_round, sync_scoreboard);
-                let risky_round_command =
-                    result.console_risky_round_command(first_round, sync_scoreboard);
-                let risky_seq_command =
-                    result.console_risky_seq_command(first_round, sync_scoreboard);
+                let round_command = result.console_round_command(first_round);
+                let seq_command = result.console_seq_command(first_round);
+                let risky_round_command = result.console_risky_round_command(first_round);
+                let risky_seq_command = result.console_risky_seq_command(first_round);
                 let players = result.players.clone();
 
                 egui::Frame::new()
@@ -984,6 +995,23 @@ impl DemoTracerGui {
                     );
                     summary_tile(ui, tr(lang, "players"), &players.len().to_string(), INFO);
                     summary_tile(ui, ".dtr", &result.files_written.to_string(), GOOD);
+                    if result.voice_requested || result.voice_sidecars > 0 {
+                        let voice_value = if result.voice_sidecars > 0 {
+                            result.voice_sidecars.to_string()
+                        } else {
+                            tr(lang, "none").to_string()
+                        };
+                        summary_tile(
+                            ui,
+                            tr(lang, "voice"),
+                            &voice_value,
+                            if result.voice_sidecars > 0 {
+                                GOOD
+                            } else {
+                                WARN
+                            },
+                        );
+                    }
                     summary_tile(
                         ui,
                         tr(lang, "validated"),
@@ -1180,12 +1208,10 @@ impl DemoTracerGui {
                                 .suffix("s"),
                         )
                         .changed();
-                    changed |= ui
-                        .checkbox(
-                            &mut self.settings.sync_scoreboard,
-                            tr(lang, "sync_scoreboard"),
-                        )
-                        .changed();
+                    let voice_response =
+                        ui.checkbox(&mut self.settings.export_voice, tr(lang, "export_voice"));
+                    changed |= voice_response.changed();
+                    voice_response.on_hover_text(tr(lang, "export_voice_hint"));
                     ui.separator();
                     let cosmetics_changed = ui
                         .checkbox(
@@ -1200,41 +1226,24 @@ impl DemoTracerGui {
                         if self.settings.export_cosmetics {
                             self.show_cosmetic_disclaimer = true;
                         } else {
-                            self.settings.export_stickers = false;
-                            self.settings.export_charms = false;
                             self.show_cosmetic_disclaimer = false;
                         }
                     }
-                    ui.add_enabled_ui(self.settings.export_cosmetics, |ui| {
-                        let stickers_changed = ui
-                            .checkbox(
-                                &mut self.settings.export_stickers,
-                                tr(lang, "export_stickers"),
-                            )
-                            .changed();
-                        if stickers_changed {
-                            changed = true;
-                        }
-                        if stickers_changed && self.settings.export_stickers {
-                            self.cosmetic_acknowledged = false;
-                            self.cosmetic_confirmation.clear();
-                            self.show_cosmetic_disclaimer = true;
-                        }
-                        let charms_changed = ui
-                            .checkbox(&mut self.settings.export_charms, tr(lang, "export_charms"))
-                            .changed();
-                        if charms_changed {
-                            changed = true;
-                        }
-                        if charms_changed && self.settings.export_charms {
-                            self.cosmetic_acknowledged = false;
-                            self.cosmetic_confirmation.clear();
-                            self.show_cosmetic_disclaimer = true;
-                        }
-                    });
-                    if !self.settings.export_cosmetics {
-                        self.settings.export_stickers = false;
-                        self.settings.export_charms = false;
+                    if self.settings.export_cosmetics
+                        && ui
+                            .small_button(format!(
+                                "{} {}",
+                                if self.settings.cosmetics_open {
+                                    "v"
+                                } else {
+                                    ">"
+                                },
+                                tr(lang, "cosmetic_details")
+                            ))
+                            .clicked()
+                    {
+                        self.settings.cosmetics_open = !self.settings.cosmetics_open;
+                        changed = true;
                     }
                     if self.settings.export_cosmetics && self.cosmetic_acknowledged {
                         ui.colored_label(GOOD, tr(lang, "risk_confirmed"));
@@ -1242,6 +1251,20 @@ impl DemoTracerGui {
                         ui.colored_label(WARN, tr(lang, "confirmation_required"));
                     }
                 });
+                if self.settings.export_cosmetics && self.settings.cosmetics_open {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.add_space(18.0);
+                        changed |= ui
+                            .checkbox(
+                                &mut self.settings.export_stickers,
+                                tr(lang, "export_stickers"),
+                            )
+                            .changed();
+                        changed |= ui
+                            .checkbox(&mut self.settings.export_charms, tr(lang, "export_charms"))
+                            .changed();
+                    });
+                }
                 if self.settings.export_cosmetics {
                     ui.add_space(4.0);
                     warning_strip(
@@ -1438,6 +1461,7 @@ impl DemoTracerGui {
 struct PendingConversion {
     parsed: Arc<ParsedDemo>,
     options: ConvertOptions,
+    export_voice: bool,
     overwrite_root: PathBuf,
 }
 
@@ -1457,6 +1481,8 @@ enum WorkerMessage {
     ConversionComplete {
         report: ConversionReport,
         validated: usize,
+        voice_requested: bool,
+        voice_sidecars: usize,
     },
     Failed(String),
 }
@@ -1561,13 +1587,20 @@ struct ConversionResultView {
     rounds_exported: usize,
     files_by_round: BTreeMap<u32, usize>,
     players: Vec<PlayerSummary>,
+    voice_requested: bool,
+    voice_sidecars: usize,
     cosmetic_files: usize,
     sticker_files: usize,
     charm_files: usize,
 }
 
 impl ConversionResultView {
-    fn from_report(report: ConversionReport, validated: usize) -> Self {
+    fn from_report(
+        report: ConversionReport,
+        validated: usize,
+        voice_requested: bool,
+        voice_sidecars: usize,
+    ) -> Self {
         let output_bytes = directory_size_bytes(&report.root).unwrap_or(0);
         let rounds_exported = report.manifest.rounds.len();
         let files_by_round = report
@@ -1622,49 +1655,41 @@ impl ConversionResultView {
             rounds_exported,
             files_by_round,
             players,
+            voice_requested,
+            voice_sidecars,
             cosmetic_files,
             sticker_files,
             charm_files,
         }
     }
 
-    fn console_round_command(&self, first_round: Option<u32>, sync_scoreboard: bool) -> String {
-        self.console_round_command_with_options(first_round, sync_scoreboard, None)
+    fn console_round_command(&self, first_round: Option<u32>) -> String {
+        self.console_round_command_with_options(first_round, None)
     }
 
-    fn console_seq_command(&self, first_round: Option<u32>, sync_scoreboard: bool) -> String {
-        self.console_seq_command_with_options(first_round, sync_scoreboard, None)
+    fn console_seq_command(&self, first_round: Option<u32>) -> String {
+        self.console_seq_command_with_options(first_round, None)
     }
 
-    fn console_risky_round_command(
-        &self,
-        first_round: Option<u32>,
-        sync_scoreboard: bool,
-    ) -> Option<String> {
+    fn console_risky_round_command(&self, first_round: Option<u32>) -> Option<String> {
         let preset = self.cosmetic_runtime_preset()?;
-        Some(self.console_round_command_with_options(first_round, sync_scoreboard, Some(preset)))
+        Some(self.console_round_command_with_options(first_round, Some(preset)))
     }
 
-    fn console_risky_seq_command(
-        &self,
-        first_round: Option<u32>,
-        sync_scoreboard: bool,
-    ) -> Option<String> {
+    fn console_risky_seq_command(&self, first_round: Option<u32>) -> Option<String> {
         let preset = self.cosmetic_runtime_preset()?;
-        Some(self.console_seq_command_with_options(first_round, sync_scoreboard, Some(preset)))
+        Some(self.console_seq_command_with_options(first_round, Some(preset)))
     }
 
     fn console_round_command_with_options(
         &self,
         first_round: Option<u32>,
-        sync_scoreboard: bool,
         cosmetic_preset: Option<&str>,
     ) -> String {
         let round = first_round.unwrap_or(0);
         let manifest = console_quote_path(&self.manifest_path);
         self.console_command_with_prefixes(
             format!("dtr_go round \"{manifest}\" {round}"),
-            sync_scoreboard,
             cosmetic_preset,
         )
     }
@@ -1672,14 +1697,12 @@ impl ConversionResultView {
     fn console_seq_command_with_options(
         &self,
         first_round: Option<u32>,
-        sync_scoreboard: bool,
         cosmetic_preset: Option<&str>,
     ) -> String {
         let round = first_round.unwrap_or(0);
         let manifest = console_quote_path(&self.manifest_path);
         self.console_command_with_prefixes(
             format!("dtr_go seq \"{manifest}\" {round}"),
-            sync_scoreboard,
             cosmetic_preset,
         )
     }
@@ -1687,15 +1710,14 @@ impl ConversionResultView {
     fn console_command_with_prefixes(
         &self,
         command: String,
-        sync_scoreboard: bool,
         cosmetic_preset: Option<&str>,
     ) -> String {
         let mut prefixes = Vec::new();
+        if self.voice_sidecars > 0 {
+            prefixes.push("dtr_voice_auto on".to_string());
+        }
         if let Some(preset) = cosmetic_preset {
             prefixes.push(format!("dtr_cosmetics {preset}"));
-        }
-        if sync_scoreboard {
-            prefixes.push("dtr_match scoreboard".to_string());
         }
         if prefixes.is_empty() {
             command
@@ -1718,10 +1740,16 @@ impl ConversionResultView {
 
 fn analyze_worker(demo_path: PathBuf, tx: Sender<WorkerMessage>) {
     let _ = tx.send(WorkerMessage::Log(format!(
-        "reading {}",
+        "reading {} with voice metadata",
         demo_path.display()
     )));
-    let result = read_demo(&demo_path).map(|parsed| {
+    let result = read_demo_with_options(
+        &demo_path,
+        ReadDemoOptions {
+            collect_voice: true,
+        },
+    )
+    .map(|parsed| {
         let analysis = analyze_demo(&parsed, AnalysisOptions::default());
         (Arc::new(parsed), analysis)
     });
@@ -1740,7 +1768,7 @@ fn analyze_worker(demo_path: PathBuf, tx: Sender<WorkerMessage>) {
 }
 
 fn convert_worker(pending: PendingConversion, clear_existing: bool, tx: Sender<WorkerMessage>) {
-    let result = (|| -> crate::Result<(ConversionReport, usize)> {
+    let result = (|| -> crate::Result<(ConversionReport, usize, usize)> {
         if clear_existing && pending.overwrite_root.exists() {
             fs::remove_dir_all(&pending.overwrite_root)
                 .map_err(|err| crate::io_error(&pending.overwrite_root, err))?;
@@ -1749,14 +1777,42 @@ fn convert_worker(pending: PendingConversion, clear_existing: bool, tx: Sender<W
         let report = export_demo_with_progress(&pending.parsed, &pending.options, move |event| {
             let _ = progress_tx.send(WorkerMessage::ConversionProgress(event));
         })?;
+        let mut voice_sidecars = 0;
+        if pending.export_voice {
+            let _ = tx.send(WorkerMessage::Log("exporting voice sidecars".to_string()));
+            match export_round_voice_sidecars(&pending.parsed, &report) {
+                Ok(reports) => {
+                    voice_sidecars = reports.len();
+                    for voice in reports {
+                        let _ = tx.send(WorkerMessage::Log(format!(
+                            "voice sidecar {} frames={} speakers={} duration={:.2}s",
+                            voice.path.display(),
+                            voice.frame_count,
+                            voice.speaker_count,
+                            voice.duration_seconds
+                        )));
+                    }
+                }
+                Err(err) => {
+                    let _ = tx.send(WorkerMessage::Log(format!(
+                        "warning: voice sidecar export skipped: {err}"
+                    )));
+                }
+            }
+        }
         let _ = tx.send(WorkerMessage::Log("validating output".to_string()));
         let validated = validate_dtr_path(&report.root)?;
-        Ok((report, validated))
+        Ok((report, validated, voice_sidecars))
     })();
 
     match result {
-        Ok((report, validated)) => {
-            let _ = tx.send(WorkerMessage::ConversionComplete { report, validated });
+        Ok((report, validated, voice_sidecars)) => {
+            let _ = tx.send(WorkerMessage::ConversionComplete {
+                report,
+                validated,
+                voice_requested: pending.export_voice,
+                voice_sidecars,
+            });
         }
         Err(err) => {
             let _ = tx.send(WorkerMessage::Failed(err.to_string()));
@@ -2129,6 +2185,8 @@ fn tr(lang: UiLanguage, key: &str) -> &'static str {
             "round_short" => "回合",
             "file_short" => "文件",
             "validated" => "验证",
+            "voice" => "语音",
+            "none" => "无",
             "cosmetics_exported" => "已导出饰品元数据",
             "no_players" => "没有导出选手文件",
             "root" => "根目录",
@@ -2155,8 +2213,10 @@ fn tr(lang: UiLanguage, key: &str) -> &'static str {
             "side_both" => "双方",
             "full_round" => "完整回合",
             "freeze_preroll" => "freeze pre-roll",
-            "sync_scoreboard" => "同步比分",
+            "export_voice" => "导出语音(若有)",
+            "export_voice_hint" => "默认导出 demo 自带游戏内语音 sidecar；demo 没有语音时不会生成 voice/。",
             "export_cosmetics" => "导出饰品",
+            "cosmetic_details" => "饰品细项",
             "export_stickers" => "导出贴纸",
             "export_charms" => "导出挂坠",
             "risk_confirmed" => "风险已确认",
@@ -2228,6 +2288,8 @@ fn tr(lang: UiLanguage, key: &str) -> &'static str {
             "round_short" => "r",
             "file_short" => "f",
             "validated" => "Validated",
+            "voice" => "Voice",
+            "none" => "none",
             "cosmetics_exported" => "Cosmetic metadata exported",
             "no_players" => "No player files exported",
             "root" => "Root",
@@ -2254,8 +2316,10 @@ fn tr(lang: UiLanguage, key: &str) -> &'static str {
             "side_both" => "Both",
             "full_round" => "Full round",
             "freeze_preroll" => "freeze pre-roll",
-            "sync_scoreboard" => "Sync scoreboard",
+            "export_voice" => "Export voice if present",
+            "export_voice_hint" => "Writes demo-backed in-game voice sidecars when the demo contains usable voice data.",
             "export_cosmetics" => "Export cosmetics",
+            "cosmetic_details" => "Cosmetic details",
             "export_stickers" => "Export stickers",
             "export_charms" => "Export charms",
             "risk_confirmed" => "risk confirmed",
@@ -2628,12 +2692,7 @@ fn load_settings() -> GuiSettings {
     let Ok(text) = fs::read_to_string(path) else {
         return GuiSettings::default();
     };
-    let mut settings: GuiSettings = serde_json::from_str(&text).unwrap_or_default();
-    if !settings.export_cosmetics {
-        settings.export_stickers = false;
-        settings.export_charms = false;
-    }
-    settings
+    serde_json::from_str(&text).unwrap_or_default()
 }
 
 fn save_settings(settings: &GuiSettings) -> std::io::Result<()> {
@@ -2771,7 +2830,11 @@ mod tests {
         assert_eq!(settings.theme, ThemeChoice::System);
         assert!(!settings.advanced_open);
         assert!(!settings.activity_open);
-        assert!(!settings.sync_scoreboard);
+        assert!(settings.export_voice);
+        assert!(!settings.export_cosmetics);
+        assert!(settings.export_stickers);
+        assert!(settings.export_charms);
+        assert!(!settings.cosmetics_open);
     }
 
     #[test]
@@ -2822,35 +2885,43 @@ mod tests {
             rounds_exported: 1,
             files_by_round: BTreeMap::new(),
             players: Vec::new(),
+            voice_requested: false,
+            voice_sidecars: 0,
             cosmetic_files: 0,
             sticker_files: 0,
             charm_files: 0,
         };
 
         assert_eq!(
-            result.console_round_command(Some(7), false),
+            result.console_round_command(Some(7)),
             "dtr_go round \"out/demo/manifest.json\" 7"
         );
         assert_eq!(
-            result.console_seq_command(Some(7), false),
+            result.console_seq_command(Some(7)),
             "dtr_go seq \"out/demo/manifest.json\" 7"
         );
+        assert_eq!(result.console_risky_seq_command(Some(7)), None);
+
+        result.voice_requested = true;
+        result.voice_sidecars = 2;
         assert_eq!(
-            result.console_seq_command(Some(7), true),
-            "dtr_match scoreboard; dtr_go seq \"out/demo/manifest.json\" 7"
+            result.console_seq_command(Some(7)),
+            "dtr_voice_auto on; dtr_go seq \"out/demo/manifest.json\" 7"
         );
-        assert_eq!(result.console_risky_seq_command(Some(7), false), None);
 
         result.cosmetic_files = 10;
         assert_eq!(
-            result.console_risky_seq_command(Some(7), false),
-            Some("dtr_cosmetics basic; dtr_go seq \"out/demo/manifest.json\" 7".to_string())
+            result.console_risky_seq_command(Some(7)),
+            Some(
+                "dtr_voice_auto on; dtr_cosmetics basic; dtr_go seq \"out/demo/manifest.json\" 7"
+                    .to_string()
+            )
         );
         result.sticker_files = 1;
         assert_eq!(
-            result.console_risky_seq_command(Some(7), true),
+            result.console_risky_seq_command(Some(7)),
             Some(
-                "dtr_cosmetics full; dtr_match scoreboard; dtr_go seq \"out/demo/manifest.json\" 7"
+                "dtr_voice_auto on; dtr_cosmetics full; dtr_go seq \"out/demo/manifest.json\" 7"
                     .to_string()
             )
         );
