@@ -621,6 +621,11 @@ pub struct ParsedPlayerTick {
     pub glove_paint_seed: Option<u32>,
     pub glove_paint_wear: Option<f32>,
     pub crosshair_code: Option<String>,
+    pub viewmodel_left_handed: Option<bool>,
+    pub viewmodel_fov: Option<f32>,
+    pub viewmodel_offset_x: Option<f32>,
+    pub viewmodel_offset_y: Option<f32>,
+    pub viewmodel_offset_z: Option<f32>,
     pub scoreboard_score: Option<i32>,
     pub scoreboard_mvps: Option<u32>,
     pub scoreboard_kills: Option<u32>,
@@ -967,11 +972,37 @@ pub struct ReplayLoadout {
 pub struct ReplayView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub crosshair_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub viewmodel: Option<ReplayViewmodel>,
 }
 
 impl ReplayView {
     pub fn is_empty(&self) -> bool {
-        self.crosshair_code.is_none()
+        self.crosshair_code.is_none() && self.viewmodel.is_none()
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct ReplayViewmodel {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_handed: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fov: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset_x: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset_y: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset_z: Option<f32>,
+}
+
+impl ReplayViewmodel {
+    pub fn is_empty(&self) -> bool {
+        self.left_handed.is_none()
+            && self.fov.is_none()
+            && self.offset_x.is_none()
+            && self.offset_y.is_none()
+            && self.offset_z.is_none()
     }
 }
 

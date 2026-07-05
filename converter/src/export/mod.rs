@@ -7,7 +7,7 @@ use crate::model::{
     ParsedPlayerTick, ParsedProjectile, ParsedWeaponSticker, ReplayAgentCosmetic,
     ReplayChatMessage, ReplayCosmetics, ReplayHifiEvent, ReplayHifiEventKind,
     ReplayInventoryItemCount, ReplayInventorySnapshot, ReplayItemCosmetic, ReplayPlayerScoreboard,
-    ReplayRoundScoreboard, ReplayScoreboardFlair, ReplayView, ReplayWeaponCharm,
+    ReplayRoundScoreboard, ReplayScoreboardFlair, ReplayView, ReplayViewmodel, ReplayWeaponCharm,
     ReplayWeaponCosmetic, ReplayWeaponSticker, RoundSummary, Side, SubtickMode, TeamEconomy,
     DEMOTRACER_ABI, DTR_FORMAT_VERSION,
 };
@@ -1499,6 +1499,11 @@ fn is_pistol_round(round: u32) -> bool {
 
 fn replay_view(rows: &[&ParsedPlayerTick]) -> Option<ReplayView> {
     let mut crosshair_codes = BTreeSet::new();
+    let mut left_handed_values = BTreeSet::new();
+    let mut fov_values = BTreeSet::new();
+    let mut offset_x_values = BTreeSet::new();
+    let mut offset_y_values = BTreeSet::new();
+    let mut offset_z_values = BTreeSet::new();
 
     for row in rows {
         if !row.is_alive || row.steam_id == 0 {
@@ -1513,16 +1518,50 @@ fn replay_view(rows: &[&ParsedPlayerTick]) -> Option<ReplayView> {
         {
             crosshair_codes.insert(code.to_string());
         }
+
+        if let Some(value) = row.viewmodel_left_handed {
+            left_handed_values.insert(value);
+        }
+        insert_stable_f32(&mut fov_values, row.viewmodel_fov);
+        insert_stable_f32(&mut offset_x_values, row.viewmodel_offset_x);
+        insert_stable_f32(&mut offset_y_values, row.viewmodel_offset_y);
+        insert_stable_f32(&mut offset_z_values, row.viewmodel_offset_z);
     }
 
-    if crosshair_codes.len() != 1 {
-        return None;
-    }
+    let viewmodel = ReplayViewmodel {
+        left_handed: stable_bool(left_handed_values),
+        fov: stable_f32(fov_values),
+        offset_x: stable_f32(offset_x_values),
+        offset_y: stable_f32(offset_y_values),
+        offset_z: stable_f32(offset_z_values),
+    };
 
     let view = ReplayView {
-        crosshair_code: crosshair_codes.into_iter().next(),
+        crosshair_code: (crosshair_codes.len() == 1)
+            .then(|| crosshair_codes.into_iter().next())
+            .flatten(),
+        viewmodel: (!viewmodel.is_empty()).then_some(viewmodel),
     };
     (!view.is_empty()).then_some(view)
+}
+
+fn insert_stable_f32(values: &mut BTreeSet<u32>, value: Option<f32>) {
+    if let Some(value) = value.filter(|value| value.is_finite()) {
+        let normalized = if value == 0.0 { 0.0 } else { value };
+        values.insert(normalized.to_bits());
+    }
+}
+
+fn stable_bool(values: BTreeSet<bool>) -> Option<bool> {
+    (values.len() == 1)
+        .then(|| values.into_iter().next())
+        .flatten()
+}
+
+fn stable_f32(values: BTreeSet<u32>) -> Option<f32> {
+    (values.len() == 1)
+        .then(|| values.into_iter().next().map(f32::from_bits))
+        .flatten()
 }
 
 fn replay_round_scoreboard(round_rows: &[&ParsedPlayerTick]) -> Option<ReplayRoundScoreboard> {
@@ -3590,6 +3629,93 @@ mod tests {
     }
 
     #[test]
+    fn manifest_includes_stable_viewmodel() {
+        let mut parsed = sample_demo();
+        parsed.rows = vec![
+            ParsedPlayerTick {
+                viewmodel_left_handed: Some(false),
+                viewmodel_fov: Some(68.0),
+                viewmodel_offset_x: Some(2.5),
+                viewmodel_offset_y: Some(0.0),
+                viewmodel_offset_z: Some(-1.5),
+                ..sample_row(100)
+            },
+            ParsedPlayerTick {
+                viewmodel_left_handed: Some(false),
+                viewmodel_fov: Some(68.0),
+                viewmodel_offset_x: Some(2.5),
+                viewmodel_offset_y: Some(-0.0),
+                viewmodel_offset_z: Some(-1.5),
+                ..sample_row(164)
+            },
+        ];
+
+        let memory = export_memory(parsed);
+        let viewmodel = memory.manifest.files[0]
+            .view
+            .as_ref()
+            .and_then(|view| view.viewmodel.as_ref())
+            .expect("expected viewmodel metadata");
+
+        assert_eq!(viewmodel.left_handed, Some(false));
+        assert_eq!(viewmodel.fov.map(f32::to_bits), Some(68.0_f32.to_bits()));
+        assert_eq!(
+            viewmodel.offset_x.map(f32::to_bits),
+            Some(2.5_f32.to_bits())
+        );
+        assert_eq!(
+            viewmodel.offset_y.map(f32::to_bits),
+            Some(0.0_f32.to_bits())
+        );
+        assert_eq!(
+            viewmodel.offset_z.map(f32::to_bits),
+            Some((-1.5_f32).to_bits())
+        );
+    }
+
+    #[test]
+    fn conflicting_viewmodel_fields_are_skipped() {
+        let mut parsed = sample_demo();
+        parsed.rows = vec![
+            ParsedPlayerTick {
+                viewmodel_left_handed: Some(false),
+                viewmodel_fov: Some(68.0),
+                viewmodel_offset_x: Some(2.5),
+                viewmodel_offset_y: Some(0.0),
+                viewmodel_offset_z: Some(-1.5),
+                ..sample_row(100)
+            },
+            ParsedPlayerTick {
+                viewmodel_left_handed: Some(true),
+                viewmodel_fov: Some(60.0),
+                viewmodel_offset_x: Some(1.0),
+                viewmodel_offset_y: Some(0.0),
+                viewmodel_offset_z: Some(-1.5),
+                ..sample_row(164)
+            },
+        ];
+
+        let memory = export_memory(parsed);
+        let viewmodel = memory.manifest.files[0]
+            .view
+            .as_ref()
+            .and_then(|view| view.viewmodel.as_ref())
+            .expect("expected partial viewmodel metadata");
+
+        assert_eq!(viewmodel.left_handed, None);
+        assert_eq!(viewmodel.fov, None);
+        assert_eq!(viewmodel.offset_x, None);
+        assert_eq!(
+            viewmodel.offset_y.map(f32::to_bits),
+            Some(0.0_f32.to_bits())
+        );
+        assert_eq!(
+            viewmodel.offset_z.map(f32::to_bits),
+            Some((-1.5_f32).to_bits())
+        );
+    }
+
+    #[test]
     fn conflicting_cosmetic_evidence_is_skipped() {
         let mut parsed = sample_demo();
         parsed.rows = vec![
@@ -4963,6 +5089,11 @@ mod tests {
             glove_paint_seed: None,
             glove_paint_wear: None,
             crosshair_code: None,
+            viewmodel_left_handed: None,
+            viewmodel_fov: None,
+            viewmodel_offset_x: None,
+            viewmodel_offset_y: None,
+            viewmodel_offset_z: None,
             scoreboard_score: None,
             scoreboard_mvps: None,
             scoreboard_kills: None,

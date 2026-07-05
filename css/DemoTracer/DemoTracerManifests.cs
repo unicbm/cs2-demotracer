@@ -318,6 +318,27 @@ public sealed partial class DemoTracerPlugin
     {
         [JsonPropertyName("crosshair_code")]
         public string? CrosshairCode { get; set; }
+
+        [JsonPropertyName("viewmodel")]
+        public ReplayViewmodel? Viewmodel { get; set; }
+    }
+
+    private sealed class ReplayViewmodel
+    {
+        [JsonPropertyName("left_handed")]
+        public bool? LeftHanded { get; set; }
+
+        [JsonPropertyName("fov")]
+        public float? Fov { get; set; }
+
+        [JsonPropertyName("offset_x")]
+        public float? OffsetX { get; set; }
+
+        [JsonPropertyName("offset_y")]
+        public float? OffsetY { get; set; }
+
+        [JsonPropertyName("offset_z")]
+        public float? OffsetZ { get; set; }
     }
 
     private sealed class ReplayScoreboardFlair

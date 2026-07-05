@@ -94,6 +94,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private readonly HashSet<int> _replayScoreboardFlairSyncedSlots = new();
     private readonly Dictionary<int, string?> _viewerOriginalCrosshairCodes = new();
     private readonly Dictionary<int, string> _viewerAppliedCrosshairCodes = new();
+    private readonly Dictionary<int, ReplayViewmodel> _replayOriginalViewmodels = new();
+    private readonly Dictionary<int, ReplayViewmodel> _replayAppliedViewmodels = new();
+    private readonly HashSet<int> _replayFailedViewmodelSlots = new();
     private readonly BotHiderMemoryProbe _botHiderProbe = new();
     private readonly RayTraceLosProbe _rayTraceLosProbe = new();
     private bool _safeC4Aligned;
@@ -1219,7 +1222,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                         ? $"pool server_round={_poolRoundIndex} candidates={_poolManifest?.Candidates.Count ?? 0}"
                         : "none";
             command.ReplyToCommand(
-                $"[DTR OK] status plan={plan} loaded_slots={_loadedSlots.Count} settings identity={ReplayIdentityModeName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} cosmetics={FormatOnOff(_cosmeticAlignEnabled)} agents={FormatOnOff(_cosmeticAgentsEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)} scoreboard={FormatOnOff(_scoreboardAlignEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} allow_partial={FormatOnOff(_partialReplayEnabled)} {FormatVoiceAutoStatusInline()} {FormatChatAutoStatusInline()} mp_freezetime={(float.IsFinite(freezeTime) ? freezeTime.ToString("F2", CultureInfo.InvariantCulture) : "unknown")} {(string.IsNullOrEmpty(freezeReason) ? "" : freezeReason)} {FormatCosmeticStatusCounts()} {FormatCrosshairStatusCounts()} {FormatScoreboardStatusCounts()}");
+                $"[DTR OK] status plan={plan} loaded_slots={_loadedSlots.Count} settings identity={ReplayIdentityModeName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} cosmetics={FormatOnOff(_cosmeticAlignEnabled)} agents={FormatOnOff(_cosmeticAgentsEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)} scoreboard={FormatOnOff(_scoreboardAlignEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} allow_partial={FormatOnOff(_partialReplayEnabled)} {FormatVoiceAutoStatusInline()} {FormatChatAutoStatusInline()} mp_freezetime={(float.IsFinite(freezeTime) ? freezeTime.ToString("F2", CultureInfo.InvariantCulture) : "unknown")} {(string.IsNullOrEmpty(freezeReason) ? "" : freezeReason)} {FormatCosmeticStatusCounts()} {FormatCrosshairStatusCounts()} {FormatViewmodelStatusCounts()} {FormatScoreboardStatusCounts()}");
             return;
         }
 
@@ -1263,7 +1266,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         command.ReplyToCommand(
             $"[DTR DOCTOR] bots players T={tPlayers}/CT={ctPlayers} strict_bots={strictBots} bot_hider_managed={managedBots} safe_replay_targets={replayTargets.Count}");
         command.ReplyToCommand(
-            $"[DTR DOCTOR] replay loaded={_loadedSlots.Count} playing={loadedPlaying} identity={ReplayIdentityModeName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} cosmetics={FormatOnOff(_cosmeticAlignEnabled)} agents={FormatOnOff(_cosmeticAgentsEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)} scoreboard={FormatOnOff(_scoreboardAlignEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} partial={FormatOnOff(_partialReplayEnabled)} raytrace={_rayTraceLosProbe.ProbeStatus} {FormatCosmeticStatusCounts()} {FormatCrosshairStatusCounts()} {FormatScoreboardStatusCounts()}");
+            $"[DTR DOCTOR] replay loaded={_loadedSlots.Count} playing={loadedPlaying} identity={ReplayIdentityModeName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} cosmetics={FormatOnOff(_cosmeticAlignEnabled)} agents={FormatOnOff(_cosmeticAgentsEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)} scoreboard={FormatOnOff(_scoreboardAlignEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} partial={FormatOnOff(_partialReplayEnabled)} raytrace={_rayTraceLosProbe.ProbeStatus} {FormatCosmeticStatusCounts()} {FormatCrosshairStatusCounts()} {FormatViewmodelStatusCounts()} {FormatScoreboardStatusCounts()}");
 
         if (command.ArgCount >= 2)
             ReplyDoctorManifest(command, command.GetArg(1));
@@ -1514,12 +1517,14 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         {
             SetReplayPovMask(0);
             RestoreAllReplayViewerCrosshairs();
+            RestoreAllReplayBotViewmodels();
             return;
         }
 
         var playerSnapshot = BuildTickPlayerSnapshot();
         UpdateReplayPovMask(playerSnapshot);
         UpdateReplayViewerCrosshairs(playerSnapshot);
+        UpdateReplayBotViewmodels(playerSnapshot);
 
         foreach (var slot in _loadedSlots.ToArray())
         {
@@ -3803,6 +3808,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         ResetStickerAlignState(resetCounters: true);
         ResetCharmAlignState(resetCounters: true);
         ResetCrosshairAlignState(resetCounters: true);
+        ResetViewmodelAlignState(resetCounters: true);
         ResetScoreboardAlignState(resetCounters: true);
         _loadedRoundScoreboard = null;
         _lastPlayingSlots.Clear();
@@ -3888,6 +3894,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             ResetStickerAlignState(resetCounters: true);
             ResetCharmAlignState(resetCounters: true);
             ResetCrosshairAlignState(resetCounters: true);
+            ResetViewmodelAlignState(resetCounters: true);
             ResetScoreboardAlignState(resetCounters: true);
             _loadedRoundScoreboard = null;
             _lastPlayingSlots.Clear();
@@ -3974,6 +3981,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _cosmeticSyncedSlots.Clear();
         _cosmeticHeartbeatTokens.Clear();
         RestoreAllReplayViewerCrosshairs();
+        RestoreAllReplayBotViewmodels();
         _lastPlayingSlots.Clear();
         _quietReplaySlots.Clear();
         _replayStartedAt.Clear();
@@ -4073,6 +4081,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     {
         if (_loadedReplays.TryGetValue(slot, out var releasedReplay) && releasedReplay.UtilityOnly)
             _pendingProjectileAlign.Clear();
+        RestoreReplayBotViewmodel(slot);
         InvalidateReplayIdentityGeneration(slot);
         _lastPlayingSlots.Remove(slot);
         _replayStartedAt.Remove(slot);
@@ -4289,6 +4298,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         int utilityWeaponDefIndex = -1,
         ReplayFileMetadata? replayMetadata = null)
     {
+        RestoreReplayBotViewmodel(slot);
         var metadata = replayMetadata ?? ReadReplayMetadataOrEmpty(path);
         TryBuildWeaponPlan(metadata.WeaponDefIndices ?? [], out var scannedFirstDef, out var scannedPreloadDefs);
         var firstDef = NormalizeWeaponDefIndex(manifestFirstWeaponDefIndex);
