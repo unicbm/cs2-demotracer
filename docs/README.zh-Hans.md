@@ -68,7 +68,7 @@ server bundle 自带：
 - `BotController` Metamod runtime
 - `DemoTracer` CounterStrikeSharp plugin
 - `DemoTracerApi.dll`
-- `skins_en.json`
+- `demotracer-econ-index.v1.json`
 - `demotracer.config.example.json`
 
 可选集成：

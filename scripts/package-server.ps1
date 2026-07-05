@@ -119,7 +119,7 @@ Copy-Item -LiteralPath (Join-Path $runtimeRoot "addons\metamod") `
 $pluginOut = Join-Path $stageRoot "addons\counterstrikesharp\plugins\DemoTracer"
 Copy-RequiredFile (Join-Path $cssOut "DemoTracer.deps.json") (Join-Path $pluginOut "DemoTracer.deps.json")
 Copy-RequiredFile (Join-Path $cssOut "DemoTracer.dll") (Join-Path $pluginOut "DemoTracer.dll")
-Copy-RequiredFile (Join-Path $cssOut "skins_en.json") (Join-Path $pluginOut "skins_en.json")
+Copy-RequiredFile (Join-Path $cssOut "demotracer-econ-index.v1.json") (Join-Path $pluginOut "demotracer-econ-index.v1.json")
 Copy-RequiredFile (Join-Path $repoRoot "css\DemoTracer\demotracer.config.example.json") (Join-Path $pluginOut "demotracer.config.example.json")
 Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.deps.json") (Join-Path $pluginOut "DemoTracerApi.deps.json")
 Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.dll") (Join-Path $pluginOut "DemoTracerApi.dll")
@@ -210,7 +210,7 @@ through CS2's native `say` / `say_team` path when `dtr_chat_auto on` is enabled
 - `addons/metamod/BotController.vdf`
 - `addons/counterstrikesharp/plugins/DemoTracer/`
   - `demotracer.config.example.json` sanitized local runtime defaults
-  - `skins_en.json` legacy cosmetic model lookup
+  - `demotracer-econ-index.v1.json` compact econ validation index
 - `docs/COMMANDS.md`
 - `docs/COMMANDS.zh-Hans.md`
 - `docs/VOICE.md`
@@ -236,7 +236,7 @@ Included in this bundle:
 - `BotController` Metamod runtime
 - `DemoTracer` CounterStrikeSharp plugin
 - `DemoTracerApi.dll`
-- `skins_en.json`
+- `demotracer-econ-index.v1.json`
 - `demotracer.config.example.json`
 
 Optional:

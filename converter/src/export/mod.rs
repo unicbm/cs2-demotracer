@@ -1753,6 +1753,9 @@ fn replay_agent_cosmetic(rows: &[&ParsedPlayerTick]) -> Option<ReplayAgentCosmet
         let Some(item_def) = row.agent_item_def_index.filter(|value| *value != 0) else {
             continue;
         };
+        if !valid_agent_item_def_index(item_def) {
+            continue;
+        }
         let Some(name) = row.agent_skin.as_deref() else {
             continue;
         };
@@ -1840,10 +1843,10 @@ fn glove_econ_cosmetics_by_player(parsed: &ParsedDemo) -> BTreeMap<u64, ReplayIt
 
 fn econ_glove_spec(item: &ParsedEconItem) -> Option<EconGloveSpec> {
     let item_def_index = i32::try_from(item.item_def_index?).ok()?;
-    if !is_plausible_glove_item_def_index(item_def_index) {
+    if !valid_glove_item_def_index(item_def_index) {
         return None;
     }
-    let paint_kit = item.paint_kit.filter(|value| *value > 0)?;
+    let paint_kit = item.paint_kit.filter(|value| valid_paint_kit(*value))?;
     let seed = item.paint_seed?;
     let wear_bits = item.paint_wear_raw?;
     let wear = f32::from_bits(wear_bits);
@@ -1940,7 +1943,7 @@ fn replay_active_cosmetics(
 
         if let Some(item_def) = row
             .glove_item_def_index
-            .filter(|def| is_plausible_glove_item_def_index(*def))
+            .filter(|def| valid_glove_item_def_index(*def))
         {
             glove_item_defs.insert(item_def);
         }
@@ -2273,7 +2276,7 @@ fn stable_weapon_u64_value(
 fn stable_music_kit_id(rows: &[&ParsedPlayerTick]) -> Option<u32> {
     let mut values = BTreeSet::new();
     for row in rows {
-        if let Some(value) = row.music_kit_id.filter(|value| *value != 0) {
+        if let Some(value) = row.music_kit_id.filter(|value| valid_music_kit_id(*value)) {
             values.insert(value);
         }
     }
@@ -2290,6 +2293,9 @@ fn stable_scoreboard_flair(rows: &[&ParsedPlayerTick]) -> Option<ReplayScoreboar
         let Some(flair) = row.scoreboard_flair else {
             continue;
         };
+        if !valid_scoreboard_flair_item_def(flair.item_def_index) {
+            continue;
+        }
         values.insert(ReplayScoreboardFlair {
             item_def_index: flair.item_def_index,
         });
@@ -2337,6 +2343,7 @@ fn cosmetic_sticker_set_from_slice(
     for sticker in stickers {
         if sticker.slot > 4
             || sticker.sticker_id == 0
+            || !valid_sticker_id(sticker.sticker_id)
             || !sticker.wear.is_finite()
             || !(0.0..=1.0).contains(&sticker.wear)
             || !sticker.offset_x.is_finite()
@@ -2395,7 +2402,8 @@ fn cosmetic_charm_set_from_attributes(
     attributes: &[ParsedInventoryWeaponAttribute],
 ) -> Option<Vec<CosmeticCharmSpec>> {
     let charm_id =
-        inventory_attribute_u32(attributes, KEYCHAIN_SLOT_0_ID_ATTR).filter(|id| *id > 0)?;
+        inventory_attribute_u32(attributes, KEYCHAIN_SLOT_0_ID_ATTR)
+            .filter(|id| valid_keychain_id(*id))?;
     let offset_x = inventory_attribute_f32(attributes, KEYCHAIN_SLOT_0_OFFSET_X_ATTR)?;
     let offset_y = inventory_attribute_f32(attributes, KEYCHAIN_SLOT_0_OFFSET_Y_ATTR)?;
     let offset_z = inventory_attribute_f32(attributes, KEYCHAIN_SLOT_0_OFFSET_Z_ATTR)?;
@@ -2407,7 +2415,7 @@ fn cosmetic_charm_set_from_attributes(
     let highlight = inventory_attribute_u32(attributes, KEYCHAIN_SLOT_0_HIGHLIGHT_ATTR)
         .filter(|value| *value > 0);
     let sticker_id = inventory_attribute_u32(attributes, KEYCHAIN_SLOT_0_STICKER_ATTR)
-        .filter(|value| *value > 0);
+        .filter(|value| valid_sticker_id(*value));
     Some(vec![CosmeticCharmSpec {
         slot: 0,
         charm_id,
@@ -2506,7 +2514,7 @@ fn cosmetic_paint_spec(
     seed: Option<u32>,
     wear: Option<f32>,
 ) -> Option<CosmeticPaintSpec> {
-    let paint_kit = paint_kit.filter(|value| *value > 0)?;
+    let paint_kit = paint_kit.filter(|value| valid_paint_kit(*value))?;
     let seed = seed?;
     let wear = wear?;
     if !wear.is_finite() || !(0.0..=1.0).contains(&wear) {
@@ -2520,43 +2528,104 @@ fn cosmetic_paint_spec(
 }
 
 fn valid_weapon_cosmetic_paint(weapon_def_index: i32, paint_kit: u32) -> bool {
-    valid_weapon_cosmetic_paints()
+    demotracer_econ_index()
+        .weapon_paints
         .contains(&(normalize_weapon_def_index(weapon_def_index), paint_kit))
 }
 
-fn valid_weapon_cosmetic_paints() -> &'static BTreeSet<(i32, u32)> {
-    static VALID: OnceLock<BTreeSet<(i32, u32)>> = OnceLock::new();
-    VALID.get_or_init(|| {
-        let value: serde_json::Value = serde_json::from_str(include_str!(concat!(
+fn valid_paint_kit(paint_kit: u32) -> bool {
+    demotracer_econ_index().paint_kit_ids.contains(&paint_kit)
+}
+
+fn valid_sticker_id(sticker_id: u32) -> bool {
+    demotracer_econ_index().sticker_ids.contains(&sticker_id)
+}
+
+fn valid_keychain_id(keychain_id: u32) -> bool {
+    demotracer_econ_index().keychain_ids.contains(&keychain_id)
+}
+
+fn valid_music_kit_id(music_kit_id: u32) -> bool {
+    demotracer_econ_index().music_kit_ids.contains(&music_kit_id)
+}
+
+fn valid_scoreboard_flair_item_def(item_def_index: u32) -> bool {
+    item_def_index == 0
+        || demotracer_econ_index()
+            .scoreboard_flair_defidx
+            .contains(&item_def_index)
+}
+
+fn valid_glove_item_def_index(item_def_index: i32) -> bool {
+    demotracer_econ_index()
+        .glove_defidx
+        .contains(&item_def_index)
+}
+
+fn valid_agent_item_def_index(item_def_index: u32) -> bool {
+    demotracer_econ_index()
+        .agent_defidx
+        .contains(&item_def_index)
+}
+
+#[derive(Debug, Deserialize)]
+struct RawDemoTracerEconIndex {
+    weapon_paints: Vec<RawPaintPair>,
+    paint_kit_ids: Vec<u32>,
+    glove_defidx: Vec<i32>,
+    agent_defidx: Vec<u32>,
+    sticker_ids: Vec<u32>,
+    keychain_ids: Vec<u32>,
+    music_kit_ids: Vec<u32>,
+    scoreboard_flair_defidx: Vec<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawPaintPair {
+    weapon_defidx: i32,
+    paint_kit: u32,
+}
+
+#[derive(Debug)]
+struct DemoTracerEconIndex {
+    weapon_paints: BTreeSet<(i32, u32)>,
+    paint_kit_ids: BTreeSet<u32>,
+    glove_defidx: BTreeSet<i32>,
+    agent_defidx: BTreeSet<u32>,
+    sticker_ids: BTreeSet<u32>,
+    keychain_ids: BTreeSet<u32>,
+    music_kit_ids: BTreeSet<u32>,
+    scoreboard_flair_defidx: BTreeSet<u32>,
+}
+
+fn demotracer_econ_index() -> &'static DemoTracerEconIndex {
+    static INDEX: OnceLock<DemoTracerEconIndex> = OnceLock::new();
+    INDEX.get_or_init(|| {
+        let raw: RawDemoTracerEconIndex = serde_json::from_str(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../css/DemoTracer/skins_en.json"
+            "/../shared/econ/demotracer-econ-index.v1.json"
         )))
-        .expect("embedded skins_en.json must be valid JSON");
-        value
-            .as_array()
-            .expect("embedded skins_en.json must be a JSON array")
-            .iter()
-            .filter_map(|item| {
-                let def = json_int(item.get("weapon_defindex")?)?;
-                let paint = json_u32(item.get("paint")?)?;
-                (is_weapon_cosmetic_def_index(def) && paint > 0).then_some((def, paint))
-            })
-            .collect()
+        .expect("embedded demotracer-econ-index.v1.json must be valid JSON");
+        DemoTracerEconIndex {
+            weapon_paints: raw
+                .weapon_paints
+                .into_iter()
+                .filter(|pair| pair.paint_kit > 0)
+                .map(|pair| (normalize_weapon_def_index(pair.weapon_defidx), pair.paint_kit))
+                .collect(),
+            paint_kit_ids: raw.paint_kit_ids.into_iter().filter(|value| *value > 0).collect(),
+            glove_defidx: raw.glove_defidx.into_iter().collect(),
+            agent_defidx: raw.agent_defidx.into_iter().collect(),
+            sticker_ids: raw.sticker_ids.into_iter().filter(|value| *value > 0).collect(),
+            keychain_ids: raw.keychain_ids.into_iter().filter(|value| *value > 0).collect(),
+            music_kit_ids: raw.music_kit_ids.into_iter().filter(|value| *value > 0).collect(),
+            scoreboard_flair_defidx: raw
+                .scoreboard_flair_defidx
+                .into_iter()
+                .filter(|value| *value > 0)
+                .collect(),
+        }
     })
-}
-
-fn json_int(value: &serde_json::Value) -> Option<i32> {
-    value
-        .as_i64()
-        .and_then(|raw| i32::try_from(raw).ok())
-        .or_else(|| value.as_str()?.parse::<i32>().ok())
-}
-
-fn json_u32(value: &serde_json::Value) -> Option<u32> {
-    value
-        .as_u64()
-        .and_then(|raw| u32::try_from(raw).ok())
-        .or_else(|| value.as_str()?.parse::<u32>().ok())
 }
 
 fn glove_cosmetic_paint_spec(
@@ -2564,7 +2633,7 @@ fn glove_cosmetic_paint_spec(
     seed: Option<u32>,
     wear: Option<f32>,
 ) -> Option<CosmeticPaintSpec> {
-    let paint_kit = paint_kit.filter(|value| *value > 0)?;
+    let paint_kit = paint_kit.filter(|value| valid_paint_kit(*value))?;
     let wear = wear?;
     if !wear.is_finite() || !(0.0..=1.0).contains(&wear) {
         return None;
@@ -2646,10 +2715,6 @@ fn is_knife_cosmetic_def_index(def: i32) -> bool {
 
 fn is_exact_knife_cosmetic_def_index(def: i32) -> bool {
     is_knife_cosmetic_def_index(def) && !matches!(def, 41 | 42 | 59)
-}
-
-fn is_plausible_glove_item_def_index(def: i32) -> bool {
-    (5027..=5035).contains(&def)
 }
 
 fn weapon_def_index_from_item_name(item_name: &str) -> Option<i32> {

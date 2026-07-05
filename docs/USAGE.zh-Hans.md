@@ -273,7 +273,7 @@ write_rec_file("copy.dtr", &rec)?;
 - DemoTracer CounterStrikeSharp 插件：`DemoTracer`
 
 server bundle 包含 `BotController`、`DemoTracer`、`DemoTracerApi.dll`、
-`skins_en.json` 和干净的示例配置；不包含 Metamod:Source、CounterStrikeSharp 或
+`demotracer-econ-index.v1.json` 和干净的示例配置；不包含 Metamod:Source、CounterStrikeSharp 或
 CS2-Bot-Hider。BotHider 是可选依赖，只用于 BotHider 管理的 replay slot，以及 demo
 显示名、SteamID64 对齐、demo 头像覆写这类 identity 功能。
 

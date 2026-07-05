@@ -7,7 +7,6 @@ using CounterStrikeSharp.API.Modules.Utils;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text.Json;
 
 namespace DemoTracer;
 
@@ -19,14 +18,15 @@ public sealed partial class DemoTracerPlugin
     private const string AttributeSetterLinuxSignature = "55 48 89 E5 41 57 41 56 49 89 FE 41 55 41 54 53 48 89 F3 48 83 EC ? F3 0F 11 85";
     private static readonly (int WeaponDefIndex, int PaintKit)[] BuiltInLegacyCosmeticPaints =
     [
-        // Fallback when skins_en.json is absent. These older USP-S finishes use
-        // the legacy bodygroup in CS2; bodygroup 0 renders as the plain dark model.
+        // Fallback when the compact econ index is absent. These older USP-S
+        // finishes use the legacy bodygroup in CS2; bodygroup 0 renders as the
+        // plain dark model.
         (61, 277), // USP-S | Stainless
         (61, 339), // USP-S | Caiman
         (61, 504), // USP-S | Kill Confirmed
     ];
     private static readonly Lazy<MemoryFunctionVoid<nint, string, float>?> AttributeSetter = new(CreateAttributeSetter);
-    private readonly HashSet<(int WeaponDefIndex, int PaintKit)> _legacyCosmeticPaints = new();
+    private readonly HashSet<(int WeaponDefIndex, uint PaintKit)> _legacyCosmeticPaints = new();
     private readonly Dictionary<ulong, PlayerCosmeticEvidence> _cosmeticEvidenceByKey = new();
     private readonly Dictionary<int, ulong> _slotCosmeticEvidenceKeys = new();
     private readonly Dictionary<int, int> _cosmeticHeartbeatTokens = new();
@@ -68,60 +68,7 @@ public sealed partial class DemoTracerPlugin
         }
     }
 
-    private void LoadCosmeticLegacyPaints()
-    {
-        _legacyCosmeticPaints.Clear();
-        foreach (var (weaponDefIndex, paintKit) in BuiltInLegacyCosmeticPaints)
-            _legacyCosmeticPaints.Add((NormalizeWeaponDefIndex(weaponDefIndex), paintKit));
-
-        var path = Path.Combine(ModuleDirectory, "skins_en.json");
-        if (!File.Exists(path))
-        {
-            Server.PrintToConsole(
-                $"dtr: cosmetic legacy paint lookup not found; using built-in fallback entries={_legacyCosmeticPaints.Count}");
-            return;
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(File.ReadAllText(path));
-            foreach (var item in document.RootElement.EnumerateArray())
-            {
-                if (!item.TryGetProperty("legacy_model", out var legacy) ||
-                    legacy.ValueKind != JsonValueKind.True)
-                {
-                    continue;
-                }
-                if (!item.TryGetProperty("weapon_defindex", out var defElement) ||
-                    !item.TryGetProperty("paint", out var paintElement))
-                {
-                    continue;
-                }
-
-                var weaponDefIndex = ReadFlexibleInt(defElement);
-                var paintKit = ReadFlexibleInt(paintElement);
-                if (weaponDefIndex > 0 && paintKit > 0)
-                    _legacyCosmeticPaints.Add((weaponDefIndex, paintKit));
-            }
-
-            Server.PrintToConsole($"dtr: loaded cosmetic legacy paint lookup entries={_legacyCosmeticPaints.Count}");
-        }
-        catch (Exception ex)
-        {
-            Server.PrintToConsole($"dtr: failed to load cosmetic legacy paint lookup: {ex.Message}");
-        }
-
-        static int ReadFlexibleInt(JsonElement element)
-        {
-            return element.ValueKind == JsonValueKind.Number
-                ? element.GetInt32()
-                : int.TryParse(element.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
-                    ? value
-            : 0;
-        }
-    }
-
-    private static ReplayCosmetics NormalizeReplayCosmetics(ReplayCosmetics? cosmetics)
+    private ReplayCosmetics NormalizeReplayCosmetics(ReplayCosmetics? cosmetics)
     {
         var normalized = new ReplayCosmetics();
         if (cosmetics == null)
@@ -134,6 +81,8 @@ public sealed partial class DemoTracerPlugin
             if (!IsWeaponCosmeticDefIndex(group.Key) || group.Count() != 1)
                 continue;
             var weapon = group.First();
+            if (!IsKnownWeaponCosmeticPaint(group.Key, weapon.PaintKit))
+                continue;
             normalized.Weapons.Add(new ReplayWeaponCosmetic
             {
                 WeaponDefIndex = group.Key,
@@ -154,7 +103,8 @@ public sealed partial class DemoTracerPlugin
         if (cosmetics.Knife is { } knife &&
             IsValidItemCosmetic(knife) &&
             knife.ItemDefIndex is { } knifeDef &&
-            IsExactKnifeCosmeticDefIndex(knifeDef))
+            IsExactKnifeCosmeticDefIndex(knifeDef) &&
+            IsKnownKnifeCosmeticItemDefIndex(knifeDef))
         {
             normalized.Knife = CloneItemCosmetic(knife);
         }
@@ -162,7 +112,7 @@ public sealed partial class DemoTracerPlugin
         if (cosmetics.Glove is { } glove &&
             IsValidItemCosmetic(glove) &&
             (glove.ItemDefIndex == null ||
-             IsPlausibleCosmeticItemDefIndex(glove.ItemDefIndex.Value)))
+             IsKnownGloveCosmeticItemDefIndex(glove.ItemDefIndex.Value)))
         {
             normalized.Glove = CloneItemCosmetic(glove);
         }
@@ -191,9 +141,9 @@ public sealed partial class DemoTracerPlugin
             CustomName = NormalizeCosmeticCustomName(source.CustomName)
         };
 
-    private static ReplayAgentCosmetic? NormalizeAgentCosmetic(ReplayAgentCosmetic? source)
+    private ReplayAgentCosmetic? NormalizeAgentCosmetic(ReplayAgentCosmetic? source)
     {
-        if (source == null || source.ItemDefIndex == 0)
+        if (source == null || source.ItemDefIndex == 0 || !IsKnownAgentCosmeticItemDefIndex(source.ItemDefIndex))
             return null;
         var modelPath = NormalizeAgentModelPath(source.ModelPath);
         if (modelPath == null)
@@ -247,12 +197,16 @@ public sealed partial class DemoTracerPlugin
             cosmetics.Glove != null ||
             cosmetics.Agent != null);
 
-    private static bool IsValidWeaponCosmetic(ReplayWeaponCosmetic cosmetic)
-        => cosmetic.PaintKit > 0 && cosmetic.Wear is >= 0.0f and <= 1.0f && float.IsFinite(cosmetic.Wear);
+    private bool IsValidWeaponCosmetic(ReplayWeaponCosmetic cosmetic)
+        => cosmetic.PaintKit > 0 &&
+           IsKnownPaintKit(cosmetic.PaintKit) &&
+           cosmetic.Wear is >= 0.0f and <= 1.0f &&
+           float.IsFinite(cosmetic.Wear);
 
-    private static bool IsValidItemCosmetic(ReplayItemCosmetic? cosmetic)
+    private bool IsValidItemCosmetic(ReplayItemCosmetic? cosmetic)
         => cosmetic != null &&
            cosmetic.PaintKit > 0 &&
+           IsKnownPaintKit(cosmetic.PaintKit) &&
            cosmetic.Wear is >= 0.0f and <= 1.0f &&
            float.IsFinite(cosmetic.Wear);
 
@@ -262,7 +216,7 @@ public sealed partial class DemoTracerPlugin
     private static int? NormalizeStattrakCounter(int? counter)
         => counter is >= 0 ? counter : null;
 
-    private static List<ReplayWeaponSticker> NormalizeWeaponStickers(IEnumerable<ReplayWeaponSticker>? stickers)
+    private List<ReplayWeaponSticker> NormalizeWeaponStickers(IEnumerable<ReplayWeaponSticker>? stickers)
     {
         if (stickers == null)
             return [];
@@ -273,6 +227,7 @@ public sealed partial class DemoTracerPlugin
         {
             if (sticker.Slot is < 0 or > 4 ||
                 sticker.StickerId == 0 ||
+                !IsKnownStickerId(sticker.StickerId) ||
                 sticker.Wear is < 0.0f or > 1.0f ||
                 !float.IsFinite(sticker.Wear) ||
                 !float.IsFinite(sticker.OffsetX) ||
@@ -301,7 +256,7 @@ public sealed partial class DemoTracerPlugin
             .ToList();
     }
 
-    private static List<ReplayWeaponCharm> NormalizeWeaponCharms(IEnumerable<ReplayWeaponCharm>? charms)
+    private List<ReplayWeaponCharm> NormalizeWeaponCharms(IEnumerable<ReplayWeaponCharm>? charms)
     {
         if (charms == null)
             return [];
@@ -312,6 +267,7 @@ public sealed partial class DemoTracerPlugin
         {
             if (charm.Slot != 0 ||
                 charm.CharmId == 0 ||
+                !IsKnownKeychainId(charm.CharmId) ||
                 !float.IsFinite(charm.OffsetX) ||
                 !float.IsFinite(charm.OffsetY) ||
                 !float.IsFinite(charm.OffsetZ) ||
@@ -329,7 +285,7 @@ public sealed partial class DemoTracerPlugin
                 OffsetZ = charm.OffsetZ,
                 Seed = NormalizeOptionalUInt(charm.Seed),
                 Highlight = NormalizeOptionalUInt(charm.Highlight),
-                StickerId = NormalizeOptionalUInt(charm.StickerId)
+                StickerId = NormalizeKnownStickerId(charm.StickerId)
             });
         }
 
@@ -340,6 +296,12 @@ public sealed partial class DemoTracerPlugin
 
     private static uint? NormalizeOptionalUInt(uint? value)
         => value is > 0 ? value : null;
+
+    private uint? NormalizeKnownStickerId(uint? value)
+    {
+        var normalized = NormalizeOptionalUInt(value);
+        return normalized.HasValue && IsKnownStickerId(normalized.Value) ? normalized : null;
+    }
 
     private static ulong? NormalizeOptionalULong(ulong? value)
         => value is > 0 ? value : null;
@@ -399,9 +361,6 @@ public sealed partial class DemoTracerPlugin
 
     private static bool IsKnifeCosmeticDefIndex(int weaponDefIndex)
         => weaponDefIndex is 41 or 42 or 59 || weaponDefIndex is >= 500 and < 600;
-
-    private static bool IsPlausibleCosmeticItemDefIndex(int itemDefIndex)
-        => itemDefIndex is >= 5027 and <= 5035;
 
     private void ResetCosmeticAlignState(bool resetCounters = false)
     {
@@ -1651,7 +1610,8 @@ public sealed partial class DemoTracerPlugin
     }
 
     private bool IsLegacyCosmeticPaint(int weaponDefIndex, int paintKit)
-        => _legacyCosmeticPaints.Contains((NormalizeWeaponDefIndex(weaponDefIndex), paintKit));
+        => paintKit > 0 &&
+           _legacyCosmeticPaints.Contains((NormalizeWeaponDefIndex(weaponDefIndex), (uint)paintKit));
 
     private static bool IsExactKnifeCosmeticDefIndex(int weaponDefIndex)
         => IsKnifeCosmeticDefIndex(weaponDefIndex) && weaponDefIndex is not (41 or 42 or 59);

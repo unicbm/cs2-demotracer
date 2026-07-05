@@ -7,14 +7,14 @@ namespace DemoTracer;
 
 public sealed partial class DemoTracerPlugin
 {
-    private static ReplayScoreboardFlair? NormalizeReplayScoreboardFlair(ReplayScoreboardFlair? flair)
+    private ReplayScoreboardFlair? NormalizeReplayScoreboardFlair(ReplayScoreboardFlair? flair)
     {
         if (flair == null)
             return null;
 
         return new ReplayScoreboardFlair
         {
-            ItemDefIndex = flair.ItemDefIndex <= ushort.MaxValue ? flair.ItemDefIndex : 0
+            ItemDefIndex = IsKnownScoreboardFlairItemDefIndex(flair.ItemDefIndex) ? flair.ItemDefIndex : 0
         };
     }
 

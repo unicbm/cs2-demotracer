@@ -292,7 +292,7 @@ Make sure your local CS2 server has loaded:
 - the DemoTracer CounterStrikeSharp plugin: `DemoTracer`
 
 The server bundle includes `BotController`, `DemoTracer`, `DemoTracerApi.dll`,
-`skins_en.json`, and the sanitized example config. It does not include
+`demotracer-econ-index.v1.json`, and the sanitized example config. It does not include
 Metamod:Source, CounterStrikeSharp, or CS2-Bot-Hider. BotHider is optional and
 only needed for BotHider-managed replay slots plus identity features such as
 demo display names, SteamID64 alignment, and demo avatar override alignment.

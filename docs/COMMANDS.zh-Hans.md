@@ -5,7 +5,7 @@
 时，才需要在每条后面加分号。
 
 服务器前置依赖是 Metamod:Source 和 CounterStrikeSharp。DemoTracer server bundle
-自带 `BotController`、`DemoTracer`、`DemoTracerApi.dll`、`skins_en.json` 和示例配置。
+自带 `BotController`、`DemoTracer`、`DemoTracerApi.dll`、`demotracer-econ-index.v1.json` 和示例配置。
 CS2-Bot-Hider 是可选依赖，只用于 BotHider 管理的 replay slot，以及 demo 显示名、
 SteamID64 对齐、demo 头像覆写这类 identity 功能。
 

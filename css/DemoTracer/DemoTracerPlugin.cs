@@ -171,7 +171,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     {
         _moduleDirectoryForPathResolution = ModuleDirectory;
         LoadRuntimeConfig(message => Server.PrintToConsole(message), announceMissing: true);
-        LoadCosmeticLegacyPaints();
+        LoadDemoTracerEconIndex();
         HookCosmeticGiveNamedItem();
         RegisterListener<Listeners.OnMapStart>(OnMapStart);
         RegisterListener<Listeners.OnMapEnd>(OnMapEnd);
@@ -3315,11 +3315,13 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         Utilities.SetStateChanged(player, "CCSPlayerController", "m_iMusicKitID");
     }
 
-    private static int NormalizeMusicKitId(uint? musicKitId)
-        => musicKitId is > 0 and <= int.MaxValue ? (int)musicKitId.Value : 0;
+    private int NormalizeMusicKitId(uint? musicKitId)
+        => musicKitId is > 0 and <= int.MaxValue && IsKnownMusicKitId((int)musicKitId.Value)
+            ? (int)musicKitId.Value
+            : 0;
 
-    private static int NormalizeMusicKitId(int musicKitId)
-        => musicKitId > 0 ? musicKitId : 0;
+    private int NormalizeMusicKitId(int musicKitId)
+        => IsKnownMusicKitId(musicKitId) ? musicKitId : 0;
 
     private void AlignSafeC4OwnerForLoadedReplays()
     {

@@ -27,7 +27,7 @@ The server bundle includes:
 - `BotController`: the DemoTracer Metamod runtime
 - `DemoTracer`: the CounterStrikeSharp playback plugin
 - `DemoTracerApi.dll`: companion-plugin API contract
-- `skins_en.json`
+- `demotracer-econ-index.v1.json`
 - `demotracer.config.example.json`
 
 The server bundle does not include Metamod:Source, CounterStrikeSharp,

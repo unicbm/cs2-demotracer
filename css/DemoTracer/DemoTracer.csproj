@@ -15,7 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="skins_en.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\shared\econ\demotracer-econ-index.v1.json" Link="demotracer-econ-index.v1.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="demotracer.config.example.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
