@@ -19,8 +19,9 @@ dtr_config_status
 dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
 ```
 
-Replay identity, weapon/loadout alignment, projectile alignment, and crosshair
-alignment are on by default. Identity alignment only writes demo names and
+Replay identity, weapon/loadout alignment, and projectile alignment are on by
+default. Crosshair alignment is off by default and must be explicitly enabled
+with `dtr_align crosshair on`. Identity alignment only writes demo names and
 SteamID64 values when BotHider is present and managing the target replay bot
 slots. If the manifest contains demo-provided PNG avatar overrides, identity
 `full` also applies them for matching SteamID64 values.
@@ -50,7 +51,8 @@ only; it is not written into `.dtr` files or manifests.
     "threat_360_los": true
   },
   "fidelity": {
-    "preset": "default"
+    "preset": "default",
+    "crosshair": false
   },
   "match": {
     "preset": "off"
@@ -73,7 +75,7 @@ matching legacy fields.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `dtr_align default` | on | Replay fidelity: weapons/loadout, projectiles, crosshair, and left-hand desired writes. |
+| `dtr_align default` | on | Replay fidelity: weapons/loadout, projectiles, and left-hand desired writes. Crosshair alignment stays off unless explicitly enabled. |
 | `dtr_match off` | off | Match presentation sync, including scoreboard/KDA/MVP/team score. |
 | `dtr_cosmetics off` | off | High-risk cosmetic evidence replay for skins, knives, gloves, names, agents, stickers, and charms. |
 | `dtr_handoff` | `death_contact_c4 slot` | Release the contacted/dead replay slot after contact or death; C4 planted releases all active replay slots. |
@@ -300,10 +302,10 @@ dtr_align left_hand <on|off>
 
 Presets:
 
-- `default` / `full`: weapons, projectiles, crosshair, and left-hand desired
-  writes are on.
-- `handoff_safe`: keeps weapons/projectiles/crosshair on, but turns
-  `left_hand` off for smoother handoff.
+- `default` / `full`: weapons, projectiles, and left-hand desired writes are
+  on. Crosshair alignment stays off unless explicitly enabled.
+- `handoff_safe`: keeps weapons/projectiles on, but turns `left_hand` off for
+  smoother handoff. Crosshair alignment stays off unless explicitly enabled.
 - `off`: disables replay-fidelity alignment switches; useful for debugging,
   not normal playback.
 
@@ -540,13 +542,18 @@ Implementation when enabled:
 
 ### `dtr_crosshair_align <0|1>`
 
-Enables or disables crosshair alignment. It is on by default.
+Enables or disables crosshair alignment. It is off by default.
 
 When enabled, DemoTracer uses manifest `view.crosshair_code` evidence exported
 from the demo player's stable `crosshair_code` value while a human viewer is
 watching a safe replay bot in-eye. Missing or contradictory demo evidence is
 skipped. This affects POV/spectator fidelity only; it does not change movement,
 weapons, projectiles, replay bot state, or inventory cosmetics.
+
+This command writes the human viewer's client crosshair configuration. It stays
+default-off because the current restore lifecycle is not hardened enough around
+handoff, bot takeover, disconnect, and reload timing; keep it opt-in until that
+ownership/restore path is corrected.
 
 ### `dtr_left_hand_desired <0|1>`
 

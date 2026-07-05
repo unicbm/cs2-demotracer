@@ -18,7 +18,7 @@ namespace DemoTracer;
 public sealed partial class DemoTracerPlugin : BasePlugin
 {
     public override string ModuleName => "CS2 DemoTracer";
-    public override string ModuleVersion => "0.3.3-beta.1";
+    public override string ModuleVersion => "0.3.9";
     public override string ModuleAuthor => "unicbm";
     public override string ModuleDescription => "Trace CS2 demos into bot-executable route replays.";
 
@@ -141,7 +141,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private bool _preserveNativeBotCosmetics;
     private bool _stickerAlignEnabled;
     private bool _charmAlignEnabled;
-    private bool _crosshairAlignEnabled = true;
+    private bool _crosshairAlignEnabled;
     private bool _scoreboardAlignEnabled;
     private bool _leftHandDesiredEnabled = true;
     private bool _weaponAlignFrameQueued;
@@ -356,12 +356,19 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         switch (mode)
         {
             case "default":
+                ApplyReplayFidelityPreset(
+                    weapons: true,
+                    projectiles: true,
+                    leftHandDesired: true,
+                    crosshair: false,
+                    command.ReplyToCommand);
+                return;
             case "full":
                 ApplyReplayFidelityPreset(
                     weapons: true,
                     projectiles: true,
                     leftHandDesired: true,
-                    crosshair: true,
+                    crosshair: false,
                     command.ReplyToCommand);
                 return;
             case "handoff_safe":
@@ -371,7 +378,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                     weapons: true,
                     projectiles: true,
                     leftHandDesired: false,
-                    crosshair: true,
+                    crosshair: false,
                     command.ReplyToCommand);
                 return;
             case "off":
@@ -785,9 +792,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private string AlignPresetName()
     {
-        if (_weaponAlignEnabled && _projectileAlignEnabled && _crosshairAlignEnabled && _leftHandDesiredEnabled)
+        if (_weaponAlignEnabled && _projectileAlignEnabled && !_crosshairAlignEnabled && _leftHandDesiredEnabled)
             return "default";
-        if (_weaponAlignEnabled && _projectileAlignEnabled && _crosshairAlignEnabled && !_leftHandDesiredEnabled)
+        if (_weaponAlignEnabled && _projectileAlignEnabled && !_crosshairAlignEnabled && !_leftHandDesiredEnabled)
             return "handoff_safe";
         if (!_weaponAlignEnabled && !_projectileAlignEnabled && !_crosshairAlignEnabled && !_leftHandDesiredEnabled)
             return "off";

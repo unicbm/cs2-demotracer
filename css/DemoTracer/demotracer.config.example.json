@@ -10,7 +10,8 @@
     "threat_360_los": true
   },
   "fidelity": {
-    "preset": "default"
+    "preset": "default",
+    "crosshair": false
   },
   "match": {
     "preset": "off"

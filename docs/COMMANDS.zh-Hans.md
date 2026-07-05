@@ -17,9 +17,10 @@ dtr_config_status
 dtr_go seq "<输出目录>\<demo-id>\manifest.json" 0
 ```
 
-replay identity、武器/loadout 对齐、投掷物对齐和准星对齐默认开启。identity 对齐只会在
-BotHider 存在且管理目标 replay bot slot 时写入 demo 名字和 SteamID64。如果 manifest
-包含 demo 提供的 PNG 头像覆写，`full` identity 也会按 SteamID64 应用。
+replay identity、武器/loadout 对齐和投掷物对齐默认开启。准星对齐默认关闭，需要显式执行
+`dtr_align crosshair on` 才会启用。identity 对齐只会在 BotHider 存在且管理目标
+replay bot slot 时写入 demo 名字和 SteamID64。如果 manifest 包含 demo 提供的 PNG
+头像覆写，`full` identity 也会按 SteamID64 应用。
 
 `seq` 表示“从某个 source round 开始顺序播放”，`round` 表示“只播放一个
 source round”，`pool` 表示“按本地经济从回合池选择”。`dtr_go` 会先校验并
@@ -44,7 +45,8 @@ DemoTracer 会从 `DemoTracer.dll` 同目录读取可选的 `demotracer.config.j
     "threat_360_los": true
   },
   "fidelity": {
-    "preset": "default"
+    "preset": "default",
+    "crosshair": false
   },
   "match": {
     "preset": "off"
@@ -66,7 +68,7 @@ DemoTracer 会从 `DemoTracer.dll` 同目录读取可选的 `demotracer.config.j
 
 | 设置 | 默认值 | 含义 |
 | --- | --- | --- |
-| `dtr_align default` | on | Replay 保真：武器/loadout、投掷物、准星、左右手 desired 写入。 |
+| `dtr_align default` | on | Replay 保真：武器/loadout、投掷物、左右手 desired 写入。准星对齐保持关闭，除非显式开启。 |
 | `dtr_match off` | off | 赛事展示同步，包括比分板、KDA、MVP、team score。 |
 | `dtr_cosmetics off` | off | 高风险饰品证据 replay，包括皮肤、刀、手套、名字、探员、贴纸和挂件。 |
 | `dtr_handoff` | `death_contact_c4 slot` | 接触或死亡后释放触发的 replay slot；C4 安装后释放全部 active replay slot。 |
@@ -271,8 +273,10 @@ dtr_align left_hand <on|off>
 
 Preset：
 
-- `default` / `full`：武器、投掷物、准星、左右手 desired 写入全部开启。
-- `handoff_safe`：保留武器/投掷物/准星，但关闭 `left_hand`，换取更顺的 handoff。
+- `default` / `full`：武器、投掷物、左右手 desired 写入开启。准星对齐保持关闭，
+  除非显式开启。
+- `handoff_safe`：保留武器/投掷物，但关闭 `left_hand`，换取更顺的 handoff。
+  准星对齐保持关闭，除非显式开启。
 - `off`：关闭 replay 保真对齐开关，只建议调试用。
 
 `loadout`、`active_weapon`、`slot_lock` 等 alias 仍可用，目前都共享 `weapons`
@@ -474,12 +478,16 @@ flag 之外又加了 `--export-stickers` 生成时，它才会生效。
 
 ### `dtr_crosshair_align <0|1>`
 
-开关准星对齐。默认开启。
+开关准星对齐。默认关闭。
 
 开启后，如果真人观察者正在第一人称观察安全 replay bot，DemoTracer 会把 converter
 从 demo 玩家稳定 `crosshair_code` 中导出的 manifest `view.crosshair_code` 临时应用到
 这个观察者，并在离开 replay POV 时恢复原准星。缺失或互相矛盾的 demo 证据会跳过。
 这个功能只影响 POV/spectator 观察拟真度，不改变移动、武器、投掷物、replay bot 状态或饰品库存。
+
+这个指令会写真人观察者的客户端准星配置。当前 handoff、bot takeover、断线和 reload
+时机附近的恢复生命周期还不够稳，可能污染玩家自己的准星；在所有权/恢复链路完善前，
+它保持默认关闭，只作为显式 opt-in 功能。
 
 ### `dtr_left_hand_desired <0|1>`
 

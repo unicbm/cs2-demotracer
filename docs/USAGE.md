@@ -327,7 +327,12 @@ use those bot items. Dedicated, community, or public servers should treat this
 as cosmetic/inventory simulation risk under Valve server guidelines and enable
 it only at the operator's own risk.
 
-Crosshair alignment is on by default. DemoTracer temporarily applies stable
-demo-observed `crosshair_code` metadata to a human viewer while they are
-watching a safe replay bot in-eye, then restores the viewer's original
-crosshair when they leave that replay POV.
+Crosshair alignment is off by default. If explicitly enabled with
+`dtr_align crosshair on`, DemoTracer temporarily applies stable demo-observed
+`crosshair_code` metadata to a human viewer while they are watching a safe
+replay bot in-eye, then restores the viewer's original crosshair when they
+leave that replay POV.
+
+Keep this opt-in for now: it writes the human viewer's client crosshair
+configuration, and the restore lifecycle still needs hardening around handoff,
+bot takeover, disconnect, and reload timing.

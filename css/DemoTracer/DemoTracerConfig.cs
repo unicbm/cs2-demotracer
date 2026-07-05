@@ -122,7 +122,7 @@ public sealed partial class DemoTracerPlugin
 
         SetWeaponAlignEnabled(true);
         SetProjectileAlignEnabled(true);
-        SetCrosshairAlignEnabled(true);
+        SetCrosshairAlignEnabled(false);
         _leftHandDesiredEnabled = true;
         ApplyCosmeticPreset(CosmeticPreset.Off);
         _preserveNativeBotCosmetics = false;
@@ -166,10 +166,15 @@ public sealed partial class DemoTracerPlugin
             switch (fidelity.Preset.Trim().ToLowerInvariant())
             {
                 case "default":
+                    SetWeaponAlignEnabled(true);
+                    SetProjectileAlignEnabled(true);
+                    SetCrosshairAlignEnabled(false);
+                    _leftHandDesiredEnabled = true;
+                    break;
                 case "full":
                     SetWeaponAlignEnabled(true);
                     SetProjectileAlignEnabled(true);
-                    SetCrosshairAlignEnabled(true);
+                    SetCrosshairAlignEnabled(false);
                     _leftHandDesiredEnabled = true;
                     break;
                 case "handoff_safe":
@@ -177,7 +182,7 @@ public sealed partial class DemoTracerPlugin
                 case "handoff":
                     SetWeaponAlignEnabled(true);
                     SetProjectileAlignEnabled(true);
-                    SetCrosshairAlignEnabled(true);
+                    SetCrosshairAlignEnabled(false);
                     _leftHandDesiredEnabled = false;
                     reply(LeftHandDesiredFidelityNotice);
                     break;
