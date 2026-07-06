@@ -2440,9 +2440,8 @@ fn stable_weapon_stickers(
 fn cosmetic_charm_set_from_attributes(
     attributes: &[ParsedInventoryWeaponAttribute],
 ) -> Option<Vec<CosmeticCharmSpec>> {
-    let charm_id =
-        inventory_attribute_u32(attributes, KEYCHAIN_SLOT_0_ID_ATTR)
-            .filter(|id| valid_keychain_id(*id))?;
+    let charm_id = inventory_attribute_u32(attributes, KEYCHAIN_SLOT_0_ID_ATTR)
+        .filter(|id| valid_keychain_id(*id))?;
     let offset_x = inventory_attribute_f32(attributes, KEYCHAIN_SLOT_0_OFFSET_X_ATTR)?;
     let offset_y = inventory_attribute_f32(attributes, KEYCHAIN_SLOT_0_OFFSET_Y_ATTR)?;
     let offset_z = inventory_attribute_f32(attributes, KEYCHAIN_SLOT_0_OFFSET_Z_ATTR)?;
@@ -2585,7 +2584,9 @@ fn valid_keychain_id(keychain_id: u32) -> bool {
 }
 
 fn valid_music_kit_id(music_kit_id: u32) -> bool {
-    demotracer_econ_index().music_kit_ids.contains(&music_kit_id)
+    demotracer_econ_index()
+        .music_kit_ids
+        .contains(&music_kit_id)
 }
 
 fn valid_scoreboard_flair_item_def(item_def_index: u32) -> bool {
@@ -2650,14 +2651,35 @@ fn demotracer_econ_index() -> &'static DemoTracerEconIndex {
                 .weapon_paints
                 .into_iter()
                 .filter(|pair| pair.paint_kit > 0)
-                .map(|pair| (normalize_weapon_def_index(pair.weapon_defidx), pair.paint_kit))
+                .map(|pair| {
+                    (
+                        normalize_weapon_def_index(pair.weapon_defidx),
+                        pair.paint_kit,
+                    )
+                })
                 .collect(),
-            paint_kit_ids: raw.paint_kit_ids.into_iter().filter(|value| *value > 0).collect(),
+            paint_kit_ids: raw
+                .paint_kit_ids
+                .into_iter()
+                .filter(|value| *value > 0)
+                .collect(),
             glove_defidx: raw.glove_defidx.into_iter().collect(),
             agent_defidx: raw.agent_defidx.into_iter().collect(),
-            sticker_ids: raw.sticker_ids.into_iter().filter(|value| *value > 0).collect(),
-            keychain_ids: raw.keychain_ids.into_iter().filter(|value| *value > 0).collect(),
-            music_kit_ids: raw.music_kit_ids.into_iter().filter(|value| *value > 0).collect(),
+            sticker_ids: raw
+                .sticker_ids
+                .into_iter()
+                .filter(|value| *value > 0)
+                .collect(),
+            keychain_ids: raw
+                .keychain_ids
+                .into_iter()
+                .filter(|value| *value > 0)
+                .collect(),
+            music_kit_ids: raw
+                .music_kit_ids
+                .into_iter()
+                .filter(|value| *value > 0)
+                .collect(),
             scoreboard_flair_defidx: raw
                 .scoreboard_flair_defidx
                 .into_iter()

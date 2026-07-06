@@ -45,6 +45,15 @@ or legacy CS:GO paths.
 ## Converter Rules
 
 - Support CS2 demos only.
+- Debug converter builds are allowed, but they are extremely slow. Use a
+  release build for normal conversion, runtime packaging, and performance
+  judgments; do not treat debug-mode conversion speed as representative.
+- Round selection is not a cheap partial parse. `--rounds`, single-round
+  inspection, and wizard round choices filter analysis/export after demoparser
+  parses the whole demo, so even one selected round still requires a full-match
+  parse. Explain this in CLI/docs/workflows that expose round filters.
+- Avoid repeated full-demo parsing inside one workflow. Parse once, then pass
+  the parsed demo into analysis/export steps when the code path already has it.
 - Default conversion should prefer recommended rounds and avoid suspicious
   tail/garbage rounds.
 - Export one `.dtr` per player per round under

@@ -233,6 +233,7 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
             demo,
             max_round_seconds,
         } => {
+            warn_debug_build_for_demo_parse();
             let parsed = read_demo(&demo)?;
             let analysis = analyze_demo(
                 &parsed,
@@ -271,6 +272,8 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
             round,
             max_round_seconds,
         } => {
+            warn_debug_build_for_demo_parse();
+            warn_full_demo_parse_for_round_filter("--round");
             let parsed = read_demo(&demo)?;
             let analysis = analyze_demo(
                 &parsed,
@@ -320,6 +323,10 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
             acknowledge_cosmetic_gslt_risk,
             accept_cosmetic_export_disclaimer,
         } => {
+            let selected_rounds = rounds.as_deref().map(parse_round_list).transpose()?;
+            if selected_rounds.is_some() {
+                warn_full_demo_parse_for_round_filter("--rounds");
+            }
             let (export_cosmetics, export_stickers, export_charms) =
                 validate_cosmetic_export_consent(
                     export_cosmetics,
@@ -328,13 +335,13 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
                     acknowledge_cosmetic_gslt_risk,
                     accept_cosmetic_export_disclaimer,
                 )?;
+            warn_debug_build_for_demo_parse();
             let parsed = read_demo_with_options(
                 &demo,
                 ReadDemoOptions {
                     collect_voice: export_voice,
                 },
             )?;
-            let selected_rounds = rounds.as_deref().map(parse_round_list).transpose()?;
             let report = export_demo(
                 &parsed,
                 &ConvertOptions {
@@ -392,6 +399,10 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
             opening_seconds,
         } => {
             let selected_rounds = rounds.as_deref().map(parse_round_list).transpose()?;
+            if selected_rounds.is_some() {
+                warn_full_demo_parse_for_round_filter("--rounds");
+            }
+            warn_debug_build_for_demo_parse();
             let report = export_nade_clips_from_demo_path(&NadeClipExportRequest {
                 demo_path: Some(demo),
                 output_dir: output,
@@ -431,6 +442,9 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
             dedupe_yaw_degrees,
             dedupe_velocity_units,
         } => {
+            if !aggregate_only {
+                warn_debug_build_for_demo_parse();
+            }
             let report = build_nade_library_with_progress(
                 &NadeLibraryExportRequest {
                     demo_dir,
@@ -487,6 +501,7 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
             acknowledge_cosmetic_gslt_risk,
             accept_cosmetic_export_disclaimer,
         } => {
+            warn_debug_build_for_demo_parse();
             let (export_cosmetics, export_stickers, export_charms) =
                 validate_cosmetic_export_consent(
                     export_cosmetics,
@@ -532,6 +547,7 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
             seconds,
             tick_rate,
         } => {
+            warn_debug_build_for_demo_parse();
             let report = export_voice_clip(&VoiceClipExportRequest {
                 demo,
                 output,
@@ -555,10 +571,24 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
             println!("voice clip {}", report.path.display());
         }
         Command::Wizard => {
+            warn_debug_build_for_demo_parse();
             run_wizard()?;
         }
     }
     Ok(())
+}
+
+fn warn_debug_build_for_demo_parse() {
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "warning: this is an unoptimized debug build; CS2 demo parsing/conversion will be very, very, very, very slow. Use the release binary for normal conversions."
+    );
+}
+
+fn warn_full_demo_parse_for_round_filter(flag: &str) {
+    eprintln!(
+        "warning: {flag} filters output after demoparser parses the whole demo; selecting one round still parses the full match."
+    );
 }
 
 fn run_wizard() -> cs2_demotracer::Result<()> {
