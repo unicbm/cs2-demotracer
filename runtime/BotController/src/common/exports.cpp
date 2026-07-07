@@ -5,6 +5,7 @@
 #include "InputInjector.h"
 #include "BuyControllerState.h"
 #include "VoiceSender.h"
+#include "hud_reticle_probe.h"
 
 #include <cstdint>
 #include <cstring>
@@ -18,7 +19,7 @@
 namespace
 {
     constexpr int kBotControllerAbiMajor = 16;
-    constexpr int kBotControllerAbiMinor = 2;
+    constexpr int kBotControllerAbiMinor = 27;
     constexpr uint64_t kCapabilityReplaySlotState = 1ULL << 0;
     constexpr uint64_t kCapabilityStartReplayAt = 1ULL << 1;
     constexpr uint64_t kCapabilityStartReplayUntil = 1ULL << 2;
@@ -129,6 +130,56 @@ extern "C" __declspec(dllexport) int BotController_GetVoiceStatus()
     return BotController::VoiceSender::GetStatus();
 }
 
+extern "C" __declspec(dllexport) int BotController_HudReticleProbe(
+    int action,
+    int forceMode,
+    int forceGap,
+    int forceRadius,
+    int flags,
+    BotController::HudReticleProbe::ProbeState *out,
+    int size)
+{
+    return BotController::HudReticleProbe::Probe(
+        action, forceMode, forceGap, forceRadius, flags, out, size);
+}
+
+extern "C" __declspec(dllexport) int BotController_HudReticleSetPaintConfig(
+    const BotController::HudReticleProbe::PaintConfigOverride *config,
+    int size)
+{
+    return BotController::HudReticleProbe::SetPaintConfig(config, size);
+}
+
+extern "C" __declspec(dllexport) int BotController_HudReticleSetPaintConfigTarget(
+    uint64_t controllerPtr,
+    uint64_t pawnPtr,
+    uint64_t weaponPtr,
+    int pawnIndex,
+    int weaponIndex)
+{
+    return BotController::HudReticleProbe::SetPaintConfigTarget(controllerPtr, pawnPtr, weaponPtr, pawnIndex, weaponIndex);
+}
+
+extern "C" __declspec(dllexport) int BotController_HudReticleSetPaintConfigMapEntry(
+    int slot,
+    int pawnIndex,
+    int weaponIndex,
+    const BotController::HudReticleProbe::PaintConfigOverride *config,
+    int size)
+{
+    return BotController::HudReticleProbe::SetPaintConfigMapEntry(slot, pawnIndex, weaponIndex, config, size);
+}
+
+extern "C" __declspec(dllexport) int BotController_HudReticleClearPaintConfigMapEntry(int slot)
+{
+    return BotController::HudReticleProbe::ClearPaintConfigMapEntry(slot);
+}
+
+extern "C" __declspec(dllexport) int BotController_HudReticleClearPaintConfigMap()
+{
+    return BotController::HudReticleProbe::ClearPaintConfigMap();
+}
+
 extern "C" __declspec(dllexport) int BotController_SendVoiceFrame(
     int recipientSlot,
     int senderClient,
@@ -213,6 +264,25 @@ extern "C" __declspec(dllexport) int BotController_SetLeftHandIntent(
 extern "C" __declspec(dllexport) int BotController_ClearLeftHandIntent(int slot)
 {
     return BotController_ClearUsercmdMovementIntent(slot);
+}
+
+extern "C" __declspec(dllexport) int BotController_SetLeftHandDesiredLatch(
+    int slot,
+    int enabled,
+    int leftHandDesired)
+{
+    return BotController::InputInjector::SetLeftHandDesiredLatch(
+               slot,
+               enabled != 0,
+               leftHandDesired != 0)
+               ? 0
+               : -1;
+}
+
+extern "C" __declspec(dllexport) int BotController_ClearAllLeftHandDesiredLatches()
+{
+    BotController::InputInjector::ClearAllLeftHandDesiredLatches();
+    return 0;
 }
 
 // ---- Bot buy plans ----

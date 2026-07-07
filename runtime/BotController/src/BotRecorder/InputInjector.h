@@ -35,6 +35,15 @@ namespace BotController
         bool ClearUsercmdMovementIntent(int slot);
         void ClearAllUsercmdMovementIntents();
 
+        // Persistent per-slot hand-state latch. This is intentionally separate
+        // from movement intent: left hand in CS2 behaves like a held usercmd
+        // desire, so callers set policy once and the native command hook keeps
+        // it continuous without a C# timer gap.
+        bool SetLeftHandDesiredLatch(int slot, bool enabled, bool leftHandDesired);
+        bool ClearLeftHandDesiredLatch(int slot);
+        void ClearAllLeftHandDesiredLatches();
+        bool GetLeftHandDesiredLatch(int slot, bool *enabled, bool *leftHandDesired);
+
         const char *Status();
 
         // Whether replay should inject subtick pitch_delta/yaw_delta into

@@ -29,6 +29,43 @@ internal static partial class BotControllerNative
     private static extern int BotController_GetVoiceStatus();
 
     [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_HudReticleProbe(
+        int action,
+        int forceMode,
+        int forceGap,
+        int forceRadius,
+        int flags,
+        out NativeHudReticleProbeState state,
+        int size);
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_HudReticleSetPaintConfig(
+        in NativeHudReticlePaintConfig config,
+        int size);
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_HudReticleSetPaintConfigTarget(
+        ulong controllerPtr,
+        ulong pawnPtr,
+        ulong weaponPtr,
+        int pawnIndex,
+        int weaponIndex);
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_HudReticleSetPaintConfigMapEntry(
+        int slot,
+        int pawnIndex,
+        int weaponIndex,
+        in NativeHudReticlePaintConfig config,
+        int size);
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_HudReticleClearPaintConfigMapEntry(int slot);
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_HudReticleClearPaintConfigMap();
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
     private static extern int BotController_SendVoiceFrame(
         int recipientSlot,
         int senderClient,
@@ -77,6 +114,15 @@ internal static partial class BotControllerNative
 
     [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
     private static extern int BotController_ClearLeftHandIntent(int slot);
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_SetLeftHandDesiredLatch(
+        int slot,
+        int enabled,
+        int leftHandDesired);
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_ClearAllLeftHandDesiredLatches();
 
     [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
     private static extern int BotController_LoadReplay(

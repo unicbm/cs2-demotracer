@@ -153,6 +153,7 @@ add_library(BotController SHARED
     src/common/ccsbot_slot.cpp
     src/common/dispatch.cpp
     src/common/commands.cpp
+    src/common/hud_reticle_probe.cpp
     src/common/exports.cpp
     ${PROTO_SRCS}
     ${SDK_SOURCES}

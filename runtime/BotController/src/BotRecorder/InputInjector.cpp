@@ -90,6 +90,8 @@ namespace BotController
         static std::array<std::atomic<float>, kMaxSlots> g_intentAnalogLeft{};
         static std::array<std::atomic<int>, kMaxSlots> g_intentFlags{};
         static std::array<std::atomic<int64_t>, kMaxSlots> g_intentExpireMs{};
+        static std::array<std::atomic<int>, kMaxSlots> g_leftHandLatchEnabled{};
+        static std::array<std::atomic<int>, kMaxSlots> g_leftHandLatchDesired{};
 
         static int64_t NowMs()
         {
@@ -296,6 +298,39 @@ namespace BotController
                 ClearUsercmdMovementIntent(slot);
         }
 
+        bool SetLeftHandDesiredLatch(int slot, bool enabled, bool leftHandDesired)
+        {
+            if (slot < 0 || slot >= kMaxSlots)
+                return false;
+
+            g_leftHandLatchDesired[slot].store(leftHandDesired ? 1 : 0, std::memory_order_relaxed);
+            g_leftHandLatchEnabled[slot].store(enabled ? 1 : 0, std::memory_order_release);
+            return true;
+        }
+
+        bool ClearLeftHandDesiredLatch(int slot)
+        {
+            return SetLeftHandDesiredLatch(slot, false, false);
+        }
+
+        void ClearAllLeftHandDesiredLatches()
+        {
+            for (int slot = 0; slot < kMaxSlots; ++slot)
+                ClearLeftHandDesiredLatch(slot);
+        }
+
+        bool GetLeftHandDesiredLatch(int slot, bool *enabled, bool *leftHandDesired)
+        {
+            if (slot < 0 || slot >= kMaxSlots)
+                return false;
+
+            if (enabled)
+                *enabled = g_leftHandLatchEnabled[slot].load(std::memory_order_acquire) != 0;
+            if (leftHandDesired)
+                *leftHandDesired = g_leftHandLatchDesired[slot].load(std::memory_order_relaxed) != 0;
+            return true;
+        }
+
         void *LiveMovementServices(int slot)
         {
             return slot >= 0 && slot < kMaxSlots
@@ -303,13 +338,18 @@ namespace BotController
                        : nullptr;
         }
 
+        static void *ServicesToPawn(void *services)
+        {
+            if (!services)
+                return nullptr;
+            return *reinterpret_cast<void **>(
+                reinterpret_cast<char *>(services) + tg::kServices_Pawn);
+        }
+
         // services -> player slot via pawn ptr at services+56, then m_hController.
         static int ServicesToSlot(void *services)
         {
-            if (!services)
-                return -1;
-            void *pawn = *reinterpret_cast<void **>(
-                reinterpret_cast<char *>(services) + tg::kServices_Pawn);
+            void *pawn = ServicesToPawn(services);
             if (!pawn)
                 return -1;
             return ControllerSlotForPawn(pawn);
@@ -318,10 +358,7 @@ namespace BotController
         // services -> pawn -> WeaponServices*, for the recording weapon tap.
         static void *ServicesToWeaponServices(void *services)
         {
-            if (!services)
-                return nullptr;
-            void *pawn = *reinterpret_cast<void **>(
-                reinterpret_cast<char *>(services) + tg::kServices_Pawn);
+            void *pawn = ServicesToPawn(services);
             if (!pawn)
                 return nullptr;
             return *reinterpret_cast<void **>(
@@ -454,8 +491,10 @@ namespace BotController
             bool hasMovementIntent =
                 !replaying && !SlotIsControllingBot(slot) &&
                 ActiveUsercmdMovementIntent(slot, movementIntent);
+            bool hasLeftHandLatch = slot >= 0 && slot < kMaxSlots &&
+                                    g_leftHandLatchEnabled[slot].load(std::memory_order_acquire) != 0;
 
-            if (cmd && (recording || replaying || hasMovementIntent))
+            if (cmd && (recording || replaying || hasMovementIntent || hasLeftHandLatch))
             {
                 // Compiler computes the multiple-inheritance adjust here.
                 auto *pc = reinterpret_cast<PlayerCommand *>(cmd);
@@ -515,7 +554,9 @@ namespace BotController
                             base->set_mousedx(frame.mouseDx);
                             base->set_mousedy(frame.mouseDy);
                         }
-                        if ((frame.commandFields & MotionRecorder::kCommandFieldLeftHand) != 0)
+                        const bool frameHasLeftHand =
+                            (frame.commandFields & MotionRecorder::kCommandFieldLeftHand) != 0;
+                        if (frameHasLeftHand)
                             pc->set_left_hand_desired(frame.leftHandDesired != 0);
 
                         if (frame.weaponSelect >= 0)
@@ -564,6 +605,13 @@ namespace BotController
                     }
                 }
 
+                if (hasLeftHandLatch)
+                {
+                    const bool leftHandDesired =
+                        g_leftHandLatchDesired[slot].load(std::memory_order_relaxed) != 0;
+                    pc->set_left_hand_desired(leftHandDesired);
+                }
+
                 if (hasMovementIntent)
                     ApplyUsercmdMovementIntentToCommand(pc, base, movementIntent);
             }
@@ -585,7 +633,9 @@ namespace BotController
             bool recording = slot >= 0 && slot < kMaxSlots && services &&
                              MotionRecorder::IsRecording(slot);
             if (slot >= 0 && slot < kMaxSlots)
+            {
                 g_slotControllingBot[slot].store(ControllerIsControllingBot(controller), std::memory_order_release);
+            }
 
             bool replaying = services && ReplayActiveAndSafe(slot);
 
@@ -704,7 +754,8 @@ namespace BotController
             g_status = "ok";
             char dbg[160];
             std::snprintf(dbg, sizeof(dbg),
-                          "[BotController] ProcessMovement @ %p\n", g_addrProcessMovement);
+                          "[BotController] ProcessMovement @ %p\n",
+                          g_addrProcessMovement);
             DebugOut(dbg);
             return true;
         }
@@ -733,6 +784,7 @@ namespace BotController
             for (auto &taken : g_slotControllingBot)
                 taken.store(false, std::memory_order_release);
             ClearAllUsercmdMovementIntents();
+            ClearAllLeftHandDesiredLatches();
             g_installed = false;
             g_status = "not_attempted";
         }

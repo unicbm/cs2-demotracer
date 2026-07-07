@@ -213,6 +213,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (playerSlot < 0 || playerSlot >= MaxPlayerSlots)
             return;
 
+        ClearReplayCrosshairHudReticleMapEntry(playerSlot);
         RestoreReplayViewerCrosshair(playerSlot);
         _slotCosmeticEvidenceKeys.Remove(playerSlot);
 
@@ -1036,6 +1037,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     {
         _leftHandDesiredEnabled = enabled;
         BotControllerNative.WriteLeftHandDesired = enabled;
+        if (!_leftHandDesiredEnabled)
+            ClearReplayLeftHandDesiredLatches();
         reply($"[DTR OK] align left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)}");
         if (!_leftHandDesiredEnabled)
             reply(LeftHandDesiredFidelityNotice);
@@ -1098,9 +1101,16 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private void SetCrosshairAlignEnabled(bool enabled)
     {
-        _crosshairAlignEnabled = enabled;
-        if (!_crosshairAlignEnabled)
+        if (!enabled)
+        {
+            _crosshairAlignEnabled = false;
             ResetCrosshairAlignState();
+            return;
+        }
+
+        _crosshairAlignEnabled = true;
+        if (_loadedSlots.Count > 0)
+            _ = RefreshReplayCrosshairHudReticleMap(BuildTickPlayerSnapshot());
     }
 
     private void SetScoreboardAlignEnabled(bool enabled)
@@ -3842,6 +3852,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _lifecycleResetInProgress = true;
         try
         {
+            ClearReplayLeftHandDesiredLatches();
             var hadReplayState = _loadedSlots.Count > 0 ||
                                  _demoTracerOwnedSlots.Count > 0 ||
                                  _loadedReplays.Count > 0 ||

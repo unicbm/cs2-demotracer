@@ -13,6 +13,8 @@ internal static partial class BotControllerNative
     public const int SubtickMoveByteSize = 28;
     public const int ReplayCommandFrameByteSize = 68;
     public const int ReplayMovementExtraByteSize = 48;
+    public const int HudReticleProbeStateByteSize = 172;
+    public const int HudReticlePaintConfigByteSize = 64;
     internal const uint CommandFieldLeftHand = 1U << 7;
     public const int ReplaySlotStateByteSize = 24;
     public const int MaxSlots = 64;
@@ -22,6 +24,12 @@ internal static partial class BotControllerNative
     internal const int LockKindAim = 1;
     internal const int LockKindWeapon = 2;
     internal const int LockKindJump = 3;
+
+    internal const int HudReticleActionInstall = 1 << 0;
+    internal const int HudReticleActionRemove = 1 << 1;
+    internal const int HudReticleActionConfigure = 1 << 2;
+    internal const int HudReticleFlagPatchPaintConfig = 1 << 0;
+    internal const int HudReticleFlagUseForcedPaintConfig = 1 << 1;
 
     private const ulong CapabilityReplaySlotState = 1UL << 0;
     private const ulong CapabilityStartReplayAt = 1UL << 1;
@@ -74,6 +82,15 @@ internal static partial class BotControllerNative
         var movementExtraSize = Marshal.SizeOf<NativeReplayMovementExtra>();
         if (movementExtraSize != ReplayMovementExtraByteSize)
             throw new InvalidOperationException($"ReplayMovementExtra layout is {movementExtraSize}, expected {ReplayMovementExtraByteSize}");
+
+        var hudReticleProbeSize = Marshal.SizeOf<NativeHudReticleProbeState>();
+        if (hudReticleProbeSize != HudReticleProbeStateByteSize)
+            throw new InvalidOperationException($"HudReticleProbeState layout is {hudReticleProbeSize}, expected {HudReticleProbeStateByteSize}");
+
+        var hudReticlePaintConfigSize = Marshal.SizeOf<NativeHudReticlePaintConfig>();
+        if (hudReticlePaintConfigSize != HudReticlePaintConfigByteSize)
+            throw new InvalidOperationException($"HudReticlePaintConfig layout is {hudReticlePaintConfigSize}, expected {HudReticlePaintConfigByteSize}");
+
     }
 }
 
@@ -137,6 +154,73 @@ internal struct NativeReplaySlotState
     public int CurrentTickIndex;
     public int WeaponDefIndex;
     public int NumSubtick;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 4)]
+internal struct NativeHudReticleProbeState
+{
+    public int Size;
+    public int Rc;
+    public int Installed;
+    public int Enabled;
+    public int ActionsApplied;
+
+    public ulong ClientBase;
+    public ulong ConfigTargetPtr;
+    public ulong ConfigOriginalPtr;
+
+    public int Flags;
+    public int ConfigInstallRc;
+    public int ConfigCalls;
+    public int ConfigPatched;
+    public int ConfigErrors;
+    public int ConfigModeBefore;
+    public int ConfigModeAfter;
+    public int ConfigColorBefore;
+    public int ConfigColorAfter;
+    public int ConfigGap100Before;
+    public int ConfigGap100After;
+    public int ConfigSize100Before;
+    public int ConfigSize100After;
+    public int ConfigThickness100Before;
+    public int ConfigThickness100After;
+    public int ConfigDotBefore;
+    public int ConfigDotAfter;
+    public int ConfigUseAlphaAfter;
+    public int ConfigAlphaAfter;
+    public int ConfigOutline100After;
+    public ulong ConfigRgbaPacked;
+    public int ConfigLiveGap100Before;
+    public int ConfigLiveGap100After;
+    public int ConfigSmoothGap100Before;
+    public int ConfigSmoothGap100After;
+    public int ConfigRecoilAfter;
+    public int ConfigGapUseWeaponAfter;
+    public int ConfigGuardMatched;
+    public int ConfigGuardMissed;
+    public int ConfigGuardActive;
+    public int ConfigMapCount;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 4)]
+internal struct NativeHudReticlePaintConfig
+{
+    public int Size;
+    public int Style;
+    public int Color;
+    public int DrawOutline;
+    public int Dot;
+    public int GapUseWeaponValue;
+    public int UseAlpha;
+    public int TStyle;
+    public int Gap100;
+    public int Size100;
+    public int Thickness100;
+    public int Outline100;
+    public int Alpha;
+    public int Red;
+    public int Green;
+    public int Blue;
 }
 
 internal enum ReplayProjectileKind : byte
