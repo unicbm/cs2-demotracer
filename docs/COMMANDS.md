@@ -433,17 +433,19 @@ Implementation when enabled:
 
 - Requires `.dtr` v4+ projectile events from the converter.
 - Matches grenade projectile entities for smoke, flash, HE, and decoy when
-  matching replay metadata is available. Fire grenades are intentionally left to
-  CS2's native projectile and inferno behavior.
+  matching replay metadata is available. Fire grenades additionally require
+  high-fidelity fire effect metadata from newly converted `.dtr` files; older
+  files and fire throws without reliable effect metadata stay on CS2's native
+  projectile and inferno behavior.
 - The bot still performs the throw action naturally. The plugin waits for CS2 to
   spawn the projectile, resolves its thrower slot, matches the next demo
   projectile event near the replay cursor, and writes:
   `InitialPosition`, `InitialVelocity`, `AbsOrigin`, and `AbsVelocity`.
 - Matching is retried for a few ticks because CS2 may not attach the thrower or
   final projectile fields immediately at spawn time.
-- Smoke detonation metadata is still the most complete diagnostic path because
-  smoke projectile lifetime and detonation events are exposed clearly enough for
-  tracing.
+- Smoke detonation metadata is still the most complete diagnostic path, but
+  fire effect metadata records the demo inferno start/detonation evidence used
+  to gate molotov/incendiary alignment.
 
 Why it exists:
 

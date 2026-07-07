@@ -277,19 +277,35 @@ pub struct ReplayProjectile {
     pub detonation_position: [f32; 3],
 }
 
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct ReplayProjectileMetadata {
+    pub tick_index: u32,
+    pub tick: i32,
+    pub kind: ProjectileKind,
+    pub weapon_def_index: i32,
+    pub effect_tick_index: Option<u32>,
+    pub effect_tick: Option<i32>,
+    pub effect_position: [f32; 3],
+    pub effect_source: ProjectileEffectSource,
+    pub effect_confidence: f32,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct HighFidelityMetadata {
     pub schema_version: u32,
     pub events: Vec<ReplayHifiEvent>,
     pub inventory_snapshots: Vec<ReplayInventorySnapshot>,
+    #[serde(default)]
+    pub projectiles: Vec<ReplayProjectileMetadata>,
 }
 
 impl Default for HighFidelityMetadata {
     fn default() -> Self {
         Self {
-            schema_version: 2,
+            schema_version: 3,
             events: Vec::new(),
             inventory_snapshots: Vec::new(),
+            projectiles: Vec::new(),
         }
     }
 }
@@ -300,14 +316,28 @@ impl HighFidelityMetadata {
         inventory_snapshots: Vec<ReplayInventorySnapshot>,
     ) -> Self {
         Self {
-            schema_version: 2,
+            schema_version: 3,
             events,
             inventory_snapshots,
+            projectiles: Vec::new(),
+        }
+    }
+
+    pub fn with_projectiles(
+        events: Vec<ReplayHifiEvent>,
+        inventory_snapshots: Vec<ReplayInventorySnapshot>,
+        projectiles: Vec<ReplayProjectileMetadata>,
+    ) -> Self {
+        Self {
+            schema_version: 3,
+            events,
+            inventory_snapshots,
+            projectiles,
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.events.is_empty() && self.inventory_snapshots.is_empty()
+        self.events.is_empty() && self.inventory_snapshots.is_empty() && self.projectiles.is_empty()
     }
 }
 

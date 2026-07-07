@@ -208,9 +208,12 @@ section ID `4`.
 
 The top-level object contains:
 
-- `schema_version`: current metadata schema is `2`.
+- `schema_version`: current metadata schema is `3`.
 - `events`: player-scoped high-fidelity events.
 - `inventory_snapshots`: inventory state after inventory changes.
+- `projectiles`: player-scoped projectile effect metadata. This supplements
+  the fixed-size `ProjectileEventV4` section without changing its binary
+  layout.
 
 Event `kind` values include `bomb_initial_owner`, `item_drop`, `item_pickup`,
 `item_transfer`, `bomb_drop`, `bomb_pickup`, `bomb_beginplant`, `bomb_planted`,
@@ -219,6 +222,20 @@ Event `kind` values include `bomb_initial_owner`, `item_drop`, `item_pickup`,
 
 Combat events are record-only for now: the CSS plugin loads them for diagnostics
 and future behavior, but does not force damage or death.
+
+Projectile metadata entries contain:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| tick_index | `u32` | Replay tick index of the throw event |
+| tick | `i32` | Original demo tick of the throw event |
+| kind | string | `smoke`, `flash`, `he`, `molotov`, `decoy`, or `unknown` |
+| weapon_def_index | `i32` | Demo weapon definition index when known |
+| effect_tick_index | `u32?` | Replay tick index of the matched effect event |
+| effect_tick | `i32?` | Original demo tick of the matched effect event |
+| effect_position | `f32[3]` | Demo effect position, such as inferno start burn |
+| effect_source | string | Source event/property used for the effect position |
+| effect_confidence | `f32` | Converter confidence in the effect match |
 
 ## Parser Checklist
 

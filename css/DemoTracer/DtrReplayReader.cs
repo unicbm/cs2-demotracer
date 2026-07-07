@@ -173,7 +173,7 @@ internal static class DtrReplayReader
         return new DtrReplayFile(
             version,
             ticks,
-            projectiles,
+            MergeProjectileMetadata(projectiles, highFidelity),
             highFidelity,
             subticks,
             [],
@@ -317,7 +317,7 @@ internal static class DtrReplayReader
         return new DtrReplayFile(
             version,
             ticks,
-            projectiles ?? [],
+            MergeProjectileMetadata(projectiles ?? [], highFidelity),
             highFidelity,
             subticks,
             commandFrames ?? [],
@@ -645,7 +645,11 @@ internal static class DtrReplayReader
             weaponDefIndex,
             initialPosition,
             initialVelocity,
-            detonationPosition);
+            detonationPosition,
+            new ReplayVector3(0.0f, 0.0f, 0.0f),
+            -1,
+            string.Empty,
+            0.0f);
     }
 
     private static ReplayHighFidelityMetadata ReadHighFidelityMetadata(byte[] metadataJson)
@@ -654,8 +658,85 @@ internal static class DtrReplayReader
             ?? ReplayHighFidelityMetadata.Empty;
         metadata.Events ??= [];
         metadata.InventorySnapshots ??= [];
+        metadata.Projectiles ??= [];
         return metadata;
     }
+
+    private static ReplayProjectileEvent[] MergeProjectileMetadata(
+        ReplayProjectileEvent[] projectiles,
+        ReplayHighFidelityMetadata highFidelity)
+    {
+        var metadata = highFidelity.Projectiles ?? [];
+        if (projectiles.Length == 0 || metadata.Length == 0)
+            return projectiles;
+
+        var used = new bool[metadata.Length];
+        var merged = new ReplayProjectileEvent[projectiles.Length];
+        for (var i = 0; i < projectiles.Length; i++)
+        {
+            var projectile = projectiles[i];
+            var match = -1;
+            for (var j = 0; j < metadata.Length; j++)
+            {
+                if (used[j])
+                    continue;
+                if (!ProjectileMetadataMatches(projectile, metadata[j]))
+                    continue;
+                match = j;
+                break;
+            }
+
+            if (match < 0)
+            {
+                merged[i] = projectile;
+                continue;
+            }
+
+            used[match] = true;
+            var item = metadata[match];
+            merged[i] = projectile with
+            {
+                EffectPosition = ReadMetadataVector(item.EffectPosition),
+                EffectTickIndex = ReadMetadataTickIndex(item.EffectTickIndex),
+                EffectSource = item.EffectSource ?? string.Empty,
+                EffectConfidence = item.EffectConfidence
+            };
+        }
+
+        return merged;
+    }
+
+    private static bool ProjectileMetadataMatches(
+        ReplayProjectileEvent projectile,
+        ReplayProjectileMetadata metadata)
+    {
+        return metadata.TickIndex == projectile.TickIndex &&
+               ProjectileKindFromString(metadata.Kind) == projectile.Kind &&
+               metadata.WeaponDefIndex == projectile.WeaponDefIndex;
+    }
+
+    private static ReplayProjectileKind ProjectileKindFromString(string? value)
+    {
+        return value?.Trim().ToLowerInvariant() switch
+        {
+            "smoke" => ReplayProjectileKind.Smoke,
+            "flash" => ReplayProjectileKind.Flash,
+            "he" => ReplayProjectileKind.He,
+            "molotov" or "incgrenade" or "incendiary" => ReplayProjectileKind.Molotov,
+            "decoy" => ReplayProjectileKind.Decoy,
+            _ => ReplayProjectileKind.Unknown
+        };
+    }
+
+    private static ReplayVector3 ReadMetadataVector(float[]? values)
+    {
+        return values is { Length: >= 3 }
+            ? new ReplayVector3(values[0], values[1], values[2])
+            : new ReplayVector3(0.0f, 0.0f, 0.0f);
+    }
+
+    private static int ReadMetadataTickIndex(uint? value)
+        => value.HasValue && value.Value <= int.MaxValue ? (int)value.Value : -1;
 
     private static string ReadRecString(BinaryReader reader)
     {

@@ -241,20 +241,57 @@ internal readonly record struct ReplayProjectileEvent(
     int WeaponDefIndex,
     ReplayVector3 InitialPosition,
     ReplayVector3 InitialVelocity,
-    ReplayVector3 DetonationPosition);
+    ReplayVector3 DetonationPosition,
+    ReplayVector3 EffectPosition,
+    int EffectTickIndex,
+    string EffectSource,
+    float EffectConfidence);
 
 internal sealed class ReplayHighFidelityMetadata
 {
     public static ReplayHighFidelityMetadata Empty { get; } = new();
 
     [JsonPropertyName("schema_version")]
-    public int SchemaVersion { get; set; } = 2;
+    public int SchemaVersion { get; set; } = 3;
 
     [JsonPropertyName("events")]
     public ReplayHifiEvent[] Events { get; set; } = [];
 
     [JsonPropertyName("inventory_snapshots")]
     public ReplayInventorySnapshot[] InventorySnapshots { get; set; } = [];
+
+    [JsonPropertyName("projectiles")]
+    public ReplayProjectileMetadata[] Projectiles { get; set; } = [];
+}
+
+internal sealed class ReplayProjectileMetadata
+{
+    [JsonPropertyName("tick_index")]
+    public uint TickIndex { get; set; }
+
+    [JsonPropertyName("tick")]
+    public int Tick { get; set; }
+
+    [JsonPropertyName("kind")]
+    public string Kind { get; set; } = string.Empty;
+
+    [JsonPropertyName("weapon_def_index")]
+    public int WeaponDefIndex { get; set; }
+
+    [JsonPropertyName("effect_tick_index")]
+    public uint? EffectTickIndex { get; set; }
+
+    [JsonPropertyName("effect_tick")]
+    public int? EffectTick { get; set; }
+
+    [JsonPropertyName("effect_position")]
+    public float[]? EffectPosition { get; set; }
+
+    [JsonPropertyName("effect_source")]
+    public string EffectSource { get; set; } = string.Empty;
+
+    [JsonPropertyName("effect_confidence")]
+    public float EffectConfidence { get; set; }
 }
 
 internal sealed class ReplayHifiEvent

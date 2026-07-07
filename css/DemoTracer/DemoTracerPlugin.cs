@@ -47,6 +47,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private const float HandoffThreat360ChestZScale = 0.62f;
     private const int ProjectileAlignMatchAttempts = 8;
     private const int ProjectileAlignPostMatchWrites = 1;
+    private const float FireProjectileAlignMaxInitialPositionDistance = 128.0f;
     private const float NadeClipStartSettleSeconds = 0.12f;
     private const int NadeClipStartReadyRetries = 6;
     private const float NadeCycleDefaultGapSeconds = 1.5f;
@@ -1997,8 +1998,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     {
         if (!_projectileAlignEnabled)
             return;
-        if (kind == ReplayProjectileKind.Molotov)
-            return;
 
         var pending = new PendingProjectileAlign(projectile.Index, projectile.Handle, kind, weaponDefIndex)
         {
@@ -2070,8 +2069,30 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 out var align))
             return false;
 
-        ApplyProjectileAlign(projectile, align);
+        var decision = EvaluateProjectileAlign(projectile, align, out var skipReason);
+        if (decision == ProjectileAlignDecision.Retry)
+        {
+            if (pending.MatchAttemptsRemaining > 1)
+                return false;
+
+            skipReason = $"{skipReason}_expired";
+            decision = ProjectileAlignDecision.Skip;
+        }
+
         _projectileAlignNextBySlot[slot] = eventIndex + 1;
+        if (decision == ProjectileAlignDecision.Skip)
+        {
+            _pendingProjectileAlign.Remove(pending.Index);
+            if (_utilityTraceEnabled && _nadeCycle == null)
+            {
+                TraceUtilityMessage(
+                    "projectile_align_skipped",
+                    $"slot={slot} event={eventIndex} tick_index={align.TickIndex} projectile={projectile.Index} kind={align.Kind} reason={skipReason}");
+            }
+            return true;
+        }
+
+        ApplyProjectileAlign(projectile, align);
         pending.Matched = true;
         pending.Slot = slot;
         pending.EventIndex = eventIndex;
@@ -2083,7 +2104,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         {
             TraceUtilityMessage(
                 "projectile_align",
-                $"slot={slot} event={eventIndex} tick_index={align.TickIndex} projectile={projectile.Index} init_vel=({align.InitialVelocity.X:F3},{align.InitialVelocity.Y:F3},{align.InitialVelocity.Z:F3})");
+                $"slot={slot} event={eventIndex} tick_index={align.TickIndex} projectile={projectile.Index} kind={align.Kind} init_vel=({align.InitialVelocity.X:F3},{align.InitialVelocity.Y:F3},{align.InitialVelocity.Z:F3}) effect={align.EffectSource}:{align.EffectConfidence:F2}");
         }
         return true;
     }
@@ -2124,6 +2145,54 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         SetVector(projectile.InitialVelocity, align.InitialVelocity);
         SetVector(projectile.AbsOrigin, align.InitialPosition);
         SetVector(projectile.AbsVelocity, align.InitialVelocity);
+    }
+
+    private static ProjectileAlignDecision EvaluateProjectileAlign(
+        CBaseCSGrenadeProjectile projectile,
+        ReplayProjectileEvent align,
+        out string skipReason)
+    {
+        skipReason = string.Empty;
+        if (align.Kind != ReplayProjectileKind.Molotov)
+            return ProjectileAlignDecision.Apply;
+
+        if (!HasReliableFireProjectileMetadata(align))
+        {
+            skipReason = "unreliable_fire_metadata";
+            return ProjectileAlignDecision.Skip;
+        }
+        if (!ReplayVectorIsMeaningful(align.InitialPosition) ||
+            !ReplayVectorIsMeaningful(align.InitialVelocity))
+        {
+            skipReason = "invalid_fire_initial_vector";
+            return ProjectileAlignDecision.Skip;
+        }
+
+        if (!VectorIsMeaningful(projectile.InitialPosition))
+        {
+            skipReason = "fire_initial_position_pending";
+            return ProjectileAlignDecision.Retry;
+        }
+
+        var initialDistance = VectorDistance(projectile.InitialPosition, align.InitialPosition);
+        if (initialDistance > FireProjectileAlignMaxInitialPositionDistance)
+        {
+            skipReason = $"fire_initial_position_distance={initialDistance:F1}";
+            return ProjectileAlignDecision.Skip;
+        }
+
+        return ProjectileAlignDecision.Apply;
+    }
+
+    private static bool HasReliableFireProjectileMetadata(ReplayProjectileEvent align)
+    {
+        if (align.EffectConfidence < 0.75f || align.EffectTickIndex < 0)
+            return false;
+        if (!ReplayVectorIsMeaningful(align.EffectPosition))
+            return false;
+
+        return align.EffectSource.Equals("inferno_start_burn_event", StringComparison.OrdinalIgnoreCase) ||
+               align.EffectSource.Equals("molotov_detonation_event", StringComparison.OrdinalIgnoreCase);
     }
 
     private static int FindProjectileAlignEvent(
@@ -2203,6 +2272,33 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         vector.Y = value.Y;
         vector.Z = value.Z;
     }
+
+    private static float VectorDistance(Vector? vector, ReplayVector3 value)
+    {
+        if (vector == null)
+            return float.PositiveInfinity;
+        var dx = vector.X - value.X;
+        var dy = vector.Y - value.Y;
+        var dz = vector.Z - value.Z;
+        return MathF.Sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    private static bool VectorIsMeaningful(Vector? value)
+        => value != null &&
+           float.IsFinite(value.X) &&
+           float.IsFinite(value.Y) &&
+           float.IsFinite(value.Z) &&
+           (MathF.Abs(value.X) > float.Epsilon ||
+            MathF.Abs(value.Y) > float.Epsilon ||
+            MathF.Abs(value.Z) > float.Epsilon);
+
+    private static bool ReplayVectorIsMeaningful(ReplayVector3 value)
+        => float.IsFinite(value.X) &&
+           float.IsFinite(value.Y) &&
+           float.IsFinite(value.Z) &&
+           (MathF.Abs(value.X) > float.Epsilon ||
+            MathF.Abs(value.Y) > float.Epsilon ||
+            MathF.Abs(value.Z) > float.Epsilon);
 
     private void OnEntityDeleted(CEntityInstance entity)
     {
@@ -5104,6 +5200,13 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         uint MoneyTotal,
         uint MatchValue,
         string Class);
+
+    private enum ProjectileAlignDecision
+    {
+        Apply,
+        Retry,
+        Skip
+    }
 
     private sealed class NadeCycleState(
         int token,

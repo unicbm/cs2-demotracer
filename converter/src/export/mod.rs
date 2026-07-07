@@ -7,9 +7,9 @@ use crate::model::{
     ParsedPlayerTick, ParsedProjectile, ParsedWeaponSticker, ReplayAgentCosmetic,
     ReplayChatMessage, ReplayCosmetics, ReplayHifiEvent, ReplayHifiEventKind,
     ReplayInventoryItemCount, ReplayInventorySnapshot, ReplayItemCosmetic, ReplayPlayerScoreboard,
-    ReplayRoundScoreboard, ReplayScoreboardFlair, ReplayView, ReplayViewmodel, ReplayWeaponCharm,
-    ReplayWeaponCosmetic, ReplayWeaponSticker, RoundSummary, Side, SubtickMode, TeamEconomy,
-    DEMOTRACER_ABI, DTR_FORMAT_VERSION,
+    ReplayProjectileMetadata, ReplayRoundScoreboard, ReplayScoreboardFlair, ReplayView,
+    ReplayViewmodel, ReplayWeaponCharm, ReplayWeaponCosmetic, ReplayWeaponSticker, RoundSummary,
+    Side, SubtickMode, TeamEconomy, DEMOTRACER_ABI, DTR_FORMAT_VERSION,
 };
 use crate::rec_writer::write_rec;
 use crate::replay::context::{
@@ -360,6 +360,7 @@ fn export_demo_to_memory_inner(
                 end_tick,
                 &player_rows,
                 round_rows,
+                player_projectiles,
             );
             subtick_stats.add_assign(&stats);
             let team_dir = Side::team_dir(player_rows[0].team_num);
@@ -786,6 +787,7 @@ fn build_player_high_fidelity_metadata(
     end_tick: i32,
     player_rows: &[&ParsedPlayerTick],
     round_rows: &[&ParsedPlayerTick],
+    player_projectiles: &[&ParsedProjectile],
 ) -> HighFidelityMetadata {
     let steam_id = player_rows
         .first()
@@ -819,7 +821,36 @@ fn build_player_high_fidelity_metadata(
             && lhs.entity_id == rhs.entity_id
     });
 
-    HighFidelityMetadata::new(events, inventory_snapshots_for_player(player_rows))
+    HighFidelityMetadata::with_projectiles(
+        events,
+        inventory_snapshots_for_player(player_rows),
+        projectile_hifi_metadata(player_projectiles, player_rows),
+    )
+}
+
+fn projectile_hifi_metadata(
+    projectiles: &[&ParsedProjectile],
+    player_rows: &[&ParsedPlayerTick],
+) -> Vec<ReplayProjectileMetadata> {
+    projectiles
+        .iter()
+        .filter_map(|projectile| {
+            let tick_index = tick_index_for_event(player_rows, projectile.tick)?;
+            Some(ReplayProjectileMetadata {
+                tick_index,
+                tick: projectile.tick,
+                kind: projectile.kind,
+                weapon_def_index: projectile.weapon_def_index,
+                effect_tick_index: projectile
+                    .effect_tick
+                    .and_then(|tick| tick_index_for_event(player_rows, tick)),
+                effect_tick: projectile.effect_tick,
+                effect_position: projectile.effect_position,
+                effect_source: projectile.effect_source,
+                effect_confidence: projectile.effect_confidence,
+            })
+        })
+        .collect()
 }
 
 fn player_scoped_hifi_events(
@@ -4524,10 +4555,10 @@ mod tests {
             initial_position: [1.0, 2.0, 3.0],
             initial_velocity: [4.0, 5.0, 6.0],
             detonation_position: [7.0, 8.0, 9.0],
-            effect_position: [0.0; 3],
-            effect_tick: None,
-            effect_source: crate::model::ProjectileEffectSource::Unknown,
-            effect_confidence: 0.0,
+            effect_position: [7.0, 8.0, 9.0],
+            effect_tick: Some(164),
+            effect_source: crate::model::ProjectileEffectSource::SmokeDetonationProp,
+            effect_confidence: 0.9,
         }];
 
         let memory = export_demo_to_memory(
@@ -4564,6 +4595,11 @@ mod tests {
         assert_eq!(rec.ticks[0].pre.origin[0], 20.0);
         assert_eq!(rec.ticks[2].pre.origin[0], 100.0);
         assert_eq!(rec.projectiles[0].tick_index, 3);
+        assert_eq!(rec.high_fidelity.schema_version, 3);
+        assert_eq!(rec.high_fidelity.projectiles.len(), 1);
+        assert_eq!(rec.high_fidelity.projectiles[0].tick_index, 3);
+        assert_eq!(rec.high_fidelity.projectiles[0].effect_tick_index, Some(3));
+        assert_eq!(rec.high_fidelity.projectiles[0].effect_confidence, 0.9);
     }
 
     #[test]

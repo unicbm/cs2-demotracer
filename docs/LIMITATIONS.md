@@ -70,9 +70,9 @@ This document tracks known limitations and edge cases.
 
 - Projectile alignment is not guaranteed to match the demo perfectly in every
   case, although most throws should behave correctly. Molotovs/incendiaries are
-  the highest-variance case: tiny parameter differences can rarely create a
-  reproducible mismatch where the demo player was not burned but the DTR replay
-  is.
+  the highest-variance case. Newly converted `.dtr` files include fire effect
+  metadata and allow conservative fire alignment only when that metadata is
+  reliable; older files or uncertain fire throws stay on native CS2 behavior.
 - Bot cosmetics are restored as closely as practical and are usually fine, but
   sticker evidence is limited by demoparser behavior and by CS2's richer sticker
   coordinate/rotation model. DemoTracer uses a revised sticker extraction path,
