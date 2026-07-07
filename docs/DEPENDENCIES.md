@@ -86,7 +86,7 @@ Current release compatibility:
 - `.dtr` reader: v3 through v7
 - Manifest ABI: 17
 - BotController native ABI: 16
-- DemoTracer companion API: 4
+- DemoTracer companion API: 5
 
 ## Source Builds
 

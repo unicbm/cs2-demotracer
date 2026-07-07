@@ -9,6 +9,7 @@
 #include "ccsbot_slot.h"
 #include "sig_scan.h"
 #include "MotionRecorder.h"
+#include "projectile_birth_align.h"
 #include "version_targets.h"
 #include "hook.h"
 #include "platform.h"
@@ -482,6 +483,7 @@ namespace BotController
 
         static void BC_FASTCALL HookedPlayerRunCommand(void *services, void *cmd)
         {
+            ProjectileBirthAlign::ProcessPending();
             MotionRecorder::AddReplayPerf(MotionRecorder::ReplayPerfCounter::PlayerRunCommandHook);
             int slot = ServicesToSlot(services);
             bool recording = slot >= 0 && slot < kMaxSlots &&
@@ -624,6 +626,7 @@ namespace BotController
 
         static void BC_FASTCALL HookedPhysicsSimulate(void *controller)
         {
+            ProjectileBirthAlign::ProcessPending();
             MotionRecorder::AddReplayPerf(MotionRecorder::ReplayPerfCounter::PhysicsSimulateHook);
             int slot = ControllerToSlot(controller);
             void *services = (slot >= 0 && slot < kMaxSlots)

@@ -6,6 +6,7 @@
 #include "BuyControllerState.h"
 #include "VoiceSender.h"
 #include "hud_reticle_probe.h"
+#include "projectile_birth_align.h"
 
 #include <cstdint>
 #include <cstring>
@@ -143,23 +144,6 @@ extern "C" __declspec(dllexport) int BotController_HudReticleProbe(
         action, forceMode, forceGap, forceRadius, flags, out, size);
 }
 
-extern "C" __declspec(dllexport) int BotController_HudReticleSetPaintConfig(
-    const BotController::HudReticleProbe::PaintConfigOverride *config,
-    int size)
-{
-    return BotController::HudReticleProbe::SetPaintConfig(config, size);
-}
-
-extern "C" __declspec(dllexport) int BotController_HudReticleSetPaintConfigTarget(
-    uint64_t controllerPtr,
-    uint64_t pawnPtr,
-    uint64_t weaponPtr,
-    int pawnIndex,
-    int weaponIndex)
-{
-    return BotController::HudReticleProbe::SetPaintConfigTarget(controllerPtr, pawnPtr, weaponPtr, pawnIndex, weaponIndex);
-}
-
 extern "C" __declspec(dllexport) int BotController_HudReticleSetPaintConfigMapEntry(
     int slot,
     int pawnIndex,
@@ -178,6 +162,46 @@ extern "C" __declspec(dllexport) int BotController_HudReticleClearPaintConfigMap
 extern "C" __declspec(dllexport) int BotController_HudReticleClearPaintConfigMap()
 {
     return BotController::HudReticleProbe::ClearPaintConfigMap();
+}
+
+extern "C" __declspec(dllexport) int BotController_SetProjectileBirthAlignOffsets(
+    int initialPositionOffset,
+    int initialVelocityOffset)
+{
+    return BotController::ProjectileBirthAlign::ConfigureOffsets(
+        initialPositionOffset,
+        initialVelocityOffset);
+}
+
+extern "C" __declspec(dllexport) int BotController_QueueProjectileBirthAlign(
+    uint64_t entityPtr,
+    float posX,
+    float posY,
+    float posZ,
+    float velX,
+    float velY,
+    float velZ)
+{
+    return BotController::ProjectileBirthAlign::Queue(
+        entityPtr,
+        posX,
+        posY,
+        posZ,
+        velX,
+        velY,
+        velZ);
+}
+
+extern "C" __declspec(dllexport) int BotController_ClearProjectileBirthAlign()
+{
+    return BotController::ProjectileBirthAlign::Clear();
+}
+
+extern "C" __declspec(dllexport) int BotController_GetProjectileBirthAlignStatus(
+    BotController::ProjectileBirthAlign::Status *out,
+    int size)
+{
+    return BotController::ProjectileBirthAlign::GetStatus(out, size);
 }
 
 extern "C" __declspec(dllexport) int BotController_SendVoiceFrame(

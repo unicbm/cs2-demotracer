@@ -5,13 +5,7 @@ namespace DemoTracer;
 
 public sealed partial class DemoTracerPlugin
 {
-    private readonly Dictionary<int, string> _replayCrosshairHudCodes = new();
-    private readonly Dictionary<int, NativeHudReticlePaintConfig> _replayCrosshairHudConfigs = new();
     private readonly Dictionary<int, bool> _replayLeftHandDesiredLatches = new();
-    private int _replayCrosshairHudMapCount;
-    private int _replayCrosshairHudLastRc;
-    private int _replayCrosshairHudDecodeFailures;
-    private bool _replayCrosshairHudPatchConfigured;
 
     private static ReplayView NormalizeReplayView(ReplayView? view)
     {
@@ -23,12 +17,7 @@ public sealed partial class DemoTracerPlugin
     }
 
     private static string? NormalizeCrosshairCode(string? code)
-    {
-        var trimmed = code?.Trim();
-        return string.IsNullOrEmpty(trimmed) || trimmed.Length > 128
-            ? null
-            : trimmed;
-    }
+        => DemoTracerCrosshairCode.Normalize(code);
 
     private static bool HasCrosshairEvidence(ReplayView view)
         => !string.IsNullOrWhiteSpace(view.CrosshairCode);
@@ -71,8 +60,7 @@ public sealed partial class DemoTracerPlugin
 
     private void ResetCrosshairAlignState(bool resetCounters = false)
     {
-        RestoreAllReplayViewerCrosshairs();
-        ClearReplayCrosshairHudReticleMap(disablePatch: true);
+        _hudCrosshairOverrides.ClearAll(disablePatch: true);
     }
 
     private void ResetViewmodelAlignState(bool resetCounters = false)
@@ -81,7 +69,10 @@ public sealed partial class DemoTracerPlugin
     }
 
     private string FormatCrosshairStatusCounts()
-        => $"crosshair_evidence={CountLoadedCrosshairEvidence()} crosshair_hud_map={_replayCrosshairHudMapCount} crosshair_hud_rc={_replayCrosshairHudLastRc} crosshair_decode_failed={_replayCrosshairHudDecodeFailures} crosshair_viewers={_viewerAppliedCrosshairCodes.Count}";
+    {
+        var status = _hudCrosshairOverrides.Status;
+        return $"crosshair_evidence={CountLoadedCrosshairEvidence()} crosshair_hud_map={status.MapCount} crosshair_hud_rc={status.LastRc} crosshair_decode_failed={status.DecodeFailures}";
+    }
 
     private string FormatViewmodelStatusCounts()
         => $"viewmodel_evidence={CountLoadedViewmodelEvidence()} viewmodel_bots={_replayAppliedViewmodels.Count} viewmodel_failed={_replayFailedViewmodelSlots.Count} left_hand_latches={_replayLeftHandDesiredLatches.Count}";
@@ -92,12 +83,11 @@ public sealed partial class DemoTracerPlugin
     private int CountLoadedViewmodelEvidence()
         => _loadedReplays.Values.Count(replay => !replay.UtilityOnly && HasViewmodelEvidence(replay.View));
 
-    private void UpdateReplayViewerCrosshairs(TickPlayerSnapshot playerSnapshot)
+    private void UpdateReplayHudCrosshairOverrides(TickPlayerSnapshot playerSnapshot)
     {
         if (!_crosshairAlignEnabled)
         {
-            ClearReplayCrosshairHudReticleMap(disablePatch: true);
-            RestoreAllReplayViewerCrosshairs();
+            _hudCrosshairOverrides.ClearAll(disablePatch: true);
             return;
         }
 
@@ -106,15 +96,8 @@ public sealed partial class DemoTracerPlugin
 
     private bool RefreshReplayCrosshairHudReticleMap(TickPlayerSnapshot playerSnapshot)
     {
-        RestoreAllReplayViewerCrosshairs();
-
-        if (!EnsureReplayCrosshairHudReticlePatch())
-            return false;
-
         var activeSlots = new HashSet<int>();
         var configured = 0;
-        var decodeFailures = 0;
-        var lastRc = 0;
 
         foreach (var slot in _loadedSlots.ToArray())
         {
@@ -125,124 +108,25 @@ public sealed partial class DemoTracerPlugin
                 replayBot is not { IsValid: true } ||
                 !IsReplayTargetBot(replayBot, playerSnapshot.Controllers))
             {
-                ClearReplayCrosshairHudReticleMapEntry(slot);
+                _hudCrosshairOverrides.ClearSlot(slot);
                 continue;
             }
 
             activeSlots.Add(slot);
-            var code = replay.View.CrosshairCode!;
-            if (!_replayCrosshairHudConfigs.TryGetValue(slot, out var config) ||
-                !_replayCrosshairHudCodes.TryGetValue(slot, out var cachedCode) ||
-                !string.Equals(cachedCode, code, StringComparison.Ordinal))
-            {
-                if (!TryDecodeCrosshairShareCodeToPaintConfig(code, out config, out _))
-                {
-                    decodeFailures++;
-                    ClearReplayCrosshairHudReticleMapEntry(slot);
-                    continue;
-                }
-
-                _replayCrosshairHudCodes[slot] = code;
-                _replayCrosshairHudConfigs[slot] = config;
-            }
-
-            var pawnIndex = PawnEntityIndex(replayBot);
-            var weaponIndex = ActiveWeaponEntityIndex(replayBot);
-            if (pawnIndex < 0 && weaponIndex < 0)
-            {
-                ClearReplayCrosshairHudReticleMapEntry(slot);
-                continue;
-            }
-
-            lastRc = BotControllerNative.HudReticleSetPaintConfigMapEntry(slot, pawnIndex, weaponIndex, config);
-            if (lastRc == 0)
+            var result = _hudCrosshairOverrides.TryApplySlot(slot, replayBot, replay.View.CrosshairCode!);
+            if (result.Ok)
                 configured++;
         }
 
-        foreach (var slot in _replayCrosshairHudConfigs.Keys.ToArray())
-        {
-            if (!activeSlots.Contains(slot))
-                ClearReplayCrosshairHudReticleMapEntry(slot);
-        }
-
-        _replayCrosshairHudMapCount = configured;
-        _replayCrosshairHudLastRc = lastRc;
-        _replayCrosshairHudDecodeFailures = decodeFailures;
+        _hudCrosshairOverrides.ClearStaleExcept(activeSlots);
         return configured > 0;
     }
 
-    private bool EnsureReplayCrosshairHudReticlePatch()
-    {
-        if (!BotControllerNative.IsCompatible || !BotControllerNative.HasHudReticleProbeExports)
-        {
-            _replayCrosshairHudLastRc = -1;
-            return false;
-        }
-
-        var rc = BotControllerNative.HudReticleProbe(
-            BotControllerNative.HudReticleActionInstall | BotControllerNative.HudReticleActionConfigure,
-            -1,
-            int.MinValue,
-            int.MinValue,
-            BotControllerNative.HudReticleFlagPatchPaintConfig |
-            BotControllerNative.HudReticleFlagUseForcedPaintConfig,
-            out var state);
-
-        _replayCrosshairHudLastRc = rc != 0 ? rc : state.Rc;
-        _replayCrosshairHudPatchConfigured = rc == 0 && state.Rc == 0;
-        return _replayCrosshairHudPatchConfigured;
-    }
-
     private void ClearReplayCrosshairHudReticleMapEntry(int slot)
-    {
-        _replayCrosshairHudCodes.Remove(slot);
-        _replayCrosshairHudConfigs.Remove(slot);
-        if (BotControllerNative.IsCompatible)
-            _ = BotControllerNative.HudReticleClearPaintConfigMapEntry(slot);
-    }
+        => _hudCrosshairOverrides.ClearSlot(slot);
 
     private void ClearReplayCrosshairHudReticleMap(bool disablePatch)
-    {
-        if (_replayCrosshairHudMapCount == 0 &&
-            _replayCrosshairHudCodes.Count == 0 &&
-            _replayCrosshairHudConfigs.Count == 0 &&
-            !_replayCrosshairHudPatchConfigured)
-        {
-            _replayCrosshairHudLastRc = 0;
-            _replayCrosshairHudDecodeFailures = 0;
-            return;
-        }
-
-        _replayCrosshairHudCodes.Clear();
-        _replayCrosshairHudConfigs.Clear();
-        _replayCrosshairHudMapCount = 0;
-        _replayCrosshairHudDecodeFailures = 0;
-
-        if (!BotControllerNative.IsCompatible)
-        {
-            _replayCrosshairHudLastRc = -1;
-            _replayCrosshairHudPatchConfigured = false;
-            return;
-        }
-
-        _ = BotControllerNative.HudReticleClearPaintConfigMap();
-        if (disablePatch)
-        {
-            _ = BotControllerNative.HudReticleSetPaintConfigTarget(0, 0, 0, -1, -1);
-            _replayCrosshairHudLastRc = BotControllerNative.HudReticleProbe(
-                BotControllerNative.HudReticleActionConfigure,
-                -1,
-                int.MinValue,
-                int.MinValue,
-                0,
-                out _);
-            _replayCrosshairHudPatchConfigured = false;
-        }
-        else
-        {
-            _replayCrosshairHudLastRc = 0;
-        }
-    }
+        => _hudCrosshairOverrides.ClearAll(disablePatch);
 
     private Dictionary<uint, int> BuildReplayPawnSlotMap(TickPlayerSnapshot playerSnapshot)
     {
@@ -263,21 +147,6 @@ public sealed partial class DemoTracerPlugin
         }
 
         return replayPawnSlots;
-    }
-
-    private static int PawnEntityIndex(CCSPlayerController target)
-        => target.PlayerPawn is { IsValid: true, Value.IsValid: true }
-            ? checked((int)target.PlayerPawn.Value.Index)
-            : -1;
-
-    private static int ActiveWeaponEntityIndex(CCSPlayerController target)
-    {
-        if (target.PlayerPawn is not { IsValid: true, Value.IsValid: true })
-            return -1;
-
-        var pawn = target.PlayerPawn.Value;
-        var weapon = pawn.WeaponServices?.ActiveWeapon.Value;
-        return weapon is { IsValid: true } ? checked((int)weapon.Index) : -1;
     }
 
     private void UpdateReplayBotViewmodels(TickPlayerSnapshot playerSnapshot)
@@ -330,42 +199,6 @@ public sealed partial class DemoTracerPlugin
             .Concat(_replayFailedViewmodelSlots)
             .Distinct()
             .ToArray();
-    }
-
-    private void ApplyReplayViewerCrosshair(CCSPlayerController viewer, string code)
-    {
-        _ = viewer;
-        _ = code;
-    }
-
-    private void RestoreAllReplayViewerCrosshairs()
-    {
-        foreach (var slot in _viewerAppliedCrosshairCodes.Keys.ToArray())
-            RestoreReplayViewerCrosshair(slot);
-        _viewerOriginalCrosshairCodes.Clear();
-    }
-
-    private void DiscardReplayViewerCrosshairState()
-    {
-        _viewerAppliedCrosshairCodes.Clear();
-        _viewerOriginalCrosshairCodes.Clear();
-    }
-
-    private void RestoreReplayViewerCrosshair(int slot)
-    {
-        _viewerAppliedCrosshairCodes.Remove(slot);
-        if (!_viewerOriginalCrosshairCodes.TryGetValue(slot, out var original))
-            return;
-
-        _viewerOriginalCrosshairCodes.Remove(slot);
-        if (string.IsNullOrWhiteSpace(original))
-            return;
-
-        var player = Utilities.GetPlayerFromSlot(slot);
-        if (player is not { IsValid: true } || player.IsBot || _botHiderProbe.IsManagedBot(slot))
-            return;
-
-        _ = TryApplyCrosshairCodeToClient(player, original, "restore");
     }
 
     private void ApplyReplayBotViewmodel(CCSPlayerController bot, ReplayViewmodel viewmodel)
@@ -552,17 +385,4 @@ public sealed partial class DemoTracerPlugin
         }
     }
 
-    private static bool TryApplyCrosshairCodeToClient(CCSPlayerController player, string code, string reason)
-    {
-        try
-        {
-            player.ExecuteClientCommandFromServer($"apply_crosshair_code {code}");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Server.PrintToConsole($"dtr: crosshair client import failed slot={player.Slot} reason={reason}: {ex.Message}");
-            return false;
-        }
-    }
 }

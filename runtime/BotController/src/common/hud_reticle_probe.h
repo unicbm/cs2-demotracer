@@ -83,8 +83,6 @@ namespace BotController::HudReticleProbe
     static_assert(sizeof(ProbeState) == 172);
 
     int Probe(int action, int forceMode, int forceGap, int forceRadius, int flags, ProbeState *out, int size);
-    int SetPaintConfig(const PaintConfigOverride *config, int size);
-    int SetPaintConfigTarget(uint64_t controllerPtr, uint64_t pawnPtr, uint64_t weaponPtr, int pawnIndex, int weaponIndex);
     int SetPaintConfigMapEntry(int slot, int pawnIndex, int weaponIndex, const PaintConfigOverride *config, int size);
     int ClearPaintConfigMapEntry(int slot);
     int ClearPaintConfigMap();

@@ -39,19 +39,6 @@ internal static partial class BotControllerNative
         int size);
 
     [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
-    private static extern int BotController_HudReticleSetPaintConfig(
-        in NativeHudReticlePaintConfig config,
-        int size);
-
-    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
-    private static extern int BotController_HudReticleSetPaintConfigTarget(
-        ulong controllerPtr,
-        ulong pawnPtr,
-        ulong weaponPtr,
-        int pawnIndex,
-        int weaponIndex);
-
-    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
     private static extern int BotController_HudReticleSetPaintConfigMapEntry(
         int slot,
         int pawnIndex,
@@ -64,6 +51,29 @@ internal static partial class BotControllerNative
 
     [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
     private static extern int BotController_HudReticleClearPaintConfigMap();
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_SetProjectileBirthAlignOffsets(
+        int initialPositionOffset,
+        int initialVelocityOffset);
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_QueueProjectileBirthAlign(
+        ulong entityPtr,
+        float posX,
+        float posY,
+        float posZ,
+        float velX,
+        float velY,
+        float velZ);
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_ClearProjectileBirthAlign();
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_GetProjectileBirthAlignStatus(
+        out NativeProjectileBirthAlignStatus status,
+        int size);
 
     [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
     private static extern int BotController_SendVoiceFrame(

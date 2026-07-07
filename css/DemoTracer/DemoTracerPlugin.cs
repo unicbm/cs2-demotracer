@@ -46,8 +46,13 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private const float HandoffThreat360MaxVerticalDelta = 128.0f;
     private const float HandoffThreat360ChestZScale = 0.62f;
     private const int ProjectileAlignMatchAttempts = 8;
-    private const int ProjectileAlignPostMatchWrites = 1;
+    private const int ProjectileAlignDefaultTotalWrites = 1;
+    private const int ProjectileAlignUntilDelete = -1;
+    private const int ProjectileAlignMaxTotalWrites = 512;
+    private const int ProjectileAlignLogMaxEntries = 128;
     private const float FireProjectileAlignMaxInitialPositionDistance = 128.0f;
+    private const int MolotovPointAlignDefaultLeadTicks = 1;
+    private const int MolotovPointAlignMaxLeadTicks = 8;
     private const float NadeClipStartSettleSeconds = 0.12f;
     private const int NadeClipStartReadyRetries = 6;
     private const float NadeCycleDefaultGapSeconds = 1.5f;
@@ -77,6 +82,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private readonly Dictionary<ulong, ulong> _replayDisplaySteamIdsByDemoSteamId = new();
     private readonly Dictionary<int, ulong> _replayDisplaySteamIdsBySlot = new();
     private readonly Dictionary<uint, PendingProjectileAlign> _pendingProjectileAlign = new();
+    private readonly Queue<string> _projectileAlignLog = new();
     private readonly List<TrackedDroppedReplayItem> _trackedDroppedReplayItems = new();
     private readonly Dictionary<int, int> _queuedNadeStartTokens = new();
     private readonly HashSet<int> _rebuiltInventorySlots = new();
@@ -93,8 +99,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private readonly Dictionary<int, AppliedActiveWeaponCosmetic> _activeWeaponCosmetics = new();
     private readonly HashSet<int> _scoreboardSyncedSlots = new();
     private readonly HashSet<int> _replayScoreboardFlairSyncedSlots = new();
-    private readonly Dictionary<int, string?> _viewerOriginalCrosshairCodes = new();
-    private readonly Dictionary<int, string> _viewerAppliedCrosshairCodes = new();
+    private readonly HudCrosshairOverrideService _hudCrosshairOverrides = new();
     private readonly Dictionary<int, ReplayViewmodel> _replayOriginalViewmodels = new();
     private readonly Dictionary<int, ReplayViewmodel> _replayAppliedViewmodels = new();
     private readonly HashSet<int> _replayFailedViewmodelSlots = new();
@@ -136,6 +141,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private ReplayRoundScoreboard? _loadedRoundScoreboard;
     private bool _weaponAlignEnabled = true;
     private bool _projectileAlignEnabled = true;
+    private int _projectileAlignTotalWrites = ProjectileAlignDefaultTotalWrites;
+    private MolotovPointAlignMode _molotovPointAlignMode = MolotovPointAlignMode.Detonate;
+    private int _molotovPointAlignLeadTicks = MolotovPointAlignDefaultLeadTicks;
     private bool _cosmeticAlignEnabled;
     private bool _cosmeticWeaponsEnabled;
     private bool _cosmeticKnivesEnabled;
@@ -185,6 +193,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         RegisterListener<Listeners.OnEntityDeleted>(OnEntityDeleted);
         Capabilities.RegisterPluginCapability(ApiCapability, () => (IDemoTracerApi)_apiFacade);
         ConfigureNativeSafetyOffsets();
+        ConfigureNativeProjectileBirthAlignOffsets();
         Server.PrintToConsole("dtr: CSS control plugin loaded");
     }
 
@@ -215,7 +224,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             return;
 
         ClearReplayCrosshairHudReticleMapEntry(playerSlot);
-        RestoreReplayViewerCrosshair(playerSlot);
         _slotCosmeticEvidenceKeys.Remove(playerSlot);
 
         if (!HasReplayLifecycleState(includeNative: true))
@@ -271,6 +279,29 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         }
     }
 
+    private static void ConfigureNativeProjectileBirthAlignOffsets()
+    {
+        try
+        {
+            var initialPositionOffset = Schema.GetSchemaOffset(
+                "CBaseCSGrenadeProjectile",
+                "m_vInitialPosition");
+            var initialVelocityOffset = Schema.GetSchemaOffset(
+                "CBaseCSGrenadeProjectile",
+                "m_vInitialVelocity");
+            var rc = BotControllerNative.SetProjectileBirthAlignOffsets(
+                initialPositionOffset,
+                initialVelocityOffset);
+            Server.PrintToConsole(rc == 0
+                ? $"dtr: native projectile birth align enabled, initial_position=0x{initialPositionOffset:X} initial_velocity=0x{initialVelocityOffset:X}"
+                : $"dtr: native projectile birth align unavailable rc={rc}");
+        }
+        catch (Exception ex)
+        {
+            Server.PrintToConsole($"dtr: native projectile birth align unavailable: {ex.Message}");
+        }
+    }
+
     [ConsoleCommand("dtr_weapon_align", "dtr_weapon_align <0|1>")]
     public void WeaponAlignCommand(CCSPlayerController? player, CommandInfo command)
     {
@@ -288,7 +319,86 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             SetProjectileAlignEnabled(ParseOnOff(command.GetArg(1), _projectileAlignEnabled));
 
         command.ReplyToCommand("[DTR WARN] legacy command: use dtr_align projectiles <on|off>");
-        command.ReplyToCommand($"dtr: projectile_align={_projectileAlignEnabled}");
+        command.ReplyToCommand($"dtr: projectile_align={_projectileAlignEnabled} ticks={FormatProjectileAlignTicks()} molotov_point={FormatMolotovPointAlignMode(_molotovPointAlignMode)}:{_molotovPointAlignLeadTicks}");
+    }
+
+    [ConsoleCommand("dtr_projectile_align_ticks", "dtr_projectile_align_ticks <status|default|once|2..512|until_delete>")]
+    public void ProjectileAlignTicksCommand(CCSPlayerController? player, CommandInfo command)
+    {
+        if (command.ArgCount >= 2)
+        {
+            if (!TryParseProjectileAlignTicks(command.GetArg(1), out var ticks))
+            {
+                command.ReplyToCommand("usage: dtr_projectile_align_ticks <status|default|once|2..512|until_delete>");
+                return;
+            }
+
+            if (ticks != int.MinValue)
+                SetProjectileAlignTicks(ticks);
+        }
+
+        command.ReplyToCommand($"dtr: projectile_align_ticks={FormatProjectileAlignTicks()}");
+    }
+
+    [ConsoleCommand("dtr_molotov_align_point", "dtr_molotov_align_point <status|off|teleport|detonate> [lead_ticks]")]
+    public void MolotovAlignPointCommand(CCSPlayerController? player, CommandInfo command)
+    {
+        if (command.ArgCount >= 2)
+        {
+            if (!TryParseMolotovPointAlignMode(command.GetArg(1), out var mode))
+            {
+                command.ReplyToCommand("usage: dtr_molotov_align_point <status|off|teleport|detonate> [lead_ticks]");
+                return;
+            }
+
+            if (mode.HasValue)
+                _molotovPointAlignMode = mode.Value;
+        }
+
+        if (command.ArgCount >= 3)
+        {
+            if (!int.TryParse(command.GetArg(2), NumberStyles.Integer, CultureInfo.InvariantCulture, out var leadTicks) ||
+                leadTicks < 0 ||
+                leadTicks > MolotovPointAlignMaxLeadTicks)
+            {
+                command.ReplyToCommand($"usage: dtr_molotov_align_point <status|off|teleport|detonate> [0..{MolotovPointAlignMaxLeadTicks}]");
+                return;
+            }
+
+            _molotovPointAlignLeadTicks = leadTicks;
+        }
+
+        command.ReplyToCommand(
+            $"dtr: molotov_align_point={FormatMolotovPointAlignMode(_molotovPointAlignMode)} lead_ticks={_molotovPointAlignLeadTicks}");
+    }
+
+    [ConsoleCommand("dtr_projectile_align_log", "dtr_projectile_align_log [clear|all|molotov|fire]")]
+    public void ProjectileAlignLogCommand(CCSPlayerController? player, CommandInfo command)
+    {
+        var mode = command.ArgCount >= 2 ? command.GetArg(1).Trim().ToLowerInvariant() : "all";
+        if (mode is "clear" or "reset")
+        {
+            _projectileAlignLog.Clear();
+            command.ReplyToCommand("dtr: projectile_align_log cleared");
+            return;
+        }
+
+        var filterFire = mode is "molotov" or "fire" or "incendiary" or "incgrenade";
+        var lines = _projectileAlignLog
+            .Where(line => !filterFire || line.Contains("kind=Molotov", StringComparison.OrdinalIgnoreCase))
+            .TakeLast(20)
+            .ToArray();
+        if (lines.Length == 0)
+        {
+            command.ReplyToCommand(filterFire
+                ? "dtr: no recent molotov projectile align events"
+                : "dtr: no recent projectile align events");
+            return;
+        }
+
+        command.ReplyToCommand($"dtr: projectile_align_log showing {lines.Length} recent event(s)");
+        foreach (var line in lines)
+            command.ReplyToCommand($"dtr: {line}");
     }
 
     [ConsoleCommand("dtr_cosmetic_align", "dtr_cosmetic_align <0|1>")]
@@ -770,7 +880,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private void ReplyAlignStatus(Action<string> reply)
     {
         reply($"[DTR ALIGN] preset={AlignPresetName()}");
-        reply($"[DTR ALIGN] weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand={FormatOnOff(_leftHandDesiredEnabled)}");
+        reply($"[DTR ALIGN] weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} projectile_ticks={FormatProjectileAlignTicks()} molotov_point={FormatMolotovPointAlignMode(_molotovPointAlignMode)}:{_molotovPointAlignLeadTicks} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand={FormatOnOff(_leftHandDesiredEnabled)}");
         reply("[DTR ALIGN] note: cosmetics moved to dtr_cosmetics; scoreboard moved to dtr_match");
     }
 
@@ -1068,7 +1178,26 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
         _projectileAlignNextBySlot.Clear();
         _pendingProjectileAlign.Clear();
+        BotControllerNative.ClearProjectileBirthAlign();
     }
+
+    private void SetProjectileAlignTicks(int totalWrites)
+    {
+        _projectileAlignTotalWrites = totalWrites;
+        foreach (var pending in _pendingProjectileAlign.Values)
+        {
+            if (!pending.Matched)
+                continue;
+
+            pending.TotalWritesTarget = totalWrites;
+            pending.WritesRemaining = RemainingProjectileAlignWrites(totalWrites, pending.WritesApplied);
+        }
+    }
+
+    private static int RemainingProjectileAlignWrites(int totalWrites, int writesApplied)
+        => totalWrites == ProjectileAlignUntilDelete
+            ? ProjectileAlignUntilDelete
+            : Math.Max(0, totalWrites - writesApplied);
 
     private void SetCosmeticAlignEnabled(bool enabled)
     {
@@ -1233,7 +1362,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                         ? $"pool server_round={_poolRoundIndex} candidates={_poolManifest?.Candidates.Count ?? 0}"
                         : "none";
             command.ReplyToCommand(
-                $"[DTR OK] status plan={plan} loaded_slots={_loadedSlots.Count} settings identity={ReplayIdentityModeName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} cosmetics={FormatOnOff(_cosmeticAlignEnabled)} agents={FormatOnOff(_cosmeticAgentsEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)} scoreboard={FormatOnOff(_scoreboardAlignEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} allow_partial={FormatOnOff(_partialReplayEnabled)} {FormatVoiceAutoStatusInline()} {FormatChatAutoStatusInline()} mp_freezetime={(float.IsFinite(freezeTime) ? freezeTime.ToString("F2", CultureInfo.InvariantCulture) : "unknown")} {(string.IsNullOrEmpty(freezeReason) ? "" : freezeReason)} {FormatCosmeticStatusCounts()} {FormatCrosshairStatusCounts()} {FormatViewmodelStatusCounts()} {FormatScoreboardStatusCounts()}");
+                $"[DTR OK] status plan={plan} loaded_slots={_loadedSlots.Count} settings identity={ReplayIdentityModeName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} projectile_ticks={FormatProjectileAlignTicks()} molotov_point={FormatMolotovPointAlignMode(_molotovPointAlignMode)}:{_molotovPointAlignLeadTicks} cosmetics={FormatOnOff(_cosmeticAlignEnabled)} agents={FormatOnOff(_cosmeticAgentsEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)} scoreboard={FormatOnOff(_scoreboardAlignEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} allow_partial={FormatOnOff(_partialReplayEnabled)} {FormatVoiceAutoStatusInline()} {FormatChatAutoStatusInline()} mp_freezetime={(float.IsFinite(freezeTime) ? freezeTime.ToString("F2", CultureInfo.InvariantCulture) : "unknown")} {(string.IsNullOrEmpty(freezeReason) ? "" : freezeReason)} {FormatCosmeticStatusCounts()} {FormatCrosshairStatusCounts()} {FormatViewmodelStatusCounts()} {FormatScoreboardStatusCounts()}");
             return;
         }
 
@@ -1248,14 +1377,17 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             ? $" pool_next={_poolRoundIndex}"
             : string.Empty;
         command.ReplyToCommand(
-            $"dtr: abi={BotControllerNative.AbiVersion} slot={slot} playing={state.Playing} cursor={state.Cursor} total={state.Total} handoff={FormatHandoffMode(_handoffMode)} scope={(_handoffAllSlots ? "all" : "slot")} handoff_360={_handoffThreat360Enabled}:{_handoffThreat360Range.ToString("F0", CultureInfo.InvariantCulture)} los={_handoffThreat360LosEnabled}:{_rayTraceLosProbe.ProbeStatus} partial={_partialReplayEnabled} identity={ReplayIdentityModeName()} projectile_align={_projectileAlignEnabled} cosmetic_align={_cosmeticAlignEnabled} agent_align={_cosmeticAgentsEnabled} sticker_align={_stickerAlignEnabled} charm_align={_charmAlignEnabled} preserve_native={_preserveNativeBotCosmetics} crosshair_align={_crosshairAlignEnabled} left_hand_desired={_leftHandDesiredEnabled} scoreboard_align={_scoreboardAlignEnabled} {FormatVoiceAutoStatusInline()} {FormatChatAutoStatusInline()}{sequence}{pool}");
+            $"dtr: abi={BotControllerNative.AbiVersion} slot={slot} playing={state.Playing} cursor={state.Cursor} total={state.Total} handoff={FormatHandoffMode(_handoffMode)} scope={(_handoffAllSlots ? "all" : "slot")} handoff_360={_handoffThreat360Enabled}:{_handoffThreat360Range.ToString("F0", CultureInfo.InvariantCulture)} los={_handoffThreat360LosEnabled}:{_rayTraceLosProbe.ProbeStatus} partial={_partialReplayEnabled} identity={ReplayIdentityModeName()} projectile_align={_projectileAlignEnabled} projectile_ticks={FormatProjectileAlignTicks()} molotov_point={FormatMolotovPointAlignMode(_molotovPointAlignMode)}:{_molotovPointAlignLeadTicks} cosmetic_align={_cosmeticAlignEnabled} agent_align={_cosmeticAgentsEnabled} sticker_align={_stickerAlignEnabled} charm_align={_charmAlignEnabled} preserve_native={_preserveNativeBotCosmetics} crosshair_align={_crosshairAlignEnabled} left_hand_desired={_leftHandDesiredEnabled} scoreboard_align={_scoreboardAlignEnabled} {FormatVoiceAutoStatusInline()} {FormatChatAutoStatusInline()}{sequence}{pool}");
     }
 
     [ConsoleCommand("dtr_runtime", "dtr_runtime")]
     public void RuntimeCommand(CCSPlayerController? player, CommandInfo command)
     {
+        var birth = BotControllerNative.ProjectileBirthAlignStatus;
         command.ReplyToCommand(
             $"[DTR OK] DemoTracer {BotControllerNative.RuntimeSummary}");
+        command.ReplyToCommand(
+            $"[DTR OK] projectile_birth_align configured={birth.Configured} pending={birth.Pending} queued={birth.Queued} applied={birth.Applied} expired={birth.Expired} failed={birth.Failed} initial_position=0x{birth.InitialPositionOffset:X} initial_velocity=0x{birth.InitialVelocityOffset:X}");
     }
 
     [ConsoleCommand("dtr_doctor", "dtr_doctor [manifest.json|pool_manifest.json]")]
@@ -1277,7 +1409,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         command.ReplyToCommand(
             $"[DTR DOCTOR] bots players T={tPlayers}/CT={ctPlayers} strict_bots={strictBots} bot_hider_managed={managedBots} safe_replay_targets={replayTargets.Count}");
         command.ReplyToCommand(
-            $"[DTR DOCTOR] replay loaded={_loadedSlots.Count} playing={loadedPlaying} identity={ReplayIdentityModeName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} cosmetics={FormatOnOff(_cosmeticAlignEnabled)} agents={FormatOnOff(_cosmeticAgentsEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)} scoreboard={FormatOnOff(_scoreboardAlignEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} partial={FormatOnOff(_partialReplayEnabled)} raytrace={_rayTraceLosProbe.ProbeStatus} {FormatCosmeticStatusCounts()} {FormatCrosshairStatusCounts()} {FormatViewmodelStatusCounts()} {FormatScoreboardStatusCounts()}");
+            $"[DTR DOCTOR] replay loaded={_loadedSlots.Count} playing={loadedPlaying} identity={ReplayIdentityModeName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} projectile_ticks={FormatProjectileAlignTicks()} molotov_point={FormatMolotovPointAlignMode(_molotovPointAlignMode)}:{_molotovPointAlignLeadTicks} cosmetics={FormatOnOff(_cosmeticAlignEnabled)} agents={FormatOnOff(_cosmeticAgentsEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)} scoreboard={FormatOnOff(_scoreboardAlignEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} partial={FormatOnOff(_partialReplayEnabled)} raytrace={_rayTraceLosProbe.ProbeStatus} {FormatCosmeticStatusCounts()} {FormatCrosshairStatusCounts()} {FormatViewmodelStatusCounts()} {FormatScoreboardStatusCounts()}");
 
         if (command.ArgCount >= 2)
             ReplyDoctorManifest(command, command.GetArg(1));
@@ -1527,14 +1659,14 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (_loadedSlots.Count == 0)
         {
             SetReplayPovMask(0);
-            RestoreAllReplayViewerCrosshairs();
+            ClearReplayCrosshairHudReticleMap(disablePatch: true);
             RestoreAllReplayBotViewmodels();
             return;
         }
 
         var playerSnapshot = BuildTickPlayerSnapshot();
         UpdateReplayPovMask(playerSnapshot);
-        UpdateReplayViewerCrosshairs(playerSnapshot);
+        UpdateReplayHudCrosshairOverrides(playerSnapshot);
         UpdateReplayBotViewmodels(playerSnapshot);
 
         foreach (var slot in _loadedSlots.ToArray())
@@ -2005,6 +2137,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             WritesRemaining = 0
         };
         _pendingProjectileAlign[projectile.Index] = pending;
+        RememberProjectileAlignEvent(
+            "projectile_align_candidate",
+            $"projectile={projectile.Index} kind={kind} weapon={weaponDefIndex} ticks={FormatProjectileAlignTicks()}");
 
         TryResolveAndApplyProjectileAlign(projectile, pending);
     }
@@ -2022,7 +2157,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 var projectile = new CBaseCSGrenadeProjectile(pending.Handle);
                 if (!projectile.IsValid)
                 {
-                    _pendingProjectileAlign.Remove(entry.Key);
+                    FinishProjectileAlign(entry.Key, pending, "entity_invalid");
                     continue;
                 }
 
@@ -2033,22 +2168,57 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
                     pending.MatchAttemptsRemaining--;
                     if (pending.MatchAttemptsRemaining <= 0)
+                    {
+                        RememberProjectileAlignEvent(
+                            "projectile_align_expired",
+                            $"projectile={pending.Index} kind={pending.Kind} weapon={pending.WeaponDefIndex} reason=no_match");
                         _pendingProjectileAlign.Remove(entry.Key);
+                    }
                     else
                         _pendingProjectileAlign[entry.Key] = pending;
                     continue;
                 }
 
-                ApplyProjectileAlign(projectile, pending.Align);
-                pending.WritesRemaining--;
-                if (pending.WritesRemaining <= 0)
-                    _pendingProjectileAlign.Remove(entry.Key);
+                if (pending.WritesRemaining == 0)
+                {
+                    if (TryProcessMolotovPointAlign(projectile, pending))
+                    {
+                        if (pending.MolotovPointAlignApplied)
+                            FinishProjectileAlign(entry.Key, pending, "molotov_point_align");
+                        else
+                            _pendingProjectileAlign[entry.Key] = pending;
+                        continue;
+                    }
+
+                    FinishProjectileAlign(entry.Key, pending, "write_budget");
+                    continue;
+                }
+
+                ApplyTrackedProjectileAlign(projectile, pending);
+                if (pending.WritesRemaining != ProjectileAlignUntilDelete)
+                    pending.WritesRemaining--;
+                if (pending.WritesRemaining == 0)
+                {
+                    if (TryProcessMolotovPointAlign(projectile, pending))
+                    {
+                        if (pending.MolotovPointAlignApplied)
+                            FinishProjectileAlign(entry.Key, pending, "molotov_point_align");
+                        else
+                            _pendingProjectileAlign[entry.Key] = pending;
+                        continue;
+                    }
+
+                    FinishProjectileAlign(entry.Key, pending, "write_budget");
+                }
                 else
                     _pendingProjectileAlign[entry.Key] = pending;
             }
             catch (Exception ex)
             {
                 _pendingProjectileAlign.Remove(entry.Key);
+                RememberProjectileAlignEvent(
+                    "projectile_align_failed",
+                    $"projectile={entry.Key} kind={pending.Kind} error=\"{EscapeConsoleString(ex.Message)}\"");
                 if (_utilityTraceEnabled && _nadeCycle == null)
                     TraceUtilityMessage("projectile_align_failed", $"index={entry.Key} {ex.Message}");
             }
@@ -2083,29 +2253,47 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (decision == ProjectileAlignDecision.Skip)
         {
             _pendingProjectileAlign.Remove(pending.Index);
+            var message =
+                $"slot={slot} event={eventIndex} tick_index={align.TickIndex} projectile={projectile.Index} kind={align.Kind} reason={skipReason}";
+            RememberProjectileAlignEvent("projectile_align_skipped", message);
             if (_utilityTraceEnabled && _nadeCycle == null)
             {
                 TraceUtilityMessage(
                     "projectile_align_skipped",
-                    $"slot={slot} event={eventIndex} tick_index={align.TickIndex} projectile={projectile.Index} kind={align.Kind} reason={skipReason}");
+                    message);
             }
             return true;
         }
 
-        ApplyProjectileAlign(projectile, align);
         pending.Matched = true;
         pending.Slot = slot;
         pending.EventIndex = eventIndex;
         pending.Align = align;
-        pending.WritesRemaining = ProjectileAlignPostMatchWrites;
-        _pendingProjectileAlign[pending.Index] = pending;
+        pending.TotalWritesTarget = _projectileAlignTotalWrites;
+        ArmMolotovPointAlign(pending, align);
+        ApplyTrackedProjectileAlign(projectile, pending);
+        pending.WritesRemaining = RemainingProjectileAlignWrites(pending.TotalWritesTarget, pending.WritesApplied);
+        var writeBudgetExhausted = pending.WritesRemaining == 0;
+        if (!writeBudgetExhausted || pending.MolotovPointAlignArmed)
+            _pendingProjectileAlign[pending.Index] = pending;
 
         if (_utilityTraceEnabled && _nadeCycle == null)
         {
+            var message =
+                $"slot={slot} event={eventIndex} tick_index={align.TickIndex} projectile={projectile.Index} kind={align.Kind} ticks={FormatProjectileAlignTicks()} native_birth_rc={pending.LastNativeBirthRc} molotov_point={FormatPendingMolotovPointAlign(pending)} init_vel=({align.InitialVelocity.X:F3},{align.InitialVelocity.Y:F3},{align.InitialVelocity.Z:F3}) effect={align.EffectSource}:{align.EffectConfidence:F2}";
+            RememberProjectileAlignEvent("projectile_align", message);
             TraceUtilityMessage(
                 "projectile_align",
-                $"slot={slot} event={eventIndex} tick_index={align.TickIndex} projectile={projectile.Index} kind={align.Kind} init_vel=({align.InitialVelocity.X:F3},{align.InitialVelocity.Y:F3},{align.InitialVelocity.Z:F3}) effect={align.EffectSource}:{align.EffectConfidence:F2}");
+                message);
         }
+        else
+        {
+            RememberProjectileAlignEvent(
+                "projectile_align",
+                $"slot={slot} event={eventIndex} tick_index={align.TickIndex} projectile={projectile.Index} kind={align.Kind} ticks={FormatProjectileAlignTicks()} native_birth_rc={pending.LastNativeBirthRc} molotov_point={FormatPendingMolotovPointAlign(pending)} init_vel=({align.InitialVelocity.X:F3},{align.InitialVelocity.Y:F3},{align.InitialVelocity.Z:F3}) effect={align.EffectSource}:{align.EffectConfidence:F2}");
+        }
+        if (writeBudgetExhausted && !pending.MolotovPointAlignArmed)
+            FinishProjectileAlign(pending.Index, pending, "write_budget");
         return true;
     }
 
@@ -2145,6 +2333,163 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         SetVector(projectile.InitialVelocity, align.InitialVelocity);
         SetVector(projectile.AbsOrigin, align.InitialPosition);
         SetVector(projectile.AbsVelocity, align.InitialVelocity);
+    }
+
+    private void ApplyTrackedProjectileAlign(CBaseCSGrenadeProjectile projectile, PendingProjectileAlign pending)
+    {
+        pending.LastNativeBirthRc = QueueNativeProjectileBirthAlign(projectile, pending.Align);
+        if (pending.LastNativeBirthRc != 0)
+            ApplyProjectileAlign(projectile, pending.Align);
+        var now = Server.CurrentTime;
+        if (pending.WritesApplied == 0)
+            pending.FirstWriteTime = now;
+        pending.LastWriteTime = now;
+        pending.WritesApplied++;
+    }
+
+    private int QueueNativeProjectileBirthAlign(
+        CBaseCSGrenadeProjectile projectile,
+        ReplayProjectileEvent align)
+    {
+        var entityPtr = unchecked((ulong)projectile.Handle);
+        var rc = BotControllerNative.QueueProjectileBirthAlign(
+            entityPtr,
+            align.InitialPosition,
+            align.InitialVelocity);
+        if (rc == 0)
+            return 0;
+
+        RememberProjectileAlignEvent(
+            "projectile_birth_align_fallback",
+            $"projectile={projectile.Index} kind={align.Kind} native_birth_rc={rc}");
+        return rc;
+    }
+
+    private void ArmMolotovPointAlign(PendingProjectileAlign pending, ReplayProjectileEvent align)
+    {
+        pending.MolotovPointAlignArmed = false;
+        pending.MolotovPointAlignApplied = false;
+        pending.MolotovPointAlignMode = MolotovPointAlignMode.Off;
+        pending.MolotovPointAlignTargetTickIndex = -1;
+
+        if (_molotovPointAlignMode == MolotovPointAlignMode.Off ||
+            align.Kind != ReplayProjectileKind.Molotov ||
+            !HasReliableFireProjectileMetadata(align))
+        {
+            return;
+        }
+
+        pending.MolotovPointAlignArmed = true;
+        pending.MolotovPointAlignMode = _molotovPointAlignMode;
+        pending.MolotovPointAlignTargetTickIndex = Math.Max(0, align.EffectTickIndex - _molotovPointAlignLeadTicks);
+    }
+
+    private bool TryProcessMolotovPointAlign(
+        CBaseCSGrenadeProjectile projectile,
+        PendingProjectileAlign pending)
+    {
+        if (!pending.MolotovPointAlignArmed || pending.MolotovPointAlignApplied)
+            return false;
+
+        var state = BotControllerNative.GetReplayState(pending.Slot);
+        if (!state.Playing)
+            return true;
+
+        var targetTick = pending.MolotovPointAlignTargetTickIndex;
+        if (targetTick < 0)
+            return false;
+
+        var cursor = state.Cursor;
+        if (cursor > pending.Align.EffectTickIndex + 16)
+        {
+            RememberProjectileAlignEvent(
+                "molotov_point_align_expired",
+                $"slot={pending.Slot} event={pending.EventIndex} projectile={pending.Index} cursor={cursor} effect_tick={pending.Align.EffectTickIndex}");
+            pending.MolotovPointAlignApplied = true;
+            return true;
+        }
+
+        if (cursor < targetTick)
+            return true;
+
+        ApplyMolotovPointAlign(projectile, pending, cursor);
+        pending.MolotovPointAlignApplied = true;
+        return true;
+    }
+
+    private void ApplyMolotovPointAlign(
+        CBaseCSGrenadeProjectile projectile,
+        PendingProjectileAlign pending,
+        int cursor)
+    {
+        var point = pending.Align.EffectPosition;
+        var zero = new ReplayVector3(0.0f, 0.0f, 0.0f);
+
+        SetVector(projectile.AbsOrigin, point);
+        SetVector(projectile.ExplodeEffectOrigin, point);
+        SetVector(projectile.AbsVelocity, zero);
+        SetVector(projectile.BaseVelocity, zero);
+        SetVector(projectile.InitialVelocity, zero);
+        projectile.TicksAtZeroVelocity = Math.Max(projectile.TicksAtZeroVelocity, 8);
+
+        var rc = 0;
+        try
+        {
+            var molotov = new CMolotovProjectile(projectile.Handle);
+            if (molotov.IsValid)
+            {
+                SetVector(molotov.AbsOrigin, point);
+                SetVector(molotov.ExplodeEffectOrigin, point);
+                SetVector(molotov.AbsVelocity, zero);
+                SetVector(molotov.BaseVelocity, zero);
+                molotov.TicksAtZeroVelocity = Math.Max(molotov.TicksAtZeroVelocity, 8);
+                if (pending.MolotovPointAlignMode == MolotovPointAlignMode.Detonate)
+                {
+                    molotov.DetonateTime = Server.CurrentTime;
+                    molotov.DetonationRecorded = false;
+                    molotov.IsLive = true;
+                }
+            }
+            else
+            {
+                rc = -2;
+            }
+        }
+        catch
+        {
+            rc = -8;
+        }
+
+        RememberProjectileAlignEvent(
+            "molotov_point_align",
+            $"slot={pending.Slot} event={pending.EventIndex} projectile={pending.Index} mode={FormatMolotovPointAlignMode(pending.MolotovPointAlignMode)} cursor={cursor} target_tick={pending.MolotovPointAlignTargetTickIndex} effect_tick={pending.Align.EffectTickIndex} rc={rc} point=({point.X:F3},{point.Y:F3},{point.Z:F3})");
+    }
+
+    private void FinishProjectileAlign(uint index, PendingProjectileAlign pending, string reason)
+    {
+        _pendingProjectileAlign.Remove(index);
+        if (!pending.Matched)
+            return;
+
+        var duration = Math.Max(0.0f, pending.LastWriteTime - pending.FirstWriteTime);
+        var message =
+            $"slot={pending.Slot} event={pending.EventIndex} projectile={pending.Index} kind={pending.Kind} reason={reason} writes={pending.WritesApplied} target={FormatProjectileAlignTicks()} native_birth_rc={pending.LastNativeBirthRc} molotov_point={FormatPendingMolotovPointAlign(pending)} duration={duration.ToString("F3", CultureInfo.InvariantCulture)}";
+        RememberProjectileAlignEvent("projectile_align_finished", message);
+        if (!_utilityTraceEnabled || _nadeCycle != null)
+            return;
+
+        TraceUtilityMessage(
+            "projectile_align_finished",
+            message);
+    }
+
+    private void RememberProjectileAlignEvent(string kind, string message)
+    {
+        var line =
+            $"{Server.CurrentTime.ToString("F3", CultureInfo.InvariantCulture)} {kind} {message}";
+        _projectileAlignLog.Enqueue(line);
+        while (_projectileAlignLog.Count > ProjectileAlignLogMaxEntries)
+            _projectileAlignLog.Dequeue();
     }
 
     private static ProjectileAlignDecision EvaluateProjectileAlign(
@@ -2305,7 +2650,14 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (!_mapActive || _lifecycleResetInProgress)
             return;
 
-        _pendingProjectileAlign.Remove(entity.Index);
+        if (_pendingProjectileAlign.Remove(entity.Index, out var pending) &&
+            pending.MolotovPointAlignArmed &&
+            !pending.MolotovPointAlignApplied)
+        {
+            RememberProjectileAlignEvent(
+                "molotov_point_align_deleted",
+                $"slot={pending.Slot} event={pending.EventIndex} projectile={pending.Index} target_tick={pending.MolotovPointAlignTargetTickIndex} effect_tick={pending.Align.EffectTickIndex}");
+        }
 
         if (!_utilityTraceEnabled)
             return;
@@ -2423,6 +2775,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             TraceNadeStage("nade_prepare_ok", slot, clip, $"initial prepare completed target_def={utilityWeaponDefIndex}");
 
             _pendingProjectileAlign.Clear();
+            BotControllerNative.ClearProjectileBirthAlign();
             var token = ++_nextNadeStartToken;
             _queuedNadeStartTokens[slot] = token;
             var settleUntilTime = Server.CurrentTime + NadeClipStartSettleSeconds;
@@ -3907,6 +4260,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _projectileAlignNextBySlot.Clear();
         _replayIdentityGenerationBySlot.Clear();
         _pendingProjectileAlign.Clear();
+        BotControllerNative.ClearProjectileBirthAlign();
         _queuedNadeStartTokens.Clear();
         _rebuiltInventorySlots.Clear();
         _loadoutSyncedSlots.Clear();
@@ -3992,6 +4346,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             _replayIdentityGenerationBySlot.Clear();
             ResetReplayDisplaySteamIds();
             _pendingProjectileAlign.Clear();
+            BotControllerNative.ClearProjectileBirthAlign();
             _trackedDroppedReplayItems.Clear();
             _queuedNadeStartTokens.Clear();
             _rebuiltInventorySlots.Clear();
@@ -4083,11 +4438,12 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _activeWeaponCosmetics.Clear();
         _projectileAlignNextBySlot.Clear();
         _pendingProjectileAlign.Clear();
+        BotControllerNative.ClearProjectileBirthAlign();
         _queuedNadeStartTokens.Clear();
         _rebuiltInventorySlots.Clear();
         _cosmeticSyncedSlots.Clear();
         _cosmeticHeartbeatTokens.Clear();
-        RestoreAllReplayViewerCrosshairs();
+        ClearReplayCrosshairHudReticleMap(disablePatch: true);
         RestoreAllReplayBotViewmodels();
         _lastPlayingSlots.Clear();
         _quietReplaySlots.Clear();
@@ -4187,7 +4543,10 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private void ReleaseReplaySlot(int slot, string reason)
     {
         if (_loadedReplays.TryGetValue(slot, out var releasedReplay) && releasedReplay.UtilityOnly)
+        {
             _pendingProjectileAlign.Clear();
+            BotControllerNative.ClearProjectileBirthAlign();
+        }
         RestoreReplayBotViewmodel(slot);
         InvalidateReplayIdentityGeneration(slot);
         _lastPlayingSlots.Remove(slot);
@@ -5208,6 +5567,13 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         Skip
     }
 
+    private enum MolotovPointAlignMode
+    {
+        Off,
+        Teleport,
+        Detonate
+    }
+
     private sealed class NadeCycleState(
         int token,
         string manifestPath,
@@ -5245,7 +5611,16 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         public int EventIndex { get; set; } = -1;
         public int MatchAttemptsRemaining { get; set; }
         public int WritesRemaining { get; set; }
+        public int TotalWritesTarget { get; set; } = ProjectileAlignDefaultTotalWrites;
+        public int WritesApplied { get; set; }
+        public int LastNativeBirthRc { get; set; } = -99;
+        public float FirstWriteTime { get; set; }
+        public float LastWriteTime { get; set; }
         public bool Matched { get; set; }
+        public bool MolotovPointAlignArmed { get; set; }
+        public bool MolotovPointAlignApplied { get; set; }
+        public MolotovPointAlignMode MolotovPointAlignMode { get; set; } = MolotovPointAlignMode.Off;
+        public int MolotovPointAlignTargetTickIndex { get; set; } = -1;
     }
 
     private readonly record struct TraceVector(float? X, float? Y, float? Z)
@@ -5328,6 +5703,59 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private static string FormatOnOff(bool value)
         => value ? "on" : "off";
+
+    private static bool TryParseProjectileAlignTicks(string value, out int ticks)
+    {
+        var normalized = value.Trim().ToLowerInvariant();
+        ticks = normalized switch
+        {
+            "status" => int.MinValue,
+            "default" or "normal" => ProjectileAlignDefaultTotalWrites,
+            "once" or "single" => 1,
+            "until_delete" or "until-delete" or "per_tick" or "per-tick" or "tick" or "every_tick" or "every-tick" => ProjectileAlignUntilDelete,
+            _ => 0
+        };
+        if (ticks != 0)
+            return true;
+
+        if (!int.TryParse(normalized, NumberStyles.Integer, CultureInfo.InvariantCulture, out ticks))
+            return false;
+        if (ticks < 1 || ticks > ProjectileAlignMaxTotalWrites)
+            return false;
+        return true;
+    }
+
+    private string FormatProjectileAlignTicks()
+        => _projectileAlignTotalWrites == ProjectileAlignUntilDelete
+            ? "until_delete"
+            : _projectileAlignTotalWrites.ToString(CultureInfo.InvariantCulture);
+
+    private static bool TryParseMolotovPointAlignMode(string value, out MolotovPointAlignMode? mode)
+    {
+        mode = value.Trim().ToLowerInvariant() switch
+        {
+            "status" => null,
+            "off" or "0" or "false" or "none" => MolotovPointAlignMode.Off,
+            "teleport" or "tp" => MolotovPointAlignMode.Teleport,
+            "detonate" or "effect" or "point" or "1" or "true" => MolotovPointAlignMode.Detonate,
+            _ => null
+        };
+
+        return mode.HasValue || value.Equals("status", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FormatMolotovPointAlignMode(MolotovPointAlignMode mode)
+        => mode switch
+        {
+            MolotovPointAlignMode.Teleport => "teleport",
+            MolotovPointAlignMode.Detonate => "detonate",
+            _ => "off"
+        };
+
+    private static string FormatPendingMolotovPointAlign(PendingProjectileAlign pending)
+        => pending.MolotovPointAlignArmed
+            ? $"{FormatMolotovPointAlignMode(pending.MolotovPointAlignMode)}:{pending.MolotovPointAlignTargetTickIndex}"
+            : "off";
 
     private static string CurrentMapName()
     {

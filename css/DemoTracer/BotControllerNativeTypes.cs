@@ -15,10 +15,11 @@ internal static partial class BotControllerNative
     public const int ReplayMovementExtraByteSize = 48;
     public const int HudReticleProbeStateByteSize = 172;
     public const int HudReticlePaintConfigByteSize = 64;
+    public const int ProjectileBirthAlignStatusByteSize = 36;
     internal const uint CommandFieldLeftHand = 1U << 7;
     public const int ReplaySlotStateByteSize = 24;
     public const int MaxSlots = 64;
-    public const int DemoTracerApiVersion = 4;
+    public const int DemoTracerApiVersion = 5;
 
     internal const int LockKindAll = 0;
     internal const int LockKindAim = 1;
@@ -91,6 +92,9 @@ internal static partial class BotControllerNative
         if (hudReticlePaintConfigSize != HudReticlePaintConfigByteSize)
             throw new InvalidOperationException($"HudReticlePaintConfig layout is {hudReticlePaintConfigSize}, expected {HudReticlePaintConfigByteSize}");
 
+        var projectileBirthAlignStatusSize = Marshal.SizeOf<NativeProjectileBirthAlignStatus>();
+        if (projectileBirthAlignStatusSize != ProjectileBirthAlignStatusByteSize)
+            throw new InvalidOperationException($"ProjectileBirthAlignStatus layout is {projectileBirthAlignStatusSize}, expected {ProjectileBirthAlignStatusByteSize}");
     }
 }
 
@@ -121,6 +125,20 @@ internal struct BotControllerAbiInfo
         MaxSlots = BotControllerNative.MaxSlots,
         Capabilities = 0
     };
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 4)]
+internal struct NativeProjectileBirthAlignStatus
+{
+    public int Size;
+    public int Configured;
+    public int Pending;
+    public int Queued;
+    public int Applied;
+    public int Expired;
+    public int Failed;
+    public int InitialPositionOffset;
+    public int InitialVelocityOffset;
 }
 
 internal readonly record struct ReplayFileMetadata(

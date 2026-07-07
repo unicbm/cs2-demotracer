@@ -1,8 +1,16 @@
 namespace DemoTracer;
 
-public sealed partial class DemoTracerPlugin
+internal static class DemoTracerCrosshairCode
 {
-    private static bool TryDecodeCrosshairShareCodeToPaintConfig(
+    public static string? Normalize(string? code)
+    {
+        var trimmed = code?.Trim();
+        return string.IsNullOrEmpty(trimmed) || trimmed.Length > 128
+            ? null
+            : trimmed;
+    }
+
+    public static bool TryDecodeToPaintConfig(
         string code,
         out NativeHudReticlePaintConfig config,
         out string reason)
@@ -10,7 +18,7 @@ public sealed partial class DemoTracerPlugin
         config = default;
         reason = string.Empty;
 
-        var normalized = NormalizeCrosshairCode(code);
+        var normalized = Normalize(code);
         if (string.IsNullOrWhiteSpace(normalized))
         {
             reason = "invalid_crosshair_code";

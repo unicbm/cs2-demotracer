@@ -15,7 +15,7 @@ values.
 - Runtime reader support: v3 through v7
 - Current manifest ABI: 17
 - Current BotController native ABI: 16
-- Current DemoTracer companion API: 4
+- Current DemoTracer companion API: 5
 
 Compatibility notes:
 

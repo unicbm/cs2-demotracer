@@ -221,7 +221,7 @@ through CS2's native `say` / `say_team` path when `dtr_chat_auto on` is enabled
 - Required BotController native ABI: 16
 - Bundled BotController native ABI: 16
 - Supported `.dtr` reader versions: 3..7
-- DemoTracer companion API: 4
+- DemoTracer companion API: 5
 - Maintained runtime platform: Windows x64
 
 ## Dependencies

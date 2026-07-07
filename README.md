@@ -150,7 +150,7 @@ loader and BotController runtime. Detailed binary layout is documented in
 - Runtime reader support: v3 through v7
 - Current manifest ABI: 17
 - Current BotController native ABI: 16
-- Current DemoTracer companion API: 4
+- Current DemoTracer companion API: 5
 - Endianness: little-endian
 - Current v7 layout: section container with required movement snapshot, tick
   metadata, and subtick sections; optional projectile, high-fidelity metadata,

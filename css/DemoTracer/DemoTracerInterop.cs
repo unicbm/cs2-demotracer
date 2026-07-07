@@ -130,6 +130,8 @@ internal static partial class BotControllerNative
 
     public static bool HasHudReticleProbeExports => ProbeHudReticleProbeExports();
 
+    public static bool HasProjectileBirthAlignExports => ProbeProjectileBirthAlignExports();
+
     public static string UsercmdMovementIntentStatus
     {
         get
@@ -156,7 +158,7 @@ internal static partial class BotControllerNative
                    $"build={BuildId} usercmd_movement_intent={UsercmdMovementIntentStatus} " +
                    $"voice_send={VoiceStatusText} " +
                    $"left_hand_alias={HasLeftHandIntentAliasExports} left_hand_latch={HasLeftHandDesiredLatchExports} " +
-                   $"hud_reticle_probe={HasHudReticleProbeExports} " +
+                   $"hud_reticle_probe={HasHudReticleProbeExports} projectile_birth_align={HasProjectileBirthAlignExports} " +
                    $"dtr_reader={MinRecFormatVersion}..{RecFormatVersion} " +
                    $"platform={RuntimePlatformName} api={DemoTracerApiVersion}";
         }
@@ -229,46 +231,6 @@ internal static partial class BotControllerNative
         }
     }
 
-    public static int HudReticleSetPaintConfig(NativeHudReticlePaintConfig config)
-    {
-        try
-        {
-            config.Size = HudReticlePaintConfigByteSize;
-            return BotController_HudReticleSetPaintConfig(
-                in config,
-                HudReticlePaintConfigByteSize);
-        }
-        catch (EntryPointNotFoundException)
-        {
-            return -7;
-        }
-        catch
-        {
-            return -8;
-        }
-    }
-
-    public static int HudReticleSetPaintConfigTarget(
-        ulong controllerPtr,
-        ulong pawnPtr,
-        ulong weaponPtr,
-        int pawnIndex,
-        int weaponIndex)
-    {
-        try
-        {
-            return BotController_HudReticleSetPaintConfigTarget(controllerPtr, pawnPtr, weaponPtr, pawnIndex, weaponIndex);
-        }
-        catch (EntryPointNotFoundException)
-        {
-            return -7;
-        }
-        catch
-        {
-            return -8;
-        }
-    }
-
     public static int HudReticleSetPaintConfigMapEntry(
         int slot,
         int pawnIndex,
@@ -324,6 +286,84 @@ internal static partial class BotControllerNative
         catch
         {
             return -8;
+        }
+    }
+
+    public static int SetProjectileBirthAlignOffsets(int initialPositionOffset, int initialVelocityOffset)
+    {
+        try
+        {
+            return BotController_SetProjectileBirthAlignOffsets(
+                initialPositionOffset,
+                initialVelocityOffset);
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return -7;
+        }
+        catch
+        {
+            return -8;
+        }
+    }
+
+    public static int QueueProjectileBirthAlign(ulong entityPtr, ReplayVector3 position, ReplayVector3 velocity)
+    {
+        if (entityPtr == 0)
+            return -2;
+        try
+        {
+            return BotController_QueueProjectileBirthAlign(
+                entityPtr,
+                position.X,
+                position.Y,
+                position.Z,
+                velocity.X,
+                velocity.Y,
+                velocity.Z);
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return -7;
+        }
+        catch
+        {
+            return -8;
+        }
+    }
+
+    public static int ClearProjectileBirthAlign()
+    {
+        try
+        {
+            return BotController_ClearProjectileBirthAlign();
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return -7;
+        }
+        catch
+        {
+            return -8;
+        }
+    }
+
+    public static NativeProjectileBirthAlignStatus ProjectileBirthAlignStatus
+    {
+        get
+        {
+            try
+            {
+                return BotController_GetProjectileBirthAlignStatus(
+                    out var status,
+                    ProjectileBirthAlignStatusByteSize) == 0
+                    ? status
+                    : new NativeProjectileBirthAlignStatus { Size = ProjectileBirthAlignStatusByteSize };
+            }
+            catch
+            {
+                return new NativeProjectileBirthAlignStatus { Size = ProjectileBirthAlignStatusByteSize };
+            }
         }
     }
 
@@ -510,6 +550,24 @@ internal static partial class BotControllerNative
                 out _,
                 HudReticleProbeStateByteSize);
             return true;
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool ProbeProjectileBirthAlignExports()
+    {
+        try
+        {
+            return BotController_GetProjectileBirthAlignStatus(
+                out _,
+                ProjectileBirthAlignStatusByteSize) == 0;
         }
         catch (EntryPointNotFoundException)
         {

@@ -439,8 +439,10 @@ Implementation when enabled:
   projectile and inferno behavior.
 - The bot still performs the throw action naturally. The plugin waits for CS2 to
   spawn the projectile, resolves its thrower slot, matches the next demo
-  projectile event near the replay cursor, and writes:
+  projectile event near the replay cursor, and asks the native BotController to
+  correct birth-state fields before projectile simulation when available:
   `InitialPosition`, `InitialVelocity`, `AbsOrigin`, and `AbsVelocity`.
+  Older native runtimes fall back to the managed post-spawn write path.
 - Matching is retried for a few ticks because CS2 may not attach the thrower or
   final projectile fields immediately at spawn time.
 - Smoke detonation metadata is still the most complete diagnostic path, but
@@ -453,6 +455,42 @@ Replaying player origin, velocity, view angles, buttons, and subtick input does
 not always reproduce the same grenade initial velocity. Small velocity or height
 differences can make precision smokes hit a different collision edge. The
 projectile data records the demo result directly and corrects that bias.
+
+### `dtr_projectile_align_ticks <status|default|once|2..512|until_delete>`
+
+Experimental write-duration control for projectile alignment. Default is
+`once`: queue one birth-state correction when the projectile is matched.
+Numeric values keep queuing/writing the same demo initial position/velocity for
+that many total plugin ticks. `until_delete` writes every plugin tick until the
+projectile entity disappears.
+
+Use this only for local fidelity/performance tests. It can help answer whether
+per-tick projectile forcing causes stutter, but it still does not guarantee
+molotov/inferno damage correctness because CS2 continues to own collision,
+detonation, inferno spread, and damage overlap.
+
+### `dtr_molotov_align_point <status|off|teleport|detonate> [lead_ticks]`
+
+Experimental molotov/incendiary effect-point alignment. It only applies to
+fire projectile events with reliable demo effect metadata.
+
+- `off`: normal projectile alignment only.
+- `teleport`: near the demo effect tick, move the live molotov projectile to
+  the demo effect position and zero its velocity.
+- `detonate`: also sets the molotov projectile `DetonateTime` to the current
+  server time after moving `AbsOrigin` and `ExplodeEffectOrigin`.
+
+Default is `detonate 1`. `lead_ticks` may be `0..8`. This corrects demo-backed
+fire effect points to avoid molotov landing drift; it does not force player
+damage or health. Use `off` to fall back to pure CS2 projectile/inferno
+simulation for fire grenades.
+
+### `dtr_projectile_align_log [clear|all|molotov|fire]`
+
+Prints the recent in-memory projectile-align decisions in the server console.
+Use `molotov` or `fire` after a test round to see whether fire throws were
+applied, skipped, expired before matching, or finished their write budget.
+This is intentionally console-only and does not require enabling CSV trace.
 
 ### `dtr_cosmetic_align <0|1>`
 
