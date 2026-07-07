@@ -335,9 +335,17 @@ fn normalize_path(path: &Path) -> PathBuf {
     for component in path.components() {
         match component {
             std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => {
-                out.pop();
-            }
+            std::path::Component::ParentDir => match out.components().next_back() {
+                Some(std::path::Component::Normal(_)) => {
+                    out.pop();
+                }
+                Some(std::path::Component::ParentDir) | None => {
+                    out.push("..");
+                }
+                Some(std::path::Component::Prefix(_))
+                | Some(std::path::Component::RootDir)
+                | Some(std::path::Component::CurDir) => {}
+            },
             other => out.push(other.as_os_str()),
         }
     }
@@ -528,6 +536,39 @@ mod tests {
         .unwrap();
 
         validate_public_artifacts(pack).unwrap();
+    }
+
+    #[test]
+    fn manifest_hygiene_allows_relative_parent_pack_inputs() {
+        let cwd = std::env::current_dir().unwrap();
+        let parent = cwd.parent().unwrap();
+        let temp = tempfile::tempdir_in(parent).unwrap();
+        let pack = temp.path().join("pack");
+        let manifest_path = pack.join("manifest.json");
+        let replay_path = pack.join("round01/t/player.dtr");
+        let avatar_path = pack.join("avatars/avatar.png");
+        fs::create_dir_all(replay_path.parent().unwrap()).unwrap();
+        fs::create_dir_all(avatar_path.parent().unwrap()).unwrap();
+        fs::write(&replay_path, b"dtr").unwrap();
+        fs::write(&avatar_path, b"png").unwrap();
+        fs::write(
+            &manifest_path,
+            serde_json::to_string(&json!({
+                "files": [
+                    { "path": "round01/t/player.dtr" }
+                ],
+                "avatar_overrides": [
+                    { "steam_id": 76561198000000001_u64, "path": "avatars/avatar.png" }
+                ]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let relative_pack = PathBuf::from("..")
+            .join(temp.path().file_name().unwrap())
+            .join("pack");
+        validate_public_artifacts(&relative_pack).unwrap();
     }
 
     #[test]
