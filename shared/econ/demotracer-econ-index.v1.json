@@ -4,13 +4,13 @@
   "description": "Compact CS2 econ allowlists consumed by CS2 DemoTracer converter and runtime.",
   "source": {
     "repository": "https://github.com/unicbm/cs2-econ-id-index",
-    "commit": "f17cf663e0a232edb2899efa1326232ccd9c8d6d",
-    "snapshot_date": "2026-07-04",
-    "cs2_patch_version": "1.41.6.7",
-    "cs2_client_version": "2000860",
-    "source_revision": "10797849",
-    "version_date": "Jul 03 2026",
-    "version_time": "11:45:52",
+    "commit": "09b4339e95aca53c122d7929b8a9a1d933af9a44",
+    "snapshot_date": "2026-07-11",
+    "cs2_patch_version": "1.41.6.9",
+    "cs2_client_version": "2000873",
+    "source_revision": "10812696",
+    "version_date": "Jul 09 2026",
+    "version_time": "13:32:20",
     "legacy_bodygroup_paints_source": "pre-index DemoTracer legacy_model rows preserved in this compact index; normalized through DemoTracer knife def rules."
   },
   "id_space_warning": "Do not compare IDs across arrays unless the array name/domain matches.",
@@ -192,6 +192,10 @@
       "paint_kit": 1430
     },
     {
+      "weapon_defidx": 1,
+      "paint_kit": 1458
+    },
+    {
       "weapon_defidx": 2,
       "paint_kit": 28
     },
@@ -360,6 +364,10 @@
       "paint_kit": 1373
     },
     {
+      "weapon_defidx": 2,
+      "paint_kit": 1459
+    },
+    {
       "weapon_defidx": 3,
       "paint_kit": 3
     },
@@ -522,6 +530,10 @@
     {
       "weapon_defidx": 3,
       "paint_kit": 1429
+    },
+    {
+      "weapon_defidx": 3,
+      "paint_kit": 1457
     },
     {
       "weapon_defidx": 4,
@@ -750,6 +762,14 @@
     {
       "weapon_defidx": 4,
       "paint_kit": 1421
+    },
+    {
+      "weapon_defidx": 4,
+      "paint_kit": 1450
+    },
+    {
+      "weapon_defidx": 4,
+      "paint_kit": 1460
     },
     {
       "weapon_defidx": 7,
@@ -988,6 +1008,14 @@
       "paint_kit": 1425
     },
     {
+      "weapon_defidx": 7,
+      "paint_kit": 1449
+    },
+    {
+      "weapon_defidx": 7,
+      "paint_kit": 1466
+    },
+    {
       "weapon_defidx": 8,
       "paint_kit": 9
     },
@@ -1162,6 +1190,14 @@
     {
       "weapon_defidx": 8,
       "paint_kit": 1362
+    },
+    {
+      "weapon_defidx": 8,
+      "paint_kit": 1452
+    },
+    {
+      "weapon_defidx": 8,
+      "paint_kit": 1464
     },
     {
       "weapon_defidx": 9,
@@ -1364,6 +1400,14 @@
       "paint_kit": 1422
     },
     {
+      "weapon_defidx": 9,
+      "paint_kit": 1465
+    },
+    {
+      "weapon_defidx": 9,
+      "paint_kit": 1467
+    },
+    {
       "weapon_defidx": 10,
       "paint_kit": 22
     },
@@ -1530,6 +1574,14 @@
     {
       "weapon_defidx": 10,
       "paint_kit": 1393
+    },
+    {
+      "weapon_defidx": 10,
+      "paint_kit": 1461
+    },
+    {
+      "weapon_defidx": 10,
+      "paint_kit": 1477
     },
     {
       "weapon_defidx": 11,
@@ -2132,6 +2184,14 @@
       "paint_kit": 1432
     },
     {
+      "weapon_defidx": 16,
+      "paint_kit": 1446
+    },
+    {
+      "weapon_defidx": 16,
+      "paint_kit": 1463
+    },
+    {
       "weapon_defidx": 17,
       "paint_kit": 3
     },
@@ -2350,6 +2410,14 @@
     {
       "weapon_defidx": 17,
       "paint_kit": 1367
+    },
+    {
+      "weapon_defidx": 17,
+      "paint_kit": 1448
+    },
+    {
+      "weapon_defidx": 17,
+      "paint_kit": 1454
     },
     {
       "weapon_defidx": 19,
@@ -3012,6 +3080,10 @@
       "paint_kit": 1381
     },
     {
+      "weapon_defidx": 25,
+      "paint_kit": 1471
+    },
+    {
       "weapon_defidx": 26,
       "paint_kit": 3
     },
@@ -3162,6 +3234,10 @@
     {
       "weapon_defidx": 26,
       "paint_kit": 1418
+    },
+    {
+      "weapon_defidx": 26,
+      "paint_kit": 1472
     },
     {
       "weapon_defidx": 27,
@@ -3552,6 +3628,10 @@
       "paint_kit": 1427
     },
     {
+      "weapon_defidx": 29,
+      "paint_kit": 1475
+    },
+    {
       "weapon_defidx": 30,
       "paint_kit": 2
     },
@@ -3734,6 +3814,14 @@
     {
       "weapon_defidx": 30,
       "paint_kit": 1384
+    },
+    {
+      "weapon_defidx": 30,
+      "paint_kit": 1447
+    },
+    {
+      "weapon_defidx": 30,
+      "paint_kit": 1462
     },
     {
       "weapon_defidx": 31,
@@ -4064,6 +4152,10 @@
       "paint_kit": 1436
     },
     {
+      "weapon_defidx": 33,
+      "paint_kit": 1468
+    },
+    {
       "weapon_defidx": 34,
       "paint_kit": 33
     },
@@ -4244,6 +4336,14 @@
       "paint_kit": 1423
     },
     {
+      "weapon_defidx": 34,
+      "paint_kit": 1469
+    },
+    {
+      "weapon_defidx": 34,
+      "paint_kit": 1473
+    },
+    {
       "weapon_defidx": 35,
       "paint_kit": 3
     },
@@ -4422,6 +4522,14 @@
     {
       "weapon_defidx": 35,
       "paint_kit": 1368
+    },
+    {
+      "weapon_defidx": 35,
+      "paint_kit": 1442
+    },
+    {
+      "weapon_defidx": 35,
+      "paint_kit": 1474
     },
     {
       "weapon_defidx": 36,
@@ -4652,6 +4760,10 @@
       "paint_kit": 1420
     },
     {
+      "weapon_defidx": 36,
+      "paint_kit": 1455
+    },
+    {
       "weapon_defidx": 38,
       "paint_kit": 46
     },
@@ -4774,6 +4886,14 @@
     {
       "weapon_defidx": 38,
       "paint_kit": 1371
+    },
+    {
+      "weapon_defidx": 38,
+      "paint_kit": 1453
+    },
+    {
+      "weapon_defidx": 38,
+      "paint_kit": 1470
     },
     {
       "weapon_defidx": 39,
@@ -5280,6 +5400,10 @@
       "paint_kit": 1433
     },
     {
+      "weapon_defidx": 60,
+      "paint_kit": 1476
+    },
+    {
       "weapon_defidx": 61,
       "paint_kit": 25
     },
@@ -5456,6 +5580,10 @@
       "paint_kit": 1431
     },
     {
+      "weapon_defidx": 61,
+      "paint_kit": 1451
+    },
+    {
       "weapon_defidx": 63,
       "paint_kit": 12
     },
@@ -5600,6 +5728,10 @@
       "paint_kit": 1390
     },
     {
+      "weapon_defidx": 63,
+      "paint_kit": 1443
+    },
+    {
       "weapon_defidx": 64,
       "paint_kit": 12
     },
@@ -5702,6 +5834,10 @@
     {
       "weapon_defidx": 64,
       "paint_kit": 1389
+    },
+    {
+      "weapon_defidx": 64,
+      "paint_kit": 1445
     }
   ],
   "legacy_bodygroup_paints": [
@@ -10876,6 +11012,40 @@
     1438,
     1439,
     1440,
+    1442,
+    1443,
+    1445,
+    1446,
+    1447,
+    1448,
+    1449,
+    1450,
+    1451,
+    1452,
+    1453,
+    1454,
+    1455,
+    1457,
+    1458,
+    1459,
+    1460,
+    1461,
+    1462,
+    1463,
+    1464,
+    1465,
+    1466,
+    1467,
+    1468,
+    1469,
+    1470,
+    1471,
+    1472,
+    1473,
+    1474,
+    1475,
+    1476,
+    1477,
     9001,
     10006,
     10007,
@@ -21466,6 +21636,59 @@
     10311,
     10312,
     10313,
+    10314,
+    10315,
+    10316,
+    10317,
+    10318,
+    10319,
+    10320,
+    10321,
+    10322,
+    10323,
+    10324,
+    10325,
+    10326,
+    10327,
+    10328,
+    10329,
+    10330,
+    10331,
+    10332,
+    10333,
+    10334,
+    10335,
+    10336,
+    10337,
+    10338,
+    10339,
+    10340,
+    10341,
+    10342,
+    10343,
+    10344,
+    10345,
+    10346,
+    10347,
+    10348,
+    10349,
+    10350,
+    10351,
+    10353,
+    10354,
+    10355,
+    10356,
+    10357,
+    10358,
+    10359,
+    10360,
+    10361,
+    10363,
+    10364,
+    10365,
+    10366,
+    10367,
+    10368,
     10369,
     10370,
     10371,
@@ -22291,6 +22514,8 @@
     11191,
     11192,
     11193,
+    11194,
+    11195,
     11196,
     11197,
     11198,
@@ -23082,6 +23307,11 @@
     5278,
     5279,
     5280,
+    5281,
+    5282,
+    5283,
+    5284,
+    5285,
     5312,
     5313,
     5314,
@@ -23090,6 +23320,42 @@
     5320,
     5321,
     5322,
+    5330,
+    5331,
+    5332,
+    5333,
+    5334,
+    5335,
+    5336,
+    5337,
+    5338,
+    5339,
+    5340,
+    5341,
+    5342,
+    5343,
+    5344,
+    5345,
+    5346,
+    5347,
+    5348,
+    5349,
+    5350,
+    5351,
+    5352,
+    5353,
+    5354,
+    5355,
+    5356,
+    5357,
+    5358,
+    5359,
+    5360,
+    5361,
+    5362,
+    5363,
+    5364,
+    5365,
     6001,
     6002,
     6003,
@@ -23203,16 +23469,16 @@
     6134
   ],
   "counts": {
-    "weapon_paints": 1422,
+    "weapon_paints": 1456,
     "legacy_bodygroup_paints": 949,
-    "paint_kit_ids": 1446,
+    "paint_kit_ids": 1480,
     "weapon_defidx": 43,
     "knife_defidx": 23,
     "glove_defidx": 10,
     "agent_defidx": 141,
-    "sticker_ids": 11154,
+    "sticker_ids": 11209,
     "keychain_ids": 143,
     "music_kit_ids": 101,
-    "scoreboard_flair_defidx": 621
+    "scoreboard_flair_defidx": 662
   }
 }
