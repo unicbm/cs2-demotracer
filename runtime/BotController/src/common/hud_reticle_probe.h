@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include <nlohmann/json.hpp>
+
 namespace BotController::HudReticleProbe
 {
     constexpr int kActionInstall = 1 << 0;
@@ -86,5 +88,6 @@ namespace BotController::HudReticleProbe
     int SetPaintConfigMapEntry(int slot, int pawnIndex, int weaponIndex, const PaintConfigOverride *config, int size);
     int ClearPaintConfigMapEntry(int slot);
     int ClearPaintConfigMap();
+    void LoadFromGamedata(const nlohmann::json &gamedata);
     void Remove();
 } // namespace BotController::HudReticleProbe

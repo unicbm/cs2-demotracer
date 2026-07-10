@@ -2,6 +2,7 @@
 
 #include "hook.h"
 #include "platform.h"
+#include "sig_scan.h"
 
 #include <array>
 #include <atomic>
@@ -19,10 +20,11 @@ namespace BotController::HudReticleProbe
 {
     namespace
     {
-        // CS2 client.dll 2026-07-04: builds the final HUD crosshair paint
-        // config for the currently rendered POV. This is intentionally later
-        // than bot/player identity and earlier than Panorama paint.
-        constexpr uintptr_t kPaintConfigBuildRva = 0x010A7100u;
+        // Builds the final HUD crosshair paint config for the currently
+        // rendered POV. Resolve it from gamedata because client.dll RVAs move
+        // across CS2 updates even when this call contract and layout survive.
+        constexpr const char *kPaintConfigBuildSigName =
+            "CCSGO_HudReticle::BuildPaintConfig";
         constexpr unsigned char kPaintConfigBuildPrologue[] = {
             0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x56, 0x57};
         constexpr int kPaintConfigMapSlots = 64;
@@ -74,6 +76,7 @@ namespace BotController::HudReticleProbe
         std::mutex g_mutex;
         Hook g_configHook;
         PaintConfigBuildFn g_configOriginal = nullptr;
+        std::string g_configSignature;
         uintptr_t g_clientBase = 0;
         uintptr_t g_configTarget = 0;
 
@@ -135,15 +138,6 @@ namespace BotController::HudReticleProbe
         std::atomic<int> g_configRecoilAfter{INT_MIN};
         std::atomic<int> g_configGapUseWeaponAfter{INT_MIN};
         std::atomic<uint64_t> g_configRgbaPacked{0};
-
-        uintptr_t ClientBase()
-        {
-#if defined(_WIN32)
-            return reinterpret_cast<uintptr_t>(GetModuleHandleA("client.dll"));
-#else
-            return 0;
-#endif
-        }
 
         bool BytesMatch(void *target, const unsigned char *expected, size_t expectedSize)
         {
@@ -549,17 +543,30 @@ namespace BotController::HudReticleProbe
                 return 0;
             }
 
-            g_clientBase = ClientBase();
-            if (!g_clientBase)
+#if defined(_WIN32)
+            const auto clientModule = Sig::ModuleFromName("client.dll");
+            if (!clientModule)
                 return -3;
 
-            g_configTarget = g_clientBase + kPaintConfigBuildRva;
-            void *target = reinterpret_cast<void *>(g_configTarget);
+            std::vector<uint8_t> pattern;
+            std::vector<bool> wildcards;
+            if (!Sig::ParseSigString(g_configSignature, pattern, wildcards))
+            {
+                g_configInstallRc.store(-13, std::memory_order_relaxed);
+                return -13;
+            }
+
+            void *target = Sig::FindPatternIn(clientModule, pattern, wildcards);
+            g_clientBase = reinterpret_cast<uintptr_t>(clientModule.Base);
+            g_configTarget = reinterpret_cast<uintptr_t>(target);
             if (!PaintConfigBuildPrologueMatches(target))
             {
                 g_configInstallRc.store(-13, std::memory_order_relaxed);
                 return -13;
             }
+#else
+            return -3;
+#endif
 
             void *orig = nullptr;
             if (!g_configHook.Create(target, reinterpret_cast<void *>(&PaintConfigBuildDetour), &orig))
@@ -632,6 +639,12 @@ namespace BotController::HudReticleProbe
                     : 0;
         }
     } // namespace
+
+    void LoadFromGamedata(const nlohmann::json &gamedata)
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        g_configSignature = Sig::FindPlatformSig(gamedata, kPaintConfigBuildSigName);
+    }
 
     void Remove()
     {
