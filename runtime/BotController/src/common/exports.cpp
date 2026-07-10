@@ -20,7 +20,7 @@
 namespace
 {
     constexpr int kBotControllerAbiMajor = 16;
-    constexpr int kBotControllerAbiMinor = 27;
+    constexpr int kBotControllerAbiMinor = 28;
     constexpr uint64_t kCapabilityReplaySlotState = 1ULL << 0;
     constexpr uint64_t kCapabilityStartReplayAt = 1ULL << 1;
     constexpr uint64_t kCapabilityStartReplayUntil = 1ULL << 2;

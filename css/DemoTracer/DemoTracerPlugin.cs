@@ -18,7 +18,7 @@ namespace DemoTracer;
 public sealed partial class DemoTracerPlugin : BasePlugin
 {
     public override string ModuleName => "CS2 DemoTracer";
-    public override string ModuleVersion => "0.4.0";
+    public override string ModuleVersion => "0.4.1";
     public override string ModuleAuthor => "unicbm";
     public override string ModuleDescription => "Trace CS2 demos into bot-executable route replays.";
 

@@ -19,7 +19,8 @@ normal conversion. Rust is only required when building from source.
 Playback needs a local Windows x64 CS2 server with:
 
 - [Metamod:Source](https://www.sourcemm.net/)
-- [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp)
+- [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp) v1.0.371
+  or newer for the July 2026 CS2 1.41.6.9 update
 - The DemoTracer server bundle
 
 The server bundle includes:
@@ -38,6 +39,9 @@ CS2-Bot-Hider, or a RayTrace provider.
 ### CS2-Bot-Hider
 
 [CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider) is optional.
+
+For the July 2026 CS2 update, use a build containing the Windows client
+identity-offset fix. Tagged v0.2.5 predates that fix.
 
 DemoTracer does not vendor BotHider and does not compile against a BotHider DLL.
 At runtime it probes BotHider-managed bot slots through BotHider's shared slot
@@ -64,6 +68,8 @@ provider, is optional. DemoTracer looks for a CounterStrikeSharp capability
 named `raytrace:craytraceinterface` and `RayTraceApi` types at runtime. There is
 no compile-time reference.
 
+For the July 2026 CS2 update, use Ray-Trace v1.0.16 or newer.
+
 When available, RayTrace is used for stricter line-of-sight filtering in
 handoff 360 threat detection. Without it, DemoTracer keeps working and falls
 back to a conservative "do not block handoff on missing raytrace" path. Use
@@ -74,6 +80,11 @@ back to a conservative "do not block handoff on missing raytrace" path. Use
 This repository bundles its own DemoTracer-compatible BotController native
 runtime. The CounterStrikeSharp plugin currently targets `net8.0` and talks to
 that runtime through a C ABI / P/Invoke layer.
+
+The source project deliberately keeps its compile-time CounterStrikeSharp API
+reference separate from the required server runtime release so it can continue
+to target `net8.0`. Changing that target is a compatibility migration, not a
+release-package dependency bump.
 
 Upstream `XBribo/CS2-Bot-Controller` also has a newer C# shared capability path
 whose projects may target newer .NET versions. That upstream API is not bundled

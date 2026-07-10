@@ -14,7 +14,7 @@ or legacy CS:GO paths.
   `dtr_`.
 - The replay extension is `.dtr`. The binary magic is `CSDTRREC`; current
   writer format is `.dtr` v7. Current manifest ABI is 17,
-  BotController native ABI is 16, and DemoTracer companion API is 3. Do not
+  BotController native ABI is 16, and DemoTracer companion API is 5. Do not
   change magic, ABI, API, or format layout without an explicit version decision
   and matching docs.
 - The maintained packaged converter target is Windows x64. Linux may work from
@@ -79,8 +79,8 @@ or legacy CS:GO paths.
 - Keep manifest ABI, C# reader expectations, and native runtime ABI in sync.
 - Never assign replay control to real human players. Valid targets are strict
   CS2 bots or slots known to be bot-managed by the BotHider/shared-state path.
-- Default replay fidelity settings are identity `full`, weapon/loadout alignment
-  on, projectile alignment on, crosshair alignment on, left-hand desired writes
+- Default replay fidelity settings are identity `steam`, weapon/loadout alignment
+  on, projectile alignment on, crosshair alignment off, left-hand desired writes
   on, partial replay on, and handoff `death_contact_c4 slot`. Cosmetic, sticker,
   and scoreboard alignment are default-off.
 - Runtime default preferences may be loaded from server-local

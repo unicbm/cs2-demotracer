@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.4.0",
+    [string]$Version = "0.4.1",
     [string]$Configuration = "Release",
     [string]$OutputRoot = "dist",
     [string]$RuntimePackage = "runtime\BotController\build\package",
@@ -147,6 +147,7 @@ version: v$Version
 git_commit: $gitCommit
 platform: windows-x64
 bundled_botcontroller_abi: 16
+bundled_botcontroller_abi_minor: 28
 expected_demotracer_native_abi: 16
 dtr_reader: 3..7
 demotracer_api: 5
@@ -167,7 +168,8 @@ matching ABI set.
 
 1. Stop the CS2 server.
 2. Make sure the server already has Metamod:Source and CounterStrikeSharp
-   installed. They are prerequisites and are not included in this bundle.
+   v1.0.371 or newer installed. They are prerequisites and are not included in
+   this bundle.
 3. Copy this package's `addons` directory into the server `game/csgo` directory
    so it merges with the existing `addons` directory.
 4. Start the server.
@@ -181,13 +183,13 @@ bc_status
 Expected ABI check:
 
 ```text
-expected_abi=16 runtime_abi=16
+expected_abi=16 runtime_abi=16 abi_minor=28
 ```
 
-If `runtime_abi` is lower than `16`, the server is still loading an old
-`BotController.dll`. Replace `addons/BotController/bin/win64/BotController.dll`,
-`addons/BotController/gamedata.json`, and `addons/metamod/BotController.vdf`
-from this package.
+For v0.4.1, require `runtime_abi=16` and `abi_minor=28` or newer. If the minor
+version is missing or lower, replace the complete server bundle, including
+`addons/BotController/bin/win64/BotController.dll`,
+`addons/BotController/gamedata.json`, and `addons/metamod/BotController.vdf`.
 
 ## Voice Replay
 
@@ -220,6 +222,7 @@ through CS2's native `say` / `say_team` path when `dtr_chat_auto on` is enabled
 
 - Required BotController native ABI: 16
 - Bundled BotController native ABI: 16
+- Bundled BotController native ABI minor: 28
 - Supported `.dtr` reader versions: 3..7
 - DemoTracer companion API: 5
 - Maintained runtime platform: Windows x64
@@ -229,7 +232,7 @@ through CS2's native `say` / `say_team` path when `dtr_chat_auto on` is enabled
 Required external server prerequisites:
 
 - Metamod:Source
-- CounterStrikeSharp
+- CounterStrikeSharp v1.0.371 or newer for CS2 1.41.6.9
 
 Included in this bundle:
 
@@ -243,7 +246,10 @@ Optional:
 
 - CS2-Bot-Hider, only for BotHider-managed replay slots and identity alignment
   features such as demo display names, SteamID64 alignment, and demo avatar
-  override alignment.
+  override alignment. For the July 2026 update, use a build containing the
+  Windows client identity-offset fix; tagged v0.2.5 predates it.
+- Ray-Trace v1.0.16 or newer, only for stricter line-of-sight filtering in
+  handoff 360 threat detection.
 - Demo-backed agent model evidence can change the matching safe replay bot slot
   to the demo agent model when `dtr_cosmetics agents` is enabled.
 '@
