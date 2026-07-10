@@ -55,6 +55,13 @@ namespace BotController
         // Last CCSPlayer_MovementServices* seen for this player slot.
         void *LiveMovementServices(int slot);
 
+        // Replay slots can register the pawn pointer known by CounterStrikeSharp.
+        // This is a fallback for builds where CPlayerPawnComponent's helper
+        // pointer is missing or stale inside movement services.
+        bool SetReplayPawn(int slot, void *pawn);
+        void ClearReplayPawn(int slot);
+        void *ResolveReplayPawn(int slot, void *services);
+
         // Resolved address of the hooked function.
         void *ProcessUsercmdAddress();
 

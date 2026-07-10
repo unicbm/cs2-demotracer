@@ -34,7 +34,7 @@
   "CCSBot::Update": {
     "signatures": {
       "library": "server",
-      "windows": "40 55 56 57 41 55 48 8D AC 24 ? ? ? ? 48 81 EC ? ? ? ? 48 8D 05",
+      "windows": "40 55 56 57 41 54 48 8D AC 24 ? ? ? ? 48 81 EC ? ? ? ? 48 8D 05 ? ? ? ? C6 81 ? ? ? ? 00",
       "linux": ""
     },
     "comment": "Per-tick decision entry; PathFollower + look-around + reaction + weapon."
@@ -42,7 +42,7 @@
   "CCSBot::Upkeep": {
     "signatures": {
       "library": "server",
-      "windows": "40 53 57 41 54 48 81 EC",
+      "windows": "48 89 5C 24 ? 48 89 6C 24 ? 56 57 41 56 48 83 EC ? 4C 8B F1 33 ED 48 8B 49 ? 48 39 A9 ? ? ? ?",
       "linux": ""
     },
     "comment": "Per-frame view mBotntenance; UpdateLookAround + jitter + UpdateLookAngles."
@@ -112,17 +112,17 @@
   "CCSPlayer_MovementServices::PhysicsSimulate": {
     "signatures": {
       "library": "server",
-      "windows": "40 55 53 56 57 41 54 41 56 48 8D AC 24 ? ? ? ? 48 81 EC",
+      "windows": "40 55 53 56 57 41 55 41 56 48 8D AC 24 08 F9 FF FF",
       "linux": ""
     },
-    "comment": "Per-tick physics entry; replay pre-write + moveType restore."
+    "comment": "CBasePlayerController::OnSimulateUserCommands; per-tick replay commit boundary."
   },
   "CCSBot::AiTickedFlag": {
     "offsets": {
-      "windows": 21196,
+      "windows": 1552,
       "linux": 0
     },
-    "comment": "AI-ran-this-tick byte flag (0x52CC). linux: TODO"
+    "comment": "AI-ran-this-tick byte flag (0x610). linux: TODO"
   },
   "CCSBot::Pawn": {
     "offsets": {
@@ -173,12 +173,26 @@
     },
     "comment": "m_vecAbsVelocity (0x38C). linux: TODO"
   },
-  "CBaseEntity::GameSceneNode": {
+  "CBaseEntity::BodyComponent": {
     "offsets": {
-      "windows": 624,
+      "windows": 48,
       "linux": 0
     },
-    "comment": "m_pGameSceneNode (0x270). linux: TODO"
+    "comment": "m_CBodyComponent pointer (0x30). linux: TODO"
+  },
+  "CBodyComponent::SceneNode": {
+    "offsets": {
+      "windows": 8,
+      "linux": 0
+    },
+    "comment": "m_pSceneNode pointer (0x08). linux: TODO"
+  },
+  "CBaseEntity::GameSceneNode": {
+    "offsets": {
+      "windows": 0,
+      "linux": 0
+    },
+    "comment": "legacy direct m_pGameSceneNode path; current server schema uses CBaseEntity::BodyComponent -> CBodyComponent::SceneNode. linux: TODO"
   },
   "CGameSceneNode::AbsOrigin": {
     "offsets": {
@@ -189,52 +203,59 @@
   },
   "CCSPlayerPawn::WeaponServices": {
     "offsets": {
-      "windows": 2560,
+      "windows": 2608,
       "linux": 0
     },
-    "comment": "m_pWeaponServices (0xA00). linux: TODO"
+    "comment": "m_pWeaponServices (0xA30). linux: TODO"
+  },
+  "CBasePlayerPawn::MovementServices": {
+    "offsets": {
+      "windows": 2672,
+      "linux": 0
+    },
+    "comment": "m_pMovementServices (0xA70), used as a stable pawn->movement-services cross-check. linux: TODO"
   },
   "CCSPlayerPawn::Controller": {
     "offsets": {
-      "windows": 2944,
+      "windows": 2992,
       "linux": 0
     },
-    "comment": "m_hController (0xB80). linux: TODO"
+    "comment": "m_hController (0xBB0). linux: TODO"
   },
   "CCSPlayerPawn::OriginalController": {
     "offsets": {
-      "windows": 2948,
+      "windows": 3364,
       "linux": 0
     },
-    "comment": "m_hOriginalController (0xB84). linux: TODO"
+    "comment": "m_hOriginalController (0xD24). linux: TODO"
   },
   "CCSPlayerPawn::ViewAngle": {
     "offsets": {
-      "windows": 2744,
+      "windows": 2792,
       "linux": 0
     },
-    "comment": "v_angle (0xAB8). linux: TODO"
+    "comment": "v_angle (0xAE8). linux: TODO"
   },
   "CCSPlayerPawn::ViewAnglePrevious": {
     "offsets": {
-      "windows": 2756,
+      "windows": 2804,
       "linux": 0
     },
-    "comment": "v_anglePrevious (0xAC4). linux: TODO"
+    "comment": "v_anglePrevious (0xAF4). linux: TODO"
   },
   "CCSPlayerPawn::ServerViewAngleChanges": {
     "offsets": {
-      "windows": 2640,
+      "windows": 2688,
       "linux": 0
     },
-    "comment": "m_ServerViewAngleChanges (0xA50), read-only diagnostics. linux: TODO"
+    "comment": "m_ServerViewAngleChanges (0xA80). linux: TODO"
   },
   "CCSPlayerPawn::EyeAngles": {
     "offsets": {
-      "windows": 4928,
+      "windows": 4968,
       "linux": 0
     },
-    "comment": "m_angEyeAngles (0x1340). linux: TODO"
+    "comment": "m_angEyeAngles (CCSPlayerPawnBase, 0x1368). linux: TODO"
   },
   "CCSPlayer_WeaponServices::ActiveWeapon": {
     "offsets": {
@@ -245,38 +266,38 @@
   },
   "CBasePlayerWeapon::ItemDefIndex": {
     "offsets": {
-      "windows": 2528,
+      "windows": 2560,
       "linux": 0
     },
-    "comment": "m_iItemDefinitionIndex (0x9E0). linux: TODO"
+    "comment": "m_iItemDefinitionIndex (0xA00). linux: TODO"
   },
   "CCSPlayer_MovementServices::Pawn": {
     "offsets": {
       "windows": 56,
       "linux": 0
     },
-    "comment": "m_pawn (56). linux: TODO"
+    "comment": "CPlayerPawnComponent::Pawn pointer helper (0x38). linux: TODO"
   },
   "CCSPlayer_MovementServices::Buttons": {
     "offsets": {
       "windows": 88,
       "linux": 0
     },
-    "comment": "m_nButtons states[0] (88). linux: TODO"
+    "comment": "m_nButtons states[0] (0x58). linux: TODO"
   },
   "CCSPlayer_MovementServices::Buttons1": {
     "offsets": {
       "windows": 96,
       "linux": 0
     },
-    "comment": "states[1] (96). linux: TODO"
+    "comment": "states[1] (0x60). linux: TODO"
   },
   "CCSPlayer_MovementServices::Buttons2": {
     "offsets": {
       "windows": 104,
       "linux": 0
     },
-    "comment": "states[2] (104). linux: TODO"
+    "comment": "states[2] (0x68). linux: TODO"
   },
   "CCSPlayer_MovementServices::OldViewAngles": {
     "offsets": {
@@ -364,14 +385,14 @@
   },
   "vtidx::PlayerRunCommand": {
     "offsets": {
-      "windows": 22,
+      "windows": 25,
       "linux": 0
     },
     "comment": "CCSPlayer_MovementServices vtable index. linux: TODO"
   },
   "vtidx::FinishMove": {
     "offsets": {
-      "windows": 35,
+      "windows": 38,
       "linux": 0
     },
     "comment": "CCSPlayer_MovementServices vtable index. linux: TODO"

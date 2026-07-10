@@ -4,6 +4,7 @@
 #include "BotController.h"
 #include "InputInjector.h"
 #include "WeaponLocker.h"
+#include "ccsbot_slot.h"
 #include "version_targets.h"
 
 #include <entity2/entityinstance.h>
@@ -71,7 +72,6 @@ namespace BotController
             values.fill(-1);
             return values;
         }();
-
         struct ReplayPerfState
         {
             std::atomic<bool> enabled{false};
@@ -137,14 +137,12 @@ namespace BotController
                    HasLadderResidue(p.ticks[static_cast<size_t>(prev)]);
         }
 
-        static bool LiveMovementHasLadderResidue(void *services)
+        static bool LiveMovementHasLadderResidue(int slot, void *services)
         {
             if (!services)
                 return false;
             auto *sv = reinterpret_cast<char *>(services);
-            if (!CanWriteMemory(sv + tg::kServices_Pawn, sizeof(void *)))
-                return false;
-            void *pawn = *reinterpret_cast<void **>(sv + tg::kServices_Pawn);
+            void *pawn = InputInjector::ResolveReplayPawn(slot, services);
             if (!pawn)
                 return false;
 
@@ -171,13 +169,11 @@ namespace BotController
             void *services = InputInjector::LiveMovementServices(slot);
             if (!services ||
                 (!ReplayStopPointHasLadderResidue(p) &&
-                 !LiveMovementHasLadderResidue(services)))
+                 !LiveMovementHasLadderResidue(slot, services)))
                 return;
 
             auto *sv = reinterpret_cast<char *>(services);
-            if (!CanWriteMemory(sv + tg::kServices_Pawn, sizeof(void *)))
-                return;
-            void *pawn = *reinterpret_cast<void **>(sv + tg::kServices_Pawn);
+            void *pawn = InputInjector::ResolveReplayPawn(slot, services);
             if (!pawn)
                 return;
 
@@ -519,13 +515,79 @@ namespace BotController
             return mode == ReplayViewMode::PrePost || mode == ReplayViewMode::PostOnly;
         }
 
+        static void *ResolveSceneNode(char *entity)
+        {
+            if (!entity)
+                return nullptr;
+
+#if defined(_WIN32)
+            if (tg::kEnt_BodyComponent > 0 && tg::kBody_SceneNode >= 0)
+            {
+                void *body = nullptr;
+                if (ReadField(entity, tg::kEnt_BodyComponent, body) && body)
+                {
+                    void *node = nullptr;
+                    if (ReadField(body, tg::kBody_SceneNode, node) && node)
+                        return node;
+                }
+            }
+
+            if (tg::kEnt_GameSceneNode > 0)
+            {
+                void *node = nullptr;
+                if (ReadField(entity, tg::kEnt_GameSceneNode, node))
+                    return node;
+            }
+#else
+            if (tg::kEnt_BodyComponent > 0 && tg::kBody_SceneNode >= 0 &&
+                CanWriteMemory(entity + tg::kEnt_BodyComponent, sizeof(void *)))
+            {
+                void *body = *reinterpret_cast<void **>(entity + tg::kEnt_BodyComponent);
+                if (body &&
+                    CanWriteMemory(reinterpret_cast<char *>(body) + tg::kBody_SceneNode,
+                                   sizeof(void *)))
+                {
+                    void *node = *reinterpret_cast<void **>(
+                        reinterpret_cast<char *>(body) + tg::kBody_SceneNode);
+                    if (node)
+                        return node;
+                }
+            }
+
+            if (tg::kEnt_GameSceneNode > 0 &&
+                CanWriteMemory(entity + tg::kEnt_GameSceneNode, sizeof(void *)))
+            {
+                return *reinterpret_cast<void **>(entity + tg::kEnt_GameSceneNode);
+            }
+#endif
+            return nullptr;
+        }
+
+        static void WriteSceneNodeOrigin(char *entity, float x, float y, float z)
+        {
+            void *node = ResolveSceneNode(entity);
+            if (!node)
+                return;
+#if defined(_WIN32)
+            const float origin[3] = {x, y, z};
+            TryWriteMemory(node, tg::kNode_AbsOrigin, origin, sizeof(origin));
+#else
+            auto *n = reinterpret_cast<char *>(node);
+            if (!CanWriteMemory(n + tg::kNode_AbsOrigin, sizeof(float) * 3))
+                return;
+            *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 0) = x;
+            *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 4) = y;
+            *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 8) = z;
+#endif
+        }
+
         // Read a MovementSnapshot from live engine state (services -> pawn).
-        static bool ReadSnapshot(void *services, MovementSnapshot &out)
+        static bool ReadSnapshot(int slot, void *services, MovementSnapshot &out)
         {
             if (!services)
                 return false;
             auto *s = reinterpret_cast<char *>(services);
-            void *pawn = *reinterpret_cast<void **>(s + tg::kServices_Pawn);
+            void *pawn = InputInjector::ResolveReplayPawn(slot, services);
             if (!pawn)
                 return false;
             auto *p = reinterpret_cast<char *>(pawn);
@@ -555,7 +617,7 @@ namespace BotController
             out.yaw = *reinterpret_cast<float *>(p + tg::kPawn_ViewAngle + 4);
             out.roll = *reinterpret_cast<float *>(p + tg::kPawn_ViewAngle + 8);
 
-            void *node = *reinterpret_cast<void **>(p + tg::kEnt_GameSceneNode);
+            void *node = ResolveSceneNode(p);
             if (node)
             {
                 auto *n = reinterpret_cast<char *>(node);
@@ -572,7 +634,7 @@ namespace BotController
                    std::isfinite(s.originZ);
         }
 
-        static bool ShouldApplyMovementSnap(ReplaySnapMode mode, int cursor,
+        static bool ShouldApplyMovementSnap(ReplaySnapMode mode, int slot, int cursor,
                                             void *services, const MovementSnapshot &target)
         {
             if (mode == ReplaySnapMode::Hard)
@@ -586,7 +648,7 @@ namespace BotController
                 return false;
 
             MovementSnapshot live{};
-            if (!ReadSnapshot(services, live) || !SnapshotPositionIsFinite(live))
+            if (!ReadSnapshot(slot, services, live) || !SnapshotPositionIsFinite(live))
                 return true;
 
             const float dx = live.originX - target.originX;
@@ -679,7 +741,7 @@ namespace BotController
             if (!r.recording.load(std::memory_order_acquire))
                 return;
             MovementSnapshot pre{};
-            if (!ReadSnapshot(services, pre))
+            if (!ReadSnapshot(slot, services, pre))
                 return;
             std::lock_guard<std::mutex> lk(r.mu);
             r.pendingPre = pre;
@@ -711,7 +773,7 @@ namespace BotController
                 return;
 
             MovementSnapshot post{};
-            if (!ReadSnapshot(services, post))
+            if (!ReadSnapshot(slot, services, post))
                 return;
 
             if (cmd)
@@ -920,6 +982,7 @@ namespace BotController
             g_lastFinalViewCursor[slot] = -1;
             g_serverViewChangeIndex[slot] = 0;
             InputInjector::ClearUsercmdMovementIntent(slot);
+            InputInjector::ClearReplayPawn(slot);
             return true;
         }
 
@@ -1479,7 +1542,7 @@ namespace BotController
                                    const MovementSnapshot &s)
         {
             auto *sv = reinterpret_cast<char *>(services);
-            void *pawn = *reinterpret_cast<void **>(sv + tg::kServices_Pawn);
+            void *pawn = InputInjector::ResolveReplayPawn(slot, services);
             if (!pawn)
                 return false;
             auto *p = reinterpret_cast<char *>(pawn);
@@ -1509,10 +1572,9 @@ namespace BotController
             return velZ < kReplayMinEngineVelZ ? kReplayMinEngineVelZ : velZ;
         }
 
-        static void WriteVelocityToPawn(void *services, const MovementSnapshot &s)
+        static void WriteVelocityToPawn(int slot, void *services, const MovementSnapshot &s)
         {
-            auto *sv = reinterpret_cast<char *>(services);
-            void *pawn = *reinterpret_cast<void **>(sv + tg::kServices_Pawn);
+            void *pawn = InputInjector::ResolveReplayPawn(slot, services);
             if (!pawn)
                 return;
             auto *p = reinterpret_cast<char *>(pawn);
@@ -1575,23 +1637,16 @@ namespace BotController
             if (!ValidSlot(slot) || !services)
                 return;
             auto *sv = reinterpret_cast<char *>(services);
-            WriteVelocityToPawn(services, t.pre);
+            WriteVelocityToPawn(slot, services, t.pre);
             WriteMovementServiceState(services, t.pre);
 
-            void *pawn = *reinterpret_cast<void **>(sv + tg::kServices_Pawn);
+            void *pawn = InputInjector::ResolveReplayPawn(slot, services);
             if (pawn)
             {
                 auto *pp = reinterpret_cast<char *>(pawn);
                 *reinterpret_cast<uint8_t *>(pp + tg::kEnt_MoveType) = t.pre.moveType;
                 *reinterpret_cast<uint8_t *>(pp + tg::kEnt_ActualMoveType) = t.pre.actualMoveType;
-                void *node = *reinterpret_cast<void **>(pp + tg::kEnt_GameSceneNode);
-                if (node)
-                {
-                    auto *n = reinterpret_cast<char *>(node);
-                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 0) = t.pre.originX;
-                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 4) = t.pre.originY;
-                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 8) = t.pre.originZ;
-                }
+                WriteSceneNodeOrigin(pp, t.pre.originX, t.pre.originY, t.pre.originZ);
 
                 BotControllerHooks::ApplyReplayEyeAngles(
                     pawn, commandView.pitch, commandView.yaw);
@@ -1616,12 +1671,12 @@ namespace BotController
                 return; // commit handler will stop/loop
             const ReplaySnapMode snapMode = ActiveReplaySnapMode();
             const bool snapMovement =
-                ShouldApplyMovementSnap(snapMode, cursor, services, t->pre);
+                ShouldApplyMovementSnap(snapMode, slot, cursor, services, t->pre);
 
             if (snapMovement)
             {
                 WriteMoveData(moveData, t->pre);
-                WriteVelocityToPawn(services, t->pre);
+                WriteVelocityToPawn(slot, services, t->pre);
                 WriteMovementServiceState(services, t->pre);
             }
             if (ShouldDirectWritePreView())
@@ -1633,19 +1688,12 @@ namespace BotController
             *reinterpret_cast<uint64_t *>(sv + tg::kServices_Buttons2) = t->pre.buttons2;
             if (snapMovement)
             {
-                void *pawn = *reinterpret_cast<void **>(sv + tg::kServices_Pawn);
+                void *pawn = InputInjector::ResolveReplayPawn(slot, services);
                 if (pawn)
                 {
                     auto *pp = reinterpret_cast<char *>(pawn);
                     *reinterpret_cast<uint8_t *>(pp + tg::kEnt_MoveType) = t->pre.moveType;
-                    void *node = *reinterpret_cast<void **>(pp + tg::kEnt_GameSceneNode);
-                    if (node)
-                    {
-                        auto *n = reinterpret_cast<char *>(node);
-                        *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 0) = t->pre.originX;
-                        *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 4) = t->pre.originY;
-                        *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 8) = t->pre.originZ;
-                    }
+                    WriteSceneNodeOrigin(pp, t->pre.originX, t->pre.originY, t->pre.originZ);
                 }
             }
         }
@@ -1676,19 +1724,13 @@ namespace BotController
 
             // Force engine to resync the entity origin from MoveData
             auto *sv = reinterpret_cast<char *>(services);
-            void *pawn = *reinterpret_cast<void **>(sv + tg::kServices_Pawn);
+            void *pawn = InputInjector::ResolveReplayPawn(slot, services);
             if (pawn)
             {
-                void *node = *reinterpret_cast<void **>(
-                    reinterpret_cast<char *>(pawn) + tg::kEnt_GameSceneNode);
-                if (node)
-                {
-                    auto *n = reinterpret_cast<char *>(node);
-                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 0) = t->post.originX;
-                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 4) = t->post.originY;
-                    *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 8) =
-                        t->post.originZ + kFinishMoveResyncNudgeZ;
-                }
+                WriteSceneNodeOrigin(reinterpret_cast<char *>(pawn),
+                                     t->post.originX,
+                                     t->post.originY,
+                                     t->post.originZ + kFinishMoveResyncNudgeZ);
             }
         }
 
@@ -1705,7 +1747,6 @@ namespace BotController
                 return;
             if (!ShouldDirectWritePostView())
                 return;
-
             int cur = -1;
             int total = 0;
             const ReplayTick *t = CurrentReplayTickPtr(p, cur, total);
@@ -1724,7 +1765,6 @@ namespace BotController
             ReplayState &p = g_rep[slot];
             if (!p.playing.load(std::memory_order_acquire))
                 return;
-
             int cur = p.cursor.load(std::memory_order_relaxed);
             int total = static_cast<int>(p.ticks.size());
             const ReplayTick *t = nullptr;
@@ -1759,7 +1799,7 @@ namespace BotController
             const bool hardSnap = snapMode == ReplaySnapMode::Hard;
             if (hardSnap)
             {
-                void *pawn = *reinterpret_cast<void **>(sv + tg::kServices_Pawn);
+                void *pawn = InputInjector::ResolveReplayPawn(slot, services);
                 if (pawn)
                 {
                     auto *pp = reinterpret_cast<char *>(pawn);
@@ -1818,6 +1858,7 @@ namespace BotController
                 g_rep[i].lastAppliedDef.store(-1, std::memory_order_relaxed);
                 g_lastFinalViewCursor[i] = -1;
                 g_serverViewChangeIndex[i] = 0;
+                InputInjector::ClearReplayPawn(i);
             }
             InputInjector::ClearAllUsercmdMovementIntents();
             g_replayPovMask.store(0, std::memory_order_relaxed);

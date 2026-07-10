@@ -4,6 +4,14 @@ Trace CS2 demos into bot-executable route replays.
 
 **Language:** English | [简体中文](docs/README.zh-Hans.md)
 
+> [!CAUTION]
+> **July 2026 CS2 update:** Optional CS2-Bot-Hider and RayTrace API integrations
+> may currently be incompatible and depend on fixes from their upstream
+> maintainers. CounterStrikeSharp has not yet published a stable release for
+> this game update, so the server-side DemoTracer CSS plugin is not guaranteed
+> to load or run correctly until one is available. The Windows core replay path
+> has been locally verified; the converter and `.dtr` format are unaffected.
+
 CS2 DemoTracer converts CS2 `.dem` files into compact `.dtr` replay files, then
 plays those routes back through bots on a local CS2 server. The normal converter
 path is a packaged Windows x64 CLI/GUI; Python, Node.js, Conda, and game-server

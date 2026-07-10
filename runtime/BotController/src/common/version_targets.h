@@ -9,7 +9,7 @@ namespace BotController::targets
     // ---- CCSBot ----
 
     // AI-ran-this-tick byte flag; set to 1 to fake a completed tick
-    inline int kBot_AiTickedFlag = 21196;
+    inline int kBot_AiTickedFlag = 0x610;
     // CCSBot -> pawn (CCSPlayerPawn*)
     inline int kBot_Pawn = 0x18;
 
@@ -19,9 +19,9 @@ namespace BotController::targets
     inline int kEnt_Identity = 0x10;
     // CEntityIdentity -> m_EHandle (low 15 bits = entity index)
     inline int kEntIdentity_EHandle = 0x10;
-    // m_MoveType (MoveType_t, 1 byte) — restored each replay tick for §8
+    // m_MoveType (MoveType_t, 1 byte) — restored each replay tick.
     inline int kEnt_MoveType = 0x2F3;
-    // m_nActualMoveType (MoveType_t, 1 byte) — networked move type (ladder anim)
+    // m_nActualMoveType (MoveType_t, 1 byte) — networked move type.
     inline int kEnt_ActualMoveType = 0x2F5;
     // m_fFlags (bit0 = FL_ONGROUND, bit1 = FL_DUCKING)
     inline int kEnt_Flags = 0x388;
@@ -30,27 +30,31 @@ namespace BotController::targets
     inline constexpr unsigned kFL_Ducking = 1u << 1;
     // m_vecAbsVelocity
     inline int kEnt_AbsVelocity = 0x38C;
-    // entity -> m_pGameSceneNode -> m_vecAbsOrigin (world pos), written each
-    // replay tick (direct write, not Teleport, to keep client interp smooth)
-    inline int kEnt_GameSceneNode = 0x270;
+    // entity -> m_CBodyComponent -> m_pSceneNode -> m_vecAbsOrigin.
+    inline int kEnt_BodyComponent = 0x30;
+    inline int kBody_SceneNode = 0x08;
+    // Legacy direct entity -> m_pGameSceneNode path, kept as a fallback for old builds.
+    inline int kEnt_GameSceneNode = 0;
     inline int kNode_AbsOrigin = 0xC8;
 
     // ---- CCSPlayerPawn ----
 
     // m_pWeaponServices
-    inline int kPawn_WeaponServices = 0xA00;
+    inline int kPawn_WeaponServices = 0xA30;
+    // m_pMovementServices
+    inline int kPawn_MovementServices = 0xA70;
     // m_hController (CHandle)
-    inline int kPawn_Controller = 0xB80;
+    inline int kPawn_Controller = 0xBB0;
     // m_hOriginalController (CHandle)
-    inline int kPawn_OriginalController = 0xB84;
+    inline int kPawn_OriginalController = 0xD24;
     // CCSPlayerPawn -> v_angle (QAngle)
-    inline int kPawn_ViewAngle = 0xAB8;
+    inline int kPawn_ViewAngle = 0xAE8;
     // v_anglePrevious (QAngle) — keep first-person spectator/camera history aligned
-    inline int kPawn_ViewAnglePrevious = 0xAC4;
+    inline int kPawn_ViewAnglePrevious = 0xAF4;
     // m_ServerViewAngleChanges — embedded network vector consumed by local/observer camera view.
-    inline int kPawn_ServerViewAngleChanges = 0xA50;
+    inline int kPawn_ServerViewAngleChanges = 0xA80;
     // m_angEyeAngles (QAngle) — written each replay tick alongside v_angle
-    inline int kPawn_EyeAngles = 0x1340;
+    inline int kPawn_EyeAngles = 0x1368;
 
     // ---- BuyState ----
 
@@ -66,18 +70,18 @@ namespace BotController::targets
 
     // ---- CBasePlayerWeapon ----
 
-    // m_AttributeManager(0x958) -> m_Item(0x50) -> m_iItemDefinitionIndex(0x38),
+    // m_AttributeManager(0x978) -> m_Item(0x50) -> m_iItemDefinitionIndex(0x38),
     // all embedded; net direct add (no deref)
-    inline int kWeapon_ItemDefIndex = 0x958 + 0x50 + 0x38; // 0x9E0
+    inline int kWeapon_ItemDefIndex = 0x978 + 0x50 + 0x38; // 0xA00
 
     // ---- CCSPlayer_MovementServices ----
 
-    // m_pawn (CCSPlayerPawn*)
-    inline int kServices_Pawn = 56;
+    // CPlayerPawnComponent::Pawn pointer helper used by CounterStrikeSharp.
+    inline int kServices_Pawn = 0x38;
     // m_nButtons.m_pButtonStates[0..2] — engine button state block (CInButtonState)
-    inline int kServices_Buttons = 88;       // states[0] (pressed)
-    inline int kServices_Buttons1 = 88 + 8;  // states[1]
-    inline int kServices_Buttons2 = 88 + 16; // states[2]
+    inline int kServices_Buttons = 0x58;       // states[0] (pressed)
+    inline int kServices_Buttons1 = 0x58 + 8;  // states[1]
+    inline int kServices_Buttons2 = 0x58 + 16; // states[2]
     // m_vecOldViewAngles (QAngle)
     inline int kServices_OldViewAngles = 0x240;
 
@@ -102,8 +106,8 @@ namespace BotController::targets
 
     // ---- vtable indices (CCSPlayer_MovementServices) ----
 
-    inline int kVtIdx_PlayerRunCommand = 22;
-    inline int kVtIdx_FinishMove = 35;
+    inline int kVtIdx_PlayerRunCommand = 25;
+    inline int kVtIdx_FinishMove = 38;
 
     // Override the above from gamedata[name].offsets[platform]; missing keeps default
     void LoadFromGamedata(const nlohmann::json &gd);

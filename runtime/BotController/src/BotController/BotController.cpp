@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cmath>
+#include <cstring>
 #include <vector>
 
 namespace tg = BotController::targets;
@@ -42,6 +43,9 @@ namespace BotController
         static GetEyeAngles_t g_origGetEyeAngles = nullptr;
         static void *g_addrGetEyeAngles = nullptr;
         static thread_local bool g_replayOwnedSetEyeAngles = false;
+#if defined(_WIN32)
+        static void **g_ppEntityIdentityChunks = nullptr;
+#endif
         static bool g_installed = false;
         static std::string g_status = "not_attempted";
 
@@ -60,6 +64,67 @@ namespace BotController
             return a - 180.0f;
         }
 
+#if defined(_WIN32)
+        // Current CCSPlayerPawn::SetEyeAngles resolves m_hController through
+        // this RIP-relative identity-chunk pointer before testing FL_FAKECLIENT.
+        // Resolve that same pointer from the verified function body so replay
+        // publication can pass the new bot-only early-out without adding a new
+        // engine global signature.
+        static void ResolveSetEyeAnglesEntityChunks(void *setEyeAngles)
+        {
+            g_ppEntityIdentityChunks = nullptr;
+            if (!setEyeAngles)
+                return;
+
+            auto *code = reinterpret_cast<uint8_t *>(setEyeAngles);
+            constexpr size_t kSearchBytes = 0x120;
+            for (size_t i = 0; i + 10 <= kSearchBytes; ++i)
+            {
+                if (code[i + 0] != 0x4C || code[i + 1] != 0x8B || code[i + 2] != 0x05 ||
+                    code[i + 7] != 0x4D || code[i + 8] != 0x85 || code[i + 9] != 0xC0)
+                    continue;
+
+                int32_t rel = 0;
+                std::memcpy(&rel, code + i + 3, sizeof(rel));
+                g_ppEntityIdentityChunks = reinterpret_cast<void **>(code + i + 7 + rel);
+                return;
+            }
+        }
+
+        static void *ReplayControllerForPawn(void *pawn)
+        {
+            if (!pawn || !g_ppEntityIdentityChunks)
+                return nullptr;
+
+            uint32_t handle = 0;
+            if (!ReadField(pawn, tg::kPawn_Controller, handle) ||
+                handle == 0xFFFFFFFFu || handle == 0xFFFFFFFEu)
+                return nullptr;
+
+            void *chunks = nullptr;
+            if (!TryReadMemory(g_ppEntityIdentityChunks, 0, &chunks, sizeof(chunks)) || !chunks)
+                return nullptr;
+
+            const uint32_t entityIndex = handle & 0x7FFFu;
+            void *chunk = nullptr;
+            if (!TryReadMemory(chunks,
+                               static_cast<int>((entityIndex >> 9) * sizeof(void *)),
+                               &chunk, sizeof(chunk)) ||
+                !chunk)
+                return nullptr;
+
+            constexpr int kIdentitySize = 0x70;
+            auto *identity = reinterpret_cast<uint8_t *>(chunk) +
+                             static_cast<size_t>(entityIndex & 0x1FFu) * kIdentitySize;
+            uint32_t liveHandle = 0;
+            void *controller = nullptr;
+            if (!ReadField(identity, 0x10, liveHandle) || liveHandle != handle ||
+                !ReadField(identity, 0x00, controller))
+                return nullptr;
+            return controller;
+        }
+#endif
+
         // Skip the Bot tick under All lock OR while replaying
         static void BC_FASTCALL HookedUpdate(void *bot)
         {
@@ -67,7 +132,8 @@ namespace BotController
             if (slot >= 0 &&
                 (BotControllerState::GetAll(slot) || MotionRecorder::IsReplaying(slot)))
             {
-                *(reinterpret_cast<uint8_t *>(bot) + tg::kBot_AiTickedFlag) = 1;
+                const uint8_t ticked = 1;
+                WriteField(bot, tg::kBot_AiTickedFlag, ticked);
                 return;
             }
             g_origUpdate(bot);
@@ -78,7 +144,7 @@ namespace BotController
 
         static void BC_FASTCALL HookedUpkeep(void *bot)
         {
-            int slot = CCSBotToSlot(bot);
+            int slot = CCSBotContextToSlot(bot);
             if (slot >= 0 && MotionRecorder::IsReplaying(slot))
                 return;
             if (slot >= 0 &&
@@ -91,7 +157,7 @@ namespace BotController
 
         static void BC_FASTCALL HookedUpdateLookAngles(void *bot)
         {
-            int slot = CCSBotToSlot(bot);
+            int slot = CCSBotContextToSlot(bot);
             if (slot >= 0 &&
                 (MotionRecorder::IsReplaying(slot) ||
                  BotControllerState::GetAll(slot) ||
@@ -120,10 +186,29 @@ namespace BotController
                 return false;
 
             float angle[3] = {pitch, NormalizeDeg(yaw), 0.0f};
+#if defined(_WIN32)
+            // July 2026 SetEyeAngles skips its server/spectator publication
+            // block when the owning controller has FL_FAKECLIENT. Bypass that
+            // gate only for this replay-owned call and restore it immediately.
+            void *controller = ReplayControllerForPawn(pawn);
+            uint32_t controllerFlags = 0;
+            bool restoreFakeClient =
+                controller && ReadField(controller, tg::kEnt_Flags, controllerFlags) &&
+                (controllerFlags & 0x100u) != 0;
+            if (restoreFakeClient)
+            {
+                const uint32_t publishedFlags = controllerFlags & ~0x100u;
+                WriteField(controller, tg::kEnt_Flags, publishedFlags);
+            }
+#endif
             bool oldGuard = g_replayOwnedSetEyeAngles;
             g_replayOwnedSetEyeAngles = true;
             g_origSetEyeAngles(pawn, angle);
             g_replayOwnedSetEyeAngles = oldGuard;
+#if defined(_WIN32)
+            if (restoreFakeClient)
+                WriteField(controller, tg::kEnt_Flags, controllerFlags);
+#endif
             return true;
         }
 
@@ -216,6 +301,12 @@ namespace BotController
                               seaErr);
                 DebugOut(dbg);
             }
+#if defined(_WIN32)
+            else
+            {
+                ResolveSetEyeAnglesEntityChunks(g_addrSetEyeAngles);
+            }
+#endif
 
             // GetEyeAngles is optional; replay can still drive server state
             // without it, but first-person spectator camera may read through
@@ -342,6 +433,9 @@ namespace BotController
             g_origGetEyeAngles = nullptr;
             g_hookSetEyeAngles.Remove();
             g_origSetEyeAngles = nullptr;
+#if defined(_WIN32)
+            g_ppEntityIdentityChunks = nullptr;
+#endif
             g_hookUpdateLookAngles.Remove();
             g_origUpdateLookAngles = nullptr;
             g_hookJump.Remove();

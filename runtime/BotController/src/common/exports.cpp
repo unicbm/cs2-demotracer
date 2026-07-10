@@ -250,6 +250,15 @@ extern "C" __declspec(dllexport) int BotController_SetReplayPovMask(uint64_t mas
     return 0;
 }
 
+extern "C" __declspec(dllexport) int BotController_SetReplayPawn(int slot, uint64_t pawnPtr)
+{
+    return BotController::InputInjector::SetReplayPawn(
+               slot,
+               reinterpret_cast<void *>(static_cast<uintptr_t>(pawnPtr)))
+               ? 0
+               : -1;
+}
+
 extern "C" __declspec(dllexport) int BotController_SetUsercmdMovementIntent(
     int slot,
     uint64_t buttonsSet,

@@ -77,12 +77,14 @@ namespace BotController
         {
             if (!bot || slot < 0 || slot >= 64)
                 return;
-            void *pawn = *reinterpret_cast<void **>(
-                reinterpret_cast<char *>(bot) + tg::kBot_Pawn);
+            void *pawn = nullptr;
+            if (!ReadField(bot, tg::kBot_Pawn, pawn))
+                return;
             if (!pawn)
                 return;
-            void *ws = *reinterpret_cast<void **>(
-                reinterpret_cast<char *>(pawn) + tg::kPawn_WeaponServices);
+            void *ws = nullptr;
+            if (!ReadField(pawn, tg::kPawn_WeaponServices, ws))
+                return;
             if (!ws)
                 return;
             std::lock_guard<std::mutex> lk(g_wsToSlotMu);
@@ -107,6 +109,8 @@ namespace BotController
                 return -1;
             return v - 1;
         }
+
+        static int ReadDefIndex(void *weapon);
 
         // ---- edge-triggered logging ----
 
@@ -165,14 +169,14 @@ namespace BotController
             // Recording : a human switching weapons calls SelectItem
             if (weapon)
             {
-                int def = *reinterpret_cast<uint16_t *>(
-                    reinterpret_cast<char *>(weapon) + tg::kWeapon_ItemDefIndex);
-                for (int s = 0; s < MotionRecorder::kMaxSlots; ++s)
-                {
-                    if (MotionRecorder::IsRecording(s) &&
-                        MotionRecorder::LiveWs(s) == ws)
-                        MotionRecorder::SetCurrentDef(s, def);
-                }
+                int def = ReadDefIndex(weapon);
+                if (def >= 0)
+                    for (int s = 0; s < MotionRecorder::kMaxSlots; ++s)
+                    {
+                        if (MotionRecorder::IsRecording(s) &&
+                            MotionRecorder::LiveWs(s) == ws)
+                            MotionRecorder::SetCurrentDef(s, def);
+                    }
             }
 
             WsBinding bind = LookupBindingForWs(ws);
@@ -352,8 +356,10 @@ namespace BotController
         {
             if (!weapon)
                 return -1;
-            return *reinterpret_cast<uint16_t *>(
-                reinterpret_cast<char *>(weapon) + tg::kWeapon_ItemDefIndex);
+            uint16_t def = 0;
+            if (!ReadField(weapon, tg::kWeapon_ItemDefIndex, def))
+                return -1;
+            return def;
         }
 
         // entity -> identity(0x10) -> m_EHandle(0x10), low 15 bits = index.
@@ -361,12 +367,14 @@ namespace BotController
         {
             if (!entity)
                 return -1;
-            void *identity = *reinterpret_cast<void **>(
-                reinterpret_cast<char *>(entity) + tg::kEnt_Identity);
+            void *identity = nullptr;
+            if (!ReadField(entity, tg::kEnt_Identity, identity))
+                return -1;
             if (!identity)
                 return -1;
-            uint32_t h = *reinterpret_cast<uint32_t *>(
-                reinterpret_cast<char *>(identity) + tg::kEntIdentity_EHandle);
+            uint32_t h = 0;
+            if (!ReadField(identity, tg::kEntIdentity_EHandle, h))
+                return -1;
             if (h == 0u || h == 0xFFFFFFFFu)
                 return -1;
             return static_cast<int>(h & 0x7FFFu);
@@ -384,8 +392,9 @@ namespace BotController
                 return -1;
             // m_hActiveWeapon is a handle; resolve it by matching its entity
             // index against the pointers GetSlot returns
-            uint32_t activeH = *reinterpret_cast<uint32_t *>(
-                reinterpret_cast<char *>(ws) + tg::kWs_ActiveWeapon);
+            uint32_t activeH = 0;
+            if (!ReadField(ws, tg::kWs_ActiveWeapon, activeH))
+                return -1;
             if (activeH == 0u || activeH == 0xFFFFFFFFu)
                 return -1;
             int activeIdx = static_cast<int>(activeH & 0x7FFFu);

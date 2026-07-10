@@ -1,5 +1,11 @@
 # CS2 DemoTracer 文档
 
+> [!CAUTION]
+> **2026 年 7 月 CS2 更新：**可选的 CS2-Bot-Hider 和 RayTrace API 集成目前
+> 可能不兼容，需要等待各自的上游开发者更新。CounterStrikeSharp 尚未发布针对
+> 本次游戏更新的稳定版本，因此服务器端 DemoTracer CSS 插件暂不保证能够正常
+> 加载或运行。Windows 核心 replay 链路已在本地验证；转换器和 `.dtr` 格式不受影响。
+
 **CS2 DemoTracer** 把 CS2 `.dem` 转成 `.dtr` 路线回放文件，然后在本地
 CS2 服务器里让 bot 执行这些路线。
 

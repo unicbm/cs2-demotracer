@@ -16,9 +16,12 @@ namespace BotController::targets
         kEnt_ActualMoveType      = Sig::FindPlatformOffset(gd, "CBaseEntity::ActualMoveType", kEnt_ActualMoveType);
         kEnt_Flags               = Sig::FindPlatformOffset(gd, "CBaseEntity::Flags", kEnt_Flags);
         kEnt_AbsVelocity         = Sig::FindPlatformOffset(gd, "CBaseEntity::AbsVelocity", kEnt_AbsVelocity);
+        kEnt_BodyComponent       = Sig::FindPlatformOffset(gd, "CBaseEntity::BodyComponent", kEnt_BodyComponent);
+        kBody_SceneNode          = Sig::FindPlatformOffset(gd, "CBodyComponent::SceneNode", kBody_SceneNode);
         kEnt_GameSceneNode       = Sig::FindPlatformOffset(gd, "CBaseEntity::GameSceneNode", kEnt_GameSceneNode);
         kNode_AbsOrigin          = Sig::FindPlatformOffset(gd, "CGameSceneNode::AbsOrigin", kNode_AbsOrigin);
         kPawn_WeaponServices     = Sig::FindPlatformOffset(gd, "CCSPlayerPawn::WeaponServices", kPawn_WeaponServices);
+        kPawn_MovementServices   = Sig::FindPlatformOffset(gd, "CBasePlayerPawn::MovementServices", kPawn_MovementServices);
         kPawn_Controller         = Sig::FindPlatformOffset(gd, "CCSPlayerPawn::Controller", kPawn_Controller);
         kPawn_OriginalController = Sig::FindPlatformOffset(gd, "CCSPlayerPawn::OriginalController", kPawn_OriginalController);
         kPawn_ViewAngle          = Sig::FindPlatformOffset(gd, "CCSPlayerPawn::ViewAngle", kPawn_ViewAngle);

@@ -3970,6 +3970,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
                 startIndex = FreezePrerollStartIndex(replay, freezeTimeSeconds ?? 0.0f);
                 var startedUntil = startIndex < replay.PlayStartTickIndex &&
+                                   RegisterReplayPawnForSlot(slot) &&
                                    BotControllerNative.StartReplayUntil(
                                        slot,
                                        loop,
@@ -3986,10 +3987,24 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 _ => 0,
             };
         }
-        var started = BotControllerNative.StartReplayAt(slot, loop, startIndex);
+        var started = RegisterReplayPawnForSlot(slot) &&
+                      BotControllerNative.StartReplayAt(slot, loop, startIndex);
         if (started)
             _demoTracerOwnedSlots.Add(slot);
         return started;
+    }
+
+    private static bool RegisterReplayPawnForSlot(int slot)
+    {
+        var player = Utilities.GetPlayerFromSlot(slot);
+        if (player is not { IsValid: true } ||
+            player.PlayerPawn is not { IsValid: true, Value.IsValid: true })
+            return false;
+
+        // Best-effort on old native builds; the normal start path still does
+        // the authoritative lock/replay validation.
+        _ = BotControllerNative.SetReplayPawn(slot, player.PlayerPawn.Value.Handle);
+        return true;
     }
 
     private void ScheduleFreezePrerollStart(string label)
@@ -5123,8 +5138,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
         try
         {
-            player.GiveNamedItem(itemName);
-            return true;
+            return player.GiveNamedItem(itemName) != IntPtr.Zero;
         }
         catch (Exception ex)
         {
@@ -5392,16 +5406,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (HasReplayWeapon(pawn, className))
             return true;
 
-        try
-        {
-            player.GiveNamedItem(className);
-        }
-        catch (Exception ex)
-        {
-            Server.PrintToConsole(
-                $"dtr: failed to give slot={player.Slot} item={className}: {ex.Message}");
+        if (!TryGiveNamedItem(player, className))
             return false;
-        }
 
         return HasReplayWeapon(pawn, className) || slot == ReplayWeaponSlot.Utility;
     }

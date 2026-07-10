@@ -24,7 +24,8 @@ if(NOT PROTO_DIR OR NOT EXISTS "${PROTO_DIR}/network_connection.proto" OR
    NOT EXISTS "${PROTO_DIR}/netmessages.proto" OR
    NOT EXISTS "${PROTO_DIR}/source2_steam_stats.proto" OR
    NOT EXISTS "${PROTO_DIR}/usercmd.proto" OR
-   NOT EXISTS "${PROTO_DIR}/cs_usercmd.proto")
+   NOT EXISTS "${PROTO_DIR}/cs_usercmd.proto" OR
+   NOT EXISTS "${PROTO_DIR}/valveextensions.proto")
     set(PROTO_STAGE "${CMAKE_BINARY_DIR}/proto_stage")
     file(MAKE_DIRECTORY "${PROTO_STAGE}")
     set(PROTO_SOURCE_FILES
@@ -32,6 +33,7 @@ if(NOT PROTO_DIR OR NOT EXISTS "${PROTO_DIR}/network_connection.proto" OR
         "${HL2SDK}/common/networkbasetypes.proto"
         "${HL2SDK}/common/netmessages.proto"
         "${HL2SDK}/common/source2_steam_stats.proto"
+        "${HL2SDK}/common/valveextensions.proto"
         "${HL2SDK}/game/shared/usercmd.proto"
         "${HL2SDK}/game/shared/cs/cs_usercmd.proto")
     foreach(src ${PROTO_SOURCE_FILES})
@@ -57,7 +59,7 @@ if(NOT PROTOC_VER MATCHES "libprotoc 3\\.21\\.")
 endif()
 message(STATUS "protoc: ${PROTOC_EXE} (${PROTOC_VER})")
 
-set(PROTO_FILES network_connection.proto networkbasetypes.proto netmessages.proto source2_steam_stats.proto usercmd.proto cs_usercmd.proto)
+set(PROTO_FILES network_connection.proto networkbasetypes.proto netmessages.proto source2_steam_stats.proto valveextensions.proto usercmd.proto cs_usercmd.proto)
 set(GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${GENERATED_DIR}")
 set(PROTO_SRCS "")

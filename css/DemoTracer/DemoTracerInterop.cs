@@ -438,6 +438,25 @@ internal static partial class BotControllerNative
         }
     }
 
+    public static bool SetReplayPawn(int slot, nint pawnHandle)
+    {
+        if (!ValidSlot(slot))
+            return false;
+
+        try
+        {
+            return BotController_SetReplayPawn(slot, unchecked((ulong)pawnHandle)) == 0;
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static bool SetUsercmdMovementIntent(
         int slot,
         ulong buttonsSet,

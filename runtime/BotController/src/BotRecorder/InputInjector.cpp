@@ -57,6 +57,7 @@ namespace BotController
 
         // slot -> live CCSPlayer_MovementServices*
         static std::array<std::atomic<void *>, kMaxSlots> g_slotServices{};
+        static std::array<std::atomic<void *>, kMaxSlots> g_slotPawns{};
         static std::array<std::atomic<bool>, kMaxSlots> g_slotControllingBot{};
         static std::atomic<int> g_controllerControllingBotOffset{-1};
 
@@ -339,31 +340,87 @@ namespace BotController
                        : nullptr;
         }
 
-        static void *ServicesToPawn(void *services)
+        static bool ValidSlotIndex(int slot)
+        {
+            return slot >= 0 && slot < kMaxSlots;
+        }
+
+        bool SetReplayPawn(int slot, void *pawn)
+        {
+            if (!ValidSlotIndex(slot))
+                return false;
+            g_slotPawns[slot].store(pawn, std::memory_order_release);
+            return true;
+        }
+
+        void ClearReplayPawn(int slot)
+        {
+            if (ValidSlotIndex(slot))
+                g_slotPawns[slot].store(nullptr, std::memory_order_release);
+        }
+
+        static void *ServicesToPawnField(void *services)
         {
             if (!services)
                 return nullptr;
-            return *reinterpret_cast<void **>(
-                reinterpret_cast<char *>(services) + tg::kServices_Pawn);
+            void *pawn = nullptr;
+            return ReadField(services, tg::kServices_Pawn, pawn) ? pawn : nullptr;
+        }
+
+        static bool PawnOwnsServices(void *pawn, void *services)
+        {
+            if (!pawn || !services)
+                return false;
+            void *liveServices = nullptr;
+            return ReadField(pawn, tg::kPawn_MovementServices, liveServices) &&
+                   liveServices == services;
+        }
+
+        void *ResolveReplayPawn(int slot, void *services)
+        {
+            if (ValidSlotIndex(slot))
+            {
+                void *registered = g_slotPawns[slot].load(std::memory_order_acquire);
+                if (PawnOwnsServices(registered, services))
+                    return registered;
+            }
+
+            return ServicesToPawnField(services);
+        }
+
+        static int RegisteredSlotForServices(void *services)
+        {
+            if (!services)
+                return -1;
+            for (int slot = 0; slot < kMaxSlots; ++slot)
+            {
+                void *pawn = g_slotPawns[slot].load(std::memory_order_acquire);
+                if (PawnOwnsServices(pawn, services))
+                    return slot;
+            }
+            return -1;
         }
 
         // services -> player slot via pawn ptr at services+56, then m_hController.
         static int ServicesToSlot(void *services)
         {
-            void *pawn = ServicesToPawn(services);
+            void *pawn = ServicesToPawnField(services);
             if (!pawn)
-                return -1;
-            return ControllerSlotForPawn(pawn);
+                return RegisteredSlotForServices(services);
+
+            int slot = ControllerSlotForPawn(pawn);
+            return slot >= 0 ? slot : RegisteredSlotForServices(services);
         }
 
         // services -> pawn -> WeaponServices*, for the recording weapon tap.
         static void *ServicesToWeaponServices(void *services)
         {
-            void *pawn = ServicesToPawn(services);
+            int slot = ServicesToSlot(services);
+            void *pawn = ResolveReplayPawn(slot, services);
             if (!pawn)
                 return nullptr;
-            return *reinterpret_cast<void **>(
-                reinterpret_cast<char *>(pawn) + tg::kPawn_WeaponServices);
+            void *ws = nullptr;
+            return ReadField(pawn, tg::kPawn_WeaponServices, ws) ? ws : nullptr;
         }
 
         static float NormalizeDeg(float a)
@@ -387,7 +444,8 @@ namespace BotController
             int offset = g_controllerControllingBotOffset.load(std::memory_order_acquire);
             if (!controller || offset < 0)
                 return false;
-            return *reinterpret_cast<uint8_t *>(reinterpret_cast<char *>(controller) + offset) != 0;
+            uint8_t value = 0;
+            return ReadField(controller, offset, value) && value != 0;
         }
 
         static bool ReplayActiveAndSafe(int slot)

@@ -59,7 +59,8 @@ namespace BotController
                     IssueBuy(slot, alias.c_str());
             }
 
-            *(reinterpret_cast<uint8_t *>(self) + tg::kBuy_DoneBuying) = 1;
+            const uint8_t done = 1;
+            WriteField(self, tg::kBuy_DoneBuying, done);
 
             char dbg[128];
             std::snprintf(dbg, sizeof(dbg), "[BC][buy] slot=%d skip=%d items=%d\n",
@@ -73,7 +74,9 @@ namespace BotController
             if (slot < 0 || slot >= 64 || !BuyControllerState::HasPlan(slot))
                 return g_origOnUpdate(self, me);
 
-            uint8_t init = *(reinterpret_cast<uint8_t *>(self) + tg::kBuy_InitialDelay);
+            uint8_t init = 0;
+            if (!ReadField(self, tg::kBuy_InitialDelay, init))
+                return g_origOnUpdate(self, me);
             if (init && !g_lastInitDelay[slot])
                 ApplyPlan(self, slot);
             g_lastInitDelay[slot] = init;

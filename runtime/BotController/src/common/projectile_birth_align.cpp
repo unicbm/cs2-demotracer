@@ -71,6 +71,32 @@ namespace BotController::ProjectileBirthAlign
             std::memcpy(base + offset, value.data(), sizeof(float) * value.size());
         }
 
+        char *ResolveSceneNode(char *entity)
+        {
+            if (!entity)
+                return nullptr;
+
+            if (targets::kEnt_BodyComponent > 0 && targets::kBody_SceneNode >= 0 &&
+                CanWriteMemory(entity + targets::kEnt_BodyComponent, sizeof(void *)))
+            {
+                auto *body = *reinterpret_cast<char **>(entity + targets::kEnt_BodyComponent);
+                if (body &&
+                    CanWriteMemory(body + targets::kBody_SceneNode, sizeof(void *)))
+                {
+                    auto *node = *reinterpret_cast<char **>(body + targets::kBody_SceneNode);
+                    if (node)
+                        return node;
+                }
+            }
+
+            if (targets::kEnt_GameSceneNode > 0 &&
+                CanWriteMemory(entity + targets::kEnt_GameSceneNode, sizeof(void *)))
+            {
+                return *reinterpret_cast<char **>(entity + targets::kEnt_GameSceneNode);
+            }
+            return nullptr;
+        }
+
         bool Apply(Pending &pending)
         {
             if (g_initialPositionOffset < 0 || g_initialVelocityOffset < 0)
@@ -91,12 +117,9 @@ namespace BotController::ProjectileBirthAlign
             WriteVec3(entity, g_initialVelocityOffset, pending.velocity);
             WriteVec3(entity, targets::kEnt_AbsVelocity, pending.velocity);
 
-            if (CanWriteMemory(entity + targets::kEnt_GameSceneNode, sizeof(void *)))
-            {
-                auto *node = *reinterpret_cast<char **>(entity + targets::kEnt_GameSceneNode);
-                if (node && CanWriteMemory(node + targets::kNode_AbsOrigin, sizeof(float) * 3))
-                    WriteVec3(node, targets::kNode_AbsOrigin, pending.position);
-            }
+            auto *node = ResolveSceneNode(entity);
+            if (node && CanWriteMemory(node + targets::kNode_AbsOrigin, sizeof(float) * 3))
+                WriteVec3(node, targets::kNode_AbsOrigin, pending.position);
 
             return true;
         }
