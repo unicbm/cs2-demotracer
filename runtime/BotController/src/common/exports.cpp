@@ -1,6 +1,7 @@
 // C-ABI exports for CounterStrikeSharp P/Invoke. quiet=true on all entries.
 
 #include "dispatch.h"
+#include "BotController.h"
 #include "MotionRecorder.h"
 #include "InputInjector.h"
 #include "BuyControllerState.h"
@@ -20,7 +21,7 @@
 namespace
 {
     constexpr int kBotControllerAbiMajor = 16;
-    constexpr int kBotControllerAbiMinor = 28;
+    constexpr int kBotControllerAbiMinor = 29;
     constexpr uint64_t kCapabilityReplaySlotState = 1ULL << 0;
     constexpr uint64_t kCapabilityStartReplayAt = 1ULL << 1;
     constexpr uint64_t kCapabilityStartReplayUntil = 1ULL << 2;
@@ -32,6 +33,7 @@ namespace
     constexpr uint64_t kCapabilityExtendedReplay = 1ULL << 8;
     constexpr uint64_t kCapabilityUsercmdMovementIntent = 1ULL << 9;
     constexpr uint64_t kCapabilityVoiceSend = 1ULL << 10;
+    constexpr uint64_t kCapabilityNativePerception = 1ULL << 11;
     constexpr uint64_t kBotControllerCapabilities =
         kCapabilityReplaySlotState |
         kCapabilityStartReplayAt |
@@ -43,7 +45,8 @@ namespace
         kCapabilityControllerBotOffset |
         kCapabilityExtendedReplay |
         kCapabilityUsercmdMovementIntent |
-        kCapabilityVoiceSend;
+        kCapabilityVoiceSend |
+        kCapabilityNativePerception;
 
 #pragma pack(push, 4)
     struct BotControllerAbiInfo
@@ -119,6 +122,27 @@ extern "C" __declspec(dllexport) uint64_t BotController_GetCapabilities()
 extern "C" __declspec(dllexport) const char *BotController_GetBuildId()
 {
     return BOTCONTROLLER_BUILD_ID;
+}
+
+extern "C" __declspec(dllexport) int BotController_GetNativePerceptionState(
+    int slot,
+    BotController::NativePerceptionState *out,
+    int size)
+{
+    if (!out || size < static_cast<int>(sizeof(BotController::NativePerceptionState)))
+        return -1;
+
+    BotController::NativePerceptionState state{};
+    if (!BotController::BotControllerHooks::GetNativePerceptionState(slot, state))
+        return -2;
+    std::memcpy(out, &state, sizeof(state));
+    return 0;
+}
+
+extern "C" __declspec(dllexport) int BotController_SetReplayNativeFovOverride(int enabled)
+{
+    BotController::BotControllerHooks::SetReplayNativeFovOverride(enabled != 0);
+    return 0;
 }
 
 extern "C" __declspec(dllexport) int BotController_CanSendVoice()

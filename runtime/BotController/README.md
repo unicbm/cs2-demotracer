@@ -23,8 +23,8 @@ signatures/offsets, so Linux runtime packages are not supported yet.
 - **Weapon** — pin a bot to one weapon slot; AI switches are blocked.
 - **Aim** — freeze `CCSBot::Upkeep`; view holds still, AI keeps deciding/moving.
 - **Jump** — block `CCSBot::Jump`; bot stops jumping, move/fire/aim unaffected.
-- **All** — freeze both `CCSBot::Update` and `CCSBot::Upkeep`, so external code
-  (such as motion replay) can drive the bot entirely.
+- **All** — freeze both `CCSBot::Update` and `CCSBot::Upkeep` for callers that
+  explicitly need a full native-AI freeze.
 
 ------------------------------------------------------------------------
 
@@ -36,8 +36,16 @@ it onto another slot and play it back. Replay is driven through the engine's own
 movement path, so it reproduces the original motion subtick-accurate.
 
 Typical flow: lock the source slot if needed → `StartRecord` → move → `StopRecord`
-→ `TransferRecordingToReplay` into a bot slot → `Lock(All)` the bot →
-`StartReplay`. See the CounterStrikeSharp API section below.
+→ `TransferRecordingToReplay` into a bot slot → `StartReplay`. While replay
+owns the bot's injected command, movement, and view output, native AI update and
+upkeep continue in the background so perception and decision state are ready for
+handoff. Replay ownership still blocks native `EquipBestWeapon`, `EquipPistol`,
+and conflicting `SelectItem` actions; only the weapon requested by the active
+replay tick may pass through the hooked selection path. DemoTracer applies a
+scoped `Lock(All)` only during freeze-time pre-roll, where contact cannot occur,
+then releases it on `round_freeze_end`. Do not otherwise apply `Lock(All)` to a
+replay bot when that continuity is wanted.
+See the CounterStrikeSharp API section below.
 
 ------------------------------------------------------------------------
 
@@ -113,7 +121,7 @@ bc_status
 ```
 bc_lock aim 1                # freeze bot 1's view, AI still runs
 bc_lock jump 1               # bot 1 can no longer jump
-bc_lock all 1                # full freeze (use this before replay)
+bc_lock all 1                # explicit full native-AI freeze
 bc_lock weapon 1 slot3       # force bot 1 to knife
 bc_unlock_all weapon         # clear every weapon lock
 bc_replay_pov spectated      # publish replay POV only for watched bots
@@ -151,6 +159,12 @@ Low-level movement integrations can probe
 helpers are present only for compatibility with existing left-hand movement
 callers.
 
+Replay handoff integrations can probe `CapabilityNativePerception`, then read
+`TryGetNativePerceptionState`. During replay, the native vision detours disable
+only the `CCSBot::IsVisible` FOV test; LOS/smoke logic and native enemy/reaction
+state continue normally. `SetReplayNativeFovOverride` controls this replay-only
+behavior.
+
 ### Locks
 
 ```csharp
@@ -174,7 +188,7 @@ BotController.StopRecord(srcSlot);
 
 // Replay it on a bot
 BotController.TransferRecordingToReplay(srcSlot, botSlot);
-BotController.Lock(botSlot, LockKind.All);    // hand the bot over
+// Do not Lock(All): replay owns output while native AI shadow-runs for handoff.
 BotController.StartReplay(botSlot, loop: false);
 
 // Or pull the buffers out, persist them, and load later

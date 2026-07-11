@@ -135,6 +135,24 @@ namespace BotControllerApi
         public int Reserved1;
     }
 
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    public struct NativePerceptionState
+    {
+        public const int ByteSize = 44;
+
+        public int Valid;
+        public uint EnemyHandle;
+        public int HasEnemy;
+        public int EnemyVisible;
+        public int VisibleEnemyParts;
+        public int NearbyEnemyCount;
+        public int LastEnemyDead;
+        public float LastSawEnemyTimestamp;
+        public float FirstSawEnemyTimestamp;
+        public float CurrentEnemyAcquireTimestamp;
+        public uint UpdateSerial;
+    }
+
     // Thin static binding over the native exports. No orchestration here.
     public static class BotController
     {
@@ -149,6 +167,7 @@ namespace BotControllerApi
         public const ulong CapabilityControllerBotOffset = 1UL << 7;
         public const ulong CapabilityExtendedReplay = 1UL << 8;
         public const ulong CapabilityUsercmdMovementIntent = 1UL << 9;
+        public const ulong CapabilityNativePerception = 1UL << 11;
 
         // Sentinel weapon def meaning "any knife"
         public const int KnifeDef = 9001;
@@ -176,6 +195,13 @@ namespace BotControllerApi
 
         [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr BotController_GetBuildId();
+
+        [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int BotController_GetNativePerceptionState(
+            int slot, out NativePerceptionState state, int size);
+
+        [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int BotController_SetReplayNativeFovOverride(int enabled);
 
         [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
         private static extern int BotController_SetReplayPovMask(ulong mask);
@@ -464,6 +490,20 @@ namespace BotControllerApi
         public static int ReplayTotal(int slot) => BotController_GetReplayTotal(slot);
 
         public static bool IsReplaying(int slot) => BotController_GetReplayCursor(slot) >= 0;
+
+        public static bool TryGetNativePerceptionState(
+            int slot, out NativePerceptionState state)
+        {
+            state = default;
+            return (Capabilities() & CapabilityNativePerception) != 0 &&
+                   BotController_GetNativePerceptionState(
+                       slot, out state, NativePerceptionState.ByteSize) == 0 &&
+                   state.Valid != 0;
+        }
+
+        public static bool SetReplayNativeFovOverride(bool enabled)
+            => (Capabilities() & CapabilityNativePerception) != 0 &&
+               BotController_SetReplayNativeFovOverride(enabled ? 1 : 0) == 0;
 
         // Bit n means replay slot n is currently watched in first-person.
         public static bool SetReplayPovMask(ulong mask)

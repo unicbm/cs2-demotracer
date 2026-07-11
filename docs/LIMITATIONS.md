@@ -50,11 +50,13 @@ This document tracks known limitations and edge cases.
 
 ## Handoff And Physics Edge Cases
 
-- Handoff can be imperfect during complex behavior, such as Dust2 mid-door AWP
-  duels. A handoff can make native AI abandon an angle instead of shooting. The
-  current implementation intentionally keeps the handoff logic simple, using the
-  RayTrace API and native visibility checks, because heavier heuristics are easy
-  to make confusing and hard to maintain.
+- Outside freeze-time pre-roll, native AI update and upkeep shadow-run during
+  replay, which avoids handing control back to a cold perception/decision
+  state. Complex handoffs can still
+  be imperfect because replay view output remains authoritative until release
+  and DemoTracer deliberately does not seed private enemy or aim state with
+  heuristics. Contact is released from native enemy/visibility/nearby state;
+  managed RayTrace is only an older-runtime fallback.
 - Boosts and other player-on-player arrangements are replayed from recorded
   position and velocity. If a human replaces the lower bot in a boost, the upper
   bot can appear to float because the DTR bot is constrained to the demo's

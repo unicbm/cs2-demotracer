@@ -112,6 +112,27 @@ namespace BotController
 
         static int ReadDefIndex(void *weapon);
 
+        static bool IsKnifeDefIndex(int def)
+        {
+            return def == kKnifeDef || def == 41 || def == 42 || def == 59 ||
+                   (def >= 500 && def < 600);
+        }
+
+        static bool ReplayAllowsWeaponSelection(int slot, void *weapon)
+        {
+            ReplayTick tick{};
+            if (!MotionRecorder::ReplayTickForSimulation(slot, tick))
+                return false;
+
+            const int desiredDef = tick.weaponDefIndex;
+            const int selectedDef = ReadDefIndex(weapon);
+            if (desiredDef < 0 || selectedDef < 0)
+                return false;
+
+            return selectedDef == desiredDef ||
+                   (IsKnifeDefIndex(selectedDef) && IsKnifeDefIndex(desiredDef));
+        }
+
         // ---- edge-triggered logging ----
 
         static int g_lastLoggedLock[64] = {0};
@@ -144,7 +165,8 @@ namespace BotController
                 RememberWsForBot(bot, sr.slot);
             LockTarget lt = (sr.slot >= 0) ? WeaponLockerState::Get(sr.slot) : LockTarget::None;
             MaybeLogEdge("EquipBestWeapon", bot, sr, lt);
-            if (lt != LockTarget::None)
+            if (sr.slot >= 0 &&
+                (MotionRecorder::IsReplaying(sr.slot) || lt != LockTarget::None))
                 return;
             g_origEquipBestWeapon(bot, mustEquip);
         }
@@ -156,7 +178,8 @@ namespace BotController
                 RememberWsForBot(bot, sr.slot);
             LockTarget lt = (sr.slot >= 0) ? WeaponLockerState::Get(sr.slot) : LockTarget::None;
             MaybeLogEdge("EquipPistol", bot, sr, lt);
-            if (lt != LockTarget::None)
+            if (sr.slot >= 0 &&
+                (MotionRecorder::IsReplaying(sr.slot) || lt != LockTarget::None))
                 return;
             g_origEquipPistol(bot, mustEquip);
         }
@@ -188,6 +211,18 @@ namespace BotController
             int curSlot = ControllerSlotForPawn(bind.pawn);
             if (curSlot != bind.slot)
                 return g_origSelectItem(ws, weapon, flag);
+
+            // Native Update/Upkeep may shadow-run during replay for warm
+            // perception, but replay remains the sole weapon-action owner.
+            // The DTR raw switch helper calls g_origSelectItem directly and
+            // therefore bypasses this detour. Engine handling of the injected
+            // cmd.weaponselect is allowed only for the exact replay weapon.
+            if (MotionRecorder::IsReplaying(bind.slot))
+            {
+                if (!ReplayAllowsWeaponSelection(bind.slot, weapon))
+                    return 0;
+                return g_origSelectItem(ws, weapon, flag);
+            }
 
             LockTarget lt = WeaponLockerState::Get(bind.slot);
             if (lt == LockTarget::None)

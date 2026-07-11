@@ -42,10 +42,11 @@
 
 ## Handoff 和物理边界
 
-- 已经观察到当 bot 做一些复杂行为，例如 Dust2 中门对狙时，handoff 可能导致的结果
-  不是开枪，而是 native AI 放弃架点。由于目前缺乏简单算法来决定如何优雅 handoff
-  给 native AI，为了避免过多启发式让行为变得混乱和难以维护，目前只提供基于
-  RayTrace API 和原生 visible 检测的简单方案。有能力的用户可以尝试优化这一层。
+- 除 freeze-time pre-roll 外，replay 期间会让原生 AI update 和 upkeep 在后台持续运行，
+  避免把控制权交还给一个刚刚冷启动的感知/决策状态。复杂 handoff 仍可能不完美，因为释放前仍以
+  replay view 为最终输出，而 DemoTracer 不会用启发式强行写入私有的敌人或瞄准状态。
+  contact 由原生 enemy / visible / nearby 状态触发；managed RayTrace 只作为旧 runtime
+  的兼容回退。
 - 例如双架 boost 行为，如果真人玩家取代了原本应该在下面的 bot，上面的 bot 可能出现
   反物理悬空。这是因为执行 DTR 的 bot 会被约束到 demo 对应的 velocity 和 position，
   不一定尊重当前游戏物理引擎。从 demo 提取的 position/velocity 反推按键意图本质上

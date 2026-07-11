@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 #include <nlohmann/json.hpp>
@@ -9,6 +10,27 @@
 
 namespace BotController
 {
+    // Game-thread snapshot of the native CCSBot perception state. Keep this
+    // POD layout in sync with the C# P/Invoke definitions.
+#pragma pack(push, 4)
+    struct NativePerceptionState
+    {
+        int32_t valid;
+        uint32_t enemyHandle;
+        int32_t hasEnemy;
+        int32_t enemyVisible;
+        int32_t visibleEnemyParts;
+        int32_t nearbyEnemyCount;
+        int32_t lastEnemyDead;
+        float lastSawEnemyTimestamp;
+        float firstSawEnemyTimestamp;
+        float currentEnemyAcquireTimestamp;
+        uint32_t updateSerial;
+    };
+#pragma pack(pop)
+
+    static_assert(sizeof(NativePerceptionState) == 44);
+
     namespace BotControllerHooks
     {
         // Resolve sigs and install detours.
@@ -23,6 +45,10 @@ namespace BotController
         // Apply replay-owned eye angles through the native engine path so
         // derived third-person/body orientation state stays synchronized.
         bool ApplyReplayEyeAngles(void *pawn, float pitch, float yaw);
+
+        // Latest snapshot captured after CCSBot::Update for this player slot.
+        bool GetNativePerceptionState(int slot, NativePerceptionState &out);
+        void SetReplayNativeFovOverride(bool enabled);
 
         void *UpdateAddress();
         void *UpkeepAddress();

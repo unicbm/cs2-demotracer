@@ -10,6 +10,14 @@ namespace BotController::targets
     {
         kBot_AiTickedFlag        = Sig::FindPlatformOffset(gd, "CCSBot::AiTickedFlag", kBot_AiTickedFlag);
         kBot_Pawn                = Sig::FindPlatformOffset(gd, "CCSBot::Pawn", kBot_Pawn);
+        kBot_Enemy               = Sig::FindPlatformOffset(gd, "CCSBot::Enemy", kBot_Enemy);
+        kBot_IsEnemyVisible      = Sig::FindPlatformOffset(gd, "CCSBot::IsEnemyVisible", kBot_IsEnemyVisible);
+        kBot_VisibleEnemyParts   = Sig::FindPlatformOffset(gd, "CCSBot::VisibleEnemyParts", kBot_VisibleEnemyParts);
+        kBot_LastSawEnemyTimestamp = Sig::FindPlatformOffset(gd, "CCSBot::LastSawEnemyTimestamp", kBot_LastSawEnemyTimestamp);
+        kBot_FirstSawEnemyTimestamp = Sig::FindPlatformOffset(gd, "CCSBot::FirstSawEnemyTimestamp", kBot_FirstSawEnemyTimestamp);
+        kBot_CurrentEnemyAcquireTimestamp = Sig::FindPlatformOffset(gd, "CCSBot::CurrentEnemyAcquireTimestamp", kBot_CurrentEnemyAcquireTimestamp);
+        kBot_IsLastEnemyDead     = Sig::FindPlatformOffset(gd, "CCSBot::IsLastEnemyDead", kBot_IsLastEnemyDead);
+        kBot_NearbyEnemyCount    = Sig::FindPlatformOffset(gd, "CCSBot::NearbyEnemyCount", kBot_NearbyEnemyCount);
         kEnt_Identity            = Sig::FindPlatformOffset(gd, "CBaseEntity::Identity", kEnt_Identity);
         kEntIdentity_EHandle     = Sig::FindPlatformOffset(gd, "CEntityIdentity::EHandle", kEntIdentity_EHandle);
         kEnt_MoveType            = Sig::FindPlatformOffset(gd, "CBaseEntity::MoveType", kEnt_MoveType);

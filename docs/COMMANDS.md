@@ -223,7 +223,7 @@ Stops selected scheduling or replay state:
 - `dtr_stop replay` or `dtr_stop loaded`: stop all currently loaded/running
   replay slots.
 - `dtr_stop slot <slot>`: stop one replay slot and release runtime locks,
-  pending alignments, buy plans, and replay brain state for that slot.
+  pending alignments, buy plans, and replay-owned injection state for that slot.
 - `dtr_stop all`: stop all DemoTracer replay state.
 
 Legacy alias: `dtr_stop <slot>` for `dtr_stop slot <slot>`.
@@ -671,27 +671,40 @@ all active replay slots even when scope is `slot`.
 
 Contact implementation:
 
-- Uses bullet damage/hurt events and replay-bot enemy visibility checks.
-- On contact, DemoTracer stops replay control, releases native locks, and resets
-  replay-owned bot state. Post-handoff fighting is left to the normal CS2 bot AI;
-  DemoTracer does not run a CSGO-style combat executor.
-- Ignores the first short replay grace window after start to avoid immediate
-  false handoff.
-- With `threat_360_los=true`, 360 threats require line of sight across
-  `threat_360_range`; close LOS threats trigger immediately, while farther LOS
-  threats require a short hold. With `threat_360_los=false`, the full configured
-  360 range remains an experimental no-LOS trigger.
+- Uses bullet damage/hurt events plus the replay bot's native `m_enemy`,
+  `m_isEnemyVisible`, and `m_nearbyEnemyCount` state. When native perception is
+  unavailable on an older BotController, the managed spotted/RayTrace detector
+  remains as a compatibility fallback.
+- During replay, native bot update and upkeep continue in the background while
+  recorded input, movement, and view remain authoritative. On contact,
+  DemoTracer releases replay control without clearing the accumulated native
+  perception and decision state. Post-handoff fighting remains owned by the
+  normal CS2 bot AI; DemoTracer does not run a CSGO-style combat executor.
+- Native weapon equip/select exits are arbitrated while replay owns the slot:
+  conflicting AI weapon changes are blocked, while the exact weapon requested
+  by the active replay tick remains allowed.
+- During freeze-time pre-roll only, DemoTracer temporarily suppresses native
+  `Update` and `Upkeep`; `round_freeze_end` releases that scoped lock before
+  normal replay-time perception shadowing resumes.
+- With 360 handoff enabled, BotController disables only the native
+  `CCSBot::IsVisible` FOV test during replay. Native LOS, smoke, target
+  selection, and reaction state remain authoritative. Native contact has no
+  artificial grace or hold delay.
+- `threat_360_range` and `threat_360_los` apply only to the compatibility
+  fallback detector.
 
 ### `dtr_handoff_360 [0|1] [range] [los|nolos]`
 
-Controls the 360-degree threat trigger used by contact handoff.
+Controls replay-time native 360-degree perception and its compatibility
+fallback detector.
 
 - `0`/`off`: disable 360 threat handoff.
 - `1`/`on`: enable 360 threat handoff.
-- `range`: threat radius in game units, clamped by the plugin.
+- `range`: fallback threat radius in game units, clamped by the plugin.
 - `los`/`raytrace`: require RayTrace line of sight when a RayTrace provider is
   available.
-- `nolos`: use proximity only; this is more experimental.
+- `nolos`: use proximity only in the fallback detector; this is more
+  experimental.
 
 The command prints the effective setting and current RayTrace status.
 

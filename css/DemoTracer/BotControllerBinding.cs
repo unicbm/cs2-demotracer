@@ -23,6 +23,15 @@ internal static partial class BotControllerNative
     private static extern IntPtr BotController_GetBuildId();
 
     [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_GetNativePerceptionState(
+        int slot,
+        out NativePerceptionState state,
+        int size);
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_SetReplayNativeFovOverride(int enabled);
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
     private static extern int BotController_CanSendVoice();
 
     [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]

@@ -12,6 +12,16 @@ namespace BotController::targets
     inline int kBot_AiTickedFlag = 0x610;
     // CCSBot -> pawn (CCSPlayerPawn*)
     inline int kBot_Pawn = 0x18;
+    // Native perception state. These are server-only CCSBot fields recovered
+    // from the current server.dll field-description table and vision code.
+    inline int kBot_Enemy = 0x5A08;                    // CHandle<CCSPlayerPawn>
+    inline int kBot_IsEnemyVisible = 0x5A0C;           // bool
+    inline int kBot_VisibleEnemyParts = 0x5A0D;        // uint8 bit mask
+    inline int kBot_LastSawEnemyTimestamp = 0x5A1C;    // float
+    inline int kBot_FirstSawEnemyTimestamp = 0x5A20;   // float
+    inline int kBot_CurrentEnemyAcquireTimestamp = 0x5A24; // float
+    inline int kBot_IsLastEnemyDead = 0x5A30;          // bool
+    inline int kBot_NearbyEnemyCount = 0x5A34;         // int32
 
     // ---- CBaseEntity / CEntityIdentity ----
 

@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <vector>
@@ -21,6 +22,10 @@ namespace tg = BotController::targets;
 
 using Update_t = void(BC_FASTCALL *)(void *bot);
 using Upkeep_t = void(BC_FASTCALL *)(void *bot);
+using IsVisiblePos_t = bool(BC_FASTCALL *)(void *bot, const void *pos,
+                                           bool testFov, void *traceContext);
+using IsVisiblePlayer_t = bool(BC_FASTCALL *)(void *bot, void *playerPawn,
+                                              bool testFov, uint8_t *visibleParts);
 using Jump_t = char(BC_FASTCALL *)(void *bot, char mustJump);
 using UpdateLookAngles_t = void(BC_FASTCALL *)(void *bot);
 using SetEyeAngles_t = void(BC_FASTCALL *)(void *pawn, float *angle);
@@ -34,6 +39,10 @@ namespace BotController
         static void *g_addrUpdate = nullptr;
         static Upkeep_t g_origUpkeep = nullptr;
         static void *g_addrUpkeep = nullptr;
+        static IsVisiblePos_t g_origIsVisiblePos = nullptr;
+        static void *g_addrIsVisiblePos = nullptr;
+        static IsVisiblePlayer_t g_origIsVisiblePlayer = nullptr;
+        static void *g_addrIsVisiblePlayer = nullptr;
         static Jump_t g_origJump = nullptr;
         static void *g_addrJump = nullptr;
         static UpdateLookAngles_t g_origUpdateLookAngles = nullptr;
@@ -51,10 +60,62 @@ namespace BotController
 
         static Hook g_hookUpdate;
         static Hook g_hookUpkeep;
+        static Hook g_hookIsVisiblePos;
+        static Hook g_hookIsVisiblePlayer;
         static Hook g_hookJump;
         static Hook g_hookUpdateLookAngles;
         static Hook g_hookSetEyeAngles;
         static Hook g_hookGetEyeAngles;
+        static std::array<NativePerceptionState, 64> g_nativePerception{};
+        static uint32_t g_nativePerceptionSerial = 0;
+        static bool g_replayNativeFovOverride = true;
+
+        static bool IsValidEnemyHandle(uint32_t handle)
+        {
+            return handle != 0u && handle != 0xFFFFFFFFu && handle != 0xFFFFFFFEu;
+        }
+
+        static void CaptureNativePerception(void *bot, int slot)
+        {
+            if (!bot || slot < 0 || slot >= static_cast<int>(g_nativePerception.size()))
+                return;
+
+            NativePerceptionState state{};
+            uint8_t enemyVisible = 0;
+            uint8_t visibleEnemyParts = 0;
+            uint8_t lastEnemyDead = 0;
+            bool ok =
+                ReadField(bot, tg::kBot_Enemy, state.enemyHandle) &&
+                ReadField(bot, tg::kBot_IsEnemyVisible, enemyVisible) &&
+                ReadField(bot, tg::kBot_VisibleEnemyParts, visibleEnemyParts) &&
+                ReadField(bot, tg::kBot_NearbyEnemyCount, state.nearbyEnemyCount) &&
+                ReadField(bot, tg::kBot_IsLastEnemyDead, lastEnemyDead) &&
+                ReadField(bot, tg::kBot_LastSawEnemyTimestamp, state.lastSawEnemyTimestamp) &&
+                ReadField(bot, tg::kBot_FirstSawEnemyTimestamp, state.firstSawEnemyTimestamp) &&
+                ReadField(bot, tg::kBot_CurrentEnemyAcquireTimestamp,
+                          state.currentEnemyAcquireTimestamp);
+
+            state.valid = ok ? 1 : 0;
+            state.hasEnemy = ok && IsValidEnemyHandle(state.enemyHandle) ? 1 : 0;
+            state.enemyVisible = enemyVisible != 0 ? 1 : 0;
+            state.visibleEnemyParts = static_cast<int32_t>(visibleEnemyParts);
+            state.lastEnemyDead = lastEnemyDead != 0 ? 1 : 0;
+            state.updateSerial = ++g_nativePerceptionSerial;
+            g_nativePerception[static_cast<size_t>(slot)] = state;
+        }
+
+        bool GetNativePerceptionState(int slot, NativePerceptionState &out)
+        {
+            if (slot < 0 || slot >= static_cast<int>(g_nativePerception.size()))
+                return false;
+            out = g_nativePerception[static_cast<size_t>(slot)];
+            return out.valid != 0;
+        }
+
+        void SetReplayNativeFovOverride(bool enabled)
+        {
+            g_replayNativeFovOverride = enabled;
+        }
 
         static float NormalizeDeg(float a)
         {
@@ -125,18 +186,42 @@ namespace BotController
         }
 #endif
 
-        // Skip the Bot tick under All lock OR while replaying
+        // All is an explicit full-brain lock. Replay itself keeps Update alive
+        // so native perception and decision state can shadow the injected
+        // command stream and be ready when replay control is released.
         static void BC_FASTCALL HookedUpdate(void *bot)
         {
             int slot = CCSBotToSlot(bot);
-            if (slot >= 0 &&
-                (BotControllerState::GetAll(slot) || MotionRecorder::IsReplaying(slot)))
+            if (slot >= 0 && BotControllerState::GetAll(slot))
             {
                 const uint8_t ticked = 1;
                 WriteField(bot, tg::kBot_AiTickedFlag, ticked);
                 return;
             }
             g_origUpdate(bot);
+            CaptureNativePerception(bot, slot);
+        }
+
+        // CS:GO botmimic keeps native vision running and disables only the FOV
+        // cone. Do the same while a DTR owns output: native LOS, smoke and
+        // target-state logic still run, but rear threats can enter the native
+        // perception/reaction pipeline before handoff.
+        static bool BC_FASTCALL HookedIsVisiblePos(void *bot, const void *pos,
+                                                   bool testFov, void *traceContext)
+        {
+            int slot = CCSBotToSlot(bot);
+            if (g_replayNativeFovOverride && slot >= 0 && MotionRecorder::IsReplaying(slot))
+                testFov = false;
+            return g_origIsVisiblePos(bot, pos, testFov, traceContext);
+        }
+
+        static bool BC_FASTCALL HookedIsVisiblePlayer(void *bot, void *playerPawn,
+                                                      bool testFov, uint8_t *visibleParts)
+        {
+            int slot = CCSBotToSlot(bot);
+            if (g_replayNativeFovOverride && slot >= 0 && MotionRecorder::IsReplaying(slot))
+                testFov = false;
+            return g_origIsVisiblePlayer(bot, playerPawn, testFov, visibleParts);
         }
 
         // Skip the per-frame view tick under replay, All, or Aim lock.
@@ -145,8 +230,6 @@ namespace BotController
         static void BC_FASTCALL HookedUpkeep(void *bot)
         {
             int slot = CCSBotContextToSlot(bot);
-            if (slot >= 0 && MotionRecorder::IsReplaying(slot))
-                return;
             if (slot >= 0 &&
                 (BotControllerState::GetAll(slot) || BotControllerState::GetAim(slot)))
             {
@@ -158,6 +241,8 @@ namespace BotController
         static void BC_FASTCALL HookedUpdateLookAngles(void *bot)
         {
             int slot = CCSBotContextToSlot(bot);
+            // Keep replay POV authoritative. The rest of Upkeep still runs so
+            // non-view native state remains warm for handoff.
             if (slot >= 0 &&
                 (MotionRecorder::IsReplaying(slot) ||
                  BotControllerState::GetAll(slot) ||
@@ -260,6 +345,34 @@ namespace BotController
                 return false;
             }
 
+            // Native 360-degree replay perception is optional. Failure keeps
+            // ordinary native FOV behavior and the managed fallback detector.
+            char ivpErr[256] = {0};
+            g_addrIsVisiblePos = Sig::ResolveSig(gd, serverModule,
+                                                 "CCSBot::IsVisiblePos",
+                                                 ivpErr, sizeof(ivpErr));
+            if (!g_addrIsVisiblePos)
+            {
+                char dbg[320];
+                std::snprintf(dbg, sizeof(dbg),
+                              "[BotController] WARN: CCSBot::IsVisible(pos) sig not resolved (%s); native replay 360 partial/disabled\n",
+                              ivpErr);
+                DebugOut(dbg);
+            }
+
+            char ivplErr[256] = {0};
+            g_addrIsVisiblePlayer = Sig::ResolveSig(gd, serverModule,
+                                                    "CCSBot::IsVisiblePlayer",
+                                                    ivplErr, sizeof(ivplErr));
+            if (!g_addrIsVisiblePlayer)
+            {
+                char dbg[320];
+                std::snprintf(dbg, sizeof(dbg),
+                              "[BotController] WARN: CCSBot::IsVisible(player) sig not resolved (%s); native replay 360 partial/disabled\n",
+                              ivplErr);
+                DebugOut(dbg);
+            }
+
             // Jump is optional; failure leaves all/aim working, only jump dies.
             char jumpErr[256] = {0};
             g_addrJump = Sig::ResolveSig(gd, serverModule, "CCSBot::Jump",
@@ -352,6 +465,35 @@ namespace BotController
                 return false;
             }
 
+            // optional: native replay vision
+            if (g_addrIsVisiblePos)
+            {
+                if (!g_hookIsVisiblePos.Create(g_addrIsVisiblePos,
+                                                reinterpret_cast<void *>(&HookedIsVisiblePos),
+                                                reinterpret_cast<void **>(&g_origIsVisiblePos)) ||
+                    !g_hookIsVisiblePos.Enable())
+                {
+                    DebugOut("[BotController] WARN: hook CCSBot::IsVisible(pos) failed; native replay 360 partial/disabled\n");
+                    g_hookIsVisiblePos.Remove();
+                    g_origIsVisiblePos = nullptr;
+                    g_addrIsVisiblePos = nullptr;
+                }
+            }
+
+            if (g_addrIsVisiblePlayer)
+            {
+                if (!g_hookIsVisiblePlayer.Create(g_addrIsVisiblePlayer,
+                                                   reinterpret_cast<void *>(&HookedIsVisiblePlayer),
+                                                   reinterpret_cast<void **>(&g_origIsVisiblePlayer)) ||
+                    !g_hookIsVisiblePlayer.Enable())
+                {
+                    DebugOut("[BotController] WARN: hook CCSBot::IsVisible(player) failed; native replay 360 partial/disabled\n");
+                    g_hookIsVisiblePlayer.Remove();
+                    g_origIsVisiblePlayer = nullptr;
+                    g_addrIsVisiblePlayer = nullptr;
+                }
+            }
+
             // optional: Jump
             if (g_addrJump)
             {
@@ -417,8 +559,9 @@ namespace BotController
 
             char dbg[400];
             std::snprintf(dbg, sizeof(dbg),
-                          "[BotController] Update@%p Upkeep@%p Jump@%p ULA@%p SEA@%p GEA@%p\n",
-                          g_addrUpdate, g_addrUpkeep, g_addrJump,
+                          "[BotController] Update@%p Upkeep@%p IVPos@%p IVPlayer@%p Jump@%p ULA@%p SEA@%p GEA@%p\n",
+                          g_addrUpdate, g_addrUpkeep, g_addrIsVisiblePos,
+                          g_addrIsVisiblePlayer, g_addrJump,
                           g_addrUpdateLookAngles, g_addrSetEyeAngles,
                           g_addrGetEyeAngles);
             DebugOut(dbg);
@@ -440,10 +583,18 @@ namespace BotController
             g_origUpdateLookAngles = nullptr;
             g_hookJump.Remove();
             g_origJump = nullptr;
+            g_hookIsVisiblePlayer.Remove();
+            g_origIsVisiblePlayer = nullptr;
+            g_addrIsVisiblePlayer = nullptr;
+            g_hookIsVisiblePos.Remove();
+            g_origIsVisiblePos = nullptr;
+            g_addrIsVisiblePos = nullptr;
             g_hookUpkeep.Remove();
             g_origUpkeep = nullptr;
             g_hookUpdate.Remove();
             g_origUpdate = nullptr;
+            g_nativePerception.fill({});
+            g_nativePerceptionSerial = 0;
             g_installed = false;
             g_status = "not_attempted";
         }

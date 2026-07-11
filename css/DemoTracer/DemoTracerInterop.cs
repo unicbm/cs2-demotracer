@@ -71,6 +71,41 @@ internal static partial class BotControllerNative
     public static bool HasVoiceSendCapability
         => (Capabilities & CapabilityVoiceSend) == CapabilityVoiceSend;
 
+    public static bool HasNativePerceptionCapability
+        => (Capabilities & CapabilityNativePerception) == CapabilityNativePerception;
+
+    public static bool TryGetNativePerceptionState(int slot, out NativePerceptionState state)
+    {
+        state = default;
+        if (!ValidSlot(slot) || !HasNativePerceptionCapability)
+            return false;
+        try
+        {
+            return BotController_GetNativePerceptionState(
+                       slot, out state, NativePerceptionState.ByteSize) == 0 &&
+                   state.Valid != 0;
+        }
+        catch
+        {
+            state = default;
+            return false;
+        }
+    }
+
+    public static bool SetReplayNativeFovOverride(bool enabled)
+    {
+        if (!HasNativePerceptionCapability)
+            return false;
+        try
+        {
+            return BotController_SetReplayNativeFovOverride(enabled ? 1 : 0) == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static bool CanSendVoice
     {
         get
@@ -726,15 +761,12 @@ internal static partial class BotControllerNative
     {
         if (!ValidSlot(slot))
             return false;
-        if (BotController_Lock(slot, LockKindAll, 0) != 0)
-            return false;
-
-        var ok = startIndex == 0
+        // Replay injection owns movement/view output. Keep the native bot
+        // state machine and perception running underneath for warm handoff.
+        UnlockReplayControl(slot);
+        return startIndex == 0
             ? BotController_StartReplay(slot, loop ? 1 : 0) == 0
             : BotController_StartReplayAt(slot, loop ? 1 : 0, checked((int)startIndex)) == 0;
-        if (!ok)
-            BotController_Unlock(slot, LockKindAll);
-        return ok;
     }
 
     public static bool StartReplayUntil(
@@ -747,17 +779,12 @@ internal static partial class BotControllerNative
             return false;
         if (holdBeforeIndex <= startIndex)
             return false;
-        if (BotController_Lock(slot, LockKindAll, 0) != 0)
-            return false;
-
-        var ok = BotController_StartReplayUntil(
+        UnlockReplayControl(slot);
+        return BotController_StartReplayUntil(
             slot,
             loop ? 1 : 0,
             checked((int)startIndex),
             checked((int)holdBeforeIndex)) == 0;
-        if (!ok)
-            BotController_Unlock(slot, LockKindAll);
-        return ok;
     }
 
     public static bool StopReplay(int slot)
@@ -881,6 +908,12 @@ internal static partial class BotControllerNative
 
     public static bool UnlockWeaponSlot(int slot)
         => ValidSlot(slot) && BotController_Unlock(slot, LockKindWeapon) == 0;
+
+    public static bool LockReplayBrain(int slot)
+        => ValidSlot(slot) && BotController_Lock(slot, LockKindAll, 0) == 0;
+
+    public static bool UnlockReplayBrain(int slot)
+        => ValidSlot(slot) && BotController_Unlock(slot, LockKindAll) == 0;
 
     public static void UnlockReplayControl(int slot)
     {

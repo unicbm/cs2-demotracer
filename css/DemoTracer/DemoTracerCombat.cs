@@ -62,7 +62,7 @@ public sealed partial class DemoTracerPlugin
             !attacker.PawnIsAlive)
             return false;
 
-        if (!IsReplaySlotPlaying(victim.Slot) || !ReplayHasPassedHandoffGrace(victim.Slot))
+        if (!IsReplaySlotPlaying(victim.Slot))
             return false;
 
         victimSlot = victim.Slot;
@@ -73,8 +73,7 @@ public sealed partial class DemoTracerPlugin
     private bool TryHandoffBulletDamagedReplay(int victimSlot, int attackerSlot, int damage)
     {
         if (damage < BulletHandoffMinDamage ||
-            !IsReplaySlotPlaying(victimSlot) ||
-            !ReplayHasPassedHandoffGrace(victimSlot))
+            !IsReplaySlotPlaying(victimSlot))
             return false;
 
         HandoffActiveReplays(
@@ -113,56 +112,6 @@ public sealed partial class DemoTracerPlugin
     {
         return !_replayStartedAt.TryGetValue(slot, out var startedAt) ||
                Server.CurrentTime - startedAt >= HandoffGraceSeconds;
-    }
-
-    private static void ResetBotBrainForHandoff(int slot)
-    {
-        var player = Utilities.GetPlayerFromSlot(slot);
-        if (player is not { IsValid: true } ||
-            player.PlayerPawn is not { IsValid: true, Value.IsValid: true })
-            return;
-
-        var pawn = player.PlayerPawn.Value;
-        var bot = pawn.Bot;
-        if (bot == null)
-            return;
-
-        ref bool isAttacking = ref bot.IsAttacking;
-        isAttacking = false;
-
-        ref bool isCrouching = ref bot.IsCrouching;
-        isCrouching = false;
-
-        ref bool eyeAnglesUnderPathFinderControl = ref bot.EyeAnglesUnderPathFinderControl;
-        eyeAnglesUnderPathFinderControl = false;
-
-        ref float fireWeaponTimestamp = ref bot.FireWeaponTimestamp;
-        fireWeaponTimestamp = 0f;
-
-        ref float inhibitLookAroundTimestamp = ref bot.InhibitLookAroundTimestamp;
-        inhibitLookAroundTimestamp = 0f;
-
-        ref int checkedHidingSpotCount = ref bot.CheckedHidingSpotCount;
-        checkedHidingSpotCount = 0;
-
-        ref float lookAroundStateTimestamp = ref bot.LookAroundStateTimestamp;
-        lookAroundStateTimestamp = 0f;
-
-        var ignoreEnemiesTimer = bot.IgnoreEnemiesTimer;
-        ref float ignoreDuration = ref ignoreEnemiesTimer.Duration;
-        ignoreDuration = 0f;
-        ref float ignoreTimestamp = ref ignoreEnemiesTimer.Timestamp;
-        ignoreTimestamp = 0f;
-        ref float ignoreTimescale = ref ignoreEnemiesTimer.Timescale;
-        ignoreTimescale = 1f;
-
-        var panicTimer = bot.PanicTimer;
-        ref float panicDuration = ref panicTimer.Duration;
-        panicDuration = 0f;
-        ref float panicTimestamp = ref panicTimer.Timestamp;
-        panicTimestamp = 0f;
-        ref float panicTimescale = ref panicTimer.Timescale;
-        panicTimescale = 1f;
     }
 
     private static bool ReplayBotSeesEnemy(int slot, out string contactReason)
@@ -233,6 +182,19 @@ public sealed partial class DemoTracerPlugin
         out string contactReason,
         out int contactSlot)
     {
+        if (TryEvaluateNativeReplayContact(slot, out var nativeContact, out contactReason))
+        {
+            contactSlot = -1;
+            return nativeContact;
+        }
+
+        if (!ReplayHasPassedHandoffGrace(slot))
+        {
+            contactReason = string.Empty;
+            contactSlot = -1;
+            return false;
+        }
+
         if (ReplayBotSeesEnemy(slot, teamPlayers, out contactReason, out contactSlot))
             return true;
 
@@ -250,6 +212,19 @@ public sealed partial class DemoTracerPlugin
         out string contactReason,
         out int contactSlot)
     {
+        if (TryEvaluateNativeReplayContact(slot, out var nativeContact, out contactReason))
+        {
+            contactSlot = -1;
+            return nativeContact;
+        }
+
+        if (!ReplayHasPassedHandoffGrace(slot))
+        {
+            contactReason = string.Empty;
+            contactSlot = -1;
+            return false;
+        }
+
         if (ReplayBotSeesEnemy(slot, playerSnapshot, out contactReason, out contactSlot))
             return true;
 
@@ -259,6 +234,47 @@ public sealed partial class DemoTracerPlugin
 
         contactSlot = -1;
         return false;
+    }
+
+    // Return true when the native lane is available/evaluated, with contact
+    // carrying its result. A false return means an older BotController is in
+    // use and the managed spotted/raytrace detector should remain the fallback.
+    private static bool TryEvaluateNativeReplayContact(
+        int slot,
+        out bool contact,
+        out string contactReason)
+    {
+        contact = false;
+        contactReason = string.Empty;
+        if (!BotControllerNative.HasNativePerceptionCapability)
+            return false;
+
+        // Do not fall back during the first native update after replay start;
+        // wait for the authoritative CCSBot state rather than racing it with a
+        // separate sensor.
+        if (!BotControllerNative.TryGetNativePerceptionState(slot, out var state))
+            return true;
+
+        if (state.EnemyVisible != 0)
+        {
+            contact = true;
+            contactReason = $"native_visible_parts{state.VisibleEnemyParts}";
+            return true;
+        }
+
+        if (state.NearbyEnemyCount > 0)
+        {
+            contact = true;
+            contactReason = $"native_nearby{state.NearbyEnemyCount}";
+            return true;
+        }
+
+        if (state.HasEnemy != 0 && state.LastEnemyDead == 0)
+        {
+            contact = true;
+            contactReason = $"native_enemy_{state.EnemyHandle:X8}";
+        }
+        return true;
     }
 
     private bool ReplayBotHasNearby360Threat(

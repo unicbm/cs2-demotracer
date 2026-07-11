@@ -43,6 +43,7 @@ internal static partial class BotControllerNative
     internal const ulong CapabilityExtendedReplay = 1UL << 8;
     internal const ulong CapabilityUsercmdMovementIntent = 1UL << 9;
     internal const ulong CapabilityVoiceSend = 1UL << 10;
+    internal const ulong CapabilityNativePerception = 1UL << 11;
 
     public const ulong RequiredCapabilityMask =
         CapabilityReplaySlotState |
@@ -71,6 +72,10 @@ internal static partial class BotControllerNative
         var tickSize = Marshal.SizeOf<NativeReplayTick>();
         if (tickSize != ReplayTickByteSize)
             throw new InvalidOperationException($"ReplayTick layout is {tickSize}, expected {ReplayTickByteSize}");
+
+        var perceptionSize = Marshal.SizeOf<NativePerceptionState>();
+        if (perceptionSize != NativePerceptionState.ByteSize)
+            throw new InvalidOperationException($"NativePerceptionState layout is {perceptionSize}, expected {NativePerceptionState.ByteSize}");
 
         var subtickSize = Marshal.SizeOf<NativeSubtickMove>();
         if (subtickSize != SubtickMoveByteSize)
@@ -172,6 +177,24 @@ internal struct NativeReplaySlotState
     public int CurrentTickIndex;
     public int WeaponDefIndex;
     public int NumSubtick;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 4)]
+internal struct NativePerceptionState
+{
+    public const int ByteSize = 44;
+
+    public int Valid;
+    public uint EnemyHandle;
+    public int HasEnemy;
+    public int EnemyVisible;
+    public int VisibleEnemyParts;
+    public int NearbyEnemyCount;
+    public int LastEnemyDead;
+    public float LastSawEnemyTimestamp;
+    public float FirstSawEnemyTimestamp;
+    public float CurrentEnemyAcquireTimestamp;
+    public uint UpdateSerial;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4)]

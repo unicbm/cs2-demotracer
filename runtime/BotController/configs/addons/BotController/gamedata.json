@@ -55,6 +55,22 @@
     },
     "comment": "Per-frame view mBotntenance; UpdateLookAround + jitter + UpdateLookAngles."
   },
+  "CCSBot::IsVisiblePos": {
+    "signatures": {
+      "library": "server",
+      "windows": "48 89 5C 24 10 48 89 74 24 18 48 89 7C 24 20 55 41 54 41 55 41 56 41 57 48 8D AC 24 ? ? ? ? 48 81 EC ? ? ? ? 48 8D 05",
+      "linux": ""
+    },
+    "comment": "CCSBot::IsVisible(Vector const&, bool testFOV, ...). Replay detour disables only testFOV; native LOS/smoke semantics remain. Windows signature verified against server.dll 2026-07-10."
+  },
+  "CCSBot::IsVisiblePlayer": {
+    "signatures": {
+      "library": "server",
+      "windows": "48 89 5C 24 08 44 88 44 24 18 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 D9 48 81 EC 90 00 00 00",
+      "linux": ""
+    },
+    "comment": "CCSBot::IsVisible(CCSPlayerPawn*, bool testFOV, uint8_t* visibleParts). Replay detour disables only testFOV. Windows signature verified against server.dll 2026-07-10."
+  },
   "CCSBot::Jump": {
     "signatures": {
       "library": "server",
@@ -138,6 +154,38 @@
       "linux": 0
     },
     "comment": "CCSBot -> pawn (0x18). linux: TODO"
+  },
+  "CCSBot::Enemy": {
+    "offsets": { "windows": 23048, "linux": 0 },
+    "comment": "m_enemy CHandle at 0x5A08; recovered from server.dll 2026-07-10. linux: TODO"
+  },
+  "CCSBot::IsEnemyVisible": {
+    "offsets": { "windows": 23052, "linux": 0 },
+    "comment": "m_isEnemyVisible bool at 0x5A0C. linux: TODO"
+  },
+  "CCSBot::VisibleEnemyParts": {
+    "offsets": { "windows": 23053, "linux": 0 },
+    "comment": "m_visibleEnemyParts byte at 0x5A0D. linux: TODO"
+  },
+  "CCSBot::LastSawEnemyTimestamp": {
+    "offsets": { "windows": 23068, "linux": 0 },
+    "comment": "m_lastSawEnemyTimestamp float at 0x5A1C. linux: TODO"
+  },
+  "CCSBot::FirstSawEnemyTimestamp": {
+    "offsets": { "windows": 23072, "linux": 0 },
+    "comment": "m_firstSawEnemyTimestamp float at 0x5A20. linux: TODO"
+  },
+  "CCSBot::CurrentEnemyAcquireTimestamp": {
+    "offsets": { "windows": 23076, "linux": 0 },
+    "comment": "m_currentEnemyAcquireTimestamp float at 0x5A24. linux: TODO"
+  },
+  "CCSBot::IsLastEnemyDead": {
+    "offsets": { "windows": 23088, "linux": 0 },
+    "comment": "m_isLastEnemyDead bool at 0x5A30. linux: TODO"
+  },
+  "CCSBot::NearbyEnemyCount": {
+    "offsets": { "windows": 23092, "linux": 0 },
+    "comment": "m_nearbyEnemyCount int32 at 0x5A34. linux: TODO"
   },
   "CBaseEntity::Identity": {
     "offsets": {

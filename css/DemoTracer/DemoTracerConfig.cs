@@ -347,6 +347,7 @@ public sealed partial class DemoTracerPlugin
     private void ApplyRuntimeConfigSideEffects()
     {
         BotControllerNative.WriteLeftHandDesired = _leftHandDesiredEnabled;
+        BotControllerNative.SetReplayNativeFovOverride(_handoffThreat360Enabled);
         if (_replayIdentityMode is not (ReplayIdentityMode.Avatar or ReplayIdentityMode.Full))
             Server.ExecuteCommand("sv_reliableavatardata false");
     }

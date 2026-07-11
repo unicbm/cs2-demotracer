@@ -37,7 +37,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private static string _moduleDirectoryForPathResolution = string.Empty;
     private const float HandoffGraceSeconds = 0.25f;
     private const float BulletHandoffMatchSeconds = 0.25f;
-    private const int BulletHandoffMinDamage = 10;
+    private const int BulletHandoffMinDamage = 1;
     private const float HandoffThreat360DefaultRange = 420.0f;
     private const float HandoffThreat360MinRange = 150.0f;
     private const float HandoffThreat360MaxRange = 800.0f;
@@ -71,6 +71,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private readonly List<int> _loadedSlots = new();
     private readonly HashSet<int> _demoTracerOwnedSlots = new();
+    private readonly HashSet<int> _freezePrerollBrainLockedSlots = new();
     private readonly Dictionary<int, LoadedReplay> _loadedReplays = new();
     private readonly Dictionary<int, int> _lastEnsuredWeaponDef = new();
     private readonly Dictionary<int, int> _lastReplayWeaponDef = new();
@@ -738,6 +739,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             }
             _pendingThreat360.Clear();
         }
+
+        BotControllerNative.SetReplayNativeFovOverride(_handoffThreat360Enabled);
 
         command.ReplyToCommand(
             $"dtr: handoff_360={_handoffThreat360Enabled} range={_handoffThreat360Range.ToString("F0", CultureInfo.InvariantCulture)} los={_handoffThreat360LosEnabled} raytrace={_rayTraceLosProbe.ProbeStatus}");
@@ -1475,6 +1478,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     [GameEventHandler]
     public HookResult OnRoundFreezeEnd(EventRoundFreezeEnd @event, GameEventInfo info)
     {
+        ReleaseFreezePrerollBrainLocks();
         InvalidateFreezePreroll();
 
         if ((_sequenceActive || _poolActive || _armed) && IsWarmupPeriod())
@@ -1708,7 +1712,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             if (hasLoadedReplay)
                 ProcessReplayHifiEvents(slot, replay, state.Cursor);
 
-            if (HandoffIncludesContact(_handoffMode) && ReplayHasPassedHandoffGrace(slot) &&
+            if (HandoffIncludesContact(_handoffMode) &&
                 ReplayBotHasContact(slot, playerSnapshot, out var contactReason, out _))
             {
                 HandoffActiveReplays($"enemy_contact_{contactReason}_slot{slot}", slot);
@@ -3976,9 +3980,21 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                                        loop,
                                        startIndex,
                                        replay.PlayStartTickIndex);
-                if (startedUntil)
-                    _demoTracerOwnedSlots.Add(slot);
-                return startedUntil;
+                if (!startedUntil)
+                    return false;
+
+                // Freeze time has no useful contact state to warm. Replay
+                // injection remains active while native Update and Upkeep are
+                // suppressed until round_freeze_end releases this scoped lock.
+                if (!BotControllerNative.LockReplayBrain(slot))
+                {
+                    BotControllerNative.StopReplay(slot);
+                    return false;
+                }
+
+                _freezePrerollBrainLockedSlots.Add(slot);
+                _demoTracerOwnedSlots.Add(slot);
+                return true;
             }
 
             startIndex = anchor switch
@@ -3987,6 +4003,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 _ => 0,
             };
         }
+        _freezePrerollBrainLockedSlots.Remove(slot);
         var started = RegisterReplayPawnForSlot(slot) &&
                       BotControllerNative.StartReplayAt(slot, loop, startIndex);
         if (started)
@@ -4044,6 +4061,13 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     {
         _freezePrerollToken++;
         _freezePrerollStarted = false;
+    }
+
+    private void ReleaseFreezePrerollBrainLocks()
+    {
+        foreach (var slot in _freezePrerollBrainLockedSlots.ToArray())
+            _ = BotControllerNative.UnlockReplayBrain(slot);
+        _freezePrerollBrainLockedSlots.Clear();
     }
 
     private bool TryGetFreezePrerollSchedule(
@@ -4317,6 +4341,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _lifecycleResetInProgress = true;
         try
         {
+            ReleaseFreezePrerollBrainLocks();
             ClearReplayLeftHandDesiredLatches();
             var hadReplayState = _loadedSlots.Count > 0 ||
                                  _demoTracerOwnedSlots.Count > 0 ||
@@ -4557,6 +4582,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private void ReleaseReplaySlot(int slot, string reason)
     {
+        _freezePrerollBrainLockedSlots.Remove(slot);
         if (_loadedReplays.TryGetValue(slot, out var releasedReplay) && releasedReplay.UtilityOnly)
         {
             _pendingProjectileAlign.Clear();
@@ -4585,7 +4611,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         BotControllerNative.ClearBuyPlan(slot);
         BotControllerNative.UnlockReplayControl(slot);
         BotControllerNative.UnlockWeaponSlot(slot);
-        ResetBotBrainForHandoff(slot);
         KillTrackedReplayDropsForSlot(slot, reason);
         ClearReplayPovSlot(slot);
         ScheduleCachedCosmeticRepairForSlot(slot);
