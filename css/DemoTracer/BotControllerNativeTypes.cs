@@ -19,7 +19,7 @@ internal static partial class BotControllerNative
     internal const uint CommandFieldLeftHand = 1U << 7;
     public const int ReplaySlotStateByteSize = 24;
     public const int MaxSlots = 64;
-    public const int DemoTracerApiVersion = 5;
+    public const int DemoTracerApiVersion = 6;
 
     internal const int LockKindAll = 0;
     internal const int LockKindAim = 1;

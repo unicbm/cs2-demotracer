@@ -78,10 +78,10 @@ public sealed partial class DemoTracerPlugin
         => $"viewmodel_evidence={CountLoadedViewmodelEvidence()} viewmodel_bots={_replayAppliedViewmodels.Count} viewmodel_failed={_replayFailedViewmodelSlots.Count} left_hand_latches={_replayLeftHandDesiredLatches.Count}";
 
     private int CountLoadedCrosshairEvidence()
-        => _loadedReplays.Values.Count(replay => !replay.UtilityOnly && HasCrosshairEvidence(replay.View));
+        => _loadedReplays.Values.Count(replay => HasCrosshairEvidence(replay.View));
 
     private int CountLoadedViewmodelEvidence()
-        => _loadedReplays.Values.Count(replay => !replay.UtilityOnly && HasViewmodelEvidence(replay.View));
+        => _loadedReplays.Values.Count(replay => HasViewmodelEvidence(replay.View));
 
     private void UpdateReplayHudCrosshairOverrides(TickPlayerSnapshot playerSnapshot)
     {
@@ -102,7 +102,6 @@ public sealed partial class DemoTracerPlugin
         foreach (var slot in _loadedSlots.ToArray())
         {
             if (!_loadedReplays.TryGetValue(slot, out var replay) ||
-                replay.UtilityOnly ||
                 !HasCrosshairEvidence(replay.View) ||
                 !playerSnapshot.TryGetSlot(slot, out var replayBot) ||
                 replayBot is not { IsValid: true } ||
@@ -165,7 +164,6 @@ public sealed partial class DemoTracerPlugin
             if (slot is < 0 or >= MaxPlayerSlots ||
                 !_lastPlayingSlots.Contains(slot) ||
                 !_loadedReplays.TryGetValue(slot, out var replay) ||
-                replay.UtilityOnly ||
                 !HasViewmodelEvidence(replay.View))
             {
                 ClearReplayLeftHandDesiredLatch(slot);

@@ -1081,11 +1081,6 @@ public sealed partial class DemoTracerPlugin
             slots.Add(slot);
         foreach (var slot in _demoTracerOwnedSlots)
             slots.Add(slot);
-        foreach (var slot in _queuedNadeStartTokens.Keys)
-            slots.Add(slot);
-        if (_nadeCycle is { } cycle)
-            slots.Add(cycle.Slot);
-
         foreach (var slot in NativeReplaySlots())
         {
             var state = BotControllerNative.GetReplayState(slot);
@@ -1128,9 +1123,6 @@ public sealed partial class DemoTracerPlugin
         var slot = candidate.Slot;
         var userId = candidate.UserId.Value;
         StopVoiceTestPlayback("dtr_kick", printSummary: false);
-        if (IsNadeCycleSlot(slot))
-            StopNadeCycle("dtr_kick", stopCurrent: false);
-
         var stopped = BotControllerNative.StopReplay(slot);
         var unloaded = BotControllerNative.UnloadReplay(slot);
         ReleaseReplaySlot(slot, "dtr_kick");
@@ -1177,8 +1169,6 @@ public sealed partial class DemoTracerPlugin
         if (ok)
         {
             StopVoiceTestPlayback("unload", printSummary: false);
-            if (IsNadeCycleSlot(slot))
-                StopNadeCycle("manual_unload", stopCurrent: false);
             _loadedSlots.Remove(slot);
             ReleaseReplaySlot(slot, "unload");
             ForgetLoadedReplayMetadata(slot);

@@ -5,14 +5,15 @@
 > v1.0.371 或更新版本；Ray-Trace 需要 v1.0.16 或更新版本。CS2-Bot-Hider
 > 需要包含 2026 年 7 月 Windows client identity offset 修复的构建，已发布的
 > v0.2.5 早于该修复。DemoTracer 的 Windows 核心 replay 链路已在本地验证；
-> 转换器和 `.dtr` 格式不受影响。
+> 使用新版 delta user-command 编码的 demo 需要 converter v0.5.0 或更新版本，
+> `.dtr` 格式保持不变。
 
 **CS2 DemoTracer** 把 CS2 `.dem` 转成 `.dtr` 路线回放文件，然后在本地
 CS2 服务器里让 bot 执行这些路线。
 
 ## 先看这些
 
-- [使用说明](USAGE.zh-Hans.md)：converter CLI、GUI、pool、Demo2Nade 和服务器播放流程。
+- [使用说明](USAGE.zh-Hans.md)：converter CLI、GUI、pool 和服务器播放流程。
 - [语音导出和回放](VOICE.zh-Hans.md)：`--export-voice`、`.dtv` sidecar、自动播放和排错。
 - [命令参考](COMMANDS.zh-Hans.md)：`dtr_` 指令、状态检查和诊断输出。
 - [依赖说明](DEPENDENCIES.md)：必需依赖、server bundle 自带内容、BotHider/RayTrace

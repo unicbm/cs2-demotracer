@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.4.1",
+    [string]$Version = "0.5.0",
     [string]$OutputRoot = "dist",
     [switch]$SkipBuild
 )
@@ -75,7 +75,7 @@ gui: cs2-demotracer-gui.exe
 dtr_writer: 7
 manifest_abi: 17
 
-Use cs2-demotracer.exe for CLI, batch, pool, and Demo2Nade workflows.
+Use cs2-demotracer.exe for CLI, batch, pool, and wizard workflows.
 Use cs2-demotracer-gui.exe for the single-demo Windows GUI workbench.
 "@
 Set-Content -LiteralPath (Join-Path $stageRoot "VERSION.txt") -Value $versionText -Encoding UTF8
@@ -85,11 +85,11 @@ $readme = @'
 
 This Windows x64 package contains both converter entry points:
 
-- `cs2-demotracer.exe`: CLI for inspect, convert, validate, wizard, pool, and Demo2Nade workflows.
+- `cs2-demotracer.exe`: CLI for inspect, convert, validate, wizard, and pool workflows.
 - `cs2-demotracer-gui.exe`: native Rust GUI for single-demo conversion.
 
-The GUI does not replace the CLI. Batch pool conversion and Demo2Nade remain
-CLI workflows in this release.
+The GUI does not replace the CLI. Batch pool conversion remains a CLI workflow
+in this release.
 
 ## Quick Start
 

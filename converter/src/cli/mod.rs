@@ -1,17 +1,9 @@
 use clap::{Parser, Subcommand};
-use cs2_demotracer::api::{
-    build_nade_library_with_progress, export_nade_clips_from_demo_path, NadeClipExportRequest,
-    NadeContextOptions, NadeDedupeOptions, NadeLibraryExportRequest,
-};
 use cs2_demotracer::demo_reader::{read_demo, read_demo_with_options, ReadDemoOptions};
 use cs2_demotracer::export::{
     export_demo, parse_round_list, ConvertOptions, DEFAULT_FREEZE_PREROLL_SECONDS,
 };
 use cs2_demotracer::model::{Side, SubtickMode};
-use cs2_demotracer::nade_export::{
-    DEFAULT_OPENING_SECONDS, DEFAULT_POST_ROLL_SECONDS, DEFAULT_PRE_ROLL_SECONDS,
-};
-use cs2_demotracer::nade_library::print_nade_library_progress;
 use cs2_demotracer::pool::{build_round_pool, BuildPoolOptions};
 use cs2_demotracer::quality::{analyze_demo, AnalysisOptions};
 use cs2_demotracer::validate::validate_dtr_path;
@@ -145,58 +137,6 @@ enum Command {
             help = "Confirm you accept responsibility for using exported cosmetic metadata only where appropriate."
         )]
         accept_cosmetic_export_disclaimer: bool,
-    },
-    /// Convert grenade throws into short .dtr clips and a nade manifest.
-    ConvertNades {
-        #[arg(long)]
-        demo: PathBuf,
-        #[arg(long)]
-        output: PathBuf,
-        #[arg(long, default_value_t = Side::Both)]
-        side: Side,
-        #[arg(long)]
-        rounds: Option<String>,
-        #[arg(long, default_value_t = DEFAULT_PRE_ROLL_SECONDS)]
-        pre_roll: f32,
-        #[arg(long, default_value_t = DEFAULT_POST_ROLL_SECONDS)]
-        post_roll: f32,
-        #[arg(long, default_value_t = DEFAULT_OPENING_SECONDS)]
-        opening_seconds: f32,
-    },
-    /// Convert many demos into a local map-indexed nade library.
-    ConvertNadesLibrary {
-        #[arg(long)]
-        demo_dir: PathBuf,
-        #[arg(long)]
-        output: PathBuf,
-        #[arg(long)]
-        recursive: bool,
-        #[arg(long, default_value_t = 1)]
-        jobs: usize,
-        #[arg(long)]
-        max_demos: Option<usize>,
-        #[arg(long)]
-        map: Option<String>,
-        #[arg(long = "reuse-root")]
-        reuse_roots: Vec<PathBuf>,
-        #[arg(long)]
-        aggregate_only: bool,
-        #[arg(long, default_value_t = Side::Both)]
-        side: Side,
-        #[arg(long, default_value_t = DEFAULT_PRE_ROLL_SECONDS)]
-        pre_roll: f32,
-        #[arg(long, default_value_t = DEFAULT_POST_ROLL_SECONDS)]
-        post_roll: f32,
-        #[arg(long, default_value_t = DEFAULT_OPENING_SECONDS)]
-        opening_seconds: f32,
-        #[arg(long = "no-dedupe")]
-        no_dedupe: bool,
-        #[arg(long, default_value_t = 48.0)]
-        dedupe_origin_units: f32,
-        #[arg(long, default_value_t = 8.0)]
-        dedupe_yaw_degrees: f32,
-        #[arg(long, default_value_t = 120.0)]
-        dedupe_velocity_units: f32,
     },
     /// Validate .dtr files and public output-pack hygiene.
     Validate {
@@ -388,102 +328,6 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
                     }
                 }
             }
-        }
-        Command::ConvertNades {
-            demo,
-            output,
-            side,
-            rounds,
-            pre_roll,
-            post_roll,
-            opening_seconds,
-        } => {
-            let selected_rounds = rounds.as_deref().map(parse_round_list).transpose()?;
-            if selected_rounds.is_some() {
-                warn_full_demo_parse_for_round_filter("--rounds");
-            }
-            warn_debug_build_for_demo_parse();
-            let report = export_nade_clips_from_demo_path(&NadeClipExportRequest {
-                demo_path: Some(demo),
-                output_dir: output,
-                output_stem: None,
-                side,
-                selected_rounds,
-                context: NadeContextOptions {
-                    pre_roll_seconds: pre_roll,
-                    post_roll_seconds: post_roll,
-                    opening_seconds,
-                },
-                subtick_mode: SubtickMode::Auto,
-            })?;
-            println!(
-                "wrote {} nade clips under {} (skipped {})",
-                report.clips_written,
-                report.root.display(),
-                report.skipped
-            );
-            println!("nade manifest {}", report.manifest_path.display());
-        }
-        Command::ConvertNadesLibrary {
-            demo_dir,
-            output,
-            recursive,
-            jobs,
-            max_demos,
-            map,
-            reuse_roots,
-            aggregate_only,
-            side,
-            pre_roll,
-            post_roll,
-            opening_seconds,
-            no_dedupe,
-            dedupe_origin_units,
-            dedupe_yaw_degrees,
-            dedupe_velocity_units,
-        } => {
-            if !aggregate_only {
-                warn_debug_build_for_demo_parse();
-            }
-            let report = build_nade_library_with_progress(
-                &NadeLibraryExportRequest {
-                    demo_dir,
-                    output_dir: output,
-                    recursive,
-                    jobs,
-                    max_demos,
-                    map_filter: map,
-                    reuse_roots,
-                    aggregate_only,
-                    side,
-                    context: NadeContextOptions {
-                        pre_roll_seconds: pre_roll,
-                        post_roll_seconds: post_roll,
-                        opening_seconds,
-                    },
-                    subtick_mode: SubtickMode::Auto,
-                    dedupe: NadeDedupeOptions {
-                        enabled: !no_dedupe,
-                        origin_units: dedupe_origin_units,
-                        yaw_degrees: dedupe_yaw_degrees,
-                        velocity_units: dedupe_velocity_units,
-                    },
-                },
-                |event| print_nade_library_progress(&event),
-            )?;
-            println!(
-                "nade library demos={} converted={} reused={} existing={} filtered_map={} failures={} maps={} source_clips={} clips={} root={}",
-                report.demos_done,
-                report.demos_converted,
-                report.demos_reused,
-                report.demos_skipped_existing,
-                report.demos_filtered_map,
-                report.failures,
-                report.maps_written,
-                report.source_clips,
-                report.clips,
-                report.root.display()
-            );
         }
         Command::ConvertPool {
             demo_dir,

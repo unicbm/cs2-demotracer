@@ -98,7 +98,8 @@ public sealed partial class DemoTracerPlugin
                 senderSlot,
                 senderClient,
                 speakerXuid,
-                AllocateVoiceSectionBase(clip.Frames.Count))
+                AllocateVoiceSectionBase(clip.Frames.Count),
+                expectedTeam: null)
         };
         _voiceTestPlayback = new VoiceClipPlaybackState(
             clip.Path,
@@ -212,7 +213,10 @@ public sealed partial class DemoTracerPlugin
                 return;
             }
 
-            var audibleRecipients = AudibleVoiceRecipientsForSpeaker(state.RecipientSlots, sender);
+            var audibleRecipients = AudibleVoiceRecipientsForSpeaker(
+                state.RecipientSlots,
+                sender,
+                speaker.ExpectedTeam);
             if (audibleRecipients.Count == 0)
             {
                 state.NextFrameIndex++;
@@ -724,7 +728,14 @@ public sealed partial class DemoTracerPlugin
                     .OrderBy(slot => slot)
                     .FirstOrDefault(-1);
                 if (match >= 0)
-                    speakers[xuid] = new VoiceSpeakerPlayback(match, match, xuid, 0);
+                {
+                    speakers[xuid] = new VoiceSpeakerPlayback(
+                        match,
+                        match,
+                        xuid,
+                        0,
+                        _loadedReplays[match].ManifestTeam);
+                }
             }
         }
         else
@@ -740,7 +751,12 @@ public sealed partial class DemoTracerPlugin
                     reply($"[DTR ERR] invalid voice speaker mapping \"{rawPart}\"; expected xuid=slot");
                     return false;
                 }
-                speakers[xuid] = new VoiceSpeakerPlayback(slot, slot, xuid, 0);
+                speakers[xuid] = new VoiceSpeakerPlayback(
+                    slot,
+                    slot,
+                    xuid,
+                    0,
+                    expectedTeam: null);
             }
         }
 
@@ -923,7 +939,7 @@ public sealed partial class DemoTracerPlugin
         foreach (var replay in _loadedReplays.Values)
         {
             var tickRate = replay.TickRate > 0.0f ? replay.TickRate : fallbackTickRate;
-            if (replay.UtilityOnly || replay.PlayStartTickIndex == 0 || tickRate <= 0.0f)
+            if (replay.PlayStartTickIndex == 0 || tickRate <= 0.0f)
                 continue;
             maxRecordedPrerollSeconds = Math.Max(
                 maxRecordedPrerollSeconds,
@@ -1179,16 +1195,21 @@ public sealed partial class DemoTracerPlugin
 
     private static List<int> AudibleVoiceRecipientsForSpeaker(
         IReadOnlyList<int> recipientSlots,
-        CCSPlayerController sender)
+        CCSPlayerController sender,
+        CsTeam? expectedTeam)
         => recipientSlots
-            .Where(slot => CanVoiceRecipientHearSpeaker(Utilities.GetPlayerFromSlot(slot), sender))
+            .Where(slot => CanVoiceRecipientHearSpeaker(
+                Utilities.GetPlayerFromSlot(slot),
+                sender,
+                expectedTeam))
             .Distinct()
             .OrderBy(slot => slot)
             .ToList();
 
     private static bool CanVoiceRecipientHearSpeaker(
         CCSPlayerController? recipient,
-        CCSPlayerController sender)
+        CCSPlayerController sender,
+        CsTeam? expectedTeam)
     {
         if (recipient is not { IsValid: true } || recipient.IsHLTV || recipient.IsBot)
             return false;
@@ -1196,17 +1217,24 @@ public sealed partial class DemoTracerPlugin
         if (IsObserverVoiceRecipient(recipient))
             return true;
 
-        if (!IsTeamVoiceParticipant(sender))
-            return true;
+        if (!IsTeamVoiceParticipant(recipient))
+            return false;
 
-        return recipient.Team == sender.Team;
+        var speakerTeam = expectedTeam ?? sender.Team;
+        if (!IsTeamVoiceParticipant(speakerTeam))
+            return false;
+
+        return recipient.Team == speakerTeam;
     }
 
     private static bool IsObserverVoiceRecipient(CCSPlayerController player)
-        => !IsTeamVoiceParticipant(player);
+        => player.Team == CsTeam.Spectator;
 
     private static bool IsTeamVoiceParticipant(CCSPlayerController player)
-        => player.Team is CsTeam.Terrorist or CsTeam.CounterTerrorist;
+        => IsTeamVoiceParticipant(player.Team);
+
+    private static bool IsTeamVoiceParticipant(CsTeam team)
+        => team is CsTeam.Terrorist or CsTeam.CounterTerrorist;
 
     private static string FormatSlotList(IReadOnlyList<int> slots)
         => slots.Count == 0 ? "none" : string.Join(",", slots);
@@ -1260,12 +1288,14 @@ public sealed partial class DemoTracerPlugin
         int slot,
         int client,
         ulong xuid,
-        int nextSectionNumber)
+        int nextSectionNumber,
+        CsTeam? expectedTeam)
     {
         public int Slot { get; } = slot;
         public int Client { get; } = client;
         public ulong Xuid { get; } = xuid;
         public int NextSectionNumber { get; set; } = nextSectionNumber;
+        public CsTeam? ExpectedTeam { get; } = expectedTeam;
     }
 
     private sealed class VoiceClipRuntimeFrame(

@@ -71,97 +71,6 @@ public sealed partial class DemoTracerPlugin
         public List<ReplayChatMessage> ChatMessages { get; set; } = new();
     }
 
-    private sealed class NadeManifest
-    {
-        [JsonPropertyName("format_version")]
-        public int FormatVersion { get; set; }
-
-        [JsonPropertyName("map")]
-        public string Map { get; set; } = string.Empty;
-
-        [JsonPropertyName("coordinate_mode")]
-        public string CoordinateMode { get; set; } = string.Empty;
-
-        [JsonPropertyName("tickrate")]
-        public float TickRate { get; set; }
-
-        [JsonPropertyName("tick_rate")]
-        public float TickRateAlt
-        {
-            get => TickRate;
-            set => TickRate = value;
-        }
-
-        [JsonPropertyName("clips")]
-        public List<NadeClip> Clips { get; set; } = new();
-    }
-
-    private sealed record CachedNadeManifest(
-        NadeManifest Manifest,
-        Dictionary<string, NadeClip> ClipsById,
-        DateTime LastWriteUtc,
-        long Length);
-
-    private sealed class NadeClip
-    {
-        [JsonPropertyName("clip_id")]
-        public string ClipId { get; set; } = string.Empty;
-
-        [JsonPropertyName("path")]
-        public string Path { get; set; } = string.Empty;
-
-        [JsonPropertyName("kind")]
-        public string Kind { get; set; } = string.Empty;
-
-        [JsonPropertyName("grenade_type")]
-        public string GrenadeType { get; set; } = string.Empty;
-
-        [JsonPropertyName("weapon_def_index")]
-        public int WeaponDefIndex { get; set; }
-
-        [JsonPropertyName("phase")]
-        public string Phase { get; set; } = string.Empty;
-
-        [JsonPropertyName("round")]
-        public int Round { get; set; }
-
-        [JsonPropertyName("side")]
-        public string Side { get; set; } = string.Empty;
-
-        [JsonPropertyName("start_origin")]
-        public float[]? StartOrigin { get; set; }
-
-        [JsonPropertyName("start_yaw")]
-        public float StartYaw { get; set; }
-
-        [JsonPropertyName("projectile_initial_velocity")]
-        public float[]? ProjectileInitialVelocity { get; set; }
-
-        [JsonPropertyName("projectile_detonation_position")]
-        public float[]? ProjectileDetonationPosition { get; set; }
-
-        [JsonPropertyName("duration_seconds")]
-        public float DurationSeconds { get; set; }
-
-        [JsonPropertyName("steam_id")]
-        public ulong SteamId { get; set; }
-
-        [JsonPropertyName("player_name")]
-        public string PlayerName { get; set; } = string.Empty;
-
-        [JsonPropertyName("throw_tick")]
-        public int ThrowTick { get; set; }
-
-        [JsonPropertyName("first_weapon_def_index")]
-        public int FirstWeaponDefIndex { get; set; }
-
-        [JsonPropertyName("preload_weapon_def_indices")]
-        public int[]? PreloadWeaponDefIndices { get; set; }
-
-        [JsonPropertyName("loadout")]
-        public ReplayLoadoutSnapshot? Loadout { get; set; }
-    }
-
     private sealed class RoundPoolManifest
     {
         [JsonPropertyName("format_version")]
@@ -551,7 +460,6 @@ public sealed partial class DemoTracerPlugin
         public string? Name { get; set; }
     }
 
-    private const int NadeManifestFormatVersion = 1;
     private const int RoundPoolManifestFormatVersion = 1;
 
     private static bool TryReadManifest(
@@ -703,92 +611,6 @@ public sealed partial class DemoTracerPlugin
         return false;
     }
 
-    private static bool TryReadNadeManifest(
-        string manifestPath,
-        out NadeManifest manifest,
-        out string error)
-    {
-        manifest = new NadeManifest();
-        error = string.Empty;
-        try
-        {
-            manifest = ReadNadeManifestCached(manifestPath).Manifest;
-            return true;
-        }
-        catch (FileNotFoundException)
-        {
-            error = $"file not found: {manifestPath}";
-            return false;
-        }
-        catch (Exception ex)
-        {
-            error = ex.Message;
-            return false;
-        }
-    }
-
-    private static bool TryFindNadeClip(
-        string manifestPath,
-        string clipId,
-        out NadeManifest manifest,
-        out NadeClip? clip,
-        out string error)
-    {
-        manifest = new NadeManifest();
-        clip = null;
-        error = string.Empty;
-        try
-        {
-            var cached = ReadNadeManifestCached(manifestPath);
-            manifest = cached.Manifest;
-            cached.ClipsById.TryGetValue(clipId, out clip);
-            return true;
-        }
-        catch (FileNotFoundException)
-        {
-            error = $"file not found: {manifestPath}";
-            return false;
-        }
-        catch (Exception ex)
-        {
-            error = ex.Message;
-            return false;
-        }
-    }
-
-    private static CachedNadeManifest ReadNadeManifestCached(string manifestPath)
-    {
-        var fullPath = ResolveReadableManifestPath(manifestPath);
-        var file = new FileInfo(fullPath);
-        if (!file.Exists)
-            throw new FileNotFoundException("nade manifest file not found", manifestPath);
-
-        lock (NadeManifestCacheLock)
-        {
-            if (NadeManifestCache.TryGetValue(fullPath, out var cached) &&
-                cached.LastWriteUtc == file.LastWriteTimeUtc &&
-                cached.Length == file.Length)
-            {
-                return cached;
-            }
-
-            var manifest = DeserializeManifestJson<NadeManifest>(
-                fullPath,
-                ReadMaybeBrotliText(fullPath),
-                "nade manifest");
-            ValidateNadeManifest(fullPath, manifest);
-            var clipsById = new Dictionary<string, NadeClip>(manifest.Clips.Count, StringComparer.OrdinalIgnoreCase);
-            foreach (var clip in manifest.Clips)
-            {
-                clipsById[clip.ClipId] = clip;
-            }
-
-            cached = new CachedNadeManifest(manifest, clipsById, file.LastWriteTimeUtc, file.Length);
-            NadeManifestCache[fullPath] = cached;
-            return cached;
-        }
-    }
-
     private static string ReadMaybeBrotliText(string path)
     {
         if (!path.EndsWith(".br", StringComparison.OrdinalIgnoreCase))
@@ -807,34 +629,6 @@ public sealed partial class DemoTracerPlugin
                 $"manifest Brotli payload is invalid: {path} ({ex.Message})",
                 ex);
         }
-    }
-
-    private static string ResolveNadeClipPath(string manifestPath, string childPath)
-    {
-        if (TryResolveNadeClipPath(manifestPath, childPath, out var fullPath, out var error))
-            return fullPath;
-        throw new InvalidDataException(error);
-    }
-
-    private static bool TryResolveNadeClipPath(
-        string manifestPath,
-        string childPath,
-        out string fullPath,
-        out string error)
-    {
-        var resolvedManifestPath = ResolveReadableManifestPath(manifestPath);
-        var manifestDir = Path.GetDirectoryName(resolvedManifestPath) ?? ".";
-        if (TryResolveRelativePathUnderRoot(manifestDir, manifestDir, childPath, out fullPath, out error))
-            return true;
-
-        if (TryGetNadeLibraryRoot(resolvedManifestPath, manifestDir, out var libraryRoot) &&
-            TryResolveRelativePathUnderRoot(libraryRoot, manifestDir, childPath, out fullPath, out _))
-        {
-            error = string.Empty;
-            return true;
-        }
-
-        return false;
     }
 
     private static bool TryResolveChildPathUnderRoot(
@@ -950,28 +744,6 @@ public sealed partial class DemoTracerPlugin
         yield return Directory.GetCurrentDirectory();
     }
 
-    private static bool TryGetNadeLibraryRoot(string manifestPath, string manifestDir, out string libraryRoot)
-    {
-        libraryRoot = string.Empty;
-        if (!IsNadeManifestFileName(Path.GetFileName(manifestPath)))
-            return false;
-
-        var mapDir = Path.GetFullPath(manifestDir);
-        var mapsDir = Path.GetDirectoryName(mapDir);
-        if (mapsDir == null ||
-            !string.Equals(Path.GetFileName(mapsDir), "maps", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        libraryRoot = Path.GetDirectoryName(mapsDir) ?? string.Empty;
-        return !string.IsNullOrWhiteSpace(libraryRoot);
-    }
-
-    private static bool IsNadeManifestFileName(string? name)
-        => string.Equals(name, "nade_manifest.json", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(name, "nade_manifest.json.br", StringComparison.OrdinalIgnoreCase);
-
     private static bool TryReadPoolManifest(
         string manifestPath,
         out RoundPoolManifest manifest,
@@ -1007,57 +779,6 @@ public sealed partial class DemoTracerPlugin
             return false;
         }
     }
-
-    private static void ValidateNadeManifest(string manifestPath, NadeManifest manifest)
-    {
-        if (manifest.FormatVersion != NadeManifestFormatVersion)
-        {
-            throw new InvalidDataException(
-                $"nade manifest format_version {manifest.FormatVersion} unsupported; expected {NadeManifestFormatVersion}");
-        }
-        if (string.IsNullOrWhiteSpace(manifest.Map))
-            throw new InvalidDataException("nade manifest map is required");
-
-        manifest.Clips ??= new List<NadeClip>();
-        var clipIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < manifest.Clips.Count; i++)
-            ValidateNadeClip(manifestPath, manifest.Clips[i], i, clipIds);
-    }
-
-    private static void ValidateNadeClip(
-        string manifestPath,
-        NadeClip? clip,
-        int index,
-        HashSet<string> clipIds)
-    {
-        if (clip == null)
-            throw new InvalidDataException($"nade clip {index} is null");
-        if (string.IsNullOrWhiteSpace(clip.ClipId))
-            throw new InvalidDataException($"nade clip {index} clip_id is required");
-        if (!clipIds.Add(clip.ClipId))
-            throw new InvalidDataException($"duplicate nade clip_id: {clip.ClipId}");
-        ValidateNadeClipFields(manifestPath, clip, clip.ClipId);
-    }
-
-    private static void ValidateNadeClipFields(string manifestPath, NadeClip clip, string label)
-    {
-        if (string.IsNullOrWhiteSpace(clip.Path))
-            throw new InvalidDataException($"nade clip {label} path is required");
-        if (!clip.Path.EndsWith(".dtr", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException($"nade clip {label} path must point to .dtr: {clip.Path}");
-        if (!IsManifestValueOneOf(clip.Side, "t", "ct"))
-            throw new InvalidDataException($"nade clip {label} side must be t or ct: {clip.Side}");
-        if (!IsManifestValueOneOf(clip.Phase, "opening", "combat", "retake"))
-            throw new InvalidDataException($"nade clip {label} phase is unsupported: {clip.Phase}");
-        if (!IsManifestValueOneOf(clip.Kind, "unknown", "smoke", "flash", "he", "molotov", "decoy"))
-            throw new InvalidDataException($"nade clip {label} kind is unsupported: {clip.Kind}");
-        if (!TryResolveNadeClipPath(manifestPath, clip.Path, out _, out var pathError))
-            throw new InvalidDataException($"nade clip {label} {pathError}");
-    }
-
-    private static bool IsManifestValueOneOf(string? value, params string[] allowed)
-        => !string.IsNullOrWhiteSpace(value) &&
-           allowed.Any(item => value.Equals(item, StringComparison.OrdinalIgnoreCase));
 
     private static void ValidateRoundPoolManifest(string manifestPath, RoundPoolManifest manifest)
     {

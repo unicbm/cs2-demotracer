@@ -448,12 +448,12 @@ mod tests {
     #[test]
     fn manifest_hygiene_reports_invalid_brotli_manifest_path() {
         let temp = tempfile::tempdir().unwrap();
-        let manifest_path = temp.path().join("nade_manifest.json.br");
+        let manifest_path = temp.path().join("manifest.json.br");
         fs::write(&manifest_path, b"not brotli").unwrap();
 
         let err = validate_public_artifacts(temp.path()).unwrap_err();
 
-        assert!(err.to_string().contains("nade_manifest.json.br"));
+        assert!(err.to_string().contains("manifest.json.br"));
         assert!(err.to_string().contains("could not be decompressed"));
     }
 
@@ -486,27 +486,27 @@ mod tests {
     fn manifest_hygiene_allows_artifact_paths_inside_pack() {
         let temp = tempfile::tempdir().unwrap();
         let pack = temp.path();
-        let map_manifest_path = pack.join("maps/de_mirage/nade_manifest.json");
-        let clip_path = pack.join("demos/demo-a/nades/t/opening/smoke/a.dtr");
+        let map_manifest_path = pack.join("replays/demo-a/manifest.json");
+        let clip_path = pack.join("replays/demo-a/round01/t/a.dtr");
         fs::create_dir_all(map_manifest_path.parent().unwrap()).unwrap();
         fs::create_dir_all(clip_path.parent().unwrap()).unwrap();
         fs::write(&map_manifest_path, "{}").unwrap();
         fs::write(&clip_path, b"dtr").unwrap();
 
         let map_manifest = json!({
-            "clips": [
-                { "path": "../../demos/demo-a/nades/t/opening/smoke/a.dtr" }
+            "files": [
+                { "path": "round01/t/a.dtr" }
             ]
         });
         validate_manifest_artifact_paths(pack, &map_manifest_path, &map_manifest).unwrap();
 
         let library_manifest = json!({
             "maps": [
-                { "manifest": "maps/de_mirage/nade_manifest.json" }
+                { "manifest": "replays/demo-a/manifest.json" }
             ]
         });
 
-        validate_manifest_artifact_paths(pack, &pack.join("nade_library.json"), &library_manifest)
+        validate_manifest_artifact_paths(pack, &pack.join("pool_manifest.json"), &library_manifest)
             .unwrap();
     }
 
@@ -632,7 +632,7 @@ mod tests {
         let target = pack.join("maps/de_mirage/readme.txt");
         fs::create_dir_all(target.parent().unwrap()).unwrap();
         fs::write(&target, b"not a manifest").unwrap();
-        let manifest_path = pack.join("nade_library.json");
+        let manifest_path = pack.join("pool_manifest.json");
         let manifest = json!({
             "maps": [
                 { "manifest": "maps/de_mirage/readme.txt" }
@@ -654,7 +654,7 @@ mod tests {
 
         let err = validate_manifest_artifact_paths(
             Path::new("pack"),
-            Path::new("pack/maps/de_mirage/nade_manifest.json"),
+            Path::new("pack/replays/demo-a/manifest.json"),
             &manifest,
         )
         .unwrap_err();

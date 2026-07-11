@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.4.1",
+    [string]$Version = "0.5.0",
     [string]$Configuration = "Release",
     [string]$OutputRoot = "dist",
     [string]$RuntimePackage = "runtime\BotController\build\package",
@@ -186,7 +186,7 @@ Expected ABI check:
 expected_abi=16 runtime_abi=16 abi_minor=29
 ```
 
-For v0.4.1, require `runtime_abi=16` and `abi_minor=29` or newer. If the minor
+For v0.5.0, require `runtime_abi=16` and `abi_minor=29` or newer. If the minor
 version is missing or lower, replace the complete server bundle, including
 `addons/BotController/bin/win64/BotController.dll`,
 `addons/BotController/gamedata.json`, and `addons/metamod/BotController.vdf`.
@@ -224,7 +224,7 @@ through CS2's native `say` / `say_team` path when `dtr_chat_auto on` is enabled
 - Bundled BotController native ABI: 16
 - Bundled BotController native ABI minor: 29
 - Supported `.dtr` reader versions: 3..7
-- DemoTracer companion API: 5
+- DemoTracer companion API: 6
 - Maintained runtime platform: Windows x64
 
 ## Dependencies

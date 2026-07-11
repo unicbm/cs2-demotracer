@@ -161,7 +161,7 @@ public sealed partial class DemoTracerPlugin
         foreach (var replay in _loadedReplays.Values)
         {
             var tickRate = replay.TickRate > 0.0f ? replay.TickRate : fallbackTickRate;
-            if (replay.UtilityOnly || replay.PlayStartTickIndex == 0 || tickRate <= 0.0f)
+            if (replay.PlayStartTickIndex == 0 || tickRate <= 0.0f)
                 continue;
             maxRecordedPrerollSeconds = Math.Max(
                 maxRecordedPrerollSeconds,
@@ -283,7 +283,7 @@ public sealed partial class DemoTracerPlugin
     {
         foreach (var (slot, replay) in _loadedReplays)
         {
-            if (replay.UtilityOnly || replay.SteamId != senderSteamId || !IsReplaySlotStillSafe(slot))
+            if (replay.SteamId != senderSteamId || !IsReplaySlotStillSafe(slot))
                 continue;
             var player = Utilities.GetPlayerFromSlot(slot);
             if (player is { IsValid: true } && IsReplayTargetBot(player))
@@ -307,7 +307,6 @@ public sealed partial class DemoTracerPlugin
             foreach (var slot in _loadedSlots)
             {
                 if (!_loadedReplays.TryGetValue(slot, out var replay) ||
-                    replay.UtilityOnly ||
                     !IsReplaySlotStillSafe(slot))
                 {
                     continue;

@@ -65,7 +65,7 @@ public sealed partial class DemoTracerPlugin
         => $"scoreboard_evidence={CountLoadedScoreboardEvidence()} scoreboard_applied={_scoreboardAppliedCount} scoreboard_skipped={_scoreboardSkippedCount}";
 
     private int CountLoadedScoreboardEvidence()
-        => _loadedReplays.Values.Count(replay => !replay.UtilityOnly && HasScoreboardEvidence(replay.Scoreboard));
+        => _loadedReplays.Values.Count(replay => HasScoreboardEvidence(replay.Scoreboard));
 
     private void ApplyLoadedReplayScoreboards()
     {
@@ -77,7 +77,7 @@ public sealed partial class DemoTracerPlugin
         {
             if (_scoreboardSyncedSlots.Contains(slot))
                 continue;
-            if (!_loadedReplays.TryGetValue(slot, out var replay) || replay.UtilityOnly)
+            if (!_loadedReplays.TryGetValue(slot, out var replay))
                 continue;
             ApplyReplayPlayerScoreboardForSlot(slot, replay.Scoreboard);
         }

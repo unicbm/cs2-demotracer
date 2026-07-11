@@ -161,12 +161,6 @@ public sealed partial class DemoTracerPlugin
 
     private void RememberReplayCosmeticEvidence(int slot, LoadedReplay replay)
     {
-        if (replay.UtilityOnly)
-        {
-            _slotCosmeticEvidenceKeys.Remove(slot);
-            return;
-        }
-
         var key = CosmeticEvidenceKey(replay.SteamId, slot);
         _slotCosmeticEvidenceKeys[slot] = key;
         if (!_cosmeticEvidenceByKey.TryGetValue(key, out var evidence))
@@ -442,7 +436,7 @@ public sealed partial class DemoTracerPlugin
 
         foreach (var replay in _loadedReplays.Values)
         {
-            if (replay.UtilityOnly || !HasCosmeticEvidence(replay.Cosmetics))
+            if (!HasCosmeticEvidence(replay.Cosmetics))
                 continue;
 
             files++;
@@ -464,7 +458,6 @@ public sealed partial class DemoTracerPlugin
     {
         var hasCosmeticEvidence = HasCosmeticEvidence(replay.Cosmetics);
         if (!AnyCosmeticFeatureEnabled() ||
-            replay.UtilityOnly ||
             !IsReplaySlotStillSafe(slot))
         {
             return;
@@ -608,7 +601,6 @@ public sealed partial class DemoTracerPlugin
         if (!WeaponCosmeticFeatureEnabled() ||
             !_weaponAlignEnabled ||
             !_loadedReplays.TryGetValue(slot, out var replay) ||
-            replay.UtilityOnly ||
             !HasCosmeticEvidence(replay.Cosmetics) ||
             !IsReplaySlotStillSafe(slot))
         {
@@ -816,13 +808,6 @@ public sealed partial class DemoTracerPlugin
     {
         if (_loadedReplays.TryGetValue(slot, out var replay))
         {
-            if (replay.UtilityOnly)
-            {
-                key = 0;
-                evidence = null!;
-                return false;
-            }
-
             key = CosmeticEvidenceKey(replay.SteamId, slot);
             if (_cosmeticEvidenceByKey.TryGetValue(key, out evidence!))
                 return true;
@@ -853,7 +838,6 @@ public sealed partial class DemoTracerPlugin
     {
         var normalized = NormalizeWeaponDefIndex(weaponDefIndex);
         if (_loadedReplays.TryGetValue(slot, out var replay) &&
-            !replay.UtilityOnly &&
             TryFindReplayWeaponCosmetic(replay, normalized, out cosmetic))
         {
             replaySteamId = replay.SteamId;
@@ -872,7 +856,6 @@ public sealed partial class DemoTracerPlugin
         out ulong replaySteamId)
     {
         if (_loadedReplays.TryGetValue(slot, out var replay) &&
-            !replay.UtilityOnly &&
             replay.Cosmetics.Knife != null)
         {
             cosmetic = replay.Cosmetics.Knife;
@@ -900,7 +883,6 @@ public sealed partial class DemoTracerPlugin
         out ulong replaySteamId)
     {
         if (_loadedReplays.TryGetValue(slot, out var replay) &&
-            !replay.UtilityOnly &&
             replay.Cosmetics.Glove != null)
         {
             cosmetic = replay.Cosmetics.Glove;
@@ -927,7 +909,6 @@ public sealed partial class DemoTracerPlugin
         out ReplayAgentCosmetic cosmetic)
     {
         if (_loadedReplays.TryGetValue(slot, out var replay) &&
-            !replay.UtilityOnly &&
             replay.Cosmetics.Agent != null)
         {
             cosmetic = replay.Cosmetics.Agent;
@@ -992,7 +973,6 @@ public sealed partial class DemoTracerPlugin
     {
         if (!WeaponCosmeticFeatureEnabled() ||
             !_loadedReplays.TryGetValue(slot, out var replay) ||
-            replay.UtilityOnly ||
             !HasCosmeticEvidence(replay.Cosmetics) ||
             !IsReplaySlotStillSafe(slot))
         {

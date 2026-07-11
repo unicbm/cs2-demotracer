@@ -9,8 +9,8 @@ Trace CS2 demos into bot-executable route replays.
 > CounterStrikeSharp v1.0.371 or newer. Ray-Trace users need v1.0.16 or newer.
 > CS2-Bot-Hider users need a build containing the July 2026 Windows client
 > identity-offset fix; tagged v0.2.5 predates it. DemoTracer's Windows core
-> replay path has been locally verified; the converter and `.dtr` format are
-> unaffected.
+> replay path has been locally verified. Demos using the newer delta user-command
+> encoding require converter v0.5.0 or newer; the `.dtr` format is unchanged.
 
 CS2 DemoTracer converts CS2 `.dem` files into compact `.dtr` replay files, then
 plays those routes back through bots on a local CS2 server. The normal converter
@@ -53,7 +53,6 @@ movement, view angles, firing, weapon state, and projectile alignment.
   when the source demo contains usable voice data.
 - Replays demo movement, view angles, crouch/jump state, firing, weapon switching,
   and selected high-fidelity metadata through local CS2 bots.
-- Exports optional Demo2Nade grenade clips for local utility libraries.
 - Can align loadout, projectiles, crosshair, scoreboard presentation, and
   demo-backed cosmetics when those modes are explicitly enabled.
 
@@ -158,7 +157,7 @@ loader and BotController runtime. Detailed binary layout is documented in
 - Runtime reader support: v3 through v7
 - Current manifest ABI: 17
 - Current BotController native ABI: 16
-- Current DemoTracer companion API: 5
+- Current DemoTracer companion API: 6
 - Endianness: little-endian
 - Current v7 layout: section container with required movement snapshot, tick
   metadata, and subtick sections; optional projectile, high-fidelity metadata,
@@ -180,7 +179,7 @@ layout is documented in [`docs/FORMAT.md`](docs/FORMAT.md).
 
 ## Repository Layout
 
-- `converter/`: Rust CLI, GUI, local Rust API, pool conversion, and Demo2Nade.
+- `converter/`: Rust CLI, GUI, local Rust API, and pool conversion.
 - `runtime/BotController/`: CS2 Metamod runtime used by the server bundle.
 - `css/DemoTracer/`: CounterStrikeSharp playback plugin.
 - `css/DemoTracerApi/`: companion-plugin API contract.

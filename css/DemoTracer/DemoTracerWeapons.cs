@@ -195,32 +195,6 @@ public sealed partial class DemoTracerPlugin
         return GetReplayWeaponSlot(className) == ReplayWeaponSlot.Utility;
     }
 
-    private static int ChooseNadeClipUtilityWeaponDefIndex(NadeClip clip)
-    {
-        var first = NormalizeWeaponDefIndex(clip.FirstWeaponDefIndex);
-        if (IsUtilityWeaponDefIndex(first) && NadeWeaponDefMatchesKind(clip.Kind, first))
-            return first;
-
-        var manifest = NormalizeWeaponDefIndex(clip.WeaponDefIndex);
-        if (IsUtilityWeaponDefIndex(manifest))
-            return manifest;
-
-        return first;
-    }
-
-    private static bool NadeWeaponDefMatchesKind(string kind, int weaponDefIndex)
-    {
-        var normalized = NormalizeWeaponDefIndex(weaponDefIndex);
-        return kind.Trim().ToLowerInvariant() switch
-        {
-            "flash" => normalized == 43,
-            "he" => normalized == 44,
-            "smoke" => normalized == 45,
-            "molotov" => normalized is 46 or 48,
-            "decoy" => normalized == 47,
-            _ => true
-        };
-    }
 
     private static int WeaponDefIndex(string className)
     {

@@ -8,7 +8,7 @@ runtime integrations.
 Normal conversion uses the packaged Windows x64 converter zip:
 
 - `cs2-demotracer.exe`: CLI for inspect, convert, validate, pool conversion,
-  Demo2Nade, and wizard workflows.
+  and wizard workflows.
 - `cs2-demotracer-gui.exe`: native single-demo GUI workbench.
 
 Python, Node.js, Conda, virtualenvs, and CS2 server plugins are not required for
@@ -97,7 +97,11 @@ Current release compatibility:
 - `.dtr` reader: v3 through v7
 - Manifest ABI: 17
 - BotController native ABI: 16
-- DemoTracer companion API: 5
+- DemoTracer companion API: 6
+
+Companion API 6 is intentionally narrow: bot ownership/busy-state queries,
+demo-backed cosmetic state, and HUD crosshair override control. It does not
+expose standalone replay-library or utility-clip orchestration.
 
 ## Source Builds
 

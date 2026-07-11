@@ -4,7 +4,7 @@ Use these pages for detailed setup, usage, command, and reference material.
 
 ## Read First
 
-- [Usage](USAGE.md): converter CLI, GUI, pool conversion, Demo2Nade, and server
+- [Usage](USAGE.md): converter CLI, GUI, pool conversion, and server
   playback workflow.
 - [Commands](COMMANDS.md): `dtr_` command reference and runtime diagnostics.
 - [Dependencies](DEPENDENCIES.md): required server stack, bundled components,
