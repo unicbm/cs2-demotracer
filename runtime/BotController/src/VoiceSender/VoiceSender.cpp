@@ -112,7 +112,11 @@ namespace BotController
                 voice->add_packet_offsets(packetOffsets[i]);
 
             msg->set_client_deprecated(senderClient);
-            msg->set_entity(senderClient);
+            // CPlayerSlot is zero-based, while CS2 player-controller entity
+            // indices are one-based. The client resolves the visible voice
+            // speaker through entity, so using the raw slot shifts identity
+            // to the preceding controller.
+            msg->set_entity(senderClient + 1);
             msg->set_proximity(false);
             if (senderXuid != 0)
                 msg->set_xuid(senderXuid);

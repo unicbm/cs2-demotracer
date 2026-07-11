@@ -182,6 +182,11 @@ public sealed partial class DemoTracerPlugin
                 StopVoiceTestPlayback($"unsafe_sender_slot_{speaker.Slot}");
                 return;
             }
+            if (speaker.ExpectedTeam.HasValue && sender.Team != speaker.ExpectedTeam.Value)
+            {
+                StopVoiceTestPlayback($"sender_team_mismatch_slot_{speaker.Slot}");
+                return;
+            }
         }
 
         state.PruneRecipients(IsVoiceRecipient);
@@ -228,7 +233,7 @@ public sealed partial class DemoTracerPlugin
                 var rc = BotControllerNative.SendVoiceFrame(
                     recipientSlot,
                     speaker.Client,
-                    frame.Xuid == 0 ? speaker.Xuid : frame.Xuid,
+                    speaker.Xuid,
                     frame.Audio,
                     frame.SampleRate,
                     frame.VoiceLevel,
@@ -238,7 +243,7 @@ public sealed partial class DemoTracerPlugin
                     frame.NumPackets,
                     frame.PacketOffsets,
                     tick: -1,
-                    audibleMask: -1);
+                    audibleMask: 1);
                 state.SentPackets++;
                 if (rc != 0)
                 {
