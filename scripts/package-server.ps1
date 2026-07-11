@@ -150,7 +150,7 @@ bundled_botcontroller_abi: 16
 bundled_botcontroller_abi_minor: 29
 expected_demotracer_native_abi: 16
 dtr_reader: 3..7
-demotracer_api: 5
+demotracer_api: 6
 
 Install target:
 Copy this package's addons directory into your CS2 server game/csgo directory.
