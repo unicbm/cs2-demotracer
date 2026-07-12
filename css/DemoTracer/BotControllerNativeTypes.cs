@@ -152,9 +152,17 @@ internal readonly record struct ReplayFileMetadata(
     int TickCount,
     ReplayProjectileEvent[] Projectiles,
     ReplayHighFidelityMetadata HighFidelity,
-    int[] WeaponDefIndices)
+    int[] WeaponDefIndices,
+    ReplayVector3? RoundStartOrigin)
 {
-    public static ReplayFileMetadata Empty { get; } = new(0.0f, 0, 0, [], ReplayHighFidelityMetadata.Empty, []);
+    public static ReplayFileMetadata Empty { get; } = new(
+        0.0f,
+        0,
+        0,
+        [],
+        ReplayHighFidelityMetadata.Empty,
+        [],
+        null);
 }
 
 internal readonly record struct ReplayState(

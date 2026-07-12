@@ -55,6 +55,10 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private const int MaxManifestAbiVersion = 17;
     private const int MaxPlayerSlots = BotControllerNative.MaxSlots;
     private const int ReplayStartHealth = 100;
+    private const int StandardTeamSize = 5;
+    private const int InitialSpawnAssignmentMaxAttempts = 8;
+    private const float PlayerHullWidth = 32.0f;
+    private const float PlayerHullHeight = 72.0f;
     private const string AvatarOverrideCacheDirectoryName = "avatar-cache";
     private const int AvatarOverrideMaxBytes = 16 * 1024;
     private static readonly byte[] AvatarPngSignature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -96,6 +100,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private readonly BotHiderMemoryProbe _botHiderProbe = new();
     private readonly RayTraceLosProbe _rayTraceLosProbe = new();
     private bool _safeC4Aligned;
+    private int _initialSpawnAssignmentToken;
+    private bool _initialSpawnAssignmentComplete;
+    private bool _initialSpawnAssignmentScheduled;
     private readonly DemoTracerApiFacade _apiFacade;
     private StreamWriter? _utilityTraceWriter;
     private string _utilityTracePath = string.Empty;
@@ -1505,7 +1512,21 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     public HookResult OnPlayerSpawn(EventPlayerSpawn @event, GameEventInfo info)
     {
         if (@event.Userid is { IsValid: true } player)
+        {
             ScheduleCachedCosmeticRepairForSlot(player.Slot);
+            if (_loadedSlots.Count > 0)
+            {
+                ScheduleInitialRoundSpawnAssignment();
+                AddTimer(
+                    0.05f,
+                    () => AlignSafeC4OwnerForLoadedReplays(forceReconcile: true),
+                    TimerFlags.STOP_ON_MAPCHANGE);
+                AddTimer(
+                    0.20f,
+                    () => AlignSafeC4OwnerForLoadedReplays(forceReconcile: true),
+                    TimerFlags.STOP_ON_MAPCHANGE);
+            }
+        }
 
         return HookResult.Continue;
     }
@@ -3304,6 +3325,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private void PreloadLoadedReplays()
     {
+        // Establish round-start positions before any later freeze-time replay
+        // scheduling can leave partial-roster bots at native spawn points.
+        ScheduleInitialRoundSpawnAssignment();
         ApplyLoadedReplayMusicKits();
 
         if (_weaponAlignEnabled)
@@ -3385,9 +3409,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private int NormalizeMusicKitId(int musicKitId)
         => IsKnownMusicKitId(musicKitId) ? musicKitId : 0;
 
-    private void AlignSafeC4OwnerForLoadedReplays()
+    private void AlignSafeC4OwnerForLoadedReplays(bool forceReconcile = false)
     {
-        if (_safeC4Aligned)
+        if (_safeC4Aligned && !forceReconcile)
             return;
 
         var plantedOwner = FindLoadedC4Owner(IsBombPlantedEvent);
@@ -3401,12 +3425,16 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         var targetSteamId = targetOwner.Value.SteamId;
         if (targetSlot < 0 || !IsReplaySlotStillSafe(targetSlot))
             return;
+        var firstAlignment = !_safeC4Aligned;
 
-        foreach (var slot in _loadedSlots.ToArray())
+        // CS2 may assign its native C4 to another live T, including a human who
+        // joins during freeze time. Demo evidence makes this replay slot the
+        // authoritative owner, so purge every other player rather than only bots.
+        foreach (var candidate in FindTeamPlayers())
         {
-            if (slot == targetSlot || !_loadedReplays.TryGetValue(slot, out var replay))
+            if (candidate.Slot == targetSlot)
                 continue;
-            RemoveC4FromReplaySlot(slot, "safe_c4_owner_align");
+            RemoveC4FromPlayer(candidate, "safe_c4_owner_align");
         }
 
         var player = Utilities.GetPlayerFromSlot(targetSlot);
@@ -3421,6 +3449,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         }
 
         _safeC4Aligned = true;
+        if (!firstAlignment)
+            return;
+
         if (plantedOwner.HasValue &&
             initialOwner.HasValue &&
             plantedOwner.Value.SteamId != initialOwner.Value.SteamId)
@@ -3460,9 +3491,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         return null;
     }
 
-    private void RemoveC4FromReplaySlot(int slot, string reason)
+    private static void RemoveC4FromPlayer(CCSPlayerController player, string reason)
     {
-        var player = Utilities.GetPlayerFromSlot(slot);
         if (player is not { IsValid: true, PawnIsAlive: true } ||
             player.PlayerPawn is not { IsValid: true, Value.IsValid: true })
             return;
@@ -3503,6 +3533,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (IsWarmupPeriod())
             return "[DTR ERR] 热身阶段无法进行回放";
 
+        if (!TryAssignInitialRoundSpawns(out var spawnReason))
+            return $"[DTR ERR] initial spawn assignment is not ready: {spawnReason}";
+
         var ok = 0;
         foreach (var slot in _loadedSlots)
         {
@@ -3534,6 +3567,259 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         var voice = TryStartLoadedAutoVoicePlayback(anchor, freezeTimeSeconds, ok);
         var chat = TryStartLoadedAutoChatPlayback(anchor, freezeTimeSeconds, ok);
         return $"dtr: started {ok}/{_loadedSlots.Count} loaded slots, loop={loop}{voice}{chat}";
+    }
+
+    private void ScheduleInitialRoundSpawnAssignment()
+    {
+        if (_initialSpawnAssignmentComplete ||
+            _initialSpawnAssignmentScheduled ||
+            _loadedSlots.Count == 0)
+        {
+            return;
+        }
+
+        var token = _initialSpawnAssignmentToken;
+        var attempts = 0;
+        _initialSpawnAssignmentScheduled = true;
+
+        void TryAssign()
+        {
+            if (token != _initialSpawnAssignmentToken)
+                return;
+
+            attempts++;
+            if (TryAssignInitialRoundSpawns(out var reason))
+            {
+                _initialSpawnAssignmentComplete = true;
+                _initialSpawnAssignmentScheduled = false;
+                return;
+            }
+
+            if (attempts >= InitialSpawnAssignmentMaxAttempts)
+            {
+                _initialSpawnAssignmentScheduled = false;
+                Server.PrintToConsole(
+                    $"[DTR WARN] initial spawn assignment was not ready after {attempts} tick(s): {reason}");
+                return;
+            }
+
+            Server.NextFrame(TryAssign);
+        }
+
+        TryAssign();
+    }
+
+    private bool TryAssignInitialRoundSpawns(out string reason)
+    {
+        if (_initialSpawnAssignmentComplete)
+        {
+            reason = string.Empty;
+            return true;
+        }
+
+        var players = FindTeamPlayers();
+        var replayPlacements = new List<(
+            CCSPlayerController Player,
+            int Slot,
+            CsTeam Team,
+            ReplayVector3 Destination)>();
+        var humanRelocations = new List<(
+            CCSPlayerController Player,
+            int VacatedBySlot,
+            CsTeam Team,
+            ReplayVector3 Origin)>();
+        var summaries = new List<(CsTeam Team, int ReplaySlots, int SubstituteHumansMoved)>();
+
+        foreach (var team in new[] { CsTeam.Terrorist, CsTeam.CounterTerrorist })
+        {
+            var plannedSlots = _loadedSlots
+                .Where(slot => _loadedReplays.TryGetValue(slot, out var replay) && replay.ManifestTeam == team)
+                .ToArray();
+            if (plannedSlots.Length == 0 || plannedSlots.Length >= StandardTeamSize)
+                continue;
+
+            var replaySpawns = new List<(
+                CCSPlayerController Player,
+                int Slot,
+                ReplayVector3 Destination,
+                ReplayVector3 Current)>();
+            foreach (var slot in plannedSlots)
+            {
+                if (!_loadedReplays.TryGetValue(slot, out var replay) ||
+                    replay.RoundStartOrigin is not { } destination ||
+                    !IsFiniteReplayPosition(destination))
+                {
+                    reason = $"slot={slot} team={team} has no valid recorded round-start origin";
+                    return false;
+                }
+
+                var replayPlayer = players.FirstOrDefault(candidate => candidate.Slot == slot);
+                if (replayPlayer is not { IsValid: true, PawnIsAlive: true } ||
+                    replayPlayer.Team != team ||
+                    !TryGetPawnOrigin(replayPlayer, out var current))
+                {
+                    reason = $"slot={slot} team={team} pawn is not spawned yet";
+                    return false;
+                }
+
+                replaySpawns.Add((
+                    replayPlayer,
+                    slot,
+                    destination,
+                    new ReplayVector3(current.X, current.Y, current.Z)));
+            }
+
+            var humans = new List<(CCSPlayerController Player, ReplayVector3 Current)>();
+            foreach (var candidate in players)
+            {
+                if (candidate.Team != team ||
+                    !candidate.PawnIsAlive ||
+                    candidate.IsBot ||
+                    _botHiderProbe.IsManagedBot(candidate.Slot) ||
+                    _loadedSlots.Contains(candidate.Slot) ||
+                    (TryGetControllingBotState(candidate, out var controllingBot) && controllingBot) ||
+                    !TryGetPawnOrigin(candidate, out var current))
+                {
+                    continue;
+                }
+
+                humans.Add((
+                    candidate,
+                    new ReplayVector3(current.X, current.Y, current.Z)));
+            }
+
+            var conflicts = humans
+                .Where(human => replaySpawns.Any(
+                    replay => PlayerHullsOverlap(human.Current, replay.Destination)))
+                .ToList();
+            var occupiedOrigins = humans
+                .Where(human => !conflicts.Any(conflict => conflict.Player.Slot == human.Player.Slot))
+                .Select(human => human.Current)
+                .ToList();
+            var relocationSpawns = new List<(int Slot, ReplayVector3 Origin)>();
+            foreach (var replay in replaySpawns)
+            {
+                if (replaySpawns.Any(candidate =>
+                        PlayerHullsOverlap(replay.Current, candidate.Destination)) ||
+                    occupiedOrigins.Any(origin => PlayerHullsOverlap(replay.Current, origin)) ||
+                    relocationSpawns.Any(candidate =>
+                        PlayerHullsOverlap(replay.Current, candidate.Origin)))
+                {
+                    continue;
+                }
+
+                relocationSpawns.Add((replay.Slot, replay.Current));
+            }
+
+            var teamRelocations = new List<(
+                CCSPlayerController Player,
+                int VacatedBySlot,
+                CsTeam Team,
+                ReplayVector3 Origin)>();
+            foreach (var conflict in conflicts)
+            {
+                if (relocationSpawns.Count == 0)
+                {
+                    reason =
+                        $"slot={conflict.Player.Slot} team={team} has no safe DTR-native spawn to inherit";
+                    return false;
+                }
+
+                var relocation = relocationSpawns
+                    .OrderBy(candidate => PositionDistanceSquared(conflict.Current, candidate.Origin))
+                    .First();
+
+                relocationSpawns.Remove(relocation);
+                occupiedOrigins.Add(relocation.Origin);
+                teamRelocations.Add((conflict.Player, relocation.Slot, team, relocation.Origin));
+            }
+
+            humanRelocations.AddRange(teamRelocations);
+            replayPlacements.AddRange(replaySpawns.Select(replay => (
+                replay.Player,
+                replay.Slot,
+                team,
+                replay.Destination)));
+            summaries.Add((team, replaySpawns.Count, teamRelocations.Count));
+        }
+
+        try
+        {
+            // Preserve the game's native spawn allocation for substitute
+            // humans before placing replay bots at demo-backed positions.
+            foreach (var relocation in humanRelocations)
+            {
+                var pawn = relocation.Player.PlayerPawn.Value;
+                if (pawn is not { IsValid: true })
+                {
+                    reason =
+                        $"human slot={relocation.Player.Slot} team={relocation.Team} pawn became invalid";
+                    return false;
+                }
+
+                pawn.Teleport(
+                    new Vector(relocation.Origin.X, relocation.Origin.Y, relocation.Origin.Z),
+                    null,
+                    new Vector(0.0f, 0.0f, 0.0f));
+            }
+
+            foreach (var replay in replayPlacements)
+            {
+                var pawn = replay.Player.PlayerPawn.Value;
+                if (pawn is not { IsValid: true })
+                {
+                    reason = $"replay slot={replay.Slot} team={replay.Team} pawn became invalid";
+                    return false;
+                }
+
+                pawn.Teleport(
+                    new Vector(replay.Destination.X, replay.Destination.Y, replay.Destination.Z),
+                    null,
+                    new Vector(0.0f, 0.0f, 0.0f));
+            }
+
+            foreach (var summary in summaries)
+            {
+                Server.PrintToConsole(
+                    "dtr: initial partial-roster spawns assigned " +
+                    $"team={summary.Team} dtr_slots={summary.ReplaySlots}/{StandardTeamSize} " +
+                    $"substitute_humans_moved={summary.SubstituteHumansMoved}");
+            }
+        }
+        catch (Exception ex)
+        {
+            reason = $"initial spawn teleport failed: {ex.Message}";
+            return false;
+        }
+
+        _initialSpawnAssignmentComplete = true;
+        reason = string.Empty;
+        return true;
+    }
+
+    private void InvalidateInitialSpawnAssignment()
+    {
+        _initialSpawnAssignmentToken++;
+        _initialSpawnAssignmentComplete = false;
+        _initialSpawnAssignmentScheduled = false;
+    }
+
+    private static bool IsFiniteReplayPosition(ReplayVector3 position)
+        => float.IsFinite(position.X) &&
+           float.IsFinite(position.Y) &&
+           float.IsFinite(position.Z);
+
+    private static bool PlayerHullsOverlap(ReplayVector3 left, ReplayVector3 right)
+        => MathF.Abs(left.X - right.X) < PlayerHullWidth &&
+           MathF.Abs(left.Y - right.Y) < PlayerHullWidth &&
+           MathF.Abs(left.Z - right.Z) < PlayerHullHeight;
+
+    private static float PositionDistanceSquared(ReplayVector3 left, ReplayVector3 right)
+    {
+        var dx = left.X - right.X;
+        var dy = left.Y - right.Y;
+        var dz = left.Z - right.Z;
+        return dx * dx + dy * dy + dz * dz;
     }
 
     private bool StartReplayForSlot(int slot, bool loop)
@@ -3863,6 +4149,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private void StopAndUnloadLoaded(bool clearArmedPlan)
     {
+        InvalidateInitialSpawnAssignment();
         var trackedSlots = _loadedSlots.ToHashSet();
         StopVoiceTestPlayback("unload_all", printSummary: false);
         ClearLoadedAutoVoiceClip();
@@ -3927,6 +4214,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _lifecycleResetInProgress = true;
         try
         {
+            InvalidateInitialSpawnAssignment();
             ReleaseFreezePrerollBrainLocks();
             ClearReplayLeftHandDesiredLatches();
             var hadReplayState = _loadedSlots.Count > 0 ||
@@ -4308,6 +4596,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private void ForgetLoadedReplayMetadata(int slot)
     {
+        InvalidateInitialSpawnAssignment();
         ClearReplayScoreboardFlairForSlot(slot);
         InvalidateReplayIdentityGeneration(slot);
         _loadedReplays.Remove(slot);
@@ -4344,6 +4633,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         CsTeam? manifestTeam = null,
         ReplayFileMetadata? replayMetadata = null)
     {
+        InvalidateInitialSpawnAssignment();
         RestoreReplayBotViewmodel(slot);
         var metadata = replayMetadata ?? ReadReplayMetadataOrEmpty(path);
         TryBuildWeaponPlan(metadata.WeaponDefIndices ?? [], out var scannedFirstDef, out var scannedPreloadDefs);
@@ -4388,7 +4678,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             inventorySnapshots,
             metadata.TickCount,
             metadata.TickRate,
-            metadata.PlayStartTickIndex);
+            metadata.PlayStartTickIndex,
+            metadata.RoundStartOrigin);
         RememberReplayCosmeticEvidence(slot, _loadedReplays[slot]);
         BeginReplayIdentityGeneration(slot);
         _lastEnsuredWeaponDef.Remove(slot);
@@ -5058,7 +5349,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         ReplayInventorySnapshot[] InventorySnapshots,
         int TickCount,
         float TickRate,
-        uint PlayStartTickIndex);
+        uint PlayStartTickIndex,
+        ReplayVector3? RoundStartOrigin);
 
     private readonly record struct ReplayAssignment(ManifestFile File, CCSPlayerController Bot);
 
