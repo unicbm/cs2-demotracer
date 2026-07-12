@@ -215,6 +215,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
         ClearReplayCrosshairHudReticleMapEntry(playerSlot);
         _slotCosmeticEvidenceKeys.Remove(playerSlot);
+        _appliedGloveCosmetics.Remove(playerSlot);
+        _gloveCosmeticTokens.Remove(playerSlot);
 
         if (!HasReplayLifecycleState(includeNative: true))
             return;
@@ -3823,6 +3825,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 _cosmeticSyncedSlots.Remove(slot);
                 _cosmeticHeartbeatTokens.Remove(slot);
                 _activeWeaponCosmetics.Remove(slot);
+                _appliedGloveCosmetics.Remove(slot);
+                _gloveCosmeticTokens.Remove(slot);
                 respawned++;
             }
             catch (Exception ex)
@@ -4314,6 +4318,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _cosmeticSyncedSlots.Remove(slot);
         _cosmeticHeartbeatTokens.Remove(slot);
         _activeWeaponCosmetics.Remove(slot);
+        _appliedGloveCosmetics.Remove(slot);
+        _gloveCosmeticTokens.Remove(slot);
         _slotCosmeticEvidenceKeys.Remove(slot);
         _scoreboardSyncedSlots.Remove(slot);
         KillTrackedReplayDropsForSlot(slot, "forget_replay");
