@@ -84,9 +84,10 @@ voice/round00.dtv
 实际输出目录名会是 `<demo-stem>-<hash12>`；`hash12` 来自 demo 文件内容，用来避免同名 demo 互相覆盖。
 `voice/` 只在传入 `--export-voice` 且 demo 含有可用 voice frame 时生成。
 `avatars/` 只在 demo 包含比赛服务器头像覆写时生成；manifest 会记录每个头像对应的 SteamID64。
-显式把 replay identity 设为 `avatar` 时，DemoTracer 会用 DTR 合成 SteamID64 key
-把匹配的 PNG 头像覆写应用到 BotHider 管理的 replay bot，并由 native runtime 启用
-`sv_reliableavatardata`。默认 `steam` identity 不写头像覆写。
+显式把 replay identity 设为 `avatar` 时，DemoTracer 会用真实 demo SteamID64 把通过
+校验的匹配 PNG 头像覆写应用到 BotHider 管理的 replay bot，并由 native runtime 启用
+`sv_reliableavatardata`，因此原生 Steam 资料卡信息仍然可用。如果匹配 PNG 缺失或无效，
+则回退到 Steam 头像。默认 `steam` identity 不写头像覆写。
 
 ## 2. 批量生成地图回合池
 

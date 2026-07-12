@@ -81,7 +81,7 @@ matching legacy fields.
 | `dtr_handoff` | `death_contact_c4 slot` | Release the contacted/dead replay slot after contact or death; C4 planted releases all active replay slots. |
 | `dtr_partial` | `1` | Allow replay with fewer bots than manifest players. |
 | `dtr_chat_auto` | `on` | Replay demo chat messages from manifest metadata on the same round timeline. |
-| `dtr_replay_identity` | `steam` | Write demo name and SteamID64 through BotHider-managed replay bot slots when available. Team/event avatar PNGs require explicit `avatar`; `full` keeps the legacy real-SteamID avatar path. |
+| `dtr_replay_identity` | `steam` | Write demo name and SteamID64 through BotHider-managed replay bot slots when available. Team/event avatar PNGs require explicit `avatar`; `full` is a compatibility alias for `avatar`. |
 | `dtr_util_trace` | `0` | Utility CSV trace disabled. |
 | `bc_replay_pov` | `spectated` | Publish expensive native first-person POV updates only for replay bots watched in-eye. |
 
@@ -577,20 +577,21 @@ SteamID64 updates for BotHider-managed bot slots using the demo player's
 `player_name` and `steam_id`. The default mode is `steam`, which does not write
 `ServerAvatarOverrides`; `1`/`on` also means `steam`.
 
-Use `avatar` to apply manifest PNG avatar overrides, such as team/event logos,
-without using the real player SteamID64 as the avatar override key. In this
-mode DemoTracer writes a synthetic DTR SteamID64 to the replay bot. When matching
-avatar override evidence exists, it writes the PNG override to that synthetic
-key.
+Use `avatar` to apply manifest PNG avatar overrides, such as team/event logos.
+DemoTracer keeps the real demo SteamID64 so the native Steam profile card,
+badges, and commendations remain available, then binds a valid matching PNG to
+that SteamID64. If the manifest entry or usable PNG is missing, it falls back
+to the Steam avatar instead of showing an unknown-avatar placeholder.
 
-Use `full` only when you explicitly want the legacy path: real demo SteamID64
-plus demo-provided avatar override keyed by that real SteamID64.
+`full` is retained as a compatibility alias for `avatar`.
 
 Avatar override application is slot-validated before the delayed write runs:
 the slot must still be loaded with the same replay SteamID64, still be a safe
 replay target, and still be BotHider-managed. CS2's `ServerAvatarOverrides`
-table is still keyed by SteamID64. `avatar` avoids real-player collisions by
-using synthetic DTR keys; `full` keeps the real-SteamID collision caveat.
+table is still keyed by SteamID64. DemoTracer reserves its empty index-zero
+fallback before adding real entries, so a missing SteamID lookup cannot reuse a
+DTR avatar for unrelated players. A real account using the same SteamID64 will
+resolve to the same override while it is present on that local server.
 
 This is mainly for POV/spectator clarity. If BotHider is not installed or is not
 managing a replay bot slot, identity alignment skips that slot instead of

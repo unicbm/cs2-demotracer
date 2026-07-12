@@ -32,11 +32,14 @@ This document tracks known limitations and edge cases.
 - Avatar overrides come from PNG data exposed by demo metadata. The current
   runtime path validates the replay slot before the delayed avatar write runs,
   so stale unloaded slots should not receive old avatar writes. The underlying
-  CS2 `ServerAvatarOverrides` table is still keyed by SteamID64. The recommended
-  `dtr_replay_identity avatar` mode uses synthetic DTR SteamID64 keys to avoid
-  real-player collisions; legacy `full` mode keeps the real-SteamID conflict
-  caveat. Some demos provide team/default logo PNGs rather than true per-player
-  avatars, so TAB, observer, and other UI surfaces can still disagree.
+  CS2 `ServerAvatarOverrides` table is still keyed by SteamID64. DemoTracer
+  reserves an empty index-zero fallback so unmatched players do not inherit the
+  first DTR avatar. The recommended `dtr_replay_identity avatar` mode keeps the
+  real demo SteamID64 so Steam profile-card metadata remains available, and
+  falls back to the Steam avatar when no valid matching PNG exists. A real
+  account with that same SteamID64 will share the override while present on the
+  local server. Some demos provide team/default logo PNGs rather than true
+  per-player avatars, so TAB, observer, and other UI surfaces can still disagree.
 - BotHider rewrites the visible SteamID and in-game bot display name, but it
   does not change the bot name that CS2 native logic considers authoritative.
   A bot can display donk's avatar and SteamID while `bot_kick donk` still does

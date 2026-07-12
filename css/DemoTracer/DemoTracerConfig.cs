@@ -348,7 +348,7 @@ public sealed partial class DemoTracerPlugin
     {
         BotControllerNative.WriteLeftHandDesired = _leftHandDesiredEnabled;
         BotControllerNative.SetReplayNativeFovOverride(_handoffThreat360Enabled);
-        if (_replayIdentityMode is not (ReplayIdentityMode.Avatar or ReplayIdentityMode.Full))
+        if (_replayIdentityMode != ReplayIdentityMode.Avatar)
             Server.ExecuteCommand("sv_reliableavatardata false");
     }
 
@@ -369,7 +369,7 @@ public sealed partial class DemoTracerPlugin
             "name" => ReplayIdentityMode.Name,
             "steam" or "sid" or "steamid" or "1" or "on" or "true" => ReplayIdentityMode.Steam,
             "avatar" or "avatars" or "event_avatar" or "event-avatar" => ReplayIdentityMode.Avatar,
-            "full" => ReplayIdentityMode.Full,
+            "full" => ReplayIdentityMode.Avatar,
             _ => ReplayIdentityMode.Off,
         };
         return value.Trim().ToLowerInvariant() is

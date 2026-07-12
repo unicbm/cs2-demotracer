@@ -56,9 +56,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private const int MaxPlayerSlots = BotControllerNative.MaxSlots;
     private const int ReplayStartHealth = 100;
     private const string AvatarOverrideCacheDirectoryName = "avatar-cache";
-    private const ulong SyntheticAvatarAccountBase = 4_200_000_000UL;
-    private const ulong SyntheticAvatarSlotStride = 100_000UL;
-    private const ulong SyntheticAvatarGenerationModulo = 100_000UL;
+    private const int AvatarOverrideMaxBytes = 16 * 1024;
+    private static readonly byte[] AvatarPngSignature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
     private const string FreezeTimeConVarName = "mp_freezetime";
     private const string CosmeticRiskNotice = "[DTR WARN] cosmetic alignment consumes opt-in manifest cosmetics evidence and may carry Valve GSLT/server-guideline risk outside local/private replay validation.";
     private const string LeftHandDesiredFidelityNotice = "[DTR WARN] left_hand_desired=off 会降低保真度，但显著增高handoff流畅性。Reload loaded replays or plans for this setting to apply.";
@@ -74,8 +73,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private readonly Dictionary<int, int> _projectileAlignNextBySlot = new();
     private readonly Dictionary<int, int> _replayHifiEventNextBySlot = new();
     private readonly Dictionary<int, long> _replayIdentityGenerationBySlot = new();
-    private readonly Dictionary<ulong, ulong> _replayDisplaySteamIdsByDemoSteamId = new();
-    private readonly Dictionary<int, ulong> _replayDisplaySteamIdsBySlot = new();
     private readonly Dictionary<uint, PendingProjectileAlign> _pendingProjectileAlign = new();
     private readonly Queue<string> _projectileAlignLog = new();
     private readonly List<TrackedDroppedReplayItem> _trackedDroppedReplayItems = new();
@@ -762,10 +759,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             case "avatars":
             case "event_avatar":
             case "event-avatar":
-                _replayIdentityMode = ReplayIdentityMode.Avatar;
-                break;
             case "full":
-                _replayIdentityMode = ReplayIdentityMode.Full;
+                _replayIdentityMode = ReplayIdentityMode.Avatar;
                 break;
             default:
                 command.ReplyToCommand("usage: dtr_set identity <off|name|steam|avatar|full>");
@@ -2884,11 +2879,30 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (_replayIdentityMode == ReplayIdentityMode.Off)
             return;
 
-        var hasAvatarOverride = file.SteamId != 0 && avatarOverrides.ContainsKey(file.SteamId);
-        var useSyntheticAvatarSteamId = _replayIdentityMode == ReplayIdentityMode.Avatar;
-        var writeSteamId = _replayIdentityMode is ReplayIdentityMode.Steam or ReplayIdentityMode.Full ||
-                           _replayIdentityMode == ReplayIdentityMode.Avatar && file.SteamId != 0;
-        if (_replayIdentityMode is ReplayIdentityMode.Steam or ReplayIdentityMode.Full && file.SteamId == 0)
+        ManifestAvatarOverride? avatarOverride = null;
+        var hasAvatarOverride =
+            file.SteamId != 0 &&
+            avatarOverrides.TryGetValue(file.SteamId, out avatarOverride);
+        var avatarCommandPath = string.Empty;
+        var avatarOverrideReady = false;
+        if (hasAvatarOverride && avatarOverride != null &&
+            _replayIdentityMode == ReplayIdentityMode.Avatar)
+        {
+            avatarOverrideReady = TryPrepareReplayAvatarOverride(
+                file.SteamId,
+                manifestDir,
+                avatarOverride,
+                out avatarCommandPath,
+                out var avatarError);
+            if (!avatarOverrideReady)
+            {
+                Server.PrintToConsole(
+                    $"dtr: replay avatar skipped slot={slot} player={file.PlayerName} sid={file.SteamId} fallback=steam: {avatarError}");
+            }
+        }
+
+        var writeSteamId = _replayIdentityMode is ReplayIdentityMode.Steam or ReplayIdentityMode.Avatar;
+        if (writeSteamId && file.SteamId == 0)
         {
             Server.PrintToConsole(
                 $"dtr: replay identity skipped slot={slot} player={file.PlayerName}: missing steam_id");
@@ -2913,21 +2927,24 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             Server.ExecuteCommand($"bh_setname {slot} \"{EscapeConsoleString(file.PlayerName)}\"");
         if (writeSteamId)
         {
-            var displaySteamId = useSyntheticAvatarSteamId
-                ? SyntheticAvatarSteamIdForSlot(slot, CurrentReplayIdentityGeneration(slot))
-                : file.SteamId;
-            RememberReplayDisplaySteamId(slot, file.SteamId, displaySteamId);
-            Server.ExecuteCommand($"bh_setsid {slot} {displaySteamId}");
-            if (_replayIdentityMode == ReplayIdentityMode.Full)
-                ScheduleReplayAvatarOverride(slot, file, file.SteamId, manifestDir, avatarOverrides);
-            else if (useSyntheticAvatarSteamId && hasAvatarOverride)
-                ScheduleReplayAvatarOverride(slot, file, displaySteamId, manifestDir, avatarOverrides);
+            Server.ExecuteCommand($"bh_setsid {slot} {file.SteamId}");
+            if (avatarOverrideReady && avatarOverride != null)
+            {
+                ScheduleReplayAvatarOverride(
+                    slot,
+                    file,
+                    file.SteamId,
+                    avatarOverride,
+                    avatarCommandPath);
+            }
         }
         ScheduleReplayScoreboardFlair(slot, file);
-        if (writeSteamId && useSyntheticAvatarSteamId)
+        if (writeSteamId && _replayIdentityMode == ReplayIdentityMode.Avatar)
         {
             Server.PrintToConsole(
-                $"dtr: replay identity queued slot={slot} player={file.PlayerName} sid={file.SteamId} avatar_sid=synthetic");
+                avatarOverrideReady
+                    ? $"dtr: replay identity queued slot={slot} player={file.PlayerName} sid={file.SteamId} avatar=override"
+                    : $"dtr: replay identity queued slot={slot} player={file.PlayerName} sid={file.SteamId} avatar=steam");
         }
         else
         {
@@ -2939,7 +2956,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     private bool ReplayIdentityShouldApplyScoreboardFlair()
-        => _replayIdentityMode is ReplayIdentityMode.Steam or ReplayIdentityMode.Avatar or ReplayIdentityMode.Full;
+        => _replayIdentityMode is ReplayIdentityMode.Steam or ReplayIdentityMode.Avatar;
 
     private void ScheduleReplayScoreboardFlair(int slot, ManifestFile file)
     {
@@ -3065,54 +3082,28 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _ = TrySetReplayScoreboardFlairValue(slot, 0, out _);
     }
 
-    private void RememberReplayDisplaySteamId(int slot, ulong demoSteamId, ulong displaySteamId)
-    {
-        if (displaySteamId == 0)
-            return;
-
-        if (demoSteamId != 0)
-            _replayDisplaySteamIdsByDemoSteamId[demoSteamId] = displaySteamId;
-        if (slot >= 0)
-            _replayDisplaySteamIdsBySlot[slot] = displaySteamId;
-    }
-
-    private ulong ResolveReplayDisplaySteamId(ulong demoSteamId, int slot)
-    {
-        if (demoSteamId != 0 &&
-            _replayDisplaySteamIdsByDemoSteamId.TryGetValue(demoSteamId, out var displaySteamId) &&
-            displaySteamId != 0)
-        {
-            return displaySteamId;
-        }
-
-        if (slot >= 0 &&
-            _replayDisplaySteamIdsBySlot.TryGetValue(slot, out displaySteamId) &&
-            displaySteamId != 0)
-        {
-            return displaySteamId;
-        }
-
-        return demoSteamId;
-    }
-
     private void ScheduleReplayAvatarOverride(
         int slot,
         ManifestFile file,
         ulong avatarSteamId,
-        string manifestDir,
-        IReadOnlyDictionary<ulong, ManifestAvatarOverride> avatarOverrides)
+        ManifestAvatarOverride avatar,
+        string commandPath)
     {
-        if (file.SteamId == 0 ||
-            !avatarOverrides.TryGetValue(file.SteamId, out var avatar))
-        {
+        if (file.SteamId == 0)
             return;
-        }
 
         var generation = CurrentReplayIdentityGeneration(slot);
         var steamId = file.SteamId;
         var playerName = file.PlayerName;
         Server.NextFrame(() =>
-            TryApplyReplayAvatarOverride(slot, steamId, avatarSteamId, playerName, manifestDir, avatar, generation));
+            TryApplyReplayAvatarOverride(
+                slot,
+                steamId,
+                avatarSteamId,
+                playerName,
+                avatar,
+                commandPath,
+                generation));
     }
 
     private void TryApplyReplayAvatarOverride(
@@ -3120,8 +3111,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         ulong steamId,
         ulong avatarSteamId,
         string playerName,
-        string manifestDir,
         ManifestAvatarOverride avatar,
+        string commandPath,
         long generation)
     {
         if (steamId == 0 ||
@@ -3138,42 +3129,71 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             return;
         }
 
+        Server.ExecuteCommand(
+            $"bc_avatar_override_probe {avatarSteamId} \"{EscapeConsoleString(commandPath)}\"");
+        Server.PrintToConsole(
+            $"dtr: replay avatar queued slot={slot} player={playerName} sid={steamId} avatar_sid={avatarSteamId} path={avatar.Path} cache={commandPath}");
+    }
+
+    private bool TryPrepareReplayAvatarOverride(
+        ulong steamId,
+        string manifestDir,
+        ManifestAvatarOverride avatar,
+        out string commandPath,
+        out string error)
+    {
+        commandPath = string.Empty;
+        error = string.Empty;
+
         var format = avatar.Format.Trim();
         var pngFormat =
             (format.Length == 0 && avatar.Path.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) ||
             format.Equals("png", StringComparison.OrdinalIgnoreCase);
         if (!pngFormat)
         {
-            Server.PrintToConsole(
-                $"dtr: replay avatar skipped slot={slot} player={playerName} sid={steamId}: unsupported format={avatar.Format}");
-            return;
+            error = $"unsupported format={avatar.Format}";
+            return false;
         }
 
-        if (!TryResolveChildPathUnderRoot(manifestDir, avatar.Path, out var avatarPath, out var pathError))
-        {
-            Server.PrintToConsole(
-                $"dtr: replay avatar skipped slot={slot} player={playerName} sid={steamId}: {pathError}");
-            return;
-        }
-
+        if (!TryResolveChildPathUnderRoot(manifestDir, avatar.Path, out var avatarPath, out error))
+            return false;
         if (!File.Exists(avatarPath))
         {
-            Server.PrintToConsole(
-                $"dtr: replay avatar skipped slot={slot} player={playerName} sid={steamId}: missing {avatar.Path}");
-            return;
+            error = $"missing {avatar.Path}";
+            return false;
         }
 
-        if (!TryPrepareAvatarOverrideCommandPath(steamId, avatarPath, avatar, out var commandPath, out var cacheError))
+        try
         {
-            Server.PrintToConsole(
-                $"dtr: replay avatar skipped slot={slot} player={playerName} sid={steamId}: {cacheError}");
-            return;
+            var bytes = File.ReadAllBytes(avatarPath);
+            if (bytes.Length == 0)
+            {
+                error = "avatar PNG is empty";
+                return false;
+            }
+            if (bytes.Length > AvatarOverrideMaxBytes)
+            {
+                error = "avatar PNG must be 16 KiB or smaller";
+                return false;
+            }
+            if (!bytes.AsSpan().StartsWith(AvatarPngSignature))
+            {
+                error = "avatar file is not a PNG";
+                return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            error = $"avatar PNG validation failed: {ex.Message}";
+            return false;
         }
 
-        Server.ExecuteCommand(
-            $"bc_avatar_override_probe {avatarSteamId} \"{EscapeConsoleString(commandPath)}\"");
-        Server.PrintToConsole(
-            $"dtr: replay avatar queued slot={slot} player={playerName} sid={steamId} avatar_sid={avatarSteamId} path={avatar.Path} cache={commandPath}");
+        return TryPrepareAvatarOverrideCommandPath(
+            steamId,
+            avatarPath,
+            avatar,
+            out commandPath,
+            out error);
     }
 
     private bool TryPrepareAvatarOverrideCommandPath(
@@ -3945,7 +3965,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             _projectileAlignNextBySlot.Clear();
             _replayHifiEventNextBySlot.Clear();
             _replayIdentityGenerationBySlot.Clear();
-            ResetReplayDisplaySteamIds();
             _pendingProjectileAlign.Clear();
             BotControllerNative.ClearProjectileBirthAlign();
             _trackedDroppedReplayItems.Clear();
@@ -4286,22 +4305,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private void InvalidateReplayIdentityGeneration(int slot)
         => _replayIdentityGenerationBySlot.Remove(slot);
-
-    private void ResetReplayDisplaySteamIds()
-    {
-        _replayDisplaySteamIdsByDemoSteamId.Clear();
-        _replayDisplaySteamIdsBySlot.Clear();
-    }
-
-    private static ulong SyntheticAvatarSteamIdForSlot(int slot, long generation)
-    {
-        var safeSlot = slot < 0 ? 0UL : (ulong)Math.Min(slot, 255);
-        var safeGeneration = generation < 0 ? 0UL : (ulong)generation;
-        var accountId = SyntheticAvatarAccountBase +
-                        safeSlot * SyntheticAvatarSlotStride +
-                        safeGeneration % SyntheticAvatarGenerationModulo;
-        return SteamId64AccountBase + accountId;
-    }
 
     private void ForgetLoadedReplayMetadata(int slot)
     {
@@ -4993,7 +4996,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         Name,
         Steam,
         Avatar,
-        Full,
     }
 
     private sealed class TickPlayerSnapshot
@@ -5408,7 +5410,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             ReplayIdentityMode.Name => "name",
             ReplayIdentityMode.Steam => "steam",
             ReplayIdentityMode.Avatar => "avatar",
-            ReplayIdentityMode.Full => "full",
             _ => "off",
         };
 

@@ -193,17 +193,51 @@ namespace BotController
         }
 
         static bool SetAvatarOverride(INetworkStringTable *table, const char *steamId,
-                                      const std::vector<unsigned char> &bytes, int &index)
+                                      const std::vector<unsigned char> &bytes, int &index,
+                                      char *err, size_t errLen)
         {
+            if (table->GetNumStrings() == 0)
+            {
+                SetStringUserDataRequest_t emptyUserData{};
+                const int sentinel = table->AddString(
+                    true, "__dtr_no_avatar__", &emptyUserData);
+                if (sentinel != 0)
+                {
+                    std::snprintf(err, errLen,
+                                  "failed to reserve ServerAvatarOverrides index 0 sentinel");
+                    return false;
+                }
+            }
+
+            const StringUserData_t *fallback = table->GetStringUserData(0);
+            if (fallback && fallback->m_cbDataSize != 0)
+            {
+                std::snprintf(err, errLen,
+                              "ServerAvatarOverrides index 0 already contains avatar data; change map before retrying");
+                return false;
+            }
+
             SetStringUserDataRequest_t userData{};
             userData.m_pRawData = const_cast<unsigned char *>(bytes.data());
             userData.m_cbDataSize = static_cast<unsigned int>(bytes.size());
 
             index = table->FindStringIndex(steamId);
+            if (index == 0)
+            {
+                std::snprintf(err, errLen,
+                              "refusing to store a player avatar in reserved index 0");
+                return false;
+            }
             if (index < 0)
             {
                 index = table->AddString(true, steamId, &userData);
-                return index >= 0;
+                if (index <= 0)
+                {
+                    std::snprintf(err, errLen,
+                                  "failed to allocate a nonzero avatar override index");
+                    return false;
+                }
+                return true;
             }
             return table->SetStringUserData(index, &userData, true);
         }
@@ -376,17 +410,18 @@ CON_COMMAND_F(bc_avatar_override_probe,
         return;
 
     int index = -1;
-    if (!Commands::SetAvatarOverride(table, steamId, bytes, index))
+    if (!Commands::SetAvatarOverride(
+            table, steamId, bytes, index, err, sizeof(err)))
     {
         Commands::PrintToCaller(context,
-                                "[BC] error: failed to update avatar override for %s\n",
-                                steamId);
+                                "[BC] error: failed to update avatar override for %s: %s\n",
+                                steamId, err[0] ? err : "unknown error");
         return;
     }
 
     Commands::PrintToCaller(context,
-                            "[BC] avatar override set %s (%zu bytes, index %d, sv_reliableavatardata=true)\n",
-                            steamId, bytes.size(), index);
+                            "[BC] avatar override set %s (%zu bytes, index %d, table_count %d, sv_reliableavatardata=true)\n",
+                            steamId, bytes.size(), index, table->GetNumStrings());
 }
 
 CON_COMMAND_F(bc_lock,

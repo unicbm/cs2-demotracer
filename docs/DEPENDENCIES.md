@@ -48,7 +48,7 @@ At runtime it probes BotHider-managed bot slots through BotHider's shared slot
 state, then uses BotHider console commands for identity presentation:
 
 - `bh_setname` for demo display names
-- `bh_setsid` for demo or synthetic DTR SteamID64 values
+- `bh_setsid` for demo SteamID64 values
 
 Without BotHider, movement replay, weapon/loadout alignment, projectile
 alignment, handoff, and cosmetic alignment still work on safe replay bots.
@@ -58,8 +58,9 @@ Avatar override behavior is split:
 
 - BotHider supplies the visible SteamID64/name presentation path.
 - DemoTracer's native runtime writes CS2 `ServerAvatarOverrides`.
-- `dtr_replay_identity avatar` uses synthetic DTR SteamID64 keys to avoid real
-  SteamID64 avatar collisions.
+- `dtr_replay_identity avatar` keeps the demo SteamID64 so Steam profile-card
+  metadata remains available, and falls back to the Steam avatar when no valid
+  matching PNG is available.
 
 ### RayTrace API Provider
 

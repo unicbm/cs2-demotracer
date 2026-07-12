@@ -829,7 +829,7 @@ public sealed partial class DemoTracerPlugin
             return false;
         }
 
-        // After a replay releases, SteamID can be synthetic or stale while bots are reused.
+        // After a replay releases, SteamID can be stale while bots are reused.
         // Only an explicit slot binding may drive cached knife/glove/agent repair.
         if (_slotCosmeticEvidenceKeys.TryGetValue(slot, out key) &&
             _cosmeticEvidenceByKey.TryGetValue(key, out evidence!))
@@ -1948,9 +1948,7 @@ public sealed partial class DemoTracerPlugin
         var ownerSteamId = NormalizeOptionalULong(cosmetic.OriginalOwnerSteamId);
         var replayPlayerSteamId = NormalizeOptionalULong(replaySteamId);
         var sourceOwnerSteamId = ownerSteamId ?? replayPlayerSteamId;
-        var effectiveOwnerSteamId = sourceOwnerSteamId.HasValue
-            ? ResolveReplayDisplaySteamId(sourceOwnerSteamId.Value, player.Slot)
-            : (ulong?)null;
+        var effectiveOwnerSteamId = sourceOwnerSteamId;
         var playerAccountId = AccountIdForReplayPlayer(player, replayPlayerSteamId);
         item.AccountID = AccountIdFromSteamId(effectiveOwnerSteamId)
                          ?? cosmetic.ItemAccountId

@@ -94,10 +94,12 @@ the demo contents to avoid overwriting unrelated demos with similar names.
 usable voice frames.
 `avatars/` is written only when the demo contains server-provided avatar
 override images; the manifest records which SteamID64 each image came from.
-When replay identity is explicitly set to `avatar`, DemoTracer applies matching
-PNG avatar overrides to BotHider-managed replay bots using synthetic DTR
-SteamID64 keys and enables `sv_reliableavatardata` in the native runtime. The
-default `steam` identity mode does not write avatar overrides.
+When replay identity is explicitly set to `avatar`, DemoTracer applies valid
+matching PNG avatar overrides to BotHider-managed replay bots using the real
+demo SteamID64 and enables `sv_reliableavatardata` in the native runtime. This
+preserves native Steam profile-card metadata. If the matching PNG is absent or
+invalid, it falls back to the Steam avatar. The default `steam` mode does not
+write overrides.
 
 ## 2. Batch Convert A Map Pool
 

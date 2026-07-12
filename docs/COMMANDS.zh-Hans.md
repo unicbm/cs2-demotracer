@@ -74,7 +74,7 @@ DemoTracer 会从 `DemoTracer.dll` 同目录读取可选的 `demotracer.config.j
 | `dtr_handoff` | `death_contact_c4 slot` | 接触或死亡后释放触发的 replay slot；C4 安装后释放全部 active replay slot。 |
 | `dtr_partial` | `1` | bot 数量不足时允许部分 replay。 |
 | `dtr_chat_auto` | `on` | 按 manifest 元数据和同一回合时间线 replay demo 文字聊天。 |
-| `dtr_replay_identity` | `steam` | BotHider 可用时，通过其管理的 replay bot slot 写入 demo 名字和 SteamID64。队伍/赛事 PNG 头像需要显式 `avatar`；`full` 保留旧的真实 SteamID 头像覆写路径。 |
+| `dtr_replay_identity` | `steam` | BotHider 可用时，通过其管理的 replay bot slot 写入 demo 名字和 SteamID64。队伍/赛事 PNG 头像需要显式 `avatar`；`full` 是 `avatar` 的兼容别名。 |
 | `dtr_util_trace` | `0` | 默认不写 utility CSV trace。 |
 | `bc_replay_pov` | `spectated` | 只给正在被第一人称观察的 replay bot 发布昂贵的 native POV 更新。 |
 
@@ -507,17 +507,18 @@ pool plan 需要重新加载后才会应用。
 的 `player_name` 和 `steam_id` 写给对应 bot slot。默认模式是 `steam`，不会写
 `ServerAvatarOverrides`；`1`/`on` 也表示 `steam`。
 
-用 `avatar` 可以应用 manifest 里的 PNG 头像覆写，例如队伍/赛事 logo，但不会把真实
-选手 SteamID64 当作头像覆写 key。这个模式会给 replay bot 写入一个 DTR 合成
-SteamID64；如果有匹配的头像证据，就把对应 PNG 绑定到这个合成 key。
+用 `avatar` 可以应用 manifest 里的 PNG 头像覆写，例如队伍/赛事 logo。DemoTracer 会
+保留真实 demo SteamID64，使原生 Steam 资料卡、勋章和称赞信息仍然可用，再把通过校验
+的匹配 PNG 绑定到该 SteamID64。如果 manifest 记录或可用 PNG 缺失，则回退到 Steam
+头像，而不是显示问号头像。
 
-只有明确想走旧路径时才用 `full`：真实 demo SteamID64 加 demo PNG 头像覆写，并且
-头像覆写仍按真实 SteamID64 keyed。
+`full` 仅作为 `avatar` 的兼容别名保留。
 
 头像覆写在延迟写入前会重新做 slot 校验：该 slot 必须仍然加载同一个 SteamID64，
 仍然是安全 replay target，并且仍由 BotHider 管理。CS2 的
-`ServerAvatarOverrides` 底层仍然按 SteamID64 生效；`avatar` 用 DTR 合成 key 避免
-真实玩家冲突，`full` 保留真实 SteamID 冲突 caveat。
+`ServerAvatarOverrides` 底层仍然按 SteamID64 生效。DemoTracer 会先保留空的第 0 项，
+避免找不到 SteamID 时把某个 DTR 头像错误复用给其他玩家。如果本地服务器中存在使用
+同一 SteamID64 的真实账号，它也会命中同一份头像覆写。
 
 这个主要用于 POV 和 spectator 观察清晰度。如果没有安装 BotHider，或目标 slot 不由
 BotHider 管理，identity 对齐会跳过该 slot，而不会应用到真人玩家。
