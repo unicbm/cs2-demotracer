@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.5.0",
+    [string]$Version = "0.5.1",
     [string]$Configuration = "Release",
     [string]$OutputRoot = "dist",
     [string]$RuntimePackage = "runtime\BotController\build\package",
@@ -186,7 +186,7 @@ Expected ABI check:
 expected_abi=16 runtime_abi=16 abi_minor=29
 ```
 
-For v0.5.0, require `runtime_abi=16` and `abi_minor=29` or newer. If the minor
+For v__VERSION__, require `runtime_abi=16` and `abi_minor=29` or newer. If the minor
 version is missing or lower, replace the complete server bundle, including
 `addons/BotController/bin/win64/BotController.dll`,
 `addons/BotController/gamedata.json`, and `addons/metamod/BotController.vdf`.
