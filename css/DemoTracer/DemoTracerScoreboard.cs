@@ -183,17 +183,9 @@ public sealed partial class DemoTracerPlugin
                 if (scoreboard.Assists.HasValue)
                     tracking.MatchStats.Assists = scoreboard.Assists.Value;
 
-                if (tracking.PerRoundStats.Count > 0)
-                {
-                    var roundStats = tracking.PerRoundStats[0];
-                    if (scoreboard.Kills.HasValue)
-                        roundStats.Kills = scoreboard.Kills.Value;
-                    if (scoreboard.Deaths.HasValue)
-                        roundStats.Deaths = scoreboard.Deaths.Value;
-                    if (scoreboard.Assists.HasValue)
-                        roundStats.Assists = scoreboard.Assists.Value;
-                }
-
+                // CounterStrikeSharp exposes m_vecPerRoundStats as NetworkedVector<CSPerRoundStats_t>,
+                // but indexing networked vectors currently supports only CHandle<T> elements, so
+                // keep K/D/A on the supported match totals.
                 TrySetScoreboardStateChanged(player, "CCSPlayerController", "m_pActionTrackingServices");
             }
 
