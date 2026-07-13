@@ -105,6 +105,13 @@ static MaintainQuotaFn g_pfnQuotaTramp = nullptr;
 static void *g_pQuotaHookTarget = nullptr;
 
 #if defined(_WIN32)
+using HandleJoinTeamFn = int64_t(__fastcall *)(void * /*CCSPlayerController*/,
+                                               unsigned int, bool);
+static HandleJoinTeamFn g_pfnHandleJoinTeamTramp = nullptr;
+static void *g_pHandleJoinTeamHookTarget = nullptr;
+#endif
+
+#if defined(_WIN32)
 using PackEntitiesFn = void(__fastcall *)(void *, void *, int, void *, void *);
 #else
 using PackEntitiesFn = void (*)(void *, void *, int, void *, void *);
@@ -121,10 +128,25 @@ struct BotPawnRef
     uint32_t Handle = 0xFFFFFFFF;
 };
 
+#if defined(_WIN32)
+struct ManagedControllerTrace
+{
+    int Slot = -1;
+    uint32_t Flags = 0;
+    unsigned int CurrentTeam = 0;
+    bool Managed = false;
+    bool Hltv = false;
+};
+#endif
+
 namespace cs2bh
 {
     std::vector<BotPawnRef> ApplyBotFlagOverride();
     void RestoreBotFlagOverride(const std::vector<BotPawnRef> &pawns);
+#if defined(_WIN32)
+    ManagedControllerTrace TraceManagedController(void *controller);
+    bool SetJoinTeamFakeClientFlag(void *controller, bool enabled);
+#endif
 }
 
 class PackEntitiesDepthGuard
@@ -160,6 +182,32 @@ public:
 private:
     std::vector<BotPawnRef> m_ModifiedPawns;
 };
+
+#if defined(_WIN32)
+class ScopedJoinTeamFakeClientFlag
+{
+public:
+    // Temporarily restores only the controller bot bit needed by team validation.
+    ScopedJoinTeamFakeClientFlag(void *controller, bool enable)
+        : m_Controller(controller),
+          m_Applied(enable && cs2bh::SetJoinTeamFakeClientFlag(controller, true))
+    {
+    }
+
+    // Clear only the bit this scope added; do not publish a transient state change.
+    ~ScopedJoinTeamFakeClientFlag()
+    {
+        if (m_Applied && !cs2bh::SetJoinTeamFakeClientFlag(m_Controller, false))
+            META_CONPRINTF("[BOTHIDER] warning: failed to restore JoinTeam fake-client scope\n");
+    }
+
+    bool Applied() const { return m_Applied; }
+
+private:
+    void *m_Controller = nullptr;
+    bool m_Applied = false;
+};
+#endif
 
 // Passes entity packing through unchanged and logs the first calling thread
 #if defined(_WIN32)
@@ -227,6 +275,10 @@ static void ClearFunchookBindings()
     g_pfnPackEntitiesTramp = nullptr;
     g_pQuotaHookTarget = nullptr;
     g_pPackEntitiesHookTarget = nullptr;
+#if defined(_WIN32)
+    g_pfnHandleJoinTeamTramp = nullptr;
+    g_pHandleJoinTeamHookTarget = nullptr;
+#endif
     g_PreparedFunchookCount = 0;
     g_FunchooksInstalled = false;
 }
@@ -260,6 +312,11 @@ static void InstallPreparedFunchooks()
     if (g_pPackEntitiesHookTarget)
         META_CONPRINTF("[BOTHIDER] CNetworkGameServer::PackEntities hook installed at %p\n",
                        g_pPackEntitiesHookTarget);
+#if defined(_WIN32)
+    if (g_pHandleJoinTeamHookTarget)
+        META_CONPRINTF("[BOTHIDER] CCSPlayerController::HandleCommand_JoinTeam hook installed at %p\n",
+                       g_pHandleJoinTeamHookTarget);
+#endif
 }
 
 // Uninstalls all hooks before releasing their shared funchook handle
@@ -323,6 +380,29 @@ static int64_t Detour_MaintainBotQuota(void *mgr)
     cs2bh::FlipManagedController904(true, &flipped);
     return r;
 }
+
+#if defined(_WIN32)
+// Restore bot identity only while the engine validates an initial team join.
+static int64_t __fastcall Detour_HandleCommandJoinTeam(void *controller,
+                                                       unsigned int requestedTeam,
+                                                       bool unknownFlag)
+{
+    ManagedControllerTrace trace = cs2bh::TraceManagedController(controller);
+    const bool needsFakeClientScope = trace.Managed && !trace.Hltv &&
+                                      (trace.Flags & 0x100u) == 0;
+    ScopedJoinTeamFakeClientFlag fakeClientScope(controller, needsFakeClientScope);
+    if (fakeClientScope.Applied())
+    {
+        META_CONPRINTF(
+            "[BOTHIDER] HandleCommand_JoinTeam bot scope ctrl=%p slot=%d current=%u requested=%u\n",
+            controller, trace.Slot, trace.CurrentTeam, requestedTeam);
+    }
+
+    return g_pfnHandleJoinTeamTramp
+               ? g_pfnHandleJoinTeamTramp(controller, requestedTeam, unknownFlag)
+               : 0;
+}
+#endif
 
 namespace cs2bh
 {
@@ -536,6 +616,8 @@ namespace cs2bh
         targets::kClientListOffset = FindPlatformOffset(gamedata, "CNetworkGameServerBase::m_Clients", targets::kClientListOffset);
         // CBasePlayerController fakeclient flags
         targets::kController_FakeClientFlagsOffset = FindPlatformOffset(gamedata, "CBasePlayerController::FakeClientFlags", targets::kController_FakeClientFlagsOffset);
+        // CBaseEntity team number, used only for JoinTeam diagnostics
+        targets::kController_TeamOffset = FindPlatformOffset(gamedata, "CBaseEntity::m_iTeamNum", targets::kController_TeamOffset);
     }
 
     // Resolves and prepares the bot quota flip-around detour
@@ -562,6 +644,41 @@ namespace cs2bh
                             "CCSBotManager::MaintainBotQuota"))
             g_pQuotaHookTarget = target;
     }
+
+#if defined(_WIN32)
+    // Resolves the team-join validation path without changing persistent identity.
+    static void InstallHandleJoinTeamHook(const nlohmann::json &gamedata,
+                                          const sig::ModuleInfo &serverModule)
+    {
+        if (!serverModule)
+            return;
+
+        std::string sigString = sig::FindPlatformSig(
+            gamedata, "CCSPlayerController::HandleCommand_JoinTeam");
+        std::vector<uint8_t> bytes;
+        std::vector<bool> wild;
+        if (sigString.empty() || !sig::ParseSigString(sigString, bytes, wild))
+        {
+            META_CONPRINTF("[BOTHIDER] warning: HandleCommand_JoinTeam signature missing or malformed\n");
+            return;
+        }
+
+        std::vector<void *> matches = sig::FindPatternMatchesIn(serverModule, bytes, wild);
+        META_CONPRINTF("[BOTHIDER] CCSPlayerController::HandleCommand_JoinTeam signature matches=%zu\n",
+                       matches.size());
+        if (matches.size() != 1)
+        {
+            META_CONPRINTF("[BOTHIDER] warning: HandleCommand_JoinTeam hook requires exactly one match\n");
+            return;
+        }
+
+        void *target = matches.front();
+        if (PrepareFunchook(g_pfnHandleJoinTeamTramp, target,
+                            reinterpret_cast<void *>(&Detour_HandleCommandJoinTeam),
+                            "CCSPlayerController::HandleCommand_JoinTeam"))
+            g_pHandleJoinTeamHookTarget = target;
+    }
+#endif
 
     // Resolves and prepares the pass-through engine entity-packing detour
     static void InstallPackEntitiesHook(const nlohmann::json &gamedata)
@@ -699,6 +816,80 @@ namespace cs2bh
             return nullptr;
         return instance;
     }
+
+#if defined(_WIN32)
+    // Collect the managed-slot identity for the controller passed to JoinTeam.
+    ManagedControllerTrace TraceManagedController(void *controller)
+    {
+        ManagedControllerTrace trace;
+        if (!controller || targets::kController_FakeClientFlagsOffset < 0)
+            return trace;
+
+        __try
+        {
+            trace.Flags = *reinterpret_cast<uint32_t *>(
+                reinterpret_cast<unsigned char *>(controller) +
+                targets::kController_FakeClientFlagsOffset);
+            if (targets::kController_TeamOffset >= 0)
+            {
+                trace.CurrentTeam = *reinterpret_cast<unsigned char *>(
+                    reinterpret_cast<unsigned char *>(controller) +
+                    targets::kController_TeamOffset);
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return trace;
+        }
+
+        for (int idx = 0; idx < PersonaPool::kMaxSlots; ++idx)
+        {
+            if (!Manager().IsManaged(idx))
+                continue;
+            void *client = ResolveClientBySlot(idx);
+            if (!client)
+                continue;
+            int entityIndex = *reinterpret_cast<int *>(
+                reinterpret_cast<unsigned char *>(client) + ssc::OFFSET_m_nEntityIndex);
+            char className[64];
+            void *resolved = ResolveEntityInstance(entityIndex, className, sizeof(className));
+            if (resolved != controller || std::strcmp(className, "cs_player_controller") != 0)
+                continue;
+
+            trace.Slot = idx;
+            trace.Managed = true;
+            trace.Hltv = ssc::IsHltv(client);
+            break;
+        }
+        return trace;
+    }
+
+    // Toggle only the transient controller bit; never mark it for replication.
+    bool SetJoinTeamFakeClientFlag(void *controller, bool enabled)
+    {
+        if (!controller || targets::kController_FakeClientFlagsOffset < 0)
+            return false;
+        __try
+        {
+            auto *flags = reinterpret_cast<uint32_t *>(
+                reinterpret_cast<unsigned char *>(controller) +
+                targets::kController_FakeClientFlagsOffset);
+            if (enabled)
+            {
+                if ((*flags & 0x100u) != 0)
+                    return false;
+                *flags |= 0x100u;
+            }
+            else
+                *flags &= ~0x100u;
+            return true;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return false;
+        }
+    }
+#endif
 
     // Returns true when an entity is already entering its destruction path
     static bool IsEntityBeingDeleted(void *instance)
@@ -2131,6 +2322,11 @@ namespace cs2bh
                 // Install the bot-quota flip-around detour
                 InstallQuotaHook(gamedata, serverModule);
 
+#if defined(_WIN32)
+                // Restore managed-bot identity only during team validation.
+                InstallHandleJoinTeamHook(gamedata, serverModule);
+#endif
+
                 // Install the pass-through engine entity-packing detour
                 InstallPackEntitiesHook(gamedata);
             }
@@ -2201,6 +2397,9 @@ namespace cs2bh
             Publisher().PublishSignature("UTIL_Remove", reinterpret_cast<void *>(g_pfnUtilRemove));
             Publisher().PublishSignature("MaintainBotQuota", g_pQuotaHookTarget);
             Publisher().PublishSignature("PackEntities", g_pPackEntitiesHookTarget);
+#if defined(_WIN32)
+            Publisher().PublishSignature("HandleJoinTeam", g_pHandleJoinTeamHookTarget);
+#endif
         }
         else
         {

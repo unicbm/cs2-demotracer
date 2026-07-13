@@ -48,6 +48,7 @@ namespace cs2bh::targets
     inline constexpr int kController_PlayerNameOffset = 1780;
 
     inline int kController_FakeClientFlagsOffset = 904; // 0x388
+    inline int kController_TeamOffset = 836;
 
     // CBaseEntity::m_fFlags network field
     inline constexpr int kBaseEntity_FlagsOffset = 0x388;

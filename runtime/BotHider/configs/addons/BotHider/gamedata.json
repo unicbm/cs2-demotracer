@@ -16,6 +16,14 @@
     },
     "comment": "runs the bot quota pass"
   },
+  "CCSPlayerController::HandleCommand_JoinTeam": {
+    "signatures": {
+      "library": "server",
+      "windows": "48 89 5C 24 ? 44 88 44 24 ? 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ? 48 81 EC ? ? ? ? 48 8B 3D",
+      "linux": ""
+    },
+    "comment": "handles player team join requests"
+  },
   "CNetworkGameServer::PackEntities": {
     "signatures": {
       "library": "engine2",
@@ -37,6 +45,13 @@
       "linux": 904
     },
     "comment": "controller fakeclient flags"
+  },
+  "CBaseEntity::m_iTeamNum": {
+    "offsets": {
+      "windows": 836,
+      "linux": -1
+    },
+    "comment": "reads the current controller team"
   },
   "CServerSideClient::m_UserIDString": {
     "offsets": {
