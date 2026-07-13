@@ -485,8 +485,8 @@ flag 之外又加了 `--export-stickers` 生成时，它才会生效。
 `crosshair_code` 导出的 manifest `view.crosshair_code`。bundle 内置 BotHider 是唯一 writer，
 通过 `CCSPlayerController.m_szCrosshairCodes` 和服务器 state replication 发布。只有 replay
 unload/替换、断线、换图、slot 重用或 reload 才按精确 token 恢复 provider 当前 persona
-基础值；死亡、接触或 C4 handoff 只释放 replay 控制，不释放 presentation。这条路径不会
-写真人客户端配置，也不会调用旧的 `client.dll` HUD hook。
+基础值；死亡、接触或 C4 handoff 只释放 replay 控制，不释放 presentation。这条路径完全
+由服务器发布，不写真人客户端配置，也不需要向客户端注入代码。
 
 ### `dtr_left_hand_desired <0|1>`
 

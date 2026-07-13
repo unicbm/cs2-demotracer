@@ -29,7 +29,6 @@
 #include "sig_scan.h"
 #include "platform.h"
 #include "version_targets.h"
-#include "hud_reticle_probe.h"
 
 class BotControllerPlugin : public ISmmPlugin
 {
@@ -161,7 +160,6 @@ bool BotControllerPlugin::Load(PluginId id, ISmmAPI *ismm,
 
     // offsets first (hooks/detours read tg::k* at runtime)
     BotController::targets::LoadFromGamedata(gd);
-    BotController::HudReticleProbe::LoadFromGamedata(gd);
 
     if (!BotController::WeaponLockerHooks::Install(gd, serverModule, error, maxlen))
         return false;
@@ -203,7 +201,6 @@ bool BotControllerPlugin::Load(PluginId id, ISmmAPI *ismm,
 bool BotControllerPlugin::Unload(char * /*error*/, size_t /*maxlen*/)
 {
     BotController::MotionRecorder::ClearAll();
-    BotController::HudReticleProbe::Remove();
     BotController::InputInjector::Remove();
     BotController::BuyControllerHooks::Remove();
     BotController::BuyControllerState::ClearAll();

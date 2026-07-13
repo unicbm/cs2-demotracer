@@ -1,12 +1,4 @@
 {
-  "CCSGO_HudReticle::BuildPaintConfig": {
-    "signatures": {
-      "library": "client",
-      "windows": "48 89 5C 24 18 55 56 57 48 83 EC 30 48 8B DA 48 8B F1 48 8B D1 49 8B F8 49 8D 48 14 E8 ? ? ? ? 84 C0 75 ? 48 8D 4F 14 E8",
-      "linux": ""
-    },
-    "comment": "Builds the final player/weapon-aware HUD crosshair paint config. Windows signature verified against client.dll 2026-07-10."
-  },
   "CCSBot::EquipBestWeapon": {
     "signatures": {
       "library": "server",

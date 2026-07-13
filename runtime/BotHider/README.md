@@ -33,7 +33,7 @@ replacement, disconnect, map change, or provider loss end presentation.
 
 Crosshair publication uses
 `CCSPlayerController.m_szCrosshairCodes` plus CounterStrikeSharp state-change
-replication. DemoTracer's legacy `client.dll` HUD hook is not used by this path.
+replication. The path is server-only and requires no client-side injection.
 
 ## Runtime commands
 

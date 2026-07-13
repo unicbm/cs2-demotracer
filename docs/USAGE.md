@@ -185,5 +185,6 @@ Crosshair alignment is off by default. If explicitly enabled with
 only writer and publishes it through the controller's server-replicated
 crosshair field. Handoff releases playback control without changing the loaded
 replay's presentation. Exact lease release restores the current persona base
-on unload/replacement, disconnect, map change, or reload; no human client
-configuration or `client.dll` HUD hook is used.
+on unload/replacement, disconnect, map change, or reload. The path is fully
+server-published and neither changes human client configuration nor injects
+client-side code.

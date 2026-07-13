@@ -550,8 +550,8 @@ Missing or contradictory demo evidence is skipped. Exact token release restores
 the provider's current persona base on replay unload/replacement, disconnect,
 map change, slot reuse, or reload. A death/contact/C4 handoff releases replay
 control only; presentation stays bound to the loaded replay assignment. The
-path does not write human client configuration or invoke the legacy
-`client.dll` HUD hook.
+path is fully server-published and does not write human client configuration
+or require client-side code injection.
 
 ### `dtr_left_hand_desired <0|1>`
 
