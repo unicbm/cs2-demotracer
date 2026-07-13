@@ -557,9 +557,10 @@ active replay slots。
 
 接触检测实现：
 
-- 使用 bullet damage / player hurt 事件，以及 replay bot 原生的 `m_enemy`、
-  `m_isEnemyVisible`、`m_nearbyEnemyCount` 状态。只有旧 BotController 不提供原生
-  感知接口时，才回退到 managed spotted / RayTrace 检测器。
+- 使用 bullet damage / player hurt 事件，以及 replay bot 当前原生
+  `m_visibleEnemyParts` 掩码。记忆中的 `m_enemy` handle 和 nearby-enemy 计数不再
+  直接视为 LOS contact。只有旧 BotController 不提供原生感知接口时，才回退到
+  managed spotted / RayTrace 检测器。
 - replay 期间仍会让原生 bot update 和 upkeep 在后台持续运行，同时保持录制的
   input、movement 和 view 为最终输出。contact handoff 会释放 replay control，但不再
   清空已累积的原生感知与决策状态。handoff 后的开火仍交给正常 CS2 bot AI；

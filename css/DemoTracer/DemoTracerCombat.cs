@@ -255,24 +255,14 @@ public sealed partial class DemoTracerPlugin
         if (!BotControllerNative.TryGetNativePerceptionState(slot, out var state))
             return true;
 
-        if (state.EnemyVisible != 0)
+        // Enemy/nearby handles are native memory and proximity state, not
+        // proof of current line of sight. VisibleEnemyParts is populated only
+        // by the current native visibility pass and remains valid for 360 FOV.
+        if (state.VisibleEnemyParts != 0)
         {
             contact = true;
             contactReason = $"native_visible_parts{state.VisibleEnemyParts}";
             return true;
-        }
-
-        if (state.NearbyEnemyCount > 0)
-        {
-            contact = true;
-            contactReason = $"native_nearby{state.NearbyEnemyCount}";
-            return true;
-        }
-
-        if (state.HasEnemy != 0 && state.LastEnemyDead == 0)
-        {
-            contact = true;
-            contactReason = $"native_enemy_{state.EnemyHandle:X8}";
         }
         return true;
     }

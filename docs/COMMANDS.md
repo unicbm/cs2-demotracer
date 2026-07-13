@@ -636,8 +636,9 @@ all active replay slots even when scope is `slot`.
 
 Contact implementation:
 
-- Uses bullet damage/hurt events plus the replay bot's native `m_enemy`,
-  `m_isEnemyVisible`, and `m_nearbyEnemyCount` state. When native perception is
+- Uses bullet damage/hurt events plus the replay bot's current native
+  `m_visibleEnemyParts` mask. Remembered `m_enemy` handles and nearby-enemy
+  counts are not treated as line-of-sight contact. When native perception is
   unavailable on an older BotController, the managed spotted/RayTrace detector
   remains as a compatibility fallback.
 - During replay, native bot update and upkeep continue in the background while
