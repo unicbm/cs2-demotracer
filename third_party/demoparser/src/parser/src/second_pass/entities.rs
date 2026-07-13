@@ -26,6 +26,7 @@ pub struct Entity {
     pub entity_id: i32,
     pub props: AHashMap<u32, Variant>,
     pub entity_type: EntityType,
+    pub revision: u64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -79,6 +80,7 @@ impl<'a> SecondPassParser<'a> {
                 EntityCmd::Delete => {
                     self.projectiles.remove(&entity_id);
                     self.projectile_record_indices.remove(&entity_id);
+                    self.weapon_cosmetic_cache.get_mut().remove(&entity_id);
                     if let Some(entry) = self.entities.get_mut(entity_id as usize) {
                         *entry = None;
                     }
@@ -307,6 +309,7 @@ impl<'a> SecondPassParser<'a> {
         if let Some(fi) = field_info {
             if fi.should_parse {
                 entity.props.insert(fi.prop_id, result);
+                entity.revision = entity.revision.wrapping_add(1);
             }
         }
     }
@@ -354,7 +357,9 @@ impl<'a> SecondPassParser<'a> {
             cls_id,
             props: AHashMap::with_capacity(0),
             entity_type,
+            revision: 0,
         };
+        self.weapon_cosmetic_cache.get_mut().remove(entity_id);
         if self.entities.len() as i32 <= *entity_id {
             // if corrupt, this can cause oom allocations
             if *entity_id > 100000 {

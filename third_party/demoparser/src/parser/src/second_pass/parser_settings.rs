@@ -13,13 +13,14 @@ use crate::second_pass::game_events::GameEvent;
 use crate::second_pass::other_netmessages::Class;
 use crate::second_pass::parser::SecondPassOutput;
 use crate::second_pass::path_ops::FieldPath;
-use crate::second_pass::variants::PropColumn;
+use crate::second_pass::variants::{InventoryWeaponCosmetic, PropColumn};
 use ahash::AHashMap;
 use ahash::AHashSet;
 use ahash::HashMap;
 use ahash::RandomState;
 use csgoproto::csvc_msg_game_event_list::DescriptorT;
 use csgoproto::CsvcMsgVoiceData;
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::env;
@@ -41,6 +42,8 @@ pub struct SecondPassParser<'a> {
     pub serializers: AHashMap<String, Serializer, RandomState>,
     pub cls_bits: Option<u32>,
     pub entities: Vec<Option<Entity>>,
+    pub weapon_cosmetic_cache:
+        RefCell<AHashMap<i32, (u64, Option<InventoryWeaponCosmetic>)>>,
     pub tick: i32,
     pub players: BTreeMap<i32, PlayerMetaData>,
     pub teams: Teams,
@@ -207,6 +210,7 @@ impl<'a> SecondPassParser<'a> {
             ge_list: first_pass_output.ge_list,
             cls_by_id: &first_pass_output.cls_by_id,
             entities: vec![None; DEFAULT_MAX_ENTITY_ID],
+            weapon_cosmetic_cache: RefCell::new(AHashMap::default()),
             cls_bits: None,
             tick: -99999,
             players: BTreeMap::default(),

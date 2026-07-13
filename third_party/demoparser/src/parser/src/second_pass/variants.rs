@@ -181,11 +181,12 @@ impl PropColumn {
             None => self.num_nones,
         }
     }
+    /// Appends `other` in row order, draining same-typed vector storage when possible.
     pub fn extend_from(&mut self, other: &mut PropColumn) {
         match &mut self.data {
-            Some(VarVec::Bool(v)) => match &other.data {
+            Some(VarVec::Bool(v)) => match &mut other.data {
                 Some(VarVec::Bool(v_other)) => {
-                    v.extend_from_slice(&v_other);
+                    v.append(v_other);
                 }
                 None => {
                     for _ in 0..other.num_nones {
@@ -194,9 +195,9 @@ impl PropColumn {
                 }
                 _ => {}
             },
-            Some(VarVec::I32(v)) => match &other.data {
+            Some(VarVec::I32(v)) => match &mut other.data {
                 Some(VarVec::I32(v_other)) => {
-                    v.extend_from_slice(&v_other);
+                    v.append(v_other);
                 }
                 None => {
                     for _ in 0..other.num_nones {
@@ -205,9 +206,9 @@ impl PropColumn {
                 }
                 _ => {}
             },
-            Some(VarVec::F32(v)) => match &other.data {
+            Some(VarVec::F32(v)) => match &mut other.data {
                 Some(VarVec::F32(v_other)) => {
-                    v.extend_from_slice(&v_other);
+                    v.append(v_other);
                 }
                 None => {
                     for _ in 0..other.num_nones {
@@ -216,9 +217,9 @@ impl PropColumn {
                 }
                 _ => {}
             },
-            Some(VarVec::String(v)) => match &other.data {
+            Some(VarVec::String(v)) => match &mut other.data {
                 Some(VarVec::String(v_other)) => {
-                    v.extend_from_slice(&v_other);
+                    v.append(v_other);
                 }
                 None => {
                     for _ in 0..other.num_nones {
@@ -227,9 +228,9 @@ impl PropColumn {
                 }
                 _ => {}
             },
-            Some(VarVec::U32(v)) => match &other.data {
+            Some(VarVec::U32(v)) => match &mut other.data {
                 Some(VarVec::U32(v_other)) => {
-                    v.extend_from_slice(&v_other);
+                    v.append(v_other);
                 }
                 None => {
                     for _ in 0..other.num_nones {
@@ -238,9 +239,9 @@ impl PropColumn {
                 }
                 _ => {}
             },
-            Some(VarVec::U64(v)) => match &other.data {
+            Some(VarVec::U64(v)) => match &mut other.data {
                 Some(VarVec::U64(v_other)) => {
-                    v.extend_from_slice(&v_other);
+                    v.append(v_other);
                 }
                 None => {
                     for _ in 0..other.num_nones {
@@ -249,9 +250,9 @@ impl PropColumn {
                 }
                 _ => {}
             },
-            Some(VarVec::StringVec(v)) => match &other.data {
+            Some(VarVec::StringVec(v)) => match &mut other.data {
                 Some(VarVec::StringVec(v_other)) => {
-                    v.extend_from_slice(&v_other);
+                    v.append(v_other);
                 }
                 None => {
                     for _ in 0..other.num_nones {
@@ -260,9 +261,9 @@ impl PropColumn {
                 }
                 _ => {}
             },
-            Some(VarVec::U64Vec(v)) => match &other.data {
+            Some(VarVec::U64Vec(v)) => match &mut other.data {
                 Some(VarVec::U64Vec(v_other)) => {
-                    v.extend_from_slice(&v_other);
+                    v.append(v_other);
                 }
                 None => {
                     for _ in 0..other.num_nones {
@@ -271,9 +272,9 @@ impl PropColumn {
                 }
                 _ => {}
             },
-            Some(VarVec::XYVec(v)) => match &other.data {
+            Some(VarVec::XYVec(v)) => match &mut other.data {
                 Some(VarVec::XYVec(v_other)) => {
-                    v.extend_from_slice(&v_other);
+                    v.append(v_other);
                 }
                 None => {
                     for _ in 0..other.num_nones {
@@ -282,9 +283,9 @@ impl PropColumn {
                 }
                 _ => {}
             },
-            Some(VarVec::XYZVec(v)) => match &other.data {
+            Some(VarVec::XYZVec(v)) => match &mut other.data {
                 Some(VarVec::XYZVec(v_other)) => {
-                    v.extend_from_slice(&v_other);
+                    v.append(v_other);
                 }
                 None => {
                     for _ in 0..other.num_nones {
@@ -293,9 +294,9 @@ impl PropColumn {
                 }
                 _ => {}
             },
-            Some(VarVec::Stickers(v)) => match &other.data {
+            Some(VarVec::Stickers(v)) => match &mut other.data {
                 Some(VarVec::Stickers(v_other)) => {
-                    v.extend_from_slice(&v_other);
+                    v.append(v_other);
                 }
                 None => {
                     for _ in 0..other.num_nones {
@@ -304,9 +305,9 @@ impl PropColumn {
                 }
                 _ => {}
             },
-            Some(VarVec::InventoryWeaponCosmetics(v)) => match &other.data {
+            Some(VarVec::InventoryWeaponCosmetics(v)) => match &mut other.data {
                 Some(VarVec::InventoryWeaponCosmetics(v_other)) => {
-                    v.extend_from_slice(&v_other);
+                    v.append(v_other);
                 }
                 None => {
                     for _ in 0..other.num_nones {
@@ -315,9 +316,9 @@ impl PropColumn {
                 }
                 _ => {}
             },
-            Some(VarVec::InputHistory(v)) => match &other.data {
+            Some(VarVec::InputHistory(v)) => match &mut other.data {
                 Some(VarVec::InputHistory(v_other)) => {
-                    v.extend_from_slice(&v_other);
+                    v.append(v_other);
                 }
                 None => {
                     for _ in 0..other.num_nones {
@@ -326,9 +327,9 @@ impl PropColumn {
                 }
                 _ => {}
             },
-            Some(VarVec::UserCmdSubtickMoves(v)) => match &other.data {
+            Some(VarVec::UserCmdSubtickMoves(v)) => match &mut other.data {
                 Some(VarVec::UserCmdSubtickMoves(v_other)) => {
-                    v.extend_from_slice(&v_other);
+                    v.append(v_other);
                 }
                 None => {
                     for _ in 0..other.num_nones {
@@ -337,9 +338,9 @@ impl PropColumn {
                 }
                 _ => {}
             },
-            Some(VarVec::U32Vec(v)) => match &other.data {
+            Some(VarVec::U32Vec(v)) => match &mut other.data {
                 Some(VarVec::U32Vec(v_other)) => {
-                    v.extend_from_slice(&v_other);
+                    v.append(v_other);
                 }
                 None => {
                     for _ in 0..other.num_nones {
@@ -914,5 +915,52 @@ impl Serialize for OutputSerdeHelperStruct {
             }
         }
         map.end()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{InventoryWeaponCosmetic, PropColumn, VarVec};
+
+    #[test]
+    fn extend_from_moves_nested_cosmetics_after_leading_nones() {
+        let weapon = InventoryWeaponCosmetic {
+            item_def_index: 7,
+            item_id_high: Some(1),
+            item_id_low: Some(2),
+            item_account_id: Some(3),
+            original_owner_xuid: Some(4),
+            paint_kit: 5,
+            paint_seed: 6,
+            paint_wear: 0.125,
+            entity_quality: Some(7),
+            stattrak_counter: Some(8),
+            attributes: Vec::new(),
+            custom_name: Some("kept".to_string()),
+            stickers: Vec::new(),
+        };
+        let mut destination = PropColumn {
+            data: None,
+            num_nones: 2,
+        };
+        let mut source = PropColumn {
+            data: Some(VarVec::InventoryWeaponCosmetics(vec![vec![weapon.clone()]])),
+            num_nones: 0,
+        };
+
+        destination.extend_from(&mut source);
+
+        assert_eq!(
+            destination.data,
+            Some(VarVec::InventoryWeaponCosmetics(vec![
+                Vec::new(),
+                Vec::new(),
+                vec![weapon],
+            ]))
+        );
+        assert_eq!(
+            source.data,
+            Some(VarVec::InventoryWeaponCosmetics(Vec::new()))
+        );
     }
 }

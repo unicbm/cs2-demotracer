@@ -1196,92 +1196,131 @@ impl<'a> SecondPassParser<'a> {
             }
             unique_eids.push(eid);
 
-            let Some(item_def_id) = &self.prop_controller.special_ids.item_def else {
-                continue;
-            };
-            let item_def_index = match self.get_prop_from_ent(item_def_id, &eid) {
-                Ok(Variant::U32(def)) => def,
-                Ok(Variant::I32(def)) if def >= 0 => def as u32,
-                _ => continue,
-            };
-            let item_id_high = self.weapon_prop_u32(self.prop_controller.special_ids.item_id_high, &eid);
-            let item_id_low = self.weapon_prop_u32(self.prop_controller.special_ids.item_id_low, &eid);
-            let item_account_id =
-                self.weapon_prop_u32(self.prop_controller.special_ids.item_account_id, &eid);
-            let original_owner_xuid = self.weapon_original_owner_from_eid(&eid);
-
-            let paint_kit = match self.find_weapon_skin_id(&eid) {
-                Ok(Variant::U32(value)) => value,
-                _ => 0,
-            };
-            let paint_seed = match self.get_prop_from_ent(&WEAPON_PAINT_SEED, &eid) {
-                Ok(Variant::F32(value)) if value.is_finite() && value >= 0.0 => value as u32,
-                Ok(Variant::U32(value)) => value,
-                _ => 0,
-            };
-            let paint_wear = match self.get_prop_from_ent(&WEAPON_FLOAT, &eid) {
-                Ok(Variant::F32(value)) => value,
-                _ => -1.0,
-            };
-            let entity_quality = self
-                .prop_controller
-                .special_ids
-                .entity_quality
-                .and_then(|quality_id| match self.get_prop_from_ent(&quality_id, &eid) {
-                    Ok(Variant::I32(value)) => Some(value),
-                    Ok(Variant::U32(value)) => i32::try_from(value).ok(),
-                    Ok(Variant::F32(value)) if value.is_finite() && value.fract() == 0.0 => {
-                        Some(value as i32)
-                    }
-                    _ => None,
-                });
-            let stattrak_counter = self
-                .prop_controller
-                .special_ids
-                .fallback_stattrak
-                .and_then(|stattrak_id| match self.get_prop_from_ent(&stattrak_id, &eid) {
-                    Ok(Variant::I32(value)) => Some(value),
-                    Ok(Variant::U32(value)) => i32::try_from(value).ok(),
-                    Ok(Variant::F32(value)) if value.is_finite() && value.fract() == 0.0 => {
-                        Some(value as i32)
-                    }
-                    _ => None,
-                });
-            let attributes = self.find_weapon_econ_attributes(&eid);
-            let custom_name = self
-                .prop_controller
-                .special_ids
-                .custom_name
-                .and_then(|custom_name_id| match self.get_prop_from_ent(&custom_name_id, &eid) {
-                    Ok(Variant::String(value)) => Some(value),
-                    _ => None,
-                });
-            let stickers = match self.find_stickers(&eid) {
-                Ok(Variant::Stickers(stickers)) => stickers,
-                _ => Vec::new(),
-            };
-
-            cosmetics.push(InventoryWeaponCosmetic {
-                item_def_index,
-                item_id_high,
-                item_id_low,
-                item_account_id,
-                original_owner_xuid,
-                paint_kit,
-                paint_seed,
-                paint_wear,
-                entity_quality,
-                stattrak_counter,
-                attributes,
-                custom_name,
-                stickers,
-            });
+            if let Some(cosmetic) = self.cached_weapon_cosmetic(&eid) {
+                cosmetics.push(cosmetic);
+            }
         }
         Ok(Variant::InventoryWeaponCosmetics(cosmetics))
     }
 
-    fn find_weapon_econ_attributes(&self, weapon_entity_id: &i32) -> Vec<InventoryWeaponAttribute> {
+    fn cached_weapon_cosmetic(&self, weapon_entity_id: &i32) -> Option<InventoryWeaponCosmetic> {
+        let revision = self
+            .entities
+            .get(*weapon_entity_id as usize)?
+            .as_ref()?
+            .revision;
+        {
+            let cache = self.weapon_cosmetic_cache.borrow();
+            if let Some((cached_revision, cached)) = cache.get(weapon_entity_id) {
+                if *cached_revision == revision {
+                    return cached.clone();
+                }
+            }
+        }
+
+        let cosmetic = self.collect_weapon_cosmetic(weapon_entity_id);
+        self.weapon_cosmetic_cache
+            .borrow_mut()
+            .insert(*weapon_entity_id, (revision, cosmetic.clone()));
+        cosmetic
+    }
+
+    fn collect_weapon_cosmetic(
+        &self,
+        weapon_entity_id: &i32,
+    ) -> Option<InventoryWeaponCosmetic> {
+        let item_def_id = self.prop_controller.special_ids.item_def?;
+        let item_def_index = match self.get_prop_from_ent(&item_def_id, weapon_entity_id) {
+            Ok(Variant::U32(def)) => def,
+            Ok(Variant::I32(def)) if def >= 0 => def as u32,
+            _ => return None,
+        };
+        let item_id_high = self.weapon_prop_u32(
+            self.prop_controller.special_ids.item_id_high,
+            weapon_entity_id,
+        );
+        let item_id_low = self.weapon_prop_u32(
+            self.prop_controller.special_ids.item_id_low,
+            weapon_entity_id,
+        );
+        let item_account_id = self.weapon_prop_u32(
+            self.prop_controller.special_ids.item_account_id,
+            weapon_entity_id,
+        );
+        let original_owner_xuid = self.weapon_original_owner_from_eid(weapon_entity_id);
+
+        let paint_kit = match self.find_weapon_skin_id(weapon_entity_id) {
+            Ok(Variant::U32(value)) => value,
+            _ => 0,
+        };
+        let paint_seed = match self.get_prop_from_ent(&WEAPON_PAINT_SEED, weapon_entity_id) {
+            Ok(Variant::F32(value)) if value.is_finite() && value >= 0.0 => value as u32,
+            Ok(Variant::U32(value)) => value,
+            _ => 0,
+        };
+        let paint_wear = match self.get_prop_from_ent(&WEAPON_FLOAT, weapon_entity_id) {
+            Ok(Variant::F32(value)) => value,
+            _ => -1.0,
+        };
+        let entity_quality = self
+            .prop_controller
+            .special_ids
+            .entity_quality
+            .and_then(|quality_id| match self.get_prop_from_ent(&quality_id, weapon_entity_id) {
+                Ok(Variant::I32(value)) => Some(value),
+                Ok(Variant::U32(value)) => i32::try_from(value).ok(),
+                Ok(Variant::F32(value)) if value.is_finite() && value.fract() == 0.0 => {
+                    Some(value as i32)
+                }
+                _ => None,
+            });
+        let stattrak_counter = self
+            .prop_controller
+            .special_ids
+            .fallback_stattrak
+            .and_then(|stattrak_id| match self.get_prop_from_ent(&stattrak_id, weapon_entity_id) {
+                Ok(Variant::I32(value)) => Some(value),
+                Ok(Variant::U32(value)) => i32::try_from(value).ok(),
+                Ok(Variant::F32(value)) if value.is_finite() && value.fract() == 0.0 => {
+                    Some(value as i32)
+                }
+                _ => None,
+            });
+        let (attributes, stickers) =
+            self.find_weapon_econ_attributes_and_stickers(weapon_entity_id);
+        let custom_name = self
+            .prop_controller
+            .special_ids
+            .custom_name
+            .and_then(|custom_name_id| {
+                match self.get_prop_from_ent(&custom_name_id, weapon_entity_id) {
+                    Ok(Variant::String(value)) => Some(value),
+                    _ => None,
+                }
+            });
+        Some(InventoryWeaponCosmetic {
+            item_def_index,
+            item_id_high,
+            item_id_low,
+            item_account_id,
+            original_owner_xuid,
+            paint_kit,
+            paint_seed,
+            paint_wear,
+            entity_quality,
+            stattrak_counter,
+            attributes,
+            custom_name,
+            stickers,
+        })
+    }
+
+    fn find_weapon_econ_attributes_and_stickers(
+        &self,
+        weapon_entity_id: &i32,
+    ) -> (Vec<InventoryWeaponAttribute>, Vec<Sticker>) {
         let mut attributes = Vec::new();
+        let mut sticker_attributes = Vec::new();
         for idx in 0..64 {
             let Ok(Variant::U32(definition_index)) =
                 self.get_prop_from_ent(&(WEAPON_ATTRIBUTE_DEF_INDEX_ID + idx), weapon_entity_id)
@@ -1292,6 +1331,12 @@ impl<'a> SecondPassParser<'a> {
             else {
                 continue;
             };
+            if let Variant::F32(raw_value) = &raw_value {
+                sticker_attributes.push(StickerAttribute {
+                    definition_index,
+                    raw_value: *raw_value,
+                });
+            }
             let Some((raw_value, raw_value_bits)) = econ_attribute_raw_value(raw_value) else {
                 continue;
             };
@@ -1301,7 +1346,7 @@ impl<'a> SecondPassParser<'a> {
                 raw_value_bits,
             });
         }
-        attributes
+        (attributes, stickers_from_attributes(sticker_attributes))
     }
 
     pub fn find_my_inventory_as_bitmask(&self, entity_id: &i32) -> Result<Variant, PropCollectionError> {

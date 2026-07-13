@@ -227,9 +227,27 @@ mod demoparser_impl {
             fallback_bytes: None,
         };
         let mut parser = Parser::new(settings, ParsingMode::Normal);
-        let output = parser
+        let mut output = parser
             .parse_demo(bytes)
             .map_err(|e| Error::Parser(format!("{e:?}")))?;
+
+        // These nested columns are already owned by the parser output. Take them out so row
+        // materialization can move their vectors and strings instead of deep-cloning every tick.
+        let inventory_weapon_cosmetics_id = output
+            .prop_controller
+            .prop_infos
+            .iter()
+            .find(|info| info.prop_friendly_name == "inventory_weapon_cosmetics")
+            .map(|info| info.id);
+        let weapon_stickers_id = output
+            .prop_controller
+            .prop_infos
+            .iter()
+            .find(|info| info.prop_friendly_name == "weapon_stickers")
+            .map(|info| info.id);
+        let mut inventory_weapon_cosmetics_column =
+            inventory_weapon_cosmetics_id.and_then(|id| output.df.remove(&id));
+        let mut weapon_stickers_column = weapon_stickers_id.and_then(|id| output.df.remove(&id));
 
         let header = output.header.unwrap_or_default();
         let map = header
@@ -302,9 +320,8 @@ mod demoparser_impl {
                     .into_iter()
                     .map(|v| v as i32)
                     .collect(),
-                inventory_weapon_cosmetics: get_inventory_weapon_cosmetics(
-                    &columns,
-                    "inventory_weapon_cosmetics",
+                inventory_weapon_cosmetics: take_inventory_weapon_cosmetics(
+                    &mut inventory_weapon_cosmetics_column,
                     idx,
                 )
                 .unwrap_or_default(),
@@ -336,7 +353,7 @@ mod demoparser_impl {
                 .filter(|value| *value != 0),
                 active_weapon_custom_name: get_string(&columns, "custom_name", idx)
                     .and_then(normalize_custom_name),
-                active_weapon_stickers: get_weapon_stickers(&columns, "weapon_stickers", idx)
+                active_weapon_stickers: take_weapon_stickers(&mut weapon_stickers_column, idx)
                     .unwrap_or_default(),
                 glove_item_def_index: get_i32(&columns, "glove_item_idx", idx),
                 glove_paint_kit: get_u32(&columns, "glove_paint_id", idx),
@@ -1329,17 +1346,16 @@ mod demoparser_impl {
         }
     }
 
-    fn get_weapon_stickers(
-        columns: &AHashMap<String, &PropColumn>,
-        name: &str,
+    fn take_weapon_stickers(
+        column: &mut Option<PropColumn>,
         idx: usize,
     ) -> Option<Vec<ParsedWeaponSticker>> {
-        let stickers = match columns.get(name)?.data.as_ref()? {
-            VarVec::Stickers(v) => v.get(idx)?,
+        let stickers = match column.as_mut()?.data.as_mut()? {
+            VarVec::Stickers(v) => std::mem::take(v.get_mut(idx)?),
             _ => return None,
         };
         let parsed = stickers
-            .iter()
+            .into_iter()
             .filter_map(|sticker| {
                 let slot = u8::try_from(sticker.slot).ok()?;
                 if slot > 4
@@ -1367,22 +1383,21 @@ mod demoparser_impl {
         (!parsed.is_empty()).then_some(parsed)
     }
 
-    fn get_inventory_weapon_cosmetics(
-        columns: &AHashMap<String, &PropColumn>,
-        name: &str,
+    fn take_inventory_weapon_cosmetics(
+        column: &mut Option<PropColumn>,
         idx: usize,
     ) -> Option<Vec<ParsedInventoryWeaponCosmetic>> {
-        let weapons = match columns.get(name)?.data.as_ref()? {
-            VarVec::InventoryWeaponCosmetics(v) => v.get(idx)?,
+        let weapons = match column.as_mut()?.data.as_mut()? {
+            VarVec::InventoryWeaponCosmetics(v) => std::mem::take(v.get_mut(idx)?),
             _ => return None,
         };
         let parsed = weapons
-            .iter()
+            .into_iter()
             .filter_map(|weapon| {
                 let item_def_index = i32::try_from(weapon.item_def_index).ok()?;
                 let stickers = weapon
                     .stickers
-                    .iter()
+                    .into_iter()
                     .filter_map(|sticker| {
                         let slot = u8::try_from(sticker.slot).ok()?;
                         if slot > 4
@@ -1420,14 +1435,14 @@ mod demoparser_impl {
                     stattrak_counter: weapon.stattrak_counter,
                     attributes: weapon
                         .attributes
-                        .iter()
+                        .into_iter()
                         .map(|attribute| ParsedInventoryWeaponAttribute {
                             definition_index: attribute.definition_index,
                             raw_value: attribute.raw_value,
                             raw_value_bits: attribute.raw_value_bits,
                         })
                         .collect(),
-                    custom_name: weapon.custom_name.clone().and_then(normalize_custom_name),
+                    custom_name: weapon.custom_name.and_then(normalize_custom_name),
                     stickers,
                 })
             })

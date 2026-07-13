@@ -232,6 +232,11 @@ fn export_demo_to_memory_inner(
         "demo={} id={} sha256={} map={} tick_rate={:.3}",
         parsed.path, output_stem, parsed.demo_sha256, parsed.map, parsed.tick_rate
     ));
+    let econ_gloves = if options.export_cosmetics {
+        glove_econ_cosmetics_by_player(parsed)
+    } else {
+        BTreeMap::new()
+    };
 
     for round in &analysis.rounds {
         if let Some(reason) = round_skip_reason(round, options) {
@@ -307,11 +312,6 @@ fn export_demo_to_memory_inner(
             },
         );
         let cosmetic_players = cosmetic_rows_by_player(round_rows, end_tick, options.side);
-        let econ_gloves = if options.export_cosmetics {
-            glove_econ_cosmetics_by_player(parsed)
-        } else {
-            BTreeMap::new()
-        };
 
         for (steam_id, mut player_rows) in players {
             player_rows.sort_by_key(|row| row.tick);
