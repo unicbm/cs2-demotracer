@@ -717,12 +717,21 @@ namespace BotController
 
         static void EnsureVtableHooks(void *services)
         {
-            if (g_vtHooksTried.exchange(true, std::memory_order_acq_rel))
+            // Once installed, this runs on every ProcessMovement call. Keep
+            // the steady-state path read-only instead of issuing a cache-line
+            // RMW, while retaining a one-winner lazy installation.
+            if (g_vtHooksTried.load(std::memory_order_acquire))
                 return;
             if (!services)
                 return;
             void **vt = *reinterpret_cast<void ***>(services);
             if (!vt)
+                return;
+            bool expected = false;
+            if (!g_vtHooksTried.compare_exchange_strong(
+                    expected, true,
+                    std::memory_order_acq_rel,
+                    std::memory_order_acquire))
                 return;
 
             g_addrFinishMove = vt[tg::kVtIdx_FinishMove];

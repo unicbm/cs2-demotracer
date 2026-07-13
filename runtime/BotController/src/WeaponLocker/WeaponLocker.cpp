@@ -17,6 +17,8 @@
 
 #include <cstdio>
 #include <cstdarg>
+#include <array>
+#include <atomic>
 #include <vector>
 #include <mutex>
 #include <unordered_map>
@@ -56,8 +58,9 @@ namespace BotController
             void *pawn;
         };
         static std::unordered_map<void *, WsBinding> g_wsToBinding;
-        // Inverse: slot -> WeaponServices*
-        static void *g_slotToWs[64] = {nullptr};
+        // Inverse: slot -> WeaponServices*. Replay reads this every usercmd,
+        // so keep it lock-free while the forward map remains mutex-guarded.
+        static std::array<std::atomic<void *>, 64> g_slotToWs{};
         static std::mutex g_wsToSlotMu;
 
         // Broadcast a debug line
@@ -89,7 +92,7 @@ namespace BotController
                 return;
             std::lock_guard<std::mutex> lk(g_wsToSlotMu);
             g_wsToBinding[ws] = {slot, pawn};
-            g_slotToWs[slot] = ws;
+            g_slotToWs[slot].store(ws, std::memory_order_release);
         }
 
         static WsBinding LookupBindingForWs(void *ws)
@@ -110,7 +113,7 @@ namespace BotController
             return v - 1;
         }
 
-        static int ReadDefIndex(void *weapon);
+        int ReadDefIndex(void *weapon);
 
         static bool IsKnifeDefIndex(int def)
         {
@@ -365,7 +368,7 @@ namespace BotController
                 std::lock_guard<std::mutex> lk(g_wsToSlotMu);
                 g_wsToBinding.clear();
                 for (int i = 0; i < 64; ++i)
-                    g_slotToWs[i] = nullptr;
+                    g_slotToWs[i].store(nullptr, std::memory_order_release);
             }
             for (int i = 0; i < 64; ++i)
             {
@@ -427,12 +430,9 @@ namespace BotController
                 return -1;
             // m_hActiveWeapon is a handle; resolve it by matching its entity
             // index against the pointers GetSlot returns
-            uint32_t activeH = 0;
-            if (!ReadField(ws, tg::kWs_ActiveWeapon, activeH))
+            const int activeIdx = ActiveWeaponEntIndex(ws);
+            if (activeIdx < 0)
                 return -1;
-            if (activeH == 0u || activeH == 0xFFFFFFFFu)
-                return -1;
-            int activeIdx = static_cast<int>(activeH & 0x7FFFu);
             for (int slot = 0; slot <= 4; ++slot)
             {
                 // GEAR_SLOT_GRENADES (3) holds every grenade type at once
@@ -455,13 +455,42 @@ namespace BotController
             return -1;
         }
 
-        void *FindWeaponByDef(void *ws, int def)
+        int ActiveWeaponEntIndex(void *ws)
         {
+            if (!ws)
+                return -1;
+            uint32_t activeH = 0;
+            if (!ReadField(ws, tg::kWs_ActiveWeapon, activeH) ||
+                activeH == 0u || activeH == 0xFFFFFFFFu)
+                return -1;
+            return static_cast<int>(activeH & 0x7FFFu);
+        }
+
+        void *FindWeaponByDef(void *ws, int def,
+                              int *engineSlot,
+                              unsigned int *position)
+        {
+            if (engineSlot)
+                *engineSlot = -1;
+            if (position)
+                *position = 0xFFFFFFFFu;
             if (!ws || def < 0 || !g_pGetSlot)
                 return nullptr;
             // kKnifeDef means "the bot's own slot-2 knife", whatever skin it is.
             if (def == kKnifeDef)
-                return g_pGetSlot(ws, 2, 0xFFFFFFFFu);
+            {
+                void *weapon = g_pGetSlot(ws, 2, 0xFFFFFFFFu);
+                const int knifeDef = ReadDefIndex(weapon);
+                if (knifeDef < 0 || knifeDef == 31)
+                    return nullptr;
+                if (weapon && engineSlot)
+                    *engineSlot = 2;
+                return weapon;
+            }
+            const int activeEntIndex = ActiveWeaponEntIndex(ws);
+            void *firstMatch = nullptr;
+            int firstMatchSlot = -1;
+            unsigned int firstMatchPosition = 0xFFFFFFFFu;
             // Non-grenade gear slots hold one weapon each
             for (int slot = 0; slot <= 4; ++slot)
             {
@@ -469,16 +498,61 @@ namespace BotController
                     continue;
                 void *w = g_pGetSlot(ws, slot, 0xFFFFFFFFu);
                 if (w && ReadDefIndex(w) == def)
-                    return w;
+                {
+                    if (WeaponEntIndex(w) == activeEntIndex)
+                    {
+                        if (engineSlot)
+                            *engineSlot = slot;
+                        return w;
+                    }
+                    if (!firstMatch)
+                    {
+                        firstMatch = w;
+                        firstMatchSlot = slot;
+                    }
+                }
             }
             // GEAR_SLOT_GRENADES (3) holds every grenade type at once
             for (unsigned int pos = 0; pos < 8; ++pos)
             {
                 void *w = g_pGetSlot(ws, 3, pos);
                 if (w && ReadDefIndex(w) == def)
-                    return w;
+                {
+                    if (WeaponEntIndex(w) == activeEntIndex)
+                    {
+                        if (engineSlot)
+                            *engineSlot = 3;
+                        if (position)
+                            *position = pos;
+                        return w;
+                    }
+                    if (!firstMatch)
+                    {
+                        firstMatch = w;
+                        firstMatchSlot = 3;
+                        firstMatchPosition = pos;
+                    }
+                }
             }
-            return nullptr;
+            if (firstMatch && engineSlot)
+                *engineSlot = firstMatchSlot;
+            if (firstMatch && position)
+                *position = firstMatchPosition;
+            return firstMatch;
+        }
+
+        void *WeaponAtInventoryPosition(void *ws, int engineSlot,
+                                        unsigned int position)
+        {
+            if (!ws || !g_pGetSlot || engineSlot < 0 || engineSlot > 4)
+                return nullptr;
+            if (engineSlot == 3)
+            {
+                if (position >= 8u)
+                    return nullptr;
+                return g_pGetSlot(ws, engineSlot, position);
+            }
+            return g_pGetSlot(ws, engineSlot, 0xFFFFFFFFu);
         }
 
         bool SelectWeaponRaw(void *ws, void *weapon)
@@ -493,8 +567,7 @@ namespace BotController
         {
             if (slot < 0 || slot >= 64)
                 return nullptr;
-            std::lock_guard<std::mutex> lk(g_wsToSlotMu);
-            return g_slotToWs[slot];
+            return g_slotToWs[slot].load(std::memory_order_acquire);
         }
 
         int SwitchToLockTarget(int slot)
@@ -517,10 +590,7 @@ namespace BotController
                 return 3;
 
             void *ws = nullptr;
-            {
-                std::lock_guard<std::mutex> lk(g_wsToSlotMu);
-                ws = g_slotToWs[slot];
-            }
+            ws = g_slotToWs[slot].load(std::memory_order_acquire);
             if (!ws)
                 return 1; // bot hasn't ticked yet; lock will still take effect once AI runs.
 

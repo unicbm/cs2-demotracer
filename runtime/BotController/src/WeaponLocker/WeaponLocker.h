@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 #include <nlohmann/json.hpp>
@@ -46,8 +47,22 @@ namespace BotController
         // handle against GetSlot(0..4). -1 if none/unresolved (no false match).
         int ActiveWeaponDef(void *ws);
 
-        // First weapon in slots 0..4 whose def index == def. nullptr if absent.
-        void *FindWeaponByDef(void *ws, int def);
+        // Active weapon entity index read directly from m_hActiveWeapon.
+        // Unlike ActiveWeaponDef, this does not enumerate the inventory.
+        int ActiveWeaponEntIndex(void *ws);
+
+        // Matching weapon in slots 0..4, preferring the active entity when
+        // duplicate defs exist. nullptr if absent. Optional location outputs
+        // let replay cache the exact inventory cell and validate
+        // give/drop/replacement changes with one GetSlot call.
+        void *FindWeaponByDef(void *ws, int def,
+                              int *engineSlot = nullptr,
+                              unsigned int *position = nullptr);
+
+        // Read one exact inventory cell. Non-grenade slots use position
+        // 0xFFFFFFFF; grenade positions are 0..7.
+        void *WeaponAtInventoryPosition(void *ws, int engineSlot,
+                                        unsigned int position);
 
         // Switch via the original (un-hooked) SelectItem. Proven reliable path.
         bool SelectWeaponRaw(void *ws, void *weapon);

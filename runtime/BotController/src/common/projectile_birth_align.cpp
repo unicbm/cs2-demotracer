@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstring>
 #include <mutex>
@@ -30,6 +31,9 @@ namespace BotController::ProjectileBirthAlign
 
         std::mutex g_mutex;
         std::vector<Pending> g_pending;
+        // PhysicsSimulate and PlayerRunCommand both poll this path. Avoid
+        // taking the mutex when no alignment work is queued.
+        std::atomic<int> g_pendingCount{0};
         int g_initialPositionOffset = -1;
         int g_initialVelocityOffset = -1;
         int g_queued = 0;
@@ -163,6 +167,8 @@ namespace BotController::ProjectileBirthAlign
             {posX, posY, posZ},
             {velX, velY, velZ},
             kMaxAttempts});
+        g_pendingCount.store(static_cast<int>(g_pending.size()),
+                             std::memory_order_release);
         ++g_queued;
         return 0;
     }
@@ -172,6 +178,7 @@ namespace BotController::ProjectileBirthAlign
         std::scoped_lock lock(g_mutex);
         const int cleared = static_cast<int>(g_pending.size());
         g_pending.clear();
+        g_pendingCount.store(0, std::memory_order_release);
         return cleared;
     }
 
@@ -197,9 +204,15 @@ namespace BotController::ProjectileBirthAlign
 
     void ProcessPending()
     {
+        if (g_pendingCount.load(std::memory_order_acquire) == 0)
+            return;
+
         std::scoped_lock lock(g_mutex);
         if (g_pending.empty())
+        {
+            g_pendingCount.store(0, std::memory_order_release);
             return;
+        }
 
         auto it = g_pending.begin();
         while (it != g_pending.end())
@@ -222,5 +235,7 @@ namespace BotController::ProjectileBirthAlign
                 ++it;
             }
         }
+        g_pendingCount.store(static_cast<int>(g_pending.size()),
+                             std::memory_order_release);
     }
 } // namespace BotController::ProjectileBirthAlign

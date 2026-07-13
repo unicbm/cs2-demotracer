@@ -48,12 +48,39 @@ namespace BotController
             std::atomic<int> cursor{0};
             std::atomic<int> startCursor{0};
             std::atomic<int> holdBeforeCursor{-1};
-            std::atomic<int> lastAppliedDef{-1};
+            // Replay weapon-select cache. cachedWeaponDef is the publication
+            // marker and is stored only after the remaining fields are ready.
+            std::atomic<int> cachedWeaponDef{-1};
+            std::atomic<void *> cachedWeaponServices{nullptr};
+            std::atomic<void *> cachedWeapon{nullptr};
+            std::atomic<int> cachedWeaponEntIndex{-1};
+            std::atomic<int> cachedWeaponSlot{-1};
+            std::atomic<unsigned int> cachedWeaponPosition{0xFFFFFFFFu};
             std::mutex mu; // guards replay buffers and offset tables
         };
 
         static std::array<RecordState, kMaxSlots> g_rec;
         static std::array<ReplayState, kMaxSlots> g_rep;
+
+        static void InvalidateReplayWeaponCache(ReplayState &p)
+        {
+            p.cachedWeaponDef.store(-1, std::memory_order_release);
+            p.cachedWeaponServices.store(nullptr, std::memory_order_relaxed);
+            p.cachedWeapon.store(nullptr, std::memory_order_relaxed);
+            p.cachedWeaponEntIndex.store(-1, std::memory_order_relaxed);
+            p.cachedWeaponSlot.store(-1, std::memory_order_relaxed);
+            p.cachedWeaponPosition.store(0xFFFFFFFFu, std::memory_order_relaxed);
+        }
+
+        // Caller must hold p.mu and must have published playing=false first.
+        static void ReleaseReplayVectors(ReplayState &p)
+        {
+            std::vector<ReplayTick>().swap(p.ticks);
+            std::vector<SubtickMove>().swap(p.subs);
+            std::vector<ReplayCommandFrameData>().swap(p.commands);
+            std::vector<ReplayMovementExtra>().swap(p.movementExtras);
+            std::vector<uint32_t>().swap(p.subOffset);
+        }
 
         constexpr uint64_t kPrimeAttackButtons = (1ull << 0) | (1ull << 11);
 
@@ -162,6 +189,24 @@ namespace BotController
                        *reinterpret_cast<float *>(sv + tg::kServices_LadderNormal + 0),
                        *reinterpret_cast<float *>(sv + tg::kServices_LadderNormal + 4),
                        *reinterpret_cast<float *>(sv + tg::kServices_LadderNormal + 8));
+        }
+
+        static void ClearReplayStopJumpResidue(int slot)
+        {
+            void *services = InputInjector::LiveMovementServices(slot);
+            if (!services)
+                return;
+
+            auto *sv = reinterpret_cast<char *>(services);
+            if (!CanWriteMemory(sv + tg::kServices_Buttons, sizeof(uint64_t)) ||
+                !CanWriteMemory(sv + tg::kServices_Buttons1, sizeof(uint64_t)) ||
+                !CanWriteMemory(sv + tg::kServices_Buttons2, sizeof(uint64_t)))
+                return;
+
+            constexpr uint64_t kJumpButton = 1ull << 1;
+            *reinterpret_cast<uint64_t *>(sv + tg::kServices_Buttons) &= ~kJumpButton;
+            *reinterpret_cast<uint64_t *>(sv + tg::kServices_Buttons1) &= ~kJumpButton;
+            *reinterpret_cast<uint64_t *>(sv + tg::kServices_Buttons2) &= ~kJumpButton;
         }
 
         static void ClearReplayStopMovementResidue(int slot, ReplayState &p)
@@ -917,22 +962,85 @@ namespace BotController
             return found & candidates;
         }
 
+        static bool ReplayWeaponMatchesRecordedDef(void *weapon,
+                                                   int engineSlot,
+                                                   int recordedDef)
+        {
+            const int liveDef = WeaponLockerHooks::ReadDefIndex(weapon);
+            if (liveDef < 0)
+                return false;
+            if (recordedDef == WeaponLockerHooks::kKnifeDef)
+                return engineSlot == 2 && liveDef != 31;
+            return liveDef == recordedDef;
+        }
+
         static int ReplayWeaponSelectForDef(int slot, int recordedDef)
         {
-            if (recordedDef < 0 || !WeaponLockerHooks::WeaponHooksReady())
+            if (!ValidSlot(slot) || recordedDef < 0 ||
+                !WeaponLockerHooks::WeaponHooksReady())
                 return -1;
 
+            ReplayState &p = g_rep[slot];
             void *ws = WeaponLockerHooks::WsForSlot(slot);
             if (!ws)
+            {
+                InvalidateReplayWeaponCache(p);
                 return -1;
+            }
 
-            if (WeaponLockerHooks::ActiveWeaponDef(ws) == recordedDef)
-                return -1;
+            if (p.cachedWeaponDef.load(std::memory_order_acquire) == recordedDef &&
+                p.cachedWeaponServices.load(std::memory_order_relaxed) == ws)
+            {
+                void *cachedWeapon =
+                    p.cachedWeapon.load(std::memory_order_relaxed);
+                const int cachedEntIndex =
+                    p.cachedWeaponEntIndex.load(std::memory_order_relaxed);
+                const int cachedSlot =
+                    p.cachedWeaponSlot.load(std::memory_order_relaxed);
+                const unsigned int cachedPosition =
+                    p.cachedWeaponPosition.load(std::memory_order_relaxed);
+                void *currentWeapon =
+                    WeaponLockerHooks::WeaponAtInventoryPosition(
+                        ws, cachedSlot, cachedPosition);
+                if (cachedWeapon && currentWeapon == cachedWeapon &&
+                    cachedEntIndex >= 0 &&
+                    WeaponLockerHooks::WeaponEntIndex(currentWeapon) ==
+                        cachedEntIndex &&
+                    ReplayWeaponMatchesRecordedDef(
+                        currentWeapon, cachedSlot, recordedDef))
+                {
+                    return WeaponLockerHooks::ActiveWeaponEntIndex(ws) ==
+                                   cachedEntIndex
+                               ? -1
+                               : cachedEntIndex;
+                }
 
-            void *weapon = WeaponLockerHooks::FindWeaponByDef(ws, recordedDef);
+                // Give/drop/replacement, in-place def mutation, entity reuse,
+                // or grenade-position change. Fall through to a full lookup
+                // immediately; do not negative-cache.
+                InvalidateReplayWeaponCache(p);
+            }
+
+            int engineSlot = -1;
+            unsigned int position = 0xFFFFFFFFu;
+            void *weapon = WeaponLockerHooks::FindWeaponByDef(
+                ws, recordedDef, &engineSlot, &position);
             if (!weapon)
                 return -1;
-            return WeaponLockerHooks::WeaponEntIndex(weapon);
+            const int weaponEntIndex = WeaponLockerHooks::WeaponEntIndex(weapon);
+            if (weaponEntIndex < 0)
+                return -1;
+
+            p.cachedWeaponServices.store(ws, std::memory_order_relaxed);
+            p.cachedWeapon.store(weapon, std::memory_order_relaxed);
+            p.cachedWeaponEntIndex.store(weaponEntIndex, std::memory_order_relaxed);
+            p.cachedWeaponSlot.store(engineSlot, std::memory_order_relaxed);
+            p.cachedWeaponPosition.store(position, std::memory_order_relaxed);
+            p.cachedWeaponDef.store(recordedDef, std::memory_order_release);
+
+            return WeaponLockerHooks::ActiveWeaponEntIndex(ws) == weaponEntIndex
+                       ? -1
+                       : weaponEntIndex;
         }
 
         bool LoadReplay(int slot, const ReplayTick *ticks, int tickCount,
@@ -978,7 +1086,7 @@ namespace BotController
             p.cursor.store(0, std::memory_order_relaxed);
             p.startCursor.store(0, std::memory_order_relaxed);
             p.holdBeforeCursor.store(-1, std::memory_order_relaxed);
-            p.lastAppliedDef.store(-1, std::memory_order_relaxed);
+            InvalidateReplayWeaponCache(p);
             g_lastFinalViewCursor[slot] = -1;
             g_serverViewChangeIndex[slot] = 0;
             InputInjector::ClearUsercmdMovementIntent(slot);
@@ -1005,7 +1113,7 @@ namespace BotController
             p.cursor.store(startIndex, std::memory_order_relaxed);
             p.startCursor.store(startIndex, std::memory_order_relaxed);
             p.holdBeforeCursor.store(-1, std::memory_order_relaxed);
-            p.lastAppliedDef.store(-1, std::memory_order_relaxed);
+            InvalidateReplayWeaponCache(p);
             g_lastFinalViewCursor[slot] = -1;
             g_serverViewChangeIndex[slot] = 0;
             p.loop.store(loop, std::memory_order_relaxed);
@@ -1029,7 +1137,7 @@ namespace BotController
             p.cursor.store(startIndex, std::memory_order_relaxed);
             p.startCursor.store(startIndex, std::memory_order_relaxed);
             p.holdBeforeCursor.store(holdBeforeIndex, std::memory_order_relaxed);
-            p.lastAppliedDef.store(-1, std::memory_order_relaxed);
+            InvalidateReplayWeaponCache(p);
             g_lastFinalViewCursor[slot] = -1;
             g_serverViewChangeIndex[slot] = 0;
             p.loop.store(loop, std::memory_order_relaxed);
@@ -1044,11 +1152,33 @@ namespace BotController
                 return false;
             ReplayState &p = g_rep[slot];
             ClearReplayStopMovementResidue(slot, p);
-            p.playing.store(false, std::memory_order_release);
+            const bool wasPlaying =
+                p.playing.exchange(false, std::memory_order_acq_rel);
+            if (wasPlaying)
+                ClearReplayStopJumpResidue(slot);
             p.holdBeforeCursor.store(-1, std::memory_order_relaxed);
+            InvalidateReplayWeaponCache(p);
             g_lastFinalViewCursor[slot] = -1;
             g_serverViewChangeIndex[slot] = 0;
             InputInjector::ClearUsercmdMovementIntent(slot);
+            return true;
+        }
+
+        bool ReleaseReplayBuffer(int slot)
+        {
+            if (!ValidSlot(slot) || !StopReplay(slot))
+                return false;
+
+            ReplayState &p = g_rep[slot];
+            {
+                std::lock_guard<std::mutex> lk(p.mu);
+                ReleaseReplayVectors(p);
+            }
+            p.cursor.store(0, std::memory_order_relaxed);
+            p.startCursor.store(0, std::memory_order_relaxed);
+            p.holdBeforeCursor.store(-1, std::memory_order_relaxed);
+            p.loop.store(false, std::memory_order_relaxed);
+            InputInjector::ClearReplayPawn(slot);
             return true;
         }
 
@@ -1344,6 +1474,7 @@ namespace BotController
         {
             if (!ValidSlot(slot) || defIndex < 0)
                 return false;
+            InvalidateReplayWeaponCache(g_rep[slot]);
             if (!WeaponLockerHooks::WeaponHooksReady())
                 return false;
             void *ws = WeaponLockerHooks::WsForSlot(slot);
@@ -1782,12 +1913,16 @@ namespace BotController
                         p.cursor.store(
                             p.startCursor.load(std::memory_order_relaxed),
                             std::memory_order_relaxed);
-                        p.lastAppliedDef.store(-1, std::memory_order_relaxed);
+                        InvalidateReplayWeaponCache(p);
                         g_lastFinalViewCursor[slot] = -1;
                         g_serverViewChangeIndex[slot] = 0;
                         return;
                     }
-                    p.playing.store(false, std::memory_order_release);
+                    const bool wasPlaying =
+                        p.playing.exchange(false, std::memory_order_acq_rel);
+                    if (wasPlaying)
+                        ClearReplayStopJumpResidue(slot);
+                    InvalidateReplayWeaponCache(p);
                     InputInjector::ClearUsercmdMovementIntent(slot);
                     return;
                 }
@@ -1826,7 +1961,17 @@ namespace BotController
                 p.cursor.store(holdBefore - 1, std::memory_order_relaxed);
                 return;
             }
-            p.cursor.store(cur + 1, std::memory_order_relaxed);
+            const int next = cur + 1;
+            p.cursor.store(next, std::memory_order_relaxed);
+            if (next >= total && !p.loop.load(std::memory_order_relaxed))
+            {
+                const bool wasPlaying =
+                    p.playing.exchange(false, std::memory_order_acq_rel);
+                if (wasPlaying)
+                    ClearReplayStopJumpResidue(slot);
+                InvalidateReplayWeaponCache(p);
+                InputInjector::ClearUsercmdMovementIntent(slot);
+            }
         }
 
         void ClearAll()
@@ -1834,7 +1979,10 @@ namespace BotController
             for (int i = 0; i < kMaxSlots; ++i)
             {
                 g_rec[i].recording.store(false, std::memory_order_release);
-                g_rep[i].playing.store(false, std::memory_order_release);
+                const bool wasPlaying =
+                    g_rep[i].playing.exchange(false, std::memory_order_acq_rel);
+                if (wasPlaying)
+                    ClearReplayStopJumpResidue(i);
                 {
                     std::lock_guard<std::mutex> lk(g_rec[i].mu);
                     g_rec[i].ticks.clear();
@@ -1844,18 +1992,15 @@ namespace BotController
                 }
                 {
                     std::lock_guard<std::mutex> lk(g_rep[i].mu);
-                    g_rep[i].ticks.clear();
-                    g_rep[i].subs.clear();
-                    g_rep[i].commands.clear();
-                    g_rep[i].movementExtras.clear();
-                    g_rep[i].subOffset.clear();
+                    ReleaseReplayVectors(g_rep[i]);
                 }
                 g_rec[i].currentDef.store(-1, std::memory_order_relaxed);
                 g_rec[i].liveWs.store(nullptr, std::memory_order_relaxed);
                 g_rep[i].cursor.store(0, std::memory_order_relaxed);
                 g_rep[i].startCursor.store(0, std::memory_order_relaxed);
                 g_rep[i].holdBeforeCursor.store(-1, std::memory_order_relaxed);
-                g_rep[i].lastAppliedDef.store(-1, std::memory_order_relaxed);
+                g_rep[i].loop.store(false, std::memory_order_relaxed);
+                InvalidateReplayWeaponCache(g_rep[i]);
                 g_lastFinalViewCursor[i] = -1;
                 g_serverViewChangeIndex[i] = 0;
                 InputInjector::ClearReplayPawn(i);

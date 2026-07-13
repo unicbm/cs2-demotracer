@@ -255,6 +255,9 @@ namespace BotController
         bool StartReplayAt(int slot, bool loop, int startIndex);
         bool StartReplayUntil(int slot, bool loop, int startIndex, int holdBeforeIndex);
         bool StopReplay(int slot);             // stop + clear injection
+        // Stop replay, clear injection, and return all replay-buffer capacity
+        // to the allocator. Use StopReplay when a warm restart is expected.
+        bool ReleaseReplayBuffer(int slot);
         bool IsReplaying(int slot);
         int ReplayCursor(int slot); // current tick index, <0 if idle
         int ReplayTotal(int slot);  // loaded tick count
