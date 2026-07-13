@@ -80,6 +80,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private readonly Dictionary<int, int> _replayHifiEventNextBySlot = new();
     private readonly Dictionary<int, long> _replayIdentityGenerationBySlot = new();
     private readonly Dictionary<uint, PendingProjectileAlign> _pendingProjectileAlign = new();
+    private readonly List<KeyValuePair<uint, PendingProjectileAlign>> _pendingProjectileAlignTickScratch = new();
     private readonly Queue<string> _projectileAlignLog = new();
     private readonly List<TrackedDroppedReplayItem> _trackedDroppedReplayItems = new();
     private readonly HashSet<int> _rebuiltInventorySlots = new();
@@ -1146,7 +1147,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _leftHandDesiredEnabled = enabled;
         BotControllerNative.WriteLeftHandDesired = enabled;
         if (!_leftHandDesiredEnabled)
-            ClearReplayLeftHandDesiredLatches();
+            ClearReplayLeftHandDesiredLatches(forceNative: true);
         reply($"[DTR OK] align left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)}");
         if (!_leftHandDesiredEnabled)
             reply(LeftHandDesiredFidelityNotice);
@@ -1674,6 +1675,19 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (!_mapActive || _lifecycleResetInProgress)
             return;
 
+        _botHiderBridge.BeginTickQueryScope();
+        try
+        {
+            ProcessReplayTick();
+        }
+        finally
+        {
+            _botHiderBridge.EndTickQueryScope();
+        }
+    }
+
+    private void ProcessReplayTick()
+    {
         ProcessVoiceTestPlayback();
         ProcessChatPlayback();
         ProcessPendingProjectileAlign();
@@ -1689,22 +1703,58 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             return;
         }
 
+        if (_lastPlayingSlots.Count == 0)
+        {
+            SetReplayPovMask(0);
+            UpdateReplayCrosshairPresentation();
+            RestoreAllReplayBotViewmodels();
+            return;
+        }
+
+        Span<int> activeSlots = stackalloc int[MaxPlayerSlots];
+        Span<ReplayState> activeStates = stackalloc ReplayState[MaxPlayerSlots];
+        var trackedSlotCount = 0;
+        foreach (var slot in _lastPlayingSlots)
+        {
+            if (slot is >= 0 and < MaxPlayerSlots)
+                activeSlots[trackedSlotCount++] = slot;
+        }
+
+        var activeSlotCount = 0;
+        for (var trackedIndex = 0; trackedIndex < trackedSlotCount; trackedIndex++)
+        {
+            var slot = activeSlots[trackedIndex];
+            var state = BotControllerNative.GetReplayState(slot);
+            if (!state.Playing)
+            {
+                ReleaseReplaySlot(slot, "replay_finished");
+                continue;
+            }
+
+            activeSlots[activeSlotCount] = slot;
+            activeStates[activeSlotCount] = state;
+            activeSlotCount++;
+        }
+
+        if (activeSlotCount == 0)
+        {
+            SetReplayPovMask(0);
+            UpdateReplayCrosshairPresentation();
+            RestoreAllReplayBotViewmodels();
+            return;
+        }
+
         var playerSnapshot = BuildTickPlayerSnapshot();
         UpdateReplayPovMask(playerSnapshot);
         UpdateReplayCrosshairPresentation();
         UpdateReplayBotViewmodels(playerSnapshot);
 
-        foreach (var slot in _loadedSlots.ToArray())
+        for (var activeIndex = 0; activeIndex < activeSlotCount; activeIndex++)
         {
-            var state = BotControllerNative.GetReplayState(slot);
-            if (!state.Playing)
-            {
-                if (_lastPlayingSlots.Contains(slot))
-                {
-                    ReleaseReplaySlot(slot, "replay_finished");
-                }
+            var slot = activeSlots[activeIndex];
+            if (!_lastPlayingSlots.Contains(slot))
                 continue;
-            }
+            var state = activeStates[activeIndex];
 
             if (!IsReplaySlotStillSafe(slot, playerSnapshot))
             {
@@ -1719,9 +1769,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 ReleaseReplaySlot(slot, "dead_replay_target");
                 continue;
             }
-
-            if (!_lastPlayingSlots.Contains(slot))
-                MarkReplayStarted(slot);
 
             var hasLoadedReplay = _loadedReplays.TryGetValue(slot, out var replay);
             if (hasLoadedReplay)
@@ -1743,7 +1790,12 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 _lastReplayWeaponDef.Remove(slot);
                 continue;
             }
-            ApplyActiveReplayWeaponCosmeticForSlot(slot, weaponDefIndex, force: false, scheduleNextFrame: true);
+            ApplyActiveReplayWeaponCosmeticForSlot(
+                slot,
+                weaponDefIndex,
+                force: false,
+                scheduleNextFrame: true,
+                playerSnapshot: playerSnapshot);
             if (_lastReplayWeaponDef.TryGetValue(slot, out var lastDef) &&
                 lastDef == weaponDefIndex)
                 continue;
@@ -2029,10 +2081,12 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (_loadedSlots.Count == 0 || _lastPlayingSlots.Count == 0)
             return 0;
 
-        var replayPawnSlots = new Dictionary<uint, int>();
-        foreach (var slot in _loadedSlots)
+        Span<uint> replayPawnIndices = stackalloc uint[MaxPlayerSlots];
+        Span<int> replaySlots = stackalloc int[MaxPlayerSlots];
+        var replayPawnCount = 0;
+        foreach (var slot in _lastPlayingSlots)
         {
-            if (slot is < 0 or >= MaxPlayerSlots || !_lastPlayingSlots.Contains(slot))
+            if (slot is < 0 or >= MaxPlayerSlots)
                 continue;
 
             if (!playerSnapshot.TryGetSlot(slot, out var replayController) ||
@@ -2041,10 +2095,12 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             if (replayController.PlayerPawn is not { IsValid: true, Value.IsValid: true } replayPawn)
                 continue;
 
-            replayPawnSlots[replayPawn.Value.Index] = slot;
+            replayPawnIndices[replayPawnCount] = replayPawn.Value.Index;
+            replaySlots[replayPawnCount] = slot;
+            replayPawnCount++;
         }
 
-        if (replayPawnSlots.Count == 0)
+        if (replayPawnCount == 0)
             return 0;
 
         ulong mask = 0;
@@ -2056,8 +2112,13 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 continue;
             if (!TryGetInEyeObserverTargetIndex(controller, out var targetIndex))
                 continue;
-            if (replayPawnSlots.TryGetValue(targetIndex, out var targetSlot))
-                mask |= 1UL << targetSlot;
+            for (var replayIndex = 0; replayIndex < replayPawnCount; replayIndex++)
+            {
+                if (replayPawnIndices[replayIndex] != targetIndex)
+                    continue;
+                mask |= 1UL << replaySlots[replayIndex];
+                break;
+            }
         }
 
         return mask;
@@ -2162,7 +2223,12 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (_pendingProjectileAlign.Count == 0)
             return;
 
-        foreach (var entry in _pendingProjectileAlign.ToArray().OrderBy(item => item.Key))
+        _pendingProjectileAlignTickScratch.Clear();
+        foreach (var entry in _pendingProjectileAlign)
+            _pendingProjectileAlignTickScratch.Add(entry);
+        _pendingProjectileAlignTickScratch.Sort(static (left, right) => left.Key.CompareTo(right.Key));
+
+        foreach (var entry in _pendingProjectileAlignTickScratch)
         {
             var pending = entry.Value;
             try
@@ -2236,6 +2302,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                     TraceUtilityMessage("projectile_align_failed", $"index={entry.Key} {ex.Message}");
             }
         }
+        _pendingProjectileAlignTickScratch.Clear();
     }
 
     private bool TryResolveAndApplyProjectileAlign(
@@ -4143,7 +4210,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             CancelReplayPrefetch();
             InvalidateInitialSpawnAssignment();
             ReleaseFreezePrerollBrainLocks();
-            ClearReplayLeftHandDesiredLatches();
+            ClearReplayLeftHandDesiredLatches(forceNative: true);
             var hadReplayState = _loadedSlots.Count > 0 ||
                                  _demoTracerOwnedSlots.Count > 0 ||
                                  _loadedReplays.Count > 0 ||
@@ -5227,7 +5294,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private sealed class TickPlayerSnapshot
     {
-        private readonly Dictionary<int, CCSPlayerController> _bySlot = new();
+        private readonly CCSPlayerController?[] _bySlot = new CCSPlayerController?[MaxPlayerSlots];
 
         public TickPlayerSnapshot(
             IReadOnlyList<CCSPlayerController> controllers,
@@ -5238,9 +5305,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
             foreach (var controller in controllers)
             {
-                if (controller is not { IsValid: true } || controller.Slot < 0)
+                if (controller is not { IsValid: true } || controller.Slot is < 0 or >= MaxPlayerSlots)
                     continue;
-                _bySlot.TryAdd(controller.Slot, controller);
+                _bySlot[controller.Slot] ??= controller;
             }
         }
 
@@ -5249,7 +5316,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
         public bool TryGetSlot(int slot, out CCSPlayerController player)
         {
-            if (_bySlot.TryGetValue(slot, out var value))
+            if (slot is >= 0 and < MaxPlayerSlots && _bySlot[slot] is { } value)
             {
                 player = value;
                 return true;

@@ -7,13 +7,31 @@ public sealed partial class DemoTracerPlugin
 {
     private sealed class DemoTracerBotHiderBridge
     {
+        private const long CapabilityRetryDelayMilliseconds = 1_000;
+        private const long ProviderValidationIntervalMilliseconds = 500;
         private static readonly PluginCapability<IBotHiderApi> Capability =
             new(DemoTracerBotHiderContract.Capability);
 
         private IBotHiderApi? _api;
+        private long _nextCapabilityLookupAtMilliseconds;
+        private long _providerValidationExpiresAtMilliseconds;
+        private bool _tickQueryScopeActive;
+        private bool _providerValidatedInTickQueryScope;
 
         public void Refresh()
-            => _api = null;
+            => InvalidateApi(throttleCapabilityLookup: false);
+
+        public void BeginTickQueryScope()
+        {
+            _tickQueryScopeActive = true;
+            _providerValidatedInTickQueryScope = false;
+        }
+
+        public void EndTickQueryScope()
+        {
+            _tickQueryScopeActive = false;
+            _providerValidatedInTickQueryScope = false;
+        }
 
         public bool IsAvailable()
             => TryGetApi(out _);
@@ -28,7 +46,7 @@ public sealed partial class DemoTracerPlugin
             }
             catch
             {
-                _api = null;
+                InvalidateApi(throttleCapabilityLookup: true);
                 return false;
             }
         }
@@ -44,7 +62,7 @@ public sealed partial class DemoTracerPlugin
             }
             catch
             {
-                _api = null;
+                InvalidateApi(throttleCapabilityLookup: true);
                 return false;
             }
         }
@@ -61,7 +79,7 @@ public sealed partial class DemoTracerPlugin
             }
             catch (Exception ex)
             {
-                _api = null;
+                InvalidateApi(throttleCapabilityLookup: true);
                 return Fail($"provider_error:{ex.Message}");
             }
         }
@@ -78,7 +96,7 @@ public sealed partial class DemoTracerPlugin
             }
             catch (Exception ex)
             {
-                _api = null;
+                InvalidateApi(throttleCapabilityLookup: true);
                 return Fail($"provider_error:{ex.Message}");
             }
         }
@@ -93,7 +111,7 @@ public sealed partial class DemoTracerPlugin
             }
             catch
             {
-                _api = null;
+                InvalidateApi(throttleCapabilityLookup: true);
                 return false;
             }
         }
@@ -110,7 +128,7 @@ public sealed partial class DemoTracerPlugin
             }
             catch
             {
-                _api = null;
+                InvalidateApi(throttleCapabilityLookup: true);
                 return false;
             }
         }
@@ -125,7 +143,7 @@ public sealed partial class DemoTracerPlugin
             }
             catch
             {
-                _api = null;
+                InvalidateApi(throttleCapabilityLookup: true);
                 return 0;
             }
         }
@@ -140,7 +158,7 @@ public sealed partial class DemoTracerPlugin
             }
             catch
             {
-                _api = null;
+                InvalidateApi(throttleCapabilityLookup: true);
                 return null;
             }
         }
@@ -155,33 +173,75 @@ public sealed partial class DemoTracerPlugin
             }
             catch
             {
-                _api = null;
+                InvalidateApi(throttleCapabilityLookup: true);
                 return null;
             }
         }
 
         private bool TryGetApi(out IBotHiderApi api)
         {
-            if (_api != null && ProviderIsUsable(_api))
+            var now = Environment.TickCount64;
+            // Cache only provider availability. Every safety decision still calls
+            // IsManagedBot/TryGetManagedSlot on the provider for the current slot.
+            if (_api != null &&
+                (_tickQueryScopeActive && _providerValidatedInTickQueryScope ||
+                 now < _providerValidationExpiresAtMilliseconds ||
+                 ValidateCachedApi(_api, now)))
             {
                 api = _api;
                 return true;
             }
 
-            _api = null;
+            if (_api != null)
+                InvalidateApi(throttleCapabilityLookup: true);
+
+            if (now < _nextCapabilityLookupAtMilliseconds)
+            {
+                api = null!;
+                return false;
+            }
+
+            _nextCapabilityLookupAtMilliseconds = now + CapabilityRetryDelayMilliseconds;
             try
             {
                 var candidate = Capability.Get();
                 if (candidate != null && ProviderIsUsable(candidate))
+                {
                     _api = candidate;
+                    _nextCapabilityLookupAtMilliseconds = 0;
+                    _providerValidationExpiresAtMilliseconds = now + ProviderValidationIntervalMilliseconds;
+                    if (_tickQueryScopeActive)
+                        _providerValidatedInTickQueryScope = true;
+                }
             }
             catch
             {
-                _api = null;
+                InvalidateApi(throttleCapabilityLookup: true);
             }
 
             api = _api!;
             return api != null;
+        }
+
+        private bool ValidateCachedApi(IBotHiderApi api, long now)
+        {
+            if (!ProviderIsUsable(api))
+                return false;
+
+            _providerValidationExpiresAtMilliseconds = now + ProviderValidationIntervalMilliseconds;
+            if (_tickQueryScopeActive)
+                _providerValidatedInTickQueryScope = true;
+            return true;
+        }
+
+        private void InvalidateApi(bool throttleCapabilityLookup)
+        {
+            _api = null;
+            _providerValidatedInTickQueryScope = false;
+            _providerValidationExpiresAtMilliseconds = 0;
+            _nextCapabilityLookupAtMilliseconds = throttleCapabilityLookup
+                ? Environment.TickCount64 + CapabilityRetryDelayMilliseconds
+                : 0;
         }
 
         private static bool ProviderIsUsable(IBotHiderApi api)

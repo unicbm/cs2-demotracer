@@ -141,14 +141,13 @@ public sealed partial class DemoTracerPlugin
             RestoreAllReplayBotViewmodels();
             return;
         }
-        if (!_leftHandDesiredEnabled)
+        if (!_leftHandDesiredEnabled && _replayLeftHandDesiredLatches.Count > 0)
             ClearReplayLeftHandDesiredLatches();
 
-        var activeReplaySlots = new HashSet<int>();
-        foreach (var slot in _loadedSlots)
+        ulong activeReplaySlotMask = 0;
+        foreach (var slot in _lastPlayingSlots)
         {
             if (slot is < 0 or >= MaxPlayerSlots ||
-                !_lastPlayingSlots.Contains(slot) ||
                 !_loadedReplays.TryGetValue(slot, out var replay) ||
                 !HasViewmodelEvidence(replay.View))
             {
@@ -164,26 +163,29 @@ public sealed partial class DemoTracerPlugin
                 continue;
             }
 
-            activeReplaySlots.Add(slot);
+            activeReplaySlotMask |= 1UL << slot;
             ApplyReplayBotViewmodel(replayBot, replay.View.Viewmodel!);
             ApplyReplayLeftHandDesiredLatch(slot, replay.View.Viewmodel!.LeftHanded);
         }
 
-        foreach (var slot in ViewmodelTrackedSlots())
+        for (var slot = 0; slot < MaxPlayerSlots; slot++)
         {
-            if (!activeReplaySlots.Contains(slot))
+            if ((activeReplaySlotMask & (1UL << slot)) == 0 && IsReplayViewmodelSlotTracked(slot))
                 RestoreReplayBotViewmodel(slot);
         }
     }
 
-    private IEnumerable<int> ViewmodelTrackedSlots()
-    {
-        return _replayOriginalViewmodels.Keys
-            .Concat(_replayAppliedViewmodels.Keys)
-            .Concat(_replayFailedViewmodelSlots)
-            .Distinct()
-            .ToArray();
-    }
+    private bool HasTrackedReplayViewmodelState()
+        => _replayOriginalViewmodels.Count > 0 ||
+           _replayAppliedViewmodels.Count > 0 ||
+           _replayFailedViewmodelSlots.Count > 0 ||
+           _replayLeftHandDesiredLatches.Count > 0;
+
+    private bool IsReplayViewmodelSlotTracked(int slot)
+        => _replayOriginalViewmodels.ContainsKey(slot) ||
+           _replayAppliedViewmodels.ContainsKey(slot) ||
+           _replayFailedViewmodelSlots.Contains(slot) ||
+           _replayLeftHandDesiredLatches.ContainsKey(slot);
 
     private void ApplyReplayBotViewmodel(CCSPlayerController bot, ReplayViewmodel viewmodel)
     {
@@ -220,19 +222,26 @@ public sealed partial class DemoTracerPlugin
 
     private void RestoreAllReplayBotViewmodels()
     {
-        foreach (var slot in ViewmodelTrackedSlots())
-            RestoreReplayBotViewmodel(slot);
+        if (!HasTrackedReplayViewmodelState())
+            return;
+
+        for (var slot = 0; slot < MaxPlayerSlots; slot++)
+        {
+            if (IsReplayViewmodelSlotTracked(slot))
+                RestoreReplayBotViewmodel(slot, clearLeftHandDesiredLatch: false);
+        }
         _replayOriginalViewmodels.Clear();
         _replayAppliedViewmodels.Clear();
         _replayFailedViewmodelSlots.Clear();
         ClearReplayLeftHandDesiredLatches();
     }
 
-    private void RestoreReplayBotViewmodel(int slot)
+    private void RestoreReplayBotViewmodel(int slot, bool clearLeftHandDesiredLatch = true)
     {
         _replayAppliedViewmodels.Remove(slot);
         _replayFailedViewmodelSlots.Remove(slot);
-        ClearReplayLeftHandDesiredLatch(slot);
+        if (clearLeftHandDesiredLatch)
+            ClearReplayLeftHandDesiredLatch(slot);
         if (!_replayOriginalViewmodels.TryGetValue(slot, out var original))
             return;
 
@@ -348,12 +357,16 @@ public sealed partial class DemoTracerPlugin
 
     private void ClearReplayLeftHandDesiredLatch(int slot)
     {
-        _replayLeftHandDesiredLatches.Remove(slot);
+        if (!_replayLeftHandDesiredLatches.Remove(slot))
+            return;
         _ = BotControllerNative.SetLeftHandDesiredLatch(slot, enabled: false, leftHandDesired: false);
     }
 
-    private void ClearReplayLeftHandDesiredLatches()
+    private void ClearReplayLeftHandDesiredLatches(bool forceNative = false)
     {
+        if (!forceNative && _replayLeftHandDesiredLatches.Count == 0)
+            return;
+
         _replayLeftHandDesiredLatches.Clear();
         _ = BotControllerNative.ClearAllLeftHandDesiredLatches();
     }

@@ -952,14 +952,16 @@ public sealed partial class DemoTracerPlugin
         int slot,
         int weaponDefIndex,
         bool force,
-        bool scheduleNextFrame)
+        bool scheduleNextFrame,
+        TickPlayerSnapshot? playerSnapshot = null)
     {
         if (TryApplyReplayWeaponCosmeticForSlot(
                 slot,
                 weaponDefIndex,
                 activeOnly: true,
                 forceActive: force,
-                countResult: false) &&
+                countResult: false,
+                playerSnapshot: playerSnapshot) &&
             scheduleNextFrame)
         {
             ScheduleActiveReplayWeaponCosmeticNextFrame(slot, NormalizeWeaponDefIndex(weaponDefIndex));
@@ -981,12 +983,21 @@ public sealed partial class DemoTracerPlugin
         int weaponDefIndex,
         bool activeOnly,
         bool forceActive,
-        bool countResult)
+        bool countResult,
+        TickPlayerSnapshot? playerSnapshot = null)
     {
         if (!WeaponCosmeticFeatureEnabled() ||
             !_loadedReplays.TryGetValue(slot, out var replay) ||
-            !HasCosmeticEvidence(replay.Cosmetics) ||
-            !IsReplaySlotStillSafe(slot))
+            !HasCosmeticEvidence(replay.Cosmetics))
+        {
+            return false;
+        }
+        if (playerSnapshot != null)
+        {
+            if (!IsReplaySlotStillSafe(slot, playerSnapshot))
+                return false;
+        }
+        else if (!IsReplaySlotStillSafe(slot))
         {
             return false;
         }
@@ -997,7 +1008,17 @@ public sealed partial class DemoTracerPlugin
         if (cosmetic == null)
             return false;
 
-        var player = Utilities.GetPlayerFromSlot(slot);
+        CCSPlayerController? player;
+        if (playerSnapshot != null)
+        {
+            if (!playerSnapshot.TryGetSlot(slot, out var snapshotPlayer))
+                return false;
+            player = snapshotPlayer;
+        }
+        else
+        {
+            player = Utilities.GetPlayerFromSlot(slot);
+        }
         var pawn = player?.PlayerPawn.Value;
         if (player is not { IsValid: true, PawnIsAlive: true } || pawn is not { IsValid: true })
             return false;
