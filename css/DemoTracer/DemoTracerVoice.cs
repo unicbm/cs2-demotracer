@@ -5,6 +5,7 @@ using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Modules.Utils;
 using System.Buffers.Binary;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -27,7 +28,30 @@ public sealed partial class DemoTracerPlugin
     private const int VoiceOpusSamplesPerPacket = 480;
     private const float VoicePlaybackEpsilonSeconds = 0.002f;
     private const float VoiceTimelineGapThresholdSeconds = 0.12f;
+    private const int VoiceClipCacheMaxEntries = 2;
+    private const long VoiceClipCacheMaxBytes = 32L * 1024 * 1024;
     private static readonly byte[] VoiceDtvMagicBytes = Encoding.ASCII.GetBytes(VoiceDtvMagic);
+
+    [DllImport(
+        "BotController",
+        EntryPoint = "BotController_SendVoiceFrame",
+        CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotControllerSendVoiceFrameSlice(
+        int recipientSlot,
+        int senderClient,
+        ulong senderXuid,
+        IntPtr audio,
+        int audioBytes,
+        int sampleRate,
+        float voiceLevel,
+        int sequenceBytes,
+        int sectionNumber,
+        int uncompressedSampleOffset,
+        uint numPackets,
+        [In] uint[] packetOffsets,
+        int packetOffsetCount,
+        int tick,
+        int audibleMask);
 
     private VoiceClipPlaybackState? _voiceTestPlayback;
     private int _nextVoiceSectionNumber = 1;
@@ -37,6 +61,13 @@ public sealed partial class DemoTracerPlugin
     private int _loadedVoiceRecordingStartTick;
     private int _loadedVoiceLiveStartTick;
     private float _loadedVoiceTickRate;
+    private readonly object _voiceClipCacheGate = new();
+    private readonly Dictionary<string, VoiceClipCacheEntry> _voiceClipCache =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly LinkedList<string> _voiceClipCacheLru = new();
+    private readonly object _voiceClipPreloadGate = new();
+    private long _voiceClipCacheBytes;
+    private CancellationTokenSource? _voiceClipPreloadCancellation;
 
     [ConsoleCommand("dtr_voice_auto", "dtr_voice_auto [status|on|off]")]
     public void VoiceAutoCommand(CCSPlayerController? player, CommandInfo command)
@@ -99,7 +130,8 @@ public sealed partial class DemoTracerPlugin
                 senderClient,
                 speakerXuid,
                 AllocateVoiceSectionBase(clip.Frames.Count),
-                expectedTeam: null)
+                expectedTeam: null,
+                followsLoadedReplay: false)
         };
         _voiceTestPlayback = new VoiceClipPlaybackState(
             clip.Path,
@@ -107,6 +139,7 @@ public sealed partial class DemoTracerPlugin
             Server.CurrentTime,
             speakers,
             speakerXuid,
+            clip.AudioPayload,
             clip.Frames,
             recipients);
 
@@ -147,6 +180,7 @@ public sealed partial class DemoTracerPlugin
             Server.CurrentTime,
             speakers,
             defaultSpeakerXuid: 0,
+            clip.AudioPayload,
             frames,
             recipients);
 
@@ -174,21 +208,6 @@ public sealed partial class DemoTracerPlugin
             return;
         }
 
-        foreach (var speaker in state.Speakers.Values)
-        {
-            var sender = Utilities.GetPlayerFromSlot(speaker.Slot);
-            if (sender is not { IsValid: true } || !IsReplayTargetBot(sender))
-            {
-                StopVoiceTestPlayback($"unsafe_sender_slot_{speaker.Slot}");
-                return;
-            }
-            if (speaker.ExpectedTeam.HasValue && sender.Team != speaker.ExpectedTeam.Value)
-            {
-                StopVoiceTestPlayback($"sender_team_mismatch_slot_{speaker.Slot}");
-                return;
-            }
-        }
-
         state.PruneRecipients(IsVoiceRecipient);
         if (state.RecipientSlots.Count == 0)
         {
@@ -211,11 +230,13 @@ public sealed partial class DemoTracerPlugin
             }
 
             var sectionNumber = speaker.NextSectionNumber;
-            var sender = Utilities.GetPlayerFromSlot(speaker.Slot);
-            if (sender is not { IsValid: true } || !IsReplayTargetBot(sender))
+            if (!TryResolveLiveVoiceSender(speaker, out var sender))
             {
-                StopVoiceTestPlayback($"unsafe_sender_slot_{speaker.Slot}");
-                return;
+                // A team join can evict or rebind one replay bot. Keep the
+                // other speakers synchronized instead of stopping the mix.
+                state.SkippedSenderFrames++;
+                state.NextFrameIndex++;
+                continue;
             }
 
             var audibleRecipients = AudibleVoiceRecipientsForSpeaker(
@@ -228,30 +249,48 @@ public sealed partial class DemoTracerPlugin
                 continue;
             }
 
-            foreach (var recipientSlot in audibleRecipients)
+            if (frame.AudioLength <= 0 ||
+                frame.AudioOffset < 0 ||
+                frame.AudioOffset > state.AudioPayload.Length - frame.AudioLength)
             {
-                var rc = BotControllerNative.SendVoiceFrame(
-                    recipientSlot,
-                    speaker.Client,
-                    speaker.Xuid,
-                    frame.Audio,
-                    frame.SampleRate,
-                    frame.VoiceLevel,
-                    frame.SequenceBytes,
-                    sectionNumber,
-                    frame.UncompressedSampleOffset,
-                    frame.NumPackets,
-                    frame.PacketOffsets,
-                    tick: -1,
-                    audibleMask: 1);
-                state.SentPackets++;
-                if (rc != 0)
+                StopVoiceTestPlayback("invalid_voice_audio_slice");
+                return;
+            }
+
+            var audioHandle = GCHandle.Alloc(state.AudioPayload, GCHandleType.Pinned);
+            try
+            {
+                var audio = IntPtr.Add(audioHandle.AddrOfPinnedObject(), frame.AudioOffset);
+                foreach (var recipientSlot in audibleRecipients)
                 {
-                    state.FailedPackets++;
-                    state.LastReturnCode = rc;
-                    StopVoiceTestPlayback($"voice_send_failed_rc_{rc}");
-                    return;
+                    var rc = SendVoiceFrameSlice(
+                        recipientSlot,
+                        speaker.Client,
+                        speaker.Xuid,
+                        audio,
+                        frame.AudioLength,
+                        frame.SampleRate,
+                        frame.VoiceLevel,
+                        frame.SequenceBytes,
+                        sectionNumber,
+                        frame.UncompressedSampleOffset,
+                        frame.NumPackets,
+                        frame.PacketOffsets,
+                        tick: -1,
+                        audibleMask: 1);
+                    state.SentPackets++;
+                    if (rc != 0)
+                    {
+                        state.FailedPackets++;
+                        state.LastReturnCode = rc;
+                        StopVoiceTestPlayback($"voice_send_failed_rc_{rc}");
+                        return;
+                    }
                 }
+            }
+            finally
+            {
+                audioHandle.Free();
             }
 
             state.SentFrames++;
@@ -263,8 +302,119 @@ public sealed partial class DemoTracerPlugin
         {
             Server.PrintToConsole(
                 $"dtr: voice test finished path=\"{EscapeConsoleString(state.Path)}\" sent_frames={state.SentFrames} " +
-                $"sent_packets={state.SentPackets} failed_packets={state.FailedPackets} last_rc={state.LastReturnCode}");
+                $"skipped_sender_frames={state.SkippedSenderFrames} sent_packets={state.SentPackets} " +
+                $"failed_packets={state.FailedPackets} last_rc={state.LastReturnCode}");
             _voiceTestPlayback = null;
+        }
+    }
+
+    private bool TryResolveLiveVoiceSender(
+        VoiceSpeakerPlayback speaker,
+        out CCSPlayerController sender)
+    {
+        var current = Utilities.GetPlayerFromSlot(speaker.Slot);
+        if (IsLiveVoiceSender(speaker, current))
+        {
+            sender = current!;
+            return true;
+        }
+
+        if (speaker.FollowsLoadedReplay)
+        {
+            var reboundSlot = int.MaxValue;
+            CCSPlayerController? reboundSender = null;
+            foreach (var (slot, replay) in _loadedReplays)
+            {
+                if (slot >= reboundSlot || replay.SteamId != speaker.Xuid)
+                    continue;
+
+                var candidate = Utilities.GetPlayerFromSlot(slot);
+                if (!IsLiveVoiceSender(speaker, candidate, slot))
+                    continue;
+
+                reboundSlot = slot;
+                reboundSender = candidate;
+            }
+
+            if (reboundSender != null)
+            {
+                speaker.Rebind(reboundSlot);
+                sender = reboundSender;
+                return true;
+            }
+        }
+
+        sender = null!;
+        return false;
+    }
+
+    private bool IsLiveVoiceSender(
+        VoiceSpeakerPlayback speaker,
+        CCSPlayerController? sender,
+        int? slotOverride = null)
+    {
+        if (sender is not { IsValid: true } || !IsReplayTargetBot(sender))
+            return false;
+        if (speaker.ExpectedTeam.HasValue && sender.Team != speaker.ExpectedTeam.Value)
+            return false;
+        if (!speaker.FollowsLoadedReplay)
+            return true;
+
+        var slot = slotOverride ?? speaker.Slot;
+        return _loadedReplays.TryGetValue(slot, out var replay) &&
+               replay.SteamId == speaker.Xuid;
+    }
+
+    private static int SendVoiceFrameSlice(
+        int recipientSlot,
+        int senderClient,
+        ulong senderXuid,
+        IntPtr audio,
+        int audioBytes,
+        int sampleRate,
+        float voiceLevel,
+        int sequenceBytes,
+        int sectionNumber,
+        int uncompressedSampleOffset,
+        uint numPackets,
+        uint[] packetOffsets,
+        int tick,
+        int audibleMask)
+    {
+        if (recipientSlot is < 0 or >= MaxPlayerSlots ||
+            senderClient < 0 ||
+            audio == IntPtr.Zero ||
+            audioBytes <= 0)
+        {
+            return -2;
+        }
+
+        try
+        {
+            return BotControllerSendVoiceFrameSlice(
+                recipientSlot,
+                senderClient,
+                senderXuid,
+                audio,
+                audioBytes,
+                sampleRate,
+                voiceLevel,
+                sequenceBytes,
+                sectionNumber,
+                uncompressedSampleOffset,
+                numPackets,
+                packetOffsets,
+                packetOffsets.Length,
+                tick,
+                audibleMask);
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return -7;
+        }
+        catch
+        {
+            return -8;
         }
     }
 
@@ -279,7 +429,8 @@ public sealed partial class DemoTracerPlugin
         {
             Server.PrintToConsole(
                 $"dtr: voice test stopped reason={reason} path=\"{EscapeConsoleString(state.Path)}\" " +
-                $"sent_frames={state.SentFrames} sent_packets={state.SentPackets} failed_packets={state.FailedPackets} last_rc={state.LastReturnCode}");
+                $"sent_frames={state.SentFrames} skipped_sender_frames={state.SkippedSenderFrames} " +
+                $"sent_packets={state.SentPackets} failed_packets={state.FailedPackets} last_rc={state.LastReturnCode}");
         }
         return true;
     }
@@ -300,7 +451,36 @@ public sealed partial class DemoTracerPlugin
         try
         {
             var resolvedPath = ResolveReadableManifestPath(clipPath);
+            var identity = ReadVoiceClipFileIdentity(resolvedPath);
+            if (!TryGetOrReadVoiceClip(identity, reply, CancellationToken.None, out clip))
+                return false;
+
+            if (!CurrentMapMatchesManifest(clip.Manifest.Map ?? string.Empty, out var currentMap))
+            {
+                reply(
+                    $"[DTR WARN] map mismatch: server=\"{currentMap}\" voice_clip=\"{clip.Manifest.Map}\" path=\"{clipPath}\"");
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            reply($"[DTR ERR] failed to read voice clip: {ex.Message}");
+            return false;
+        }
+    }
+
+    private bool TryReadVoiceClip(
+        VoiceClipFileIdentity identity,
+        Action<string> reply,
+        out LoadedVoiceClip clip)
+    {
+        clip = default;
+        try
+        {
+            var resolvedPath = identity.Path;
             var data = File.ReadAllBytes(resolvedPath);
+            if (data.LongLength != identity.Length)
+                throw new InvalidDataException("voice clip length changed while it was being read");
             if (!LooksLikeVoiceDtvBytes(data))
             {
                 reply("[DTR ERR] unsupported voice clip format; expected DTRVOICE v2 .dtv");
@@ -451,8 +631,7 @@ public sealed partial class DemoTracerPlugin
                 var frame = decodedFrames[i];
                 if (audioOffset > data.Length - frame.AudioLength)
                     throw new InvalidDataException($"voice frame {i} audio extends beyond blob");
-                frame.Audio = new byte[frame.AudioLength];
-                Buffer.BlockCopy(data, audioOffset, frame.Audio, 0, frame.AudioLength);
+                frame.AudioOffset = audioOffset;
                 audioOffset += frame.AudioLength;
             }
 
@@ -469,21 +648,185 @@ public sealed partial class DemoTracerPlugin
                 DurationSeconds = Math.Max(0, endTick - startTick) / tickRate,
                 Speakers = speakers
             };
-            if (!CurrentMapMatchesManifest(manifest.Map ?? string.Empty, out var currentMap))
-            {
-                reply(
-                    $"[DTR WARN] map mismatch: server=\"{currentMap}\" voice_clip=\"{manifest.Map}\" path=\"{clipPath}\"");
-            }
             if (!TryBuildVoiceFrames(manifest, decodedFrames, reply, out var frames))
                 return false;
 
-            clip = new LoadedVoiceClip(resolvedPath, manifest, frames);
+            clip = new LoadedVoiceClip(resolvedPath, manifest, data, frames);
             return true;
         }
         catch (Exception ex)
         {
             reply($"[DTR ERR] failed to read voice clip: {ex.Message}");
             return false;
+        }
+    }
+
+    private static VoiceClipFileIdentity ReadVoiceClipFileIdentity(string path)
+    {
+        var info = new FileInfo(path);
+        if (!info.Exists)
+            throw new FileNotFoundException($"voice clip not found: {path}", path);
+        if (info.Length > int.MaxValue)
+            throw new InvalidDataException("voice clip is too large");
+        return new VoiceClipFileIdentity(info.FullName, info.Length, info.LastWriteTimeUtc.Ticks);
+    }
+
+    private bool TryGetOrReadVoiceClip(
+        VoiceClipFileIdentity identity,
+        Action<string> reply,
+        CancellationToken cancellationToken,
+        out LoadedVoiceClip clip)
+    {
+        if (TryGetCachedVoiceClip(identity, out clip))
+            return true;
+        if (cancellationToken.IsCancellationRequested)
+        {
+            clip = default;
+            return false;
+        }
+        if (!TryReadVoiceClip(identity, reply, out clip))
+            return false;
+        if (cancellationToken.IsCancellationRequested)
+        {
+            clip = default;
+            return false;
+        }
+
+        var currentIdentity = ReadVoiceClipFileIdentity(identity.Path);
+        if (!identity.Matches(currentIdentity))
+        {
+            reply("[DTR ERR] voice clip changed while it was being read");
+            clip = default;
+            return false;
+        }
+
+        clip = CacheVoiceClip(identity, clip, cancellationToken);
+        return true;
+    }
+
+    private bool TryGetCachedVoiceClip(VoiceClipFileIdentity identity, out LoadedVoiceClip clip)
+    {
+        lock (_voiceClipCacheGate)
+        {
+            if (!_voiceClipCache.TryGetValue(identity.Path, out var entry))
+            {
+                clip = default;
+                return false;
+            }
+            if (!entry.Identity.Matches(identity))
+            {
+                RemoveVoiceClipCacheEntry(entry);
+                clip = default;
+                return false;
+            }
+
+            _voiceClipCacheLru.Remove(entry.LruNode);
+            _voiceClipCacheLru.AddFirst(entry.LruNode);
+            clip = entry.Clip;
+            return true;
+        }
+    }
+
+    private LoadedVoiceClip CacheVoiceClip(
+        VoiceClipFileIdentity identity,
+        LoadedVoiceClip clip,
+        CancellationToken cancellationToken)
+    {
+        var size = clip.AudioPayload.LongLength;
+        if (size > VoiceClipCacheMaxBytes)
+            return clip;
+
+        lock (_voiceClipCacheGate)
+        {
+            if (cancellationToken.IsCancellationRequested)
+                return clip;
+
+            if (_voiceClipCache.TryGetValue(identity.Path, out var existing))
+            {
+                if (existing.Identity.Matches(identity))
+                {
+                    _voiceClipCacheLru.Remove(existing.LruNode);
+                    _voiceClipCacheLru.AddFirst(existing.LruNode);
+                    return existing.Clip;
+                }
+                RemoveVoiceClipCacheEntry(existing);
+            }
+
+            while ((_voiceClipCache.Count >= VoiceClipCacheMaxEntries ||
+                    _voiceClipCacheBytes + size > VoiceClipCacheMaxBytes) &&
+                   _voiceClipCacheLru.Last is { } oldest)
+            {
+                RemoveVoiceClipCacheEntry(_voiceClipCache[oldest.Value]);
+            }
+
+            var node = _voiceClipCacheLru.AddFirst(identity.Path);
+            var entry = new VoiceClipCacheEntry(identity, clip, node, size);
+            _voiceClipCache.Add(identity.Path, entry);
+            _voiceClipCacheBytes += size;
+            return clip;
+        }
+    }
+
+    private void RemoveVoiceClipCacheEntry(VoiceClipCacheEntry entry)
+    {
+        _voiceClipCache.Remove(entry.Identity.Path);
+        _voiceClipCacheLru.Remove(entry.LruNode);
+        _voiceClipCacheBytes -= entry.Size;
+    }
+
+    private void ClearVoiceClipCache()
+    {
+        lock (_voiceClipCacheGate)
+        {
+            _voiceClipCache.Clear();
+            _voiceClipCacheLru.Clear();
+            _voiceClipCacheBytes = 0;
+        }
+    }
+
+    private void QueueVoiceClipPreload(string clipPath)
+    {
+        var cancellation = new CancellationTokenSource();
+        var token = cancellation.Token;
+        lock (_voiceClipPreloadGate)
+        {
+            _voiceClipPreloadCancellation?.Cancel();
+            _voiceClipPreloadCancellation = cancellation;
+        }
+
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                if (token.IsCancellationRequested)
+                    return;
+                var identity = ReadVoiceClipFileIdentity(clipPath);
+                if (identity.Length > VoiceClipCacheMaxBytes)
+                    return;
+                _ = TryGetOrReadVoiceClip(identity, static _ => { }, token, out _);
+            }
+            catch
+            {
+                // A foreground load reports errors. Preload stays silent and never touches game state.
+            }
+            finally
+            {
+                lock (_voiceClipPreloadGate)
+                {
+                    if (ReferenceEquals(_voiceClipPreloadCancellation, cancellation))
+                        _voiceClipPreloadCancellation = null;
+                    cancellation.Dispose();
+                }
+            }
+        });
+    }
+
+    private void CancelVoiceClipPreload()
+    {
+        lock (_voiceClipPreloadGate)
+        {
+            _voiceClipPreloadCancellation?.Cancel();
+            _voiceClipPreloadCancellation = null;
         }
     }
 
@@ -511,8 +854,7 @@ public sealed partial class DemoTracerPlugin
                 return false;
             }
 
-            var audio = frame.Audio;
-            if (audio.Length == 0)
+            if (frame.AudioLength == 0)
             {
                 reply($"[DTR ERR] voice frame {i} has empty audio");
                 return false;
@@ -524,7 +866,7 @@ public sealed partial class DemoTracerPlugin
             var voiceLevel = frame.VoiceLevel;
             if (!TryBuildPacketOffsets(
                     i,
-                    audio.Length,
+                    frame.AudioLength,
                     frame.PacketOffsets,
                     frame.NumPackets,
                     reply,
@@ -542,7 +884,8 @@ public sealed partial class DemoTracerPlugin
                 frame.RelativeTick,
                 playbackSeconds,
                 xuid,
-                audio,
+                frame.AudioOffset,
+                frame.AudioLength,
                 sampleRate,
                 voiceLevel,
                 frame.SequenceBytes,
@@ -739,7 +1082,8 @@ public sealed partial class DemoTracerPlugin
                         match,
                         xuid,
                         0,
-                        _loadedReplays[match].ManifestTeam);
+                        _loadedReplays[match].ManifestTeam,
+                        followsLoadedReplay: true);
                 }
             }
         }
@@ -761,7 +1105,8 @@ public sealed partial class DemoTracerPlugin
                     slot,
                     xuid,
                     0,
-                    expectedTeam: null);
+                    expectedTeam: null,
+                    followsLoadedReplay: false);
             }
         }
 
@@ -838,11 +1183,14 @@ public sealed partial class DemoTracerPlugin
         _loadedVoiceTickRate = manifestTickRate > 0.0f
             ? manifestTickRate
             : 0.0f;
+        if (_voiceAutoEnabled)
+            QueueVoiceClipPreload(clipPath);
         return Path.GetFileName(clipPath);
     }
 
     private void ClearLoadedAutoVoiceClip()
     {
+        CancelVoiceClipPreload();
         _loadedVoiceClipPath = string.Empty;
         _loadedVoiceRound = -1;
         _loadedVoiceRecordingStartTick = 0;
@@ -896,6 +1244,7 @@ public sealed partial class DemoTracerPlugin
             startTime,
             speakers,
             defaultSpeakerXuid: 0,
+            clip.AudioPayload,
             frames,
             recipients)
         {
@@ -1247,7 +1596,31 @@ public sealed partial class DemoTracerPlugin
     private readonly record struct LoadedVoiceClip(
         string Path,
         VoiceClipManifest Manifest,
+        byte[] AudioPayload,
         List<VoiceClipRuntimeFrame> Frames);
+
+    private readonly record struct VoiceClipFileIdentity(
+        string Path,
+        long Length,
+        long LastWriteTimeUtcTicks)
+    {
+        public bool Matches(VoiceClipFileIdentity other)
+            => string.Equals(Path, other.Path, StringComparison.OrdinalIgnoreCase) &&
+               Length == other.Length &&
+               LastWriteTimeUtcTicks == other.LastWriteTimeUtcTicks;
+    }
+
+    private sealed class VoiceClipCacheEntry(
+        VoiceClipFileIdentity identity,
+        LoadedVoiceClip clip,
+        LinkedListNode<string> lruNode,
+        long size)
+    {
+        public VoiceClipFileIdentity Identity { get; } = identity;
+        public LoadedVoiceClip Clip { get; } = clip;
+        public LinkedListNode<string> LruNode { get; } = lruNode;
+        public long Size { get; } = size;
+    }
 
     private sealed class VoiceClipPlaybackState(
         string path,
@@ -1255,6 +1628,7 @@ public sealed partial class DemoTracerPlugin
         float startTime,
         Dictionary<ulong, VoiceSpeakerPlayback> speakers,
         ulong defaultSpeakerXuid,
+        byte[] audioPayload,
         List<VoiceClipRuntimeFrame> frames,
         List<int> recipientSlots)
     {
@@ -1263,10 +1637,12 @@ public sealed partial class DemoTracerPlugin
         public float StartTime { get; } = startTime;
         public Dictionary<ulong, VoiceSpeakerPlayback> Speakers { get; } = speakers;
         public ulong DefaultSpeakerXuid { get; } = defaultSpeakerXuid;
+        public byte[] AudioPayload { get; } = audioPayload;
         public List<VoiceClipRuntimeFrame> Frames { get; } = frames;
         public List<int> RecipientSlots { get; private set; } = recipientSlots;
         public int NextFrameIndex { get; set; }
         public int SentFrames { get; set; }
+        public int SkippedSenderFrames { get; set; }
         public int SentPackets { get; set; }
         public int FailedPackets { get; set; }
         public int LastReturnCode { get; set; }
@@ -1294,20 +1670,29 @@ public sealed partial class DemoTracerPlugin
         int client,
         ulong xuid,
         int nextSectionNumber,
-        CsTeam? expectedTeam)
+        CsTeam? expectedTeam,
+        bool followsLoadedReplay)
     {
-        public int Slot { get; } = slot;
-        public int Client { get; } = client;
+        public int Slot { get; private set; } = slot;
+        public int Client { get; private set; } = client;
         public ulong Xuid { get; } = xuid;
         public int NextSectionNumber { get; set; } = nextSectionNumber;
         public CsTeam? ExpectedTeam { get; } = expectedTeam;
+        public bool FollowsLoadedReplay { get; } = followsLoadedReplay;
+
+        public void Rebind(int newSlot)
+        {
+            Slot = newSlot;
+            Client = newSlot;
+        }
     }
 
     private sealed class VoiceClipRuntimeFrame(
         uint relativeTick,
         float playbackSeconds,
         ulong xuid,
-        byte[] audio,
+        int audioOffset,
+        int audioLength,
         int sampleRate,
         float voiceLevel,
         int sequenceBytes,
@@ -1319,7 +1704,8 @@ public sealed partial class DemoTracerPlugin
         public uint RelativeTick { get; } = relativeTick;
         public float PlaybackSeconds { get; } = playbackSeconds;
         public ulong Xuid { get; } = xuid;
-        public byte[] Audio { get; } = audio;
+        public int AudioOffset { get; } = audioOffset;
+        public int AudioLength { get; } = audioLength;
         public int SampleRate { get; } = sampleRate;
         public float VoiceLevel { get; } = voiceLevel;
         public int SequenceBytes { get; } = sequenceBytes;
@@ -1379,6 +1765,6 @@ public sealed partial class DemoTracerPlugin
 
         public int AudioLength { get; init; }
 
-        public byte[] Audio { get; set; } = Array.Empty<byte>();
+        public int AudioOffset { get; set; }
     }
 }

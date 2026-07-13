@@ -4234,6 +4234,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             }
             _lastReplayPovMask = 0;
             ClearLoadedAutoVoiceClip();
+            ClearVoiceClipCache();
             ClearLoadedAutoChat();
 
             _loadedSlots.Clear();
