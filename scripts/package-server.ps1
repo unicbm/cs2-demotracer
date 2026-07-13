@@ -4,8 +4,11 @@ param(
     [string]$OutputRoot = "dist",
     [string]$RuntimePackage = "runtime\BotController\build\package",
     [string]$RuntimeBuild = "runtime\BotController\build",
+    [string]$BotHiderRuntimePackage = "runtime\BotHider\build\package",
+    [string]$BotHiderRuntimeBuild = "runtime\BotHider\build",
     [string]$DotnetPath = "",
     [switch]$BuildRuntime,
+    [switch]$BuildBotHiderRuntime,
     [switch]$SkipCssBuild,
     [switch]$IncludeSymbols
 )
@@ -22,8 +25,15 @@ $runtimeRoot = if ([System.IO.Path]::IsPathRooted($RuntimePackage)) {
 } else {
     Join-Path $repoRoot $RuntimePackage
 }
-$cssOut = Join-Path $repoRoot "css\DemoTracer\bin\$Configuration\net8.0"
-$apiOut = Join-Path $repoRoot "css\DemoTracerApi\bin\$Configuration\net8.0"
+$botHiderRuntimeRoot = if ([System.IO.Path]::IsPathRooted($BotHiderRuntimePackage)) {
+    $BotHiderRuntimePackage
+} else {
+    Join-Path $repoRoot $BotHiderRuntimePackage
+}
+$cssOut = Join-Path $repoRoot "css\DemoTracer\bin\$Configuration\net10.0"
+$apiOut = Join-Path $repoRoot "css\DemoTracerApi\bin\$Configuration\net10.0"
+$botHiderCssOut = Join-Path $repoRoot "runtime\BotHider\csharp\BotHiderImpl\bin\$Configuration\net10.0"
+$botHiderApiOut = Join-Path $repoRoot "runtime\BotHider\csharp\BotHiderApi\bin\$Configuration\net10.0"
 
 function Require-Path([string]$Path, [string]$Label) {
     if (-not (Test-Path -LiteralPath $Path)) {
@@ -51,7 +61,7 @@ function Test-DotnetHasSdk([string]$Command) {
         if ($LASTEXITCODE -ne 0) {
             return $false
         }
-        return $null -ne ($sdks | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)
+        return $null -ne ($sdks | Where-Object { $_ -match '^10\.' } | Select-Object -First 1)
     } catch {
         return $false
     }
@@ -86,23 +96,33 @@ function Resolve-DotnetPath([string]$PreferredPath) {
     if ($command -and (Test-DotnetHasSdk $command.Source)) {
         return $command.Source
     }
-    throw "dotnet SDK not found. Install a .NET SDK or pass -DotnetPath to a dotnet.exe with SDKs installed."
+    throw "dotnet 10 SDK not found. Install .NET 10 SDK or pass -DotnetPath to a dotnet.exe that provides it."
 }
 
 if ($BuildRuntime) {
     Invoke-Checked "cmake" @("--build", (Join-Path $repoRoot $RuntimeBuild), "--config", $Configuration, "--target", "BotController")
 }
 
+if ($BuildBotHiderRuntime) {
+    Invoke-Checked "cmake" @("--build", (Join-Path $repoRoot $BotHiderRuntimeBuild), "--config", $Configuration, "--target", "BotHider")
+}
+
 if (-not $SkipCssBuild) {
     $resolvedDotnetPath = Resolve-DotnetPath $DotnetPath
     Invoke-Checked $resolvedDotnetPath @("build", (Join-Path $repoRoot "css\DemoTracer\DemoTracer.csproj"), "-c", $Configuration)
+    Invoke-Checked $resolvedDotnetPath @("build", (Join-Path $repoRoot "runtime\BotHider\csharp\BotHiderImpl\BotHiderImpl.csproj"), "-c", $Configuration)
 }
 
 Require-Path (Join-Path $runtimeRoot "addons\BotController\bin\win64\BotController.dll") "BotController runtime DLL"
 Require-Path (Join-Path $runtimeRoot "addons\BotController\gamedata.json") "BotController gamedata"
 Require-Path (Join-Path $runtimeRoot "addons\metamod\BotController.vdf") "BotController Metamod VDF"
+Require-Path (Join-Path $botHiderRuntimeRoot "addons\BotHider\bin\win64\BotHider.dll") "DemoTracer BotHider runtime DLL"
+Require-Path (Join-Path $botHiderRuntimeRoot "addons\BotHider\gamedata.json") "DemoTracer BotHider gamedata"
+Require-Path (Join-Path $botHiderRuntimeRoot "addons\metamod\BotHider.vdf") "DemoTracer BotHider Metamod VDF"
 Require-Path (Join-Path $cssOut "DemoTracer.dll") "DemoTracer CSS plugin"
 Require-Path (Join-Path $apiOut "DemoTracerApi.dll") "DemoTracer API assembly"
+Require-Path (Join-Path $botHiderCssOut "DemoTracerBotHider.dll") "DemoTracer BotHider CSS plugin"
+Require-Path (Join-Path $botHiderApiOut "DemoTracerBotHiderApi.dll") "DemoTracer BotHider API assembly"
 
 if (Test-Path -LiteralPath $stageRoot) {
     Remove-Item -LiteralPath $stageRoot -Recurse -Force
@@ -115,6 +135,10 @@ Copy-Item -LiteralPath (Join-Path $runtimeRoot "addons\BotController") `
     -Destination (Join-Path $addonsOut "BotController") -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $runtimeRoot "addons\metamod") `
     -Destination (Join-Path $addonsOut "metamod") -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $botHiderRuntimeRoot "addons\BotHider") `
+    -Destination (Join-Path $addonsOut "BotHider") -Recurse -Force
+Copy-RequiredFile (Join-Path $botHiderRuntimeRoot "addons\metamod\BotHider.vdf") `
+    (Join-Path $addonsOut "metamod\BotHider.vdf")
 
 $pluginOut = Join-Path $stageRoot "addons\counterstrikesharp\plugins\DemoTracer"
 Copy-RequiredFile (Join-Path $cssOut "DemoTracer.deps.json") (Join-Path $pluginOut "DemoTracer.deps.json")
@@ -123,9 +147,19 @@ Copy-RequiredFile (Join-Path $cssOut "demotracer-econ-index.v1.json") (Join-Path
 Copy-RequiredFile (Join-Path $repoRoot "css\DemoTracer\demotracer.config.example.json") (Join-Path $pluginOut "demotracer.config.example.json")
 Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.deps.json") (Join-Path $pluginOut "DemoTracerApi.deps.json")
 Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.dll") (Join-Path $pluginOut "DemoTracerApi.dll")
+
+$botHiderPluginOut = Join-Path $stageRoot "addons\counterstrikesharp\plugins\DemoTracerBotHider"
+Copy-RequiredFile (Join-Path $botHiderCssOut "DemoTracerBotHider.deps.json") (Join-Path $botHiderPluginOut "DemoTracerBotHider.deps.json")
+Copy-RequiredFile (Join-Path $botHiderCssOut "DemoTracerBotHider.dll") (Join-Path $botHiderPluginOut "DemoTracerBotHider.dll")
+$botHiderSharedOut = Join-Path $stageRoot "addons\counterstrikesharp\shared\DemoTracerBotHiderApi"
+Copy-RequiredFile (Join-Path $botHiderApiOut "DemoTracerBotHiderApi.dll") (Join-Path $botHiderSharedOut "DemoTracerBotHiderApi.dll")
+$harmonySource = Join-Path $botHiderCssOut "shared\0Harmony\0Harmony.dll"
+Copy-RequiredFile $harmonySource (Join-Path $stageRoot "addons\counterstrikesharp\shared\0Harmony\0Harmony.dll")
 if ($IncludeSymbols) {
     Copy-RequiredFile (Join-Path $cssOut "DemoTracer.pdb") (Join-Path $pluginOut "DemoTracer.pdb")
     Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.pdb") (Join-Path $pluginOut "DemoTracerApi.pdb")
+    Copy-RequiredFile (Join-Path $botHiderCssOut "DemoTracerBotHider.pdb") (Join-Path $botHiderPluginOut "DemoTracerBotHider.pdb")
+    Copy-RequiredFile (Join-Path $botHiderApiOut "DemoTracerBotHiderApi.pdb") (Join-Path $botHiderSharedOut "DemoTracerBotHiderApi.pdb")
 }
 
 New-Item -ItemType Directory -Force -Path (Join-Path $stageRoot "docs") | Out-Null
@@ -133,6 +167,7 @@ Copy-RequiredFile (Join-Path $repoRoot "docs\COMMANDS.md") (Join-Path $stageRoot
 Copy-RequiredFile (Join-Path $repoRoot "docs\COMMANDS.zh-Hans.md") (Join-Path $stageRoot "docs\COMMANDS.zh-Hans.md")
 Copy-RequiredFile (Join-Path $repoRoot "docs\VOICE.md") (Join-Path $stageRoot "docs\VOICE.md")
 Copy-RequiredFile (Join-Path $repoRoot "docs\VOICE.zh-Hans.md") (Join-Path $stageRoot "docs\VOICE.zh-Hans.md")
+Copy-RequiredFile (Join-Path $repoRoot "runtime\BotHider\UPSTREAM.md") (Join-Path $stageRoot "docs\BOTHIDER-UPSTREAM.md")
 Copy-RequiredFile (Join-Path $repoRoot "LICENSE") (Join-Path $stageRoot "LICENSE")
 
 $gitCommit = "unknown"
@@ -151,6 +186,8 @@ bundled_botcontroller_abi_minor: 29
 expected_demotracer_native_abi: 16
 dtr_reader: 3..7
 demotracer_api: 6
+demotracer_bothider_api: 1
+counterstrikesharp_target: net10.0
 
 Install target:
 Copy this package's addons directory into your CS2 server game/csgo directory.
@@ -161,8 +198,8 @@ $readme = @'
 # CS2 DemoTracer Server Bundle v__VERSION__
 
 This is the complete Windows x64 server playback package. It includes the
-Metamod BotController runtime and the CounterStrikeSharp DemoTracer plugin as a
-matching ABI set.
+Metamod BotController and BotHider runtimes plus their CounterStrikeSharp
+plugins as one matching runtime set.
 
 ## Install
 
@@ -170,14 +207,18 @@ matching ABI set.
 2. Make sure the server already has Metamod:Source and CounterStrikeSharp
    v1.0.371 or newer installed. They are prerequisites and are not included in
    this bundle.
-3. Copy this package's `addons` directory into the server `game/csgo` directory
+3. Remove separately installed public `BotHiderImpl` CounterStrikeSharp plugin
+   directories. The bundled `DemoTracerBotHider` is the only supported
+   presentation writer and must not run beside another BotHider CSS plugin.
+4. Copy this package's `addons` directory into the server `game/csgo` directory
    so it merges with the existing `addons` directory.
-4. Start the server.
-5. In the server console, run:
+5. Start the server.
+6. In the server console, run:
 
 ```text
 dtr_runtime
 bc_status
+bh_status
 ```
 
 Expected ABI check:
@@ -210,6 +251,12 @@ through CS2's native `say` / `say_team` path when `dtr_chat_auto on` is enabled
 - `addons/BotController/bin/win64/BotController.dll`
 - `addons/BotController/gamedata.json`
 - `addons/metamod/BotController.vdf`
+- `addons/BotHider/bin/win64/BotHider.dll`
+- `addons/BotHider/gamedata.json`
+- `addons/BotHider/bot_info.example.json` (does not overwrite local `bot_info.json`)
+- `addons/metamod/BotHider.vdf`
+- `addons/counterstrikesharp/plugins/DemoTracerBotHider/`
+- `addons/counterstrikesharp/shared/DemoTracerBotHiderApi/`
 - `addons/counterstrikesharp/plugins/DemoTracer/`
   - `demotracer.config.example.json` sanitized local runtime defaults
   - `demotracer-econ-index.v1.json` compact econ validation index
@@ -217,6 +264,7 @@ through CS2's native `say` / `say_team` path when `dtr_chat_auto on` is enabled
 - `docs/COMMANDS.zh-Hans.md`
 - `docs/VOICE.md`
 - `docs/VOICE.zh-Hans.md`
+- `docs/BOTHIDER-UPSTREAM.md`
 
 ## Compatibility
 
@@ -225,6 +273,8 @@ through CS2's native `say` / `say_team` path when `dtr_chat_auto on` is enabled
 - Bundled BotController native ABI minor: 29
 - Supported `.dtr` reader versions: 3..7
 - DemoTracer companion API: 6
+- DemoTracer BotHider API: 1
+- CounterStrikeSharp plugin target: .NET 10
 - Maintained runtime platform: Windows x64
 
 ## Dependencies
@@ -237,17 +287,20 @@ Required external server prerequisites:
 Included in this bundle:
 
 - `BotController` Metamod runtime
+- `BotHider` Metamod runtime maintained by DemoTracer
 - `DemoTracer` CounterStrikeSharp plugin
+- `DemoTracerBotHider` CounterStrikeSharp plugin
+- `DemoTracerBotHiderApi.dll`
 - `DemoTracerApi.dll`
 - `demotracer-econ-index.v1.json`
 - `demotracer.config.example.json`
 
+Do not install a second public CS2-Bot-Hider CSS plugin beside the bundled
+`DemoTracerBotHider`. Identity and crosshair presentation use exclusive,
+versioned leases and require one publisher.
+
 Optional:
 
-- CS2-Bot-Hider, only for BotHider-managed replay slots and identity alignment
-  features such as demo display names, SteamID64 alignment, and demo avatar
-  override alignment. For the July 2026 update, use a build containing the
-  Windows client identity-offset fix; tagged v0.2.5 predates it.
 - Ray-Trace v1.0.16 or newer, only for stricter line-of-sight filtering in
   handoff 360 threat detection.
 - Demo-backed agent model evidence can change the matching safe replay bot slot

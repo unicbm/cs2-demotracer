@@ -7,10 +7,10 @@ Trace CS2 demos into bot-executable route replays.
 > [!CAUTION]
 > **July 2026 CS2 update (1.41.6.9):** Server playback requires
 > CounterStrikeSharp v1.0.371 or newer. Ray-Trace users need v1.0.16 or newer.
-> CS2-Bot-Hider users need a build containing the July 2026 Windows client
-> identity-offset fix; tagged v0.2.5 predates it. DemoTracer's Windows core
-> replay path has been locally verified. Demos using the newer delta user-command
-> encoding require converter v0.5.0 or newer; the `.dtr` format is unchanged.
+> The server bundle now carries DemoTracer's maintained BotHider runtime with
+> the required Windows identity offsets. DemoTracer's Windows core replay path
+> has been locally verified. Demos using the newer delta user-command encoding
+> require converter v0.5.0 or newer; the `.dtr` format is unchanged.
 
 CS2 DemoTracer converts CS2 `.dem` files into compact `.dtr` replay files, then
 plays those routes back through bots on a local CS2 server. The normal converter
@@ -68,20 +68,21 @@ In-game playback needs a local Windows x64 CS2 server with:
 - [Metamod:Source](https://www.sourcemm.net/)
 - [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp)
 - The DemoTracer server bundle, which includes the `BotController` Metamod
-  runtime, `DemoTracer` CounterStrikeSharp plugin, `DemoTracerApi.dll`, and
-  sanitized example config.
+  runtime, the DemoTracer-maintained `BotHider` runtime,
+  `DemoTracer`/`DemoTracerBotHider` CounterStrikeSharp plugins, their API
+  assemblies, and sanitized example config. All CounterStrikeSharp projects
+  target .NET 10.
 
 Optional integrations:
 
-- [CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider), for BotHider-managed
-  replay slots plus demo display-name, SteamID64, and avatar identity alignment.
 - [Ray-Trace](https://github.com/FUNPLAY-pro-CS2/Ray-Trace), or another provider
   exposing `raytrace:craytraceinterface`, for stricter line-of-sight filtering
   in handoff 360 threat detection. DemoTracer works without it and reports the
   status through `dtr_doctor`.
 
-The server bundle does not include Metamod:Source, CounterStrikeSharp,
-CS2-Bot-Hider, or a RayTrace provider. Full dependency notes are in
+The server bundle does not include Metamod:Source, CounterStrikeSharp, or a
+RayTrace provider. Do not co-install a separate public BotHider CSS plugin;
+DemoTracer's bundled provider is the sole identity/crosshair publisher. Full dependency notes are in
 [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md).
 
 ## Quick Start
@@ -181,6 +182,8 @@ layout is documented in [`docs/FORMAT.md`](docs/FORMAT.md).
 
 - `converter/`: Rust CLI, GUI, local Rust API, and pool conversion.
 - `runtime/BotController/`: CS2 Metamod runtime used by the server bundle.
+- `runtime/BotHider/`: DemoTracer-maintained BotHider native/CSS runtime and
+  versioned presentation-lease API.
 - `css/DemoTracer/`: CounterStrikeSharp playback plugin.
 - `css/DemoTracerApi/`: companion-plugin API contract.
 - `docs/`: maintained usage, reference, format, and dependency docs.
@@ -195,8 +198,8 @@ CS2 DemoTracer builds on several excellent open-source projects.
   provides the AGPL-3.0 BotController foundation for replay hooks, recording,
   input injection, and weapon locking.
 - [XBribo/CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider) provides the
-  integration path used for managed bot detection, display-name alignment, and
-  SteamID64 alignment.
+  AGPL foundation for the maintained `runtime/BotHider` fake-client and persona
+  runtime. DemoTracer adds its versioned presentation-lease provider.
 - [LaihoE/demoparser](https://github.com/LaihoE/demoparser) provides the Rust
   CS2 demo parser used by the converter. The vendored source is preserved under
   `third_party/demoparser`.
@@ -211,4 +214,5 @@ CS2 DemoTracer builds on several excellent open-source projects.
 
 CS2 DemoTracer is AGPL-3.0-only. See [`LICENSE`](LICENSE) for the full license
 text. Vendored third-party components keep their upstream license files under
-`third_party/`.
+`third_party/`; the maintained BotHider copy preserves its original license and
+tracking notes under `runtime/BotHider/`.

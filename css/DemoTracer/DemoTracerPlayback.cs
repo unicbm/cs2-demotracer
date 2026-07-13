@@ -1207,7 +1207,7 @@ public sealed partial class DemoTracerPlugin
     {
         if (!IsReplayControllerSafe(player) || IsReplayPawnTakenByController(player, playerControllers))
             return false;
-        return player.IsBot || _botHiderProbe.IsManagedBot(player.Slot);
+        return player.IsBot || _botHiderBridge.IsManagedBot(player.Slot);
     }
 
     private bool IsReplaySlotStillSafe(

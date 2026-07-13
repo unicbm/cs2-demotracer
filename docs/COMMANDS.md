@@ -6,24 +6,25 @@ loaded. Add semicolons only when you want to paste several commands as one
 console line.
 
 Server prerequisites are Metamod:Source and CounterStrikeSharp. The DemoTracer
-server bundle supplies `BotController`, `DemoTracer`, `DemoTracerApi.dll`,
-`demotracer-econ-index.v1.json`, and the example config. CS2-Bot-Hider is optional and only
-needed for BotHider-managed replay slots plus identity features such as demo
-display names, SteamID64 alignment, and demo avatar override alignment.
+server bundle supplies `BotController`, the DemoTracer-maintained `BotHider`,
+`DemoTracer`, `DemoTracerBotHider`, their API assemblies,
+`demotracer-econ-index.v1.json`, and the example config. Do not run another
+public BotHider CSS plugin beside the bundled presentation provider.
 
 ## Recommended Baseline
 
 ```text
 css_plugins reload DemoTracer
+bh_status
 dtr_config_status
 dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
 ```
 
 Replay identity, weapon/loadout alignment, and projectile alignment are on by
 default. Crosshair alignment is off by default and must be explicitly enabled
-with `dtr_align crosshair on`. Identity alignment only writes demo names and
-SteamID64 values when BotHider is present and managing the target replay bot
-slots. If the manifest contains demo-provided PNG avatar overrides, identity
+with `dtr_align crosshair on`. Identity alignment leases demo names and
+SteamID64 values through bundled BotHider-managed replay slots. If the manifest
+contains demo-provided PNG avatar overrides, identity
 `full` also applies them for matching SteamID64 values.
 
 Use `seq` for "sequence from source round", `round` for one source round only,
@@ -81,7 +82,7 @@ matching legacy fields.
 | `dtr_handoff` | `death_contact_c4 slot` | Release the contacted/dead replay slot after contact or death; C4 planted releases all active replay slots. |
 | `dtr_partial` | `1` | Allow replay with fewer bots than manifest players. |
 | `dtr_chat_auto` | `on` | Replay demo chat messages from manifest metadata on the same round timeline. |
-| `dtr_replay_identity` | `steam` | Write demo name and SteamID64 through BotHider-managed replay bot slots when available. Team/event avatar PNGs require explicit `avatar`; `full` is a compatibility alias for `avatar`. |
+| `dtr_replay_identity` | `steam` | Lease demo name and SteamID64 through bundled BotHider-managed replay bot slots. Team/event avatar PNGs require explicit `avatar`; `full` is a compatibility alias for `avatar`. |
 | `dtr_util_trace` | `0` | Utility CSV trace disabled. |
 | `bc_replay_pov` | `spectated` | Publish expensive native first-person POV updates only for replay bots watched in-eye. |
 
@@ -542,16 +543,15 @@ Implementation when enabled:
 
 Enables or disables crosshair alignment. It is off by default.
 
-When enabled, DemoTracer uses manifest `view.crosshair_code` evidence exported
-from the demo player's stable `crosshair_code` value while a human viewer is
-watching a safe replay bot in-eye. Missing or contradictory demo evidence is
-skipped. This affects POV/spectator fidelity only; it does not change movement,
-weapons, projectiles, replay bot state, or inventory cosmetics.
-
-This command writes the human viewer's client crosshair configuration. It stays
-default-off because the current restore lifecycle is not hardened enough around
-handoff, bot takeover, disconnect, and reload timing; keep it opt-in until that
-ownership/restore path is corrected.
+When enabled, DemoTracer leases manifest `view.crosshair_code` evidence for the
+safe replay bot. The bundled BotHider is the sole writer and publishes the code
+through `CCSPlayerController.m_szCrosshairCodes` with server state replication.
+Missing or contradictory demo evidence is skipped. Exact token release restores
+the provider's current persona base on replay unload/replacement, disconnect,
+map change, slot reuse, or reload. A death/contact/C4 handoff releases replay
+control only; presentation stays bound to the loaded replay assignment. The
+path does not write human client configuration or invoke the legacy
+`client.dll` HUD hook.
 
 ### `dtr_left_hand_desired <0|1>`
 
@@ -572,10 +572,17 @@ round, sequence, or pool plan to apply it to already loaded replay slots.
 
 Controls BotHider identity alignment.
 
-When enabled and BotHider is available, manifest loading queues name and
-SteamID64 updates for BotHider-managed bot slots using the demo player's
-`player_name` and `steam_id`. The default mode is `steam`, which does not write
+When enabled, manifest loading leases name and SteamID64 presentation from the
+bundled BotHider using the demo player's `player_name` and `steam_id`. The
+default mode is `steam`, which does not write
 `ServerAvatarOverrides`; `1`/`on` also means `steam`.
+
+The identity lease follows the loaded replay assignment, not active input
+playback. Death, contact, replay finish, and C4 handoff therefore keep the same
+demo name, SteamID, avatar association, crosshair, and flair. Round replacement
+atomically replaces the presentation batch; unload or slot loss restores the
+current BotHider persona base. Exact SteamID batches reject unresolved
+collisions instead of silently substituting another persona.
 
 Use `avatar` to apply manifest PNG avatar overrides, such as team/event logos.
 DemoTracer keeps the real demo SteamID64 so the native Steam profile card,
@@ -593,9 +600,8 @@ fallback before adding real entries, so a missing SteamID lookup cannot reuse a
 DTR avatar for unrelated players. A real account using the same SteamID64 will
 resolve to the same override while it is present on that local server.
 
-This is mainly for POV/spectator clarity. If BotHider is not installed or is not
-managing a replay bot slot, identity alignment skips that slot instead of
-applying to real human players.
+This is mainly for POV/spectator clarity. If a slot is not managed by the
+bundled provider, identity alignment skips it instead of applying to a human.
 
 ### `dtr_partial <0|1>`
 

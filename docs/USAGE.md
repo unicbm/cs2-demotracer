@@ -143,11 +143,12 @@ Make sure your local CS2 server has loaded:
 - the DemoTracer Metamod runtime plugin: `BotController`
 - the DemoTracer CounterStrikeSharp plugin: `DemoTracer`
 
-The server bundle includes `BotController`, `DemoTracer`, `DemoTracerApi.dll`,
-`demotracer-econ-index.v1.json`, and the sanitized example config. It does not include
-Metamod:Source, CounterStrikeSharp, or CS2-Bot-Hider. BotHider is optional and
-only needed for BotHider-managed replay slots plus identity features such as
-demo display names, SteamID64 alignment, and demo avatar override alignment.
+The server bundle includes `BotController`, the DemoTracer-maintained
+`BotHider`, `DemoTracer`, `DemoTracerBotHider`, their API assemblies,
+`demotracer-econ-index.v1.json`, and the sanitized example config. It does not
+include Metamod:Source or CounterStrikeSharp. All bundled CounterStrikeSharp
+plugins target .NET 10. Remove separately installed public BotHider CSS plugins
+before installing the bundle.
 
 Then use the server commands in [`COMMANDS.md`](COMMANDS.md).
 
@@ -179,11 +180,10 @@ as cosmetic/inventory simulation risk under Valve server guidelines and enable
 it only at the operator's own risk.
 
 Crosshair alignment is off by default. If explicitly enabled with
-`dtr_align crosshair on`, DemoTracer temporarily applies stable demo-observed
-`crosshair_code` metadata to a human viewer while they are watching a safe
-replay bot in-eye, then restores the viewer's original crosshair when they
-leave that replay POV.
-
-Keep this opt-in for now: it writes the human viewer's client crosshair
-configuration, and the restore lifecycle still needs hardening around handoff,
-bot takeover, disconnect, and reload timing.
+`dtr_align crosshair on`, DemoTracer leases stable demo-observed
+`crosshair_code` metadata for the safe replay bot. The bundled BotHider is the
+only writer and publishes it through the controller's server-replicated
+crosshair field. Handoff releases playback control without changing the loaded
+replay's presentation. Exact lease release restores the current persona base
+on unload/replacement, disconnect, map change, or reload; no human client
+configuration or `client.dll` HUD hook is used.

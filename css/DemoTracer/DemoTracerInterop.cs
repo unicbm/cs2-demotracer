@@ -163,8 +163,6 @@ internal static partial class BotControllerNative
 
     public static bool HasLeftHandDesiredLatchExports => ProbeLeftHandDesiredLatchExports();
 
-    public static bool HasHudReticleProbeExports => ProbeHudReticleProbeExports();
-
     public static bool HasProjectileBirthAlignExports => ProbeProjectileBirthAlignExports();
 
     public static string UsercmdMovementIntentStatus
@@ -193,7 +191,7 @@ internal static partial class BotControllerNative
                    $"build={BuildId} usercmd_movement_intent={UsercmdMovementIntentStatus} " +
                    $"voice_send={VoiceStatusText} " +
                    $"left_hand_alias={HasLeftHandIntentAliasExports} left_hand_latch={HasLeftHandDesiredLatchExports} " +
-                   $"hud_reticle_probe={HasHudReticleProbeExports} projectile_birth_align={HasProjectileBirthAlignExports} " +
+                   $"projectile_birth_align={HasProjectileBirthAlignExports} " +
                    $"dtr_reader={MinRecFormatVersion}..{RecFormatVersion} " +
                    $"platform={RuntimePlatformName} api={DemoTracerApiVersion}";
         }
@@ -223,96 +221,6 @@ internal static partial class BotControllerNative
         try
         {
             return BotController_ClearAllLeftHandDesiredLatches();
-        }
-        catch (EntryPointNotFoundException)
-        {
-            return -7;
-        }
-        catch
-        {
-            return -8;
-        }
-    }
-
-    public static int HudReticleProbe(
-        int action,
-        int forceMode,
-        int forceGap,
-        int forceRadius,
-        int flags,
-        out NativeHudReticleProbeState state)
-    {
-        state = default;
-        try
-        {
-            return BotController_HudReticleProbe(
-                action,
-                forceMode,
-                forceGap,
-                forceRadius,
-                flags,
-                out state,
-                HudReticleProbeStateByteSize);
-        }
-        catch (EntryPointNotFoundException)
-        {
-            state = UnavailableHudReticleProbeState(-7);
-            return -7;
-        }
-        catch
-        {
-            state = UnavailableHudReticleProbeState(-8);
-            return -8;
-        }
-    }
-
-    public static int HudReticleSetPaintConfigMapEntry(
-        int slot,
-        int pawnIndex,
-        int weaponIndex,
-        NativeHudReticlePaintConfig config)
-    {
-        try
-        {
-            config.Size = HudReticlePaintConfigByteSize;
-            return BotController_HudReticleSetPaintConfigMapEntry(
-                slot,
-                pawnIndex,
-                weaponIndex,
-                in config,
-                HudReticlePaintConfigByteSize);
-        }
-        catch (EntryPointNotFoundException)
-        {
-            return -7;
-        }
-        catch
-        {
-            return -8;
-        }
-    }
-
-    public static int HudReticleClearPaintConfigMapEntry(int slot)
-    {
-        try
-        {
-            return BotController_HudReticleClearPaintConfigMapEntry(slot);
-        }
-        catch (EntryPointNotFoundException)
-        {
-            return -7;
-        }
-        catch
-        {
-            return -8;
-        }
-    }
-
-    public static int HudReticleClearPaintConfigMap()
-    {
-        try
-        {
-            return BotController_HudReticleClearPaintConfigMap();
         }
         catch (EntryPointNotFoundException)
         {
@@ -591,30 +499,6 @@ internal static partial class BotControllerNative
         }
     }
 
-    private static bool ProbeHudReticleProbeExports()
-    {
-        try
-        {
-            _ = BotController_HudReticleProbe(
-                0,
-                -1,
-                int.MinValue,
-                int.MinValue,
-                0,
-                out _,
-                HudReticleProbeStateByteSize);
-            return true;
-        }
-        catch (EntryPointNotFoundException)
-        {
-            return false;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
     private static bool ProbeProjectileBirthAlignExports()
     {
         try
@@ -631,15 +515,6 @@ internal static partial class BotControllerNative
         {
             return false;
         }
-    }
-
-    private static NativeHudReticleProbeState UnavailableHudReticleProbeState(int rc)
-    {
-        return new NativeHudReticleProbeState
-        {
-            Size = HudReticleProbeStateByteSize,
-            Rc = rc
-        };
     }
 
     public static bool LoadReplayFromFile(int slot, string path)

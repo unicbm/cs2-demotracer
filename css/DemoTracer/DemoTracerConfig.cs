@@ -350,6 +350,8 @@ public sealed partial class DemoTracerPlugin
         BotControllerNative.SetReplayNativeFovOverride(_handoffThreat360Enabled);
         if (_replayIdentityMode != ReplayIdentityMode.Avatar)
             Server.ExecuteCommand("sv_reliableavatardata false");
+        if (_loadedSlots.Count > 0 || _companionCrosshairOverrides.Count > 0)
+            _ = SyncBotHiderPresentationLease(announce: false);
     }
 
     private void ReplyRuntimeSettings(Action<string> reply, string prefix)

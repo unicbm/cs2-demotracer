@@ -26,9 +26,11 @@ This document tracks known limitations and edge cases.
 
 - If you replay a match where you were one of the original demo players, the
   server can contain both your real player and a bot that looks like you. In
-  that case, avoid CS2-Bot-Hider: it can create a bot with the same SteamID and
-  avatar as you, which may confuse TAB scoreboard and related UI surfaces. This
-  usually should not crash the game, but the presentation can be wrong.
+  that case, use `dtr_replay_identity name` or `off` before loading the replay.
+  The bundled BotHider runtime is required, but those modes avoid leasing the
+  demo SteamID and avatar to the replay bot. Otherwise TAB and related UI can
+  show conflicting presentation for the human and bot that share a SteamID.
+  This usually should not crash the game, but the presentation can be wrong.
 - Avatar overrides come from PNG data exposed by demo metadata. The current
   runtime path validates the replay slot before the delayed avatar write runs,
   so stale unloaded slots should not receive old avatar writes. The underlying
@@ -40,7 +42,7 @@ This document tracks known limitations and edge cases.
   account with that same SteamID64 will share the override while present on the
   local server. Some demos provide team/default logo PNGs rather than true
   per-player avatars, so TAB, observer, and other UI surfaces can still disagree.
-- BotHider rewrites the visible SteamID and in-game bot display name, but it
+- The bundled BotHider rewrites the visible SteamID and in-game bot display name, but it
   does not change the bot name that CS2 native logic considers authoritative.
   A bot can display donk's avatar and SteamID while `bot_kick donk` still does
   not target it; use `dtr_kick` for DemoTracer replay bots instead. One

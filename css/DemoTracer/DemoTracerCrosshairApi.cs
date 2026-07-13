@@ -10,28 +10,44 @@ public sealed partial class DemoTracerPlugin
         string crosshairCode,
         out DemoTracerCrosshairOverrideResult result)
     {
+        var normalized = DemoTracerCrosshairCode.Normalize(crosshairCode);
         if (slot is < 0 or >= MaxPlayerSlots)
         {
-            result = CrosshairApiResult(false, slot, crosshairCode, "invalid_slot", -2);
+            result = CrosshairApiResult(false, slot, normalized, "invalid_slot", -2);
+            return false;
+        }
+        if (normalized == null)
+        {
+            result = CrosshairApiResult(false, slot, null, "invalid_crosshair_code", -3);
             return false;
         }
 
         var player = Utilities.GetPlayerFromSlot(slot);
         if (player is not { IsValid: true })
         {
-            result = CrosshairApiResult(false, slot, crosshairCode, "slot_not_found", -3);
+            result = CrosshairApiResult(false, slot, normalized, "slot_not_found", -4);
             return false;
         }
-
-        if (!IsReplaySlotStillSafe(slot))
+        if (!IsReplaySlotStillSafe(slot) || !_botHiderBridge.IsManagedBot(slot))
         {
-            result = CrosshairApiResult(false, slot, crosshairCode, "unsafe_replay_slot", -4);
+            result = CrosshairApiResult(false, slot, normalized, "unsafe_or_unmanaged_slot", -5);
             return false;
         }
 
-        var apply = _hudCrosshairOverrides.TryApplySlot(slot, player, crosshairCode);
-        result = CrosshairApiResult(apply);
-        return apply.Ok;
+        var hadPrevious = _companionCrosshairOverrides.TryGetValue(slot, out var previous);
+        _companionCrosshairOverrides[slot] = normalized;
+        if (!SyncBotHiderPresentationLease(announce: true))
+        {
+            if (hadPrevious)
+                _companionCrosshairOverrides[slot] = previous!;
+            else
+                _companionCrosshairOverrides.Remove(slot);
+            result = CrosshairApiResult(false, slot, normalized, "bothider_lease_failed", -6);
+            return false;
+        }
+
+        result = CrosshairApiResult(true, slot, normalized, "server_published", 0);
+        return true;
     }
 
     private bool ClearBotHudCrosshairOverride(
@@ -40,49 +56,37 @@ public sealed partial class DemoTracerPlugin
     {
         if (slot is < 0 or >= MaxPlayerSlots)
         {
-            result = CrosshairApiResult(false, slot, string.Empty, "invalid_slot", -2);
+            result = CrosshairApiResult(false, slot, null, "invalid_slot", -2);
             return false;
         }
 
-        _hudCrosshairOverrides.ClearSlot(slot);
-        result = CrosshairApiResult(true, slot, string.Empty, "cleared", 0);
+        _companionCrosshairOverrides.Remove(slot);
+        _ = SyncBotHiderPresentationLease(announce: false);
+        result = CrosshairApiResult(true, slot, null, "cleared", 0);
         return true;
     }
 
     private void ClearBotHudCrosshairOverrides()
-        => _hudCrosshairOverrides.ClearAll(disablePatch: true);
+    {
+        _companionCrosshairOverrides.Clear();
+        _ = SyncBotHiderPresentationLease(announce: false);
+    }
 
     private DemoTracerCrosshairOverrideStatus GetCrosshairOverrideStatus()
     {
-        var status = _hudCrosshairOverrides.Status;
         return new DemoTracerCrosshairOverrideStatus
         {
-            MapCount = status.MapCount,
-            LastNativeResult = status.LastRc,
-            DecodeFailures = status.DecodeFailures,
-            PatchConfigured = status.PatchConfigured
-        };
-    }
-
-    private static DemoTracerCrosshairOverrideResult CrosshairApiResult(
-        HudCrosshairOverrideApplyResult apply)
-    {
-        return new DemoTracerCrosshairOverrideResult
-        {
-            Ok = apply.Ok,
-            Slot = apply.Slot,
-            CrosshairCode = apply.Code,
-            PawnEntityIndex = apply.PawnEntityIndex,
-            WeaponEntityIndex = apply.WeaponEntityIndex,
-            NativeResult = apply.Rc,
-            Reason = apply.Reason
+            MapCount = _companionCrosshairOverrides.Count,
+            LastNativeResult = string.IsNullOrWhiteSpace(_botHiderPresentationLeaseToken) ? -1 : 0,
+            DecodeFailures = 0,
+            PatchConfigured = false
         };
     }
 
     private static DemoTracerCrosshairOverrideResult CrosshairApiResult(
         bool ok,
         int slot,
-        string code,
+        string? code,
         string reason,
         int rc)
     {
@@ -90,7 +94,7 @@ public sealed partial class DemoTracerPlugin
         {
             Ok = ok,
             Slot = slot,
-            CrosshairCode = DemoTracerCrosshairCode.Normalize(code) ?? string.Empty,
+            CrosshairCode = code ?? string.Empty,
             NativeResult = rc,
             Reason = reason
         };

@@ -26,41 +26,47 @@ Playback needs a local Windows x64 CS2 server with:
 The server bundle includes:
 
 - `BotController`: the DemoTracer Metamod runtime
+- `BotHider`: the DemoTracer-maintained fake-client/identity Metamod runtime
 - `DemoTracer`: the CounterStrikeSharp playback plugin
+- `DemoTracerBotHider`: the sole bot presentation publisher
 - `DemoTracerApi.dll`: companion-plugin API contract
+- `DemoTracerBotHiderApi.dll`: versioned presentation-lease contract
 - `demotracer-econ-index.v1.json`
 - `demotracer.config.example.json`
 
-The server bundle does not include Metamod:Source, CounterStrikeSharp,
-CS2-Bot-Hider, or a RayTrace provider.
+All bundled CounterStrikeSharp projects target .NET 10 and compile against
+CounterStrikeSharp.API 1.0.371. The server bundle does not include
+Metamod:Source, CounterStrikeSharp itself, or a RayTrace provider.
+
+## Bundled BotHider Boundary
+
+DemoTracer maintains its BotHider source under `runtime/BotHider`, based on
+[XBribo/CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider). Upstream
+changes are imported selectively rather than merged mechanically.
+
+The shared-memory mapping is private transport between the bundled native and
+C# BotHider halves. DemoTracer consumes only the versioned
+`demotracer:bot-hider:v1` capability. Temporary name, SteamID64, scoreboard
+flair, and server-replicated crosshair values are one all-or-none presentation
+lease with slot incarnation checks, exact release tokens, heartbeat expiry,
+and provider/map epochs. DemoTracer binds that lease to the loaded replay
+assignment rather than active playback control, so handoff cannot expose the
+underlying persona. Round replacement uses one batch replace instead of a
+release/reacquire gap.
+
+BotHider continuously reconciles the native client identity and the
+CounterStrikeSharp controller fields. Exact SteamID batches are validated for
+duplicates and live-slot conflicts; the provider fails the batch rather than
+substituting another `bot_info` identity.
+
+Do not co-install a separate public BotHider CounterStrikeSharp plugin. Multiple
+presentation publishers can overwrite each other and are unsupported.
+
+Avatar behavior remains split: the bundled BotHider publishes the leased
+SteamID64/name, while BotController writes `ServerAvatarOverrides` for validated
+manifest PNGs. Missing or invalid PNG evidence falls back to the Steam avatar.
 
 ## Optional Integrations
-
-### CS2-Bot-Hider
-
-[CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider) is optional.
-
-For the July 2026 CS2 update, use a build containing the Windows client
-identity-offset fix. Tagged v0.2.5 predates that fix.
-
-DemoTracer does not vendor BotHider and does not compile against a BotHider DLL.
-At runtime it probes BotHider-managed bot slots through BotHider's shared slot
-state, then uses BotHider console commands for identity presentation:
-
-- `bh_setname` for demo display names
-- `bh_setsid` for demo SteamID64 values
-
-Without BotHider, movement replay, weapon/loadout alignment, projectile
-alignment, handoff, and cosmetic alignment still work on safe replay bots.
-Identity features that need visible bot name or SteamID64 changes are skipped.
-
-Avatar override behavior is split:
-
-- BotHider supplies the visible SteamID64/name presentation path.
-- DemoTracer's native runtime writes CS2 `ServerAvatarOverrides`.
-- `dtr_replay_identity avatar` keeps the demo SteamID64 so Steam profile-card
-  metadata remains available, and falls back to the Steam avatar when no valid
-  matching PNG is available.
 
 ### RayTrace API Provider
 
@@ -79,13 +85,8 @@ back to a conservative "do not block handoff on missing raytrace" path. Use
 ## BotController Boundary
 
 This repository bundles its own DemoTracer-compatible BotController native
-runtime. The CounterStrikeSharp plugin currently targets `net8.0` and talks to
+runtime. The CounterStrikeSharp plugins target `net10.0` and DemoTracer talks to
 that runtime through a C ABI / P/Invoke layer.
-
-The source project deliberately keeps its compile-time CounterStrikeSharp API
-reference separate from the required server runtime release so it can continue
-to target `net8.0`. Changing that target is a compatibility migration, not a
-release-package dependency bump.
 
 Upstream `XBribo/CS2-Bot-Controller` also has a newer C# shared capability path
 whose projects may target newer .NET versions. That upstream API is not bundled
@@ -101,7 +102,7 @@ Current release compatibility:
 - DemoTracer companion API: 6
 
 Companion API 6 is intentionally narrow: bot ownership/busy-state queries,
-demo-backed cosmetic state, and HUD crosshair override control. It does not
+demo-backed cosmetic state, and server-published bot crosshair override control. It does not
 expose standalone replay-library or utility-clip orchestration.
 
 ## Source Builds
@@ -109,9 +110,8 @@ expose standalone replay-library or utility-clip orchestration.
 Source builds use the repo-local project files:
 
 - Converter: Rust/Cargo under `converter/`
-- CounterStrikeSharp plugin: `.NET SDK` compatible with `net8.0`
-- Native BotController runtime: local CS2 Metamod/SDK/CMake toolchain
+- CounterStrikeSharp plugins: .NET 10 SDK
+- Native BotController and BotHider runtimes: local CS2 Metamod/SDK/CMake toolchain
 
-Release packaging should reuse an already staged BotController runtime unless
-native runtime source changed and the native toolchain is intentionally
-configured.
+Release packaging should reuse staged BotController and BotHider runtimes unless
+native source changed and the native toolchain is intentionally configured.

@@ -438,7 +438,7 @@ public sealed partial class DemoTracerPlugin
             return false;
         if (_loadedSlots.Contains(enemy.Slot) || IsReplaySlotPlaying(enemy.Slot))
             return false;
-        if (_botHiderProbe.IsManagedBot(enemy.Slot))
+        if (_botHiderBridge.IsManagedBot(enemy.Slot))
             return false;
         var controllingBot = TryGetControllingBotState(enemy, out var controlsBot) && controlsBot;
         return !enemy.IsBot || controllingBot;
@@ -452,7 +452,7 @@ public sealed partial class DemoTracerPlugin
             return false;
         if (_loadedSlots.Contains(enemy.Slot) || _lastPlayingSlots.Contains(enemy.Slot))
             return false;
-        if (_botHiderProbe.IsManagedBot(enemy.Slot))
+        if (_botHiderBridge.IsManagedBot(enemy.Slot))
             return false;
         var controllingBot = TryGetControllingBotState(enemy, out var controlsBot) && controlsBot;
         return !enemy.IsBot || controllingBot;

@@ -5,21 +5,22 @@
 时，才需要在每条后面加分号。
 
 服务器前置依赖是 Metamod:Source 和 CounterStrikeSharp。DemoTracer server bundle
-自带 `BotController`、`DemoTracer`、`DemoTracerApi.dll`、`demotracer-econ-index.v1.json` 和示例配置。
-CS2-Bot-Hider 是可选依赖，只用于 BotHider 管理的 replay slot，以及 demo 显示名、
-SteamID64 对齐、demo 头像覆写这类 identity 功能。
+自带 `BotController`、DemoTracer 自维护的 `BotHider`、`DemoTracer`、
+`DemoTracerBotHider`、对应 API assembly、`demotracer-econ-index.v1.json` 和示例配置。
+不要同时运行另一个公开 BotHider CSS 插件。
 
 ## 推荐基础配置
 
 ```text
 css_plugins reload DemoTracer
+bh_status
 dtr_config_status
 dtr_go seq "<输出目录>\<demo-id>\manifest.json" 0
 ```
 
 replay identity、武器/loadout 对齐和投掷物对齐默认开启。准星对齐默认关闭，需要显式执行
-`dtr_align crosshair on` 才会启用。identity 对齐只会在 BotHider 存在且管理目标
-replay bot slot 时写入 demo 名字和 SteamID64。如果 manifest 包含 demo 提供的 PNG
+`dtr_align crosshair on` 才会启用。identity 对齐通过 bundle 内置 BotHider 的独占 lease
+向受管 replay bot slot 发布 demo 名字和 SteamID64。如果 manifest 包含 demo 提供的 PNG
 头像覆写，`full` identity 也会按 SteamID64 应用。
 
 `seq` 表示“从某个 source round 开始顺序播放”，`round` 表示“只播放一个
@@ -74,7 +75,7 @@ DemoTracer 会从 `DemoTracer.dll` 同目录读取可选的 `demotracer.config.j
 | `dtr_handoff` | `death_contact_c4 slot` | 接触或死亡后释放触发的 replay slot；C4 安装后释放全部 active replay slot。 |
 | `dtr_partial` | `1` | bot 数量不足时允许部分 replay。 |
 | `dtr_chat_auto` | `on` | 按 manifest 元数据和同一回合时间线 replay demo 文字聊天。 |
-| `dtr_replay_identity` | `steam` | BotHider 可用时，通过其管理的 replay bot slot 写入 demo 名字和 SteamID64。队伍/赛事 PNG 头像需要显式 `avatar`；`full` 是 `avatar` 的兼容别名。 |
+| `dtr_replay_identity` | `steam` | 通过 bundle 内置 BotHider 的 presentation lease 向受管 replay bot slot 发布 demo 名字和 SteamID64。队伍/赛事 PNG 头像需要显式 `avatar`；`full` 是 `avatar` 的兼容别名。 |
 | `dtr_util_trace` | `0` | 默认不写 utility CSV trace。 |
 | `bc_replay_pov` | `spectated` | 只给正在被第一人称观察的 replay bot 发布昂贵的 native POV 更新。 |
 
@@ -480,14 +481,12 @@ flag 之外又加了 `--export-stickers` 生成时，它才会生效。
 
 开关准星对齐。默认关闭。
 
-开启后，如果真人观察者正在第一人称观察安全 replay bot，DemoTracer 会把 converter
-从 demo 玩家稳定 `crosshair_code` 中导出的 manifest `view.crosshair_code` 临时应用到
-这个观察者，并在离开 replay POV 时恢复原准星。缺失或互相矛盾的 demo 证据会跳过。
-这个功能只影响 POV/spectator 观察拟真度，不改变移动、武器、投掷物、replay bot 状态或饰品库存。
-
-这个指令会写真人观察者的客户端准星配置。当前 handoff、bot takeover、断线和 reload
-时机附近的恢复生命周期还不够稳，可能污染玩家自己的准星；在所有权/恢复链路完善前，
-它保持默认关闭，只作为显式 opt-in 功能。
+开启后，DemoTracer 会为安全 replay bot 租用 converter 从 demo 玩家稳定
+`crosshair_code` 导出的 manifest `view.crosshair_code`。bundle 内置 BotHider 是唯一 writer，
+通过 `CCSPlayerController.m_szCrosshairCodes` 和服务器 state replication 发布。只有 replay
+unload/替换、断线、换图、slot 重用或 reload 才按精确 token 恢复 provider 当前 persona
+基础值；死亡、接触或 C4 handoff 只释放 replay 控制，不释放 presentation。这条路径不会
+写真人客户端配置，也不会调用旧的 `client.dll` HUD hook。
 
 ### `dtr_left_hand_desired <0|1>`
 
@@ -503,9 +502,15 @@ pool plan 需要重新加载后才会应用。
 
 控制 BotHider identity 对齐。
 
-开启后，如果 BotHider 可用且 slot 由 BotHider 管理，加载 manifest 时会把 demo 玩家
-的 `player_name` 和 `steam_id` 写给对应 bot slot。默认模式是 `steam`，不会写
+开启后，加载 manifest 时会通过 bundle 内置 BotHider 的 presentation lease，把 demo
+玩家的 `player_name` 和 `steam_id` 发布给受管 bot slot。默认模式是 `steam`，不会写
 `ServerAvatarOverrides`；`1`/`on` 也表示 `steam`。
+
+identity lease 跟随“已加载 replay 的 slot 分配”，不跟随当前是否仍在注入输入。死亡、
+接触、replay 结束或 C4 handoff 后，demo 名字、SteamID、头像关联、准星和 flair 都继续
+保持；换 round 时原子替换整批 presentation，unload 或 slot 丢失时才恢复 BotHider 当前
+persona 基础值。精确 SteamID 批次若存在无法消解的碰撞会明确拒绝，不会偷偷替换成另一个
+persona。
 
 用 `avatar` 可以应用 manifest 里的 PNG 头像覆写，例如队伍/赛事 logo。DemoTracer 会
 保留真实 demo SteamID64，使原生 Steam 资料卡、勋章和称赞信息仍然可用，再把通过校验
@@ -520,8 +525,8 @@ pool plan 需要重新加载后才会应用。
 避免找不到 SteamID 时把某个 DTR 头像错误复用给其他玩家。如果本地服务器中存在使用
 同一 SteamID64 的真实账号，它也会命中同一份头像覆写。
 
-这个主要用于 POV 和 spectator 观察清晰度。如果没有安装 BotHider，或目标 slot 不由
-BotHider 管理，identity 对齐会跳过该 slot，而不会应用到真人玩家。
+这个主要用于 POV 和 spectator 观察清晰度。如果目标 slot 不由 bundle 内置 provider
+管理，identity 对齐会跳过该 slot，而不会应用到真人玩家。
 
 ### `dtr_partial <0|1>`
 

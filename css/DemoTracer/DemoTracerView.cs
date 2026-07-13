@@ -60,7 +60,12 @@ public sealed partial class DemoTracerPlugin
 
     private void ResetCrosshairAlignState(bool resetCounters = false)
     {
-        _hudCrosshairOverrides.ClearAll(disablePatch: true);
+        if (resetCounters)
+            _companionCrosshairOverrides.Clear();
+        if (_loadedSlots.Count == 0 && _companionCrosshairOverrides.Count == 0)
+            ReleaseBotHiderPresentationLease("crosshair_reset");
+        else
+            _ = SyncBotHiderPresentationLease(announce: false);
     }
 
     private void ResetViewmodelAlignState(bool resetCounters = false)
@@ -70,8 +75,8 @@ public sealed partial class DemoTracerPlugin
 
     private string FormatCrosshairStatusCounts()
     {
-        var status = _hudCrosshairOverrides.Status;
-        return $"crosshair_evidence={CountLoadedCrosshairEvidence()} crosshair_hud_map={status.MapCount} crosshair_hud_rc={status.LastRc} crosshair_decode_failed={status.DecodeFailures}";
+        var provider = _botHiderBridge.GetProviderInfo();
+        return $"crosshair_evidence={CountLoadedCrosshairEvidence()} crosshair_server_overrides={CountActiveBotHiderCrosshairOverrides()} crosshair_lease={FormatOnOff(!string.IsNullOrWhiteSpace(_botHiderPresentationLeaseToken))} bothider={(provider is { Connected: true, Draining: false } ? "ready" : "unavailable")}";
     }
 
     private string FormatViewmodelStatusCounts()
@@ -83,49 +88,30 @@ public sealed partial class DemoTracerPlugin
     private int CountLoadedViewmodelEvidence()
         => _loadedReplays.Values.Count(replay => HasViewmodelEvidence(replay.View));
 
-    private void UpdateReplayHudCrosshairOverrides(TickPlayerSnapshot playerSnapshot)
+    private void UpdateReplayCrosshairPresentation()
     {
-        if (!_crosshairAlignEnabled)
-        {
-            _hudCrosshairOverrides.ClearAll(disablePatch: true);
-            return;
-        }
-
-        RefreshReplayCrosshairHudReticleMap(playerSnapshot);
+        EnsureBotHiderPresentationLease();
     }
 
-    private bool RefreshReplayCrosshairHudReticleMap(TickPlayerSnapshot playerSnapshot)
+    private bool RefreshReplayCrosshairPresentation()
     {
-        var activeSlots = new HashSet<int>();
-        var configured = 0;
-
-        foreach (var slot in _loadedSlots.ToArray())
-        {
-            if (!_loadedReplays.TryGetValue(slot, out var replay) ||
-                !HasCrosshairEvidence(replay.View) ||
-                !playerSnapshot.TryGetSlot(slot, out var replayBot) ||
-                replayBot is not { IsValid: true } ||
-                !IsReplayTargetBot(replayBot, playerSnapshot.Controllers))
-            {
-                _hudCrosshairOverrides.ClearSlot(slot);
-                continue;
-            }
-
-            activeSlots.Add(slot);
-            var result = _hudCrosshairOverrides.TryApplySlot(slot, replayBot, replay.View.CrosshairCode!);
-            if (result.Ok)
-                configured++;
-        }
-
-        _hudCrosshairOverrides.ClearStaleExcept(activeSlots);
-        return configured > 0;
+        return SyncBotHiderPresentationLease(announce: false);
     }
 
-    private void ClearReplayCrosshairHudReticleMapEntry(int slot)
-        => _hudCrosshairOverrides.ClearSlot(slot);
+    private void ClearReplayCrosshairPresentationEntry(int slot)
+    {
+        _companionCrosshairOverrides.Remove(slot);
+        _ = SyncBotHiderPresentationLease(announce: false);
+    }
 
-    private void ClearReplayCrosshairHudReticleMap(bool disablePatch)
-        => _hudCrosshairOverrides.ClearAll(disablePatch);
+    private void ClearReplayCrosshairPresentation()
+    {
+        _companionCrosshairOverrides.Clear();
+        if (_loadedSlots.Count == 0)
+            ReleaseBotHiderPresentationLease("crosshair_clear_all");
+        else
+            _ = SyncBotHiderPresentationLease(announce: false);
+    }
 
     private Dictionary<uint, int> BuildReplayPawnSlotMap(TickPlayerSnapshot playerSnapshot)
     {

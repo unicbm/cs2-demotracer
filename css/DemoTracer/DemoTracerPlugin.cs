@@ -8,6 +8,7 @@ using CounterStrikeSharp.API.Modules.Timers;
 using CounterStrikeSharp.API.Modules.Utils;
 using CounterStrikeSharp.API;
 using DemoTracerApi;
+using DemoTracerBotHiderApi;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -92,12 +93,10 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private readonly HashSet<int> _cosmeticSyncedSlots = new();
     private readonly Dictionary<int, AppliedActiveWeaponCosmetic> _activeWeaponCosmetics = new();
     private readonly HashSet<int> _scoreboardSyncedSlots = new();
-    private readonly HashSet<int> _replayScoreboardFlairSyncedSlots = new();
-    private readonly HudCrosshairOverrideService _hudCrosshairOverrides = new();
     private readonly Dictionary<int, ReplayViewmodel> _replayOriginalViewmodels = new();
     private readonly Dictionary<int, ReplayViewmodel> _replayAppliedViewmodels = new();
     private readonly HashSet<int> _replayFailedViewmodelSlots = new();
-    private readonly BotHiderMemoryProbe _botHiderProbe = new();
+    private readonly DemoTracerBotHiderBridge _botHiderBridge = new();
     private readonly RayTraceLosProbe _rayTraceLosProbe = new();
     private bool _safeC4Aligned;
     private int _initialSpawnAssignmentToken;
@@ -191,13 +190,20 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         Server.PrintToConsole("dtr: CSS control plugin loaded");
     }
 
+    public override void OnAllPluginsLoaded(bool hotReload)
+    {
+        _botHiderBridge.Refresh();
+        _ = _botHiderBridge.ReleaseOwner(DemoTracerBotHiderContract.DemoTracerOwner);
+        _ = SyncBotHiderPresentationLease(announce: _loadedSlots.Count > 0);
+    }
+
     public override void Unload(bool hotReload)
     {
         UnhookCosmeticGiveNamedItem();
         ClearReplayStateForLifecycle(hotReload ? "plugin_reload" : "plugin_unload");
         StopUtilityTrace();
         BotControllerNative.ClearAllBuyPlans();
-        _botHiderProbe.Dispose();
+        _botHiderBridge.Refresh();
     }
 
     private void OnMapStart(string mapName)
@@ -217,7 +223,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (playerSlot < 0 || playerSlot >= MaxPlayerSlots)
             return;
 
-        ClearReplayCrosshairHudReticleMapEntry(playerSlot);
+        ClearReplayCrosshairPresentationEntry(playerSlot);
         _slotCosmeticEvidenceKeys.Remove(playerSlot);
         _appliedGloveCosmetics.Remove(playerSlot);
         _gloveCosmeticTokens.Remove(playerSlot);
@@ -1231,7 +1237,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
         _crosshairAlignEnabled = true;
         if (_loadedSlots.Count > 0)
-            _ = RefreshReplayCrosshairHudReticleMap(BuildTickPlayerSnapshot());
+            _ = RefreshReplayCrosshairPresentation();
     }
 
     private void SetScoreboardAlignEnabled(bool enabled)
@@ -1311,13 +1317,13 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     {
         var players = FindTeamPlayers();
         var strictBots = players.Count(candidate => candidate.IsBot);
-        var managedBots = players.Count(candidate => _botHiderProbe.IsManagedBot(candidate.Slot));
+        var managedBots = players.Count(candidate => _botHiderBridge.IsManagedBot(candidate.Slot));
         var candidates = players.Count(IsReplayTargetBot);
         command.ReplyToCommand(
             $"dtr: strict IsBot={strictBots}, BotHider managed={managedBots}, safe replay candidates={candidates}");
         foreach (var bot in players)
         {
-            var managed = _botHiderProbe.IsManagedBot(bot.Slot);
+            var managed = _botHiderBridge.IsManagedBot(bot.Slot);
             var controllingBot = TryGetControllingBotState(bot, out var isControllingBot)
                 ? (isControllingBot ? "1" : "0")
                 : "unknown";
@@ -1389,7 +1395,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         var tPlayers = players.Count(candidate => candidate.Team == CsTeam.Terrorist);
         var ctPlayers = players.Count(candidate => candidate.Team == CsTeam.CounterTerrorist);
         var strictBots = players.Count(candidate => candidate.IsBot);
-        var managedBots = players.Count(candidate => _botHiderProbe.IsManagedBot(candidate.Slot));
+        var managedBots = players.Count(candidate => _botHiderBridge.IsManagedBot(candidate.Slot));
         var replayTargets = FindReplayTargets();
         var loadedPlaying = _loadedSlots.Count(slot => BotControllerNative.GetReplayState(slot).Playing);
 
@@ -1399,6 +1405,12 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             $"[DTR DOCTOR] server map={CurrentMapName()} time={Server.CurrentTime.ToString("F2", CultureInfo.InvariantCulture)} mp_freezetime={(float.IsFinite(freezeTime) ? freezeTime.ToString("F2", CultureInfo.InvariantCulture) : "unknown")} {(string.IsNullOrEmpty(freezeReason) ? "" : freezeReason)}");
         command.ReplyToCommand(
             $"[DTR DOCTOR] bots players T={tPlayers}/CT={ctPlayers} strict_bots={strictBots} bot_hider_managed={managedBots} safe_replay_targets={replayTargets.Count}");
+        var botHiderProvider = _botHiderBridge.GetProviderInfo();
+        var botHiderDiagnostics = _botHiderBridge.GetDiagnostics();
+        command.ReplyToCommand(
+            botHiderProvider == null || botHiderDiagnostics == null
+                ? "[DTR DOCTOR] bot_hider provider=unavailable"
+                : $"[DTR DOCTOR] bot_hider api={botHiderProvider.ApiVersion} connected={botHiderProvider.Connected} draining={botHiderProvider.Draining} map_epoch={botHiderProvider.MapEpoch} leases={botHiderDiagnostics.ActiveLeases}/{botHiderDiagnostics.LeasedSlots} writes={botHiderDiagnostics.PublishedWrites} controller_repairs={botHiderDiagnostics.ControllerRepairs}");
         command.ReplyToCommand(
             $"[DTR DOCTOR] replay loaded={_loadedSlots.Count} playing={loadedPlaying} identity={ReplayIdentityModeName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} projectile_ticks={FormatProjectileAlignTicks()} molotov_point={FormatMolotovPointAlignMode(_molotovPointAlignMode)}:{_molotovPointAlignLeadTicks} cosmetics={FormatOnOff(_cosmeticAlignEnabled)} agents={FormatOnOff(_cosmeticAgentsEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)} scoreboard={FormatOnOff(_scoreboardAlignEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} partial={FormatOnOff(_partialReplayEnabled)} raytrace={_rayTraceLosProbe.ProbeStatus} {FormatCosmeticStatusCounts()} {FormatCrosshairStatusCounts()} {FormatViewmodelStatusCounts()} {FormatScoreboardStatusCounts()}");
 
@@ -1434,33 +1446,41 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     [GameEventHandler]
     public HookResult OnRoundStart(EventRoundStart @event, GameEventInfo info)
     {
-        if (StopReplayStateForRoundBoundary("round_start"))
-            Server.PrintToConsole("[DTR WARN] round_start stopped stale DTR replay state");
-
-        if ((_sequenceActive || _poolActive || _armed) && IsWarmupPeriod())
+        BeginBotHiderPresentationTransition();
+        try
         {
-            Server.PrintToConsole("[DTR ERR] 热身阶段无法进行回放");
-            StopAllState("warmup_block");
+            if (StopReplayStateForRoundBoundary("round_start"))
+                Server.PrintToConsole("[DTR WARN] round_start stopped stale DTR replay state");
+
+            if ((_sequenceActive || _poolActive || _armed) && IsWarmupPeriod())
+            {
+                Server.PrintToConsole("[DTR ERR] 热身阶段无法进行回放");
+                StopAllState("warmup_block");
+                return HookResult.Continue;
+            }
+
+            if (_sequenceActive)
+            {
+                if (PrepareNextSequenceRound("round_start"))
+                    ScheduleFreezePrerollStart($"sequence round {_sequencePreparedRound}");
+            }
+            else if (_armed)
+            {
+                if (PrepareArmedRound("round_start"))
+                    ScheduleFreezePrerollStart(_armedLabel);
+            }
+            else if (_poolActive)
+            {
+                if (PrepareNextPoolRound("round_start"))
+                    ScheduleFreezePrerollStart($"pool round {_poolPreparedRoundIndex}");
+            }
+
             return HookResult.Continue;
         }
-
-        if (_sequenceActive)
+        finally
         {
-            if (PrepareNextSequenceRound("round_start"))
-                ScheduleFreezePrerollStart($"sequence round {_sequencePreparedRound}");
+            EndBotHiderPresentationTransition();
         }
-        else if (_armed)
-        {
-            if (PrepareArmedRound("round_start"))
-                ScheduleFreezePrerollStart(_armedLabel);
-        }
-        else if (_poolActive)
-        {
-            if (PrepareNextPoolRound("round_start"))
-                ScheduleFreezePrerollStart($"pool round {_poolPreparedRoundIndex}");
-        }
-
-        return HookResult.Continue;
     }
 
     [GameEventHandler]
@@ -1517,6 +1537,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             if (_loadedSlots.Count > 0)
             {
                 ScheduleInitialRoundSpawnAssignment();
+                Server.NextFrame(() => SyncBotHiderPresentationLease(announce: false));
                 AddTimer(
                     0.05f,
                     () => AlignSafeC4OwnerForLoadedReplays(forceReconcile: true),
@@ -1663,14 +1684,14 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (_loadedSlots.Count == 0)
         {
             SetReplayPovMask(0);
-            ClearReplayCrosshairHudReticleMap(disablePatch: true);
+            ClearReplayCrosshairPresentation();
             RestoreAllReplayBotViewmodels();
             return;
         }
 
         var playerSnapshot = BuildTickPlayerSnapshot();
         UpdateReplayPovMask(playerSnapshot);
-        UpdateReplayHudCrosshairOverrides(playerSnapshot);
+        UpdateReplayCrosshairPresentation();
         UpdateReplayBotViewmodels(playerSnapshot);
 
         foreach (var slot in _loadedSlots.ToArray())
@@ -2031,7 +2052,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         {
             if (controller is not { IsValid: true })
                 continue;
-            if (controller.IsBot || _botHiderProbe.IsManagedBot(controller.Slot))
+            if (controller.IsBot || _botHiderBridge.IsManagedBot(controller.Slot))
                 continue;
             if (!TryGetInEyeObserverTargetIndex(controller, out var targetIndex))
                 continue;
@@ -2678,6 +2699,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private LoadRoundResult LoadRound(string manifestPath, int round)
     {
         var replayStateReplaced = false;
+        var presentationTransitionStarted = false;
         try
         {
             var resolvedManifestPath = ResolveReadableManifestPath(manifestPath);
@@ -2722,6 +2744,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             var skippedT = allTFiles.Count - tAssignments.Count;
             var skippedCt = allCtFiles.Count - ctAssignments.Count;
 
+            BeginBotHiderPresentationTransition();
+            presentationTransitionStarted = true;
             StopAndUnloadLoaded();
             replayStateReplaced = true;
             _loadedRoundScoreboard = roundScoreboard;
@@ -2753,6 +2777,11 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             if (replayStateReplaced)
                 StopAndUnloadLoaded();
             return LoadRoundResult.Fail($"dtr: load round failed: {ex.Message}");
+        }
+        finally
+        {
+            if (presentationTransitionStarted)
+                EndBotHiderPresentationTransition();
         }
     }
 
@@ -2930,25 +2959,22 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             return;
         }
 
-        if (!_botHiderProbe.IsAvailable())
+        if (!_botHiderBridge.IsAvailable())
         {
             Server.PrintToConsole(
                 $"dtr: replay identity skipped slot={slot} player={file.PlayerName}: BotHider unavailable");
             return;
         }
 
-        if (!_botHiderProbe.IsManagedBot(slot))
+        if (!_botHiderBridge.IsManagedBot(slot))
         {
             Server.PrintToConsole(
                 $"dtr: replay identity skipped slot={slot} player={file.PlayerName}: not a BotHider managed bot");
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(file.PlayerName))
-            Server.ExecuteCommand($"bh_setname {slot} \"{EscapeConsoleString(file.PlayerName)}\"");
         if (writeSteamId)
         {
-            Server.ExecuteCommand($"bh_setsid {slot} {file.SteamId}");
             if (avatarOverrideReady && avatarOverride != null)
             {
                 ScheduleReplayAvatarOverride(
@@ -2959,149 +2985,24 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                     avatarCommandPath);
             }
         }
-        ScheduleReplayScoreboardFlair(slot, file);
         if (writeSteamId && _replayIdentityMode == ReplayIdentityMode.Avatar)
         {
             Server.PrintToConsole(
                 avatarOverrideReady
-                    ? $"dtr: replay identity queued slot={slot} player={file.PlayerName} sid={file.SteamId} avatar=override"
-                    : $"dtr: replay identity queued slot={slot} player={file.PlayerName} sid={file.SteamId} avatar=steam");
+                    ? $"dtr: replay identity lease pending slot={slot} player={file.PlayerName} sid={file.SteamId} avatar=override"
+                    : $"dtr: replay identity lease pending slot={slot} player={file.PlayerName} sid={file.SteamId} avatar=steam");
         }
         else
         {
             Server.PrintToConsole(
                 writeSteamId
-                    ? $"dtr: replay identity queued slot={slot} player={file.PlayerName} sid={file.SteamId}"
-                    : $"dtr: replay identity queued slot={slot} player={file.PlayerName}");
+                    ? $"dtr: replay identity lease pending slot={slot} player={file.PlayerName} sid={file.SteamId}"
+                    : $"dtr: replay identity lease pending slot={slot} player={file.PlayerName}");
         }
     }
 
     private bool ReplayIdentityShouldApplyScoreboardFlair()
         => _replayIdentityMode is ReplayIdentityMode.Steam or ReplayIdentityMode.Avatar;
-
-    private void ScheduleReplayScoreboardFlair(int slot, ManifestFile file)
-    {
-        if (!ReplayIdentityShouldApplyScoreboardFlair() || file.ScoreboardFlair == null)
-            return;
-
-        var flair = NormalizeReplayScoreboardFlair(file.ScoreboardFlair);
-        if (flair == null)
-            return;
-
-        var generation = CurrentReplayIdentityGeneration(slot);
-        var playerName = file.PlayerName;
-        Server.NextFrame(() => TryApplyReplayScoreboardFlair(slot, playerName, flair, generation, announce: true));
-        AddTimer(
-            0.10f,
-            () => TryApplyReplayScoreboardFlair(slot, playerName, flair, generation, announce: false),
-            TimerFlags.STOP_ON_MAPCHANGE);
-        AddTimer(
-            0.35f,
-            () => TryApplyReplayScoreboardFlair(slot, playerName, flair, generation, announce: false),
-            TimerFlags.STOP_ON_MAPCHANGE);
-    }
-
-    private void TryApplyReplayScoreboardFlair(
-        int slot,
-        string playerName,
-        ReplayScoreboardFlair flair,
-        long generation,
-        bool announce)
-    {
-        if (!IsReplayIdentityGenerationCurrent(slot, generation) ||
-            !_loadedReplays.TryGetValue(slot, out var replay) ||
-            replay.ScoreboardFlair == null ||
-            replay.ScoreboardFlair.ItemDefIndex != flair.ItemDefIndex ||
-            !IsReplaySlotStillSafe(slot) ||
-            !_botHiderProbe.IsManagedBot(slot))
-        {
-            return;
-        }
-
-        if (TrySetReplayScoreboardFlairValue(slot, flair.ItemDefIndex, out var error))
-        {
-            _replayScoreboardFlairSyncedSlots.Add(slot);
-            if (announce)
-            {
-                Server.PrintToConsole(
-                    $"dtr: replay flair applied slot={slot} player={playerName} def={flair.ItemDefIndex}");
-            }
-            return;
-        }
-
-        if (announce && !string.IsNullOrWhiteSpace(error))
-        {
-            Server.PrintToConsole(
-                $"dtr: replay flair skipped slot={slot} player={playerName} def={flair.ItemDefIndex}: {error}");
-        }
-    }
-
-    private bool TrySetReplayScoreboardFlairValue(
-        int slot,
-        uint itemDefIndex,
-        out string? error)
-    {
-        error = null;
-        if (!IsReplaySlotStillSafe(slot) || !_botHiderProbe.IsManagedBot(slot))
-            return false;
-
-        var player = Utilities.GetPlayerFromSlot(slot);
-        if (player is not { IsValid: true })
-            return false;
-
-        try
-        {
-            var inventory = player.InventoryServices;
-            if (inventory == null)
-                return false;
-
-            var ranks = inventory.Rank;
-            if (ranks.Length == 0)
-            {
-                error = "rank span is empty";
-                return false;
-            }
-
-            for (var i = 0; i < ranks.Length; i++)
-                SetReplayScoreboardFlairRank(player, ranks, i, itemDefIndex);
-            TrySetScoreboardStateChanged(player, "CCSPlayerController", "m_pInventoryServices");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            error = ex.Message;
-            return false;
-        }
-    }
-
-    private static void SetReplayScoreboardFlairRank(
-        CCSPlayerController player,
-        Span<MedalRank_t> ranks,
-        int index,
-        uint itemDefIndex)
-    {
-        ranks[index] = (MedalRank_t)itemDefIndex;
-        TrySetScoreboardStateChanged(
-            player,
-            "CCSPlayerController_InventoryServices",
-            "m_rank",
-            index * sizeof(uint));
-    }
-
-    private void ClearLoadedReplayScoreboardFlairs()
-    {
-        foreach (var slot in _replayScoreboardFlairSyncedSlots.ToArray())
-            ClearReplayScoreboardFlairForSlot(slot);
-        _replayScoreboardFlairSyncedSlots.Clear();
-    }
-
-    private void ClearReplayScoreboardFlairForSlot(int slot)
-    {
-        if (!_replayScoreboardFlairSyncedSlots.Remove(slot))
-            return;
-
-        _ = TrySetReplayScoreboardFlairValue(slot, 0, out _);
-    }
 
     private void ScheduleReplayAvatarOverride(
         int slot,
@@ -3145,7 +3046,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (!_loadedReplays.TryGetValue(slot, out var replay) ||
             replay.SteamId != steamId ||
             !IsReplaySlotStillSafe(slot) ||
-            !_botHiderProbe.IsManagedBot(slot))
+            !_botHiderBridge.IsManagedBot(slot))
         {
             return;
         }
@@ -3357,6 +3258,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
         ApplyLoadedReplayScoreboards();
         AlignSafeC4OwnerForLoadedReplays();
+        _ = SyncBotHiderPresentationLease(announce: false);
     }
 
     private void ApplyLoadedReplayMusicKits()
@@ -3675,7 +3577,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 if (candidate.Team != team ||
                     !candidate.PawnIsAlive ||
                     candidate.IsBot ||
-                    _botHiderProbe.IsManagedBot(candidate.Slot) ||
+                    _botHiderBridge.IsManagedBot(candidate.Slot) ||
                     _loadedSlots.Contains(candidate.Slot) ||
                     (TryGetControllingBotState(candidate, out var controllingBot) && controllingBot) ||
                     !TryGetPawnOrigin(candidate, out var current))
@@ -4154,7 +4056,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         StopVoiceTestPlayback("unload_all", printSummary: false);
         ClearLoadedAutoVoiceClip();
         ClearLoadedAutoChat();
-        ClearLoadedReplayScoreboardFlairs();
         foreach (var slot in _loadedSlots.ToArray())
         {
             BotControllerNative.StopReplay(slot);
@@ -4230,7 +4131,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
             StopVoiceTestPlayback(reason, printSummary: false);
             InvalidateFreezePreroll();
-            ClearLoadedReplayScoreboardFlairs();
 
             if (BotControllerNative.IsCompatible)
             {
@@ -4345,7 +4245,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _rebuiltInventorySlots.Clear();
         _cosmeticSyncedSlots.Clear();
         _cosmeticHeartbeatTokens.Clear();
-        ClearReplayCrosshairHudReticleMap(disablePatch: true);
+        ClearReplayCrosshairPresentation();
         RestoreAllReplayBotViewmodels();
         _lastPlayingSlots.Clear();
         _replayStartedAt.Clear();
@@ -4442,7 +4342,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     {
         _freezePrerollBrainLockedSlots.Remove(slot);
         RestoreReplayBotViewmodel(slot);
-        InvalidateReplayIdentityGeneration(slot);
         _lastPlayingSlots.Remove(slot);
         _replayStartedAt.Remove(slot);
         _lastEnsuredWeaponDef.Remove(slot);
@@ -4597,7 +4496,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private void ForgetLoadedReplayMetadata(int slot)
     {
         InvalidateInitialSpawnAssignment();
-        ClearReplayScoreboardFlairForSlot(slot);
         InvalidateReplayIdentityGeneration(slot);
         _loadedReplays.Remove(slot);
         _lastEnsuredWeaponDef.Remove(slot);
@@ -4615,6 +4513,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _slotCosmeticEvidenceKeys.Remove(slot);
         _scoreboardSyncedSlots.Remove(slot);
         KillTrackedReplayDropsForSlot(slot, "forget_replay");
+        _ = SyncBotHiderPresentationLease(announce: false);
     }
 
     private void TrackLoadedReplay(

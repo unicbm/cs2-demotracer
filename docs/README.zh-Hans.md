@@ -2,9 +2,9 @@
 
 > [!CAUTION]
 > **2026 年 7 月 CS2 更新（1.41.6.9）：**服务器播放需要 CounterStrikeSharp
-> v1.0.371 或更新版本；Ray-Trace 需要 v1.0.16 或更新版本。CS2-Bot-Hider
-> 需要包含 2026 年 7 月 Windows client identity offset 修复的构建，已发布的
-> v0.2.5 早于该修复。DemoTracer 的 Windows 核心 replay 链路已在本地验证；
+> v1.0.371 或更新版本；Ray-Trace 需要 v1.0.16 或更新版本。server bundle
+> 已自带包含所需 Windows identity offset 的 DemoTracer BotHider runtime。
+> DemoTracer 的 Windows 核心 replay 链路已在本地验证；
 > 使用新版 delta user-command 编码的 demo 需要 converter v0.5.0 或更新版本，
 > `.dtr` 格式保持不变。
 
@@ -16,8 +16,8 @@ CS2 服务器里让 bot 执行这些路线。
 - [使用说明](USAGE.zh-Hans.md)：converter CLI、GUI、pool 和服务器播放流程。
 - [语音导出和回放](VOICE.zh-Hans.md)：`--export-voice`、`.dtv` sidecar、自动播放和排错。
 - [命令参考](COMMANDS.zh-Hans.md)：`dtr_` 指令、状态检查和诊断输出。
-- [依赖说明](DEPENDENCIES.md)：必需依赖、server bundle 自带内容、BotHider/RayTrace
-  等可选集成边界。
+- [依赖说明](DEPENDENCIES.md)：必需依赖、server bundle 自带 BotHider、RayTrace
+  可选集成边界。
 - [限制和边界](LIMITATIONS.zh-Hans.md)：已知问题、handoff、头像、BotHider、饰品等边界。
 
 英文参考：
@@ -74,15 +74,17 @@ dtr_go round "<manifest.json>" 0
 server bundle 自带：
 
 - `BotController` Metamod runtime
-- `DemoTracer` CounterStrikeSharp plugin
-- `DemoTracerApi.dll`
+- DemoTracer 自维护的 `BotHider` Metamod runtime
+- `.NET 10` 的 `DemoTracer` 和 `DemoTracerBotHider` CounterStrikeSharp plugin
+- `DemoTracerApi.dll` 和 `DemoTracerBotHiderApi.dll`
 - `demotracer-econ-index.v1.json`
 - `demotracer.config.example.json`
 
+不要同时安装另一个公开 BotHider CSS plugin；bundle 内置 provider 是 identity 和
+服务器准星的唯一 writer。
+
 可选集成：
 
-- [CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider)：用于 BotHider 管理的
-  replay slot，以及 demo 显示名、SteamID64、头像 identity 对齐。
 - [Ray-Trace](https://github.com/FUNPLAY-pro-CS2/Ray-Trace) 或其他提供
   `raytrace:craytraceinterface` 的 RayTrace API provider：用于 handoff 360 threat
   的更严格 LOS 判断；没有它也能运行，`dtr_doctor` 会显示当前 RayTrace 状态。
