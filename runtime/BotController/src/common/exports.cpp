@@ -20,7 +20,7 @@
 namespace
 {
     constexpr int kBotControllerAbiMajor = 16;
-    constexpr int kBotControllerAbiMinor = 30;
+    constexpr int kBotControllerAbiMinor = 31;
     constexpr uint64_t kCapabilityReplaySlotState = 1ULL << 0;
     constexpr uint64_t kCapabilityStartReplayAt = 1ULL << 1;
     constexpr uint64_t kCapabilityStartReplayUntil = 1ULL << 2;
@@ -33,6 +33,7 @@ namespace
     constexpr uint64_t kCapabilityUsercmdMovementIntent = 1ULL << 9;
     constexpr uint64_t kCapabilityVoiceSend = 1ULL << 10;
     constexpr uint64_t kCapabilityNativePerception = 1ULL << 11;
+    constexpr uint64_t kCapabilityReleaseReplayBuffer = 1ULL << 12;
     constexpr uint64_t kBotControllerCapabilities =
         kCapabilityReplaySlotState |
         kCapabilityStartReplayAt |
@@ -45,7 +46,8 @@ namespace
         kCapabilityExtendedReplay |
         kCapabilityUsercmdMovementIntent |
         kCapabilityVoiceSend |
-        kCapabilityNativePerception;
+        kCapabilityNativePerception |
+        kCapabilityReleaseReplayBuffer;
 
 #pragma pack(push, 4)
     struct BotControllerAbiInfo
@@ -478,6 +480,13 @@ extern "C" __declspec(dllexport) int BotController_StartReplayUntil(
 extern "C" __declspec(dllexport) int BotController_StopReplay(int slot)
 {
     return BotController::MotionRecorder::StopReplay(slot) ? 0 : -1;
+}
+
+// Stop replay and return all loaded replay-buffer capacity to the allocator.
+// Callers expecting to restart the same loaded replay should use StopReplay.
+extern "C" __declspec(dllexport) int BotController_ReleaseReplayBuffer(int slot)
+{
+    return BotController::MotionRecorder::ReleaseReplayBuffer(slot) ? 0 : -1;
 }
 
 // Current replay tick index, or <0 if the slot is not replaying.

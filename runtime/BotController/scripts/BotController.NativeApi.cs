@@ -168,6 +168,7 @@ namespace BotControllerApi
         public const ulong CapabilityExtendedReplay = 1UL << 8;
         public const ulong CapabilityUsercmdMovementIntent = 1UL << 9;
         public const ulong CapabilityNativePerception = 1UL << 11;
+        public const ulong CapabilityReleaseReplayBuffer = 1UL << 12;
 
         // Sentinel weapon def meaning "any knife"
         public const int KnifeDef = 9001;
@@ -279,6 +280,9 @@ namespace BotControllerApi
 
         [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
         private static extern int BotController_StopReplay(int slot);
+
+        [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int BotController_ReleaseReplayBuffer(int slot);
 
         [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
         private static extern int BotController_GetReplayCursor(int slot);
@@ -484,6 +488,22 @@ namespace BotControllerApi
             => BotController_StartReplayUntil(slot, loop ? 1 : 0, startIndex, holdBeforeIndex) == 0;
 
         public static bool StopReplay(int slot) => BotController_StopReplay(slot) == 0;
+
+        // Unlike StopReplay, this also returns native replay vector capacity.
+        // Capability-probe so the ABI-16 wrapper remains safe with older DLLs.
+        public static bool ReleaseReplayBuffer(int slot)
+        {
+            if ((Capabilities() & CapabilityReleaseReplayBuffer) == 0)
+                return false;
+            try
+            {
+                return BotController_ReleaseReplayBuffer(slot) == 0;
+            }
+            catch (EntryPointNotFoundException)
+            {
+                return false;
+            }
+        }
 
         public static int ReplayCursor(int slot) => BotController_GetReplayCursor(slot);
 

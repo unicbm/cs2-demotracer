@@ -68,6 +68,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private const string LeftHandDesiredFidelityNotice = "[DTR WARN] left_hand_desired=off 会降低保真度，但显著增高handoff流畅性。Reload loaded replays or plans for this setting to apply.";
 
     private readonly List<int> _loadedSlots = new();
+    private readonly HashSet<int> _warmReplayBufferSlots = new();
     private readonly HashSet<int> _demoTracerOwnedSlots = new();
     private readonly HashSet<int> _freezePrerollBrainLockedSlots = new();
     private readonly Dictionary<int, LoadedReplay> _loadedReplays = new();
@@ -253,9 +254,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private void ClearDisconnectedReplaySlot(int slot, string reason)
     {
-        BotControllerNative.StopReplay(slot);
-        ReleaseReplaySlot(slot, reason);
         BotControllerNative.UnloadReplay(slot);
+        ReleaseReplaySlot(slot, reason);
         _loadedSlots.Remove(slot);
         ForgetLoadedReplayMetadata(slot);
     }
@@ -2700,10 +2700,12 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     {
         var replayStateReplaced = false;
         var presentationTransitionStarted = false;
+        var loadSucceeded = false;
         try
         {
             var resolvedManifestPath = ResolveReadableManifestPath(manifestPath);
-            if (!TryReadManifest(resolvedManifestPath, out var manifest, out var readError))
+            if (!TryGetPrefetchedManifest(resolvedManifestPath, out var manifest) &&
+                !TryReadManifest(resolvedManifestPath, out manifest, out var readError))
                 return LoadRoundResult.Fail($"dtr: failed to read manifest: {readError}");
             if (!CurrentMapMatchesManifest(manifest.Map, out var currentMap))
             {
@@ -2746,7 +2748,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
             BeginBotHiderPresentationTransition();
             presentationTransitionStarted = true;
-            StopAndUnloadLoaded();
+            StopAndUnloadLoaded(clearArmedPlan: true, releaseBuffers: false);
             replayStateReplaced = true;
             _loadedRoundScoreboard = roundScoreboard;
             var loaded = new List<string>();
@@ -2770,6 +2772,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             var chatStatus = string.IsNullOrWhiteSpace(chat)
                 ? string.Empty
                 : $" chat={chat}";
+            ReleaseUnusedWarmReplayBuffers();
+            loadSucceeded = true;
             return LoadRoundResult.Success($"dtr: loaded {loaded.Count} replays for round {round}{partial}{voiceStatus}{chatStatus}: {string.Join(", ", loaded)}");
         }
         catch (Exception ex)
@@ -2780,6 +2784,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         }
         finally
         {
+            FinishReplayPrefetchRound();
+            if (!loadSucceeded)
+                ReleaseUnusedWarmReplayBuffers();
             if (presentationTransitionStarted)
                 EndBotHiderPresentationTransition();
         }
@@ -2816,12 +2823,17 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 return false;
             }
 
-            if (!BotControllerNative.LoadReplayFromFile(slot, recPath, out var replayMetadata))
+            ReplayFileMetadata replayMetadata;
+            var loadedReplay = TryTakePrefetchedReplay(recPath, out var prefetchedReplay)
+                ? BotControllerNative.LoadReplay(slot, prefetchedReplay, out replayMetadata)
+                : BotControllerNative.LoadReplayFromFile(slot, recPath, out replayMetadata);
+            if (!loadedReplay)
             {
                 error = $"{file.Side}:slot{slot}:{file.PlayerName} {recPath} ({BotControllerNative.LastLoadError})";
                 return false;
             }
 
+            _warmReplayBufferSlots.Remove(slot);
             RememberLoadedSlot(slot);
             TrackLoadedReplay(
                 slot,
@@ -4047,9 +4059,12 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     private void StopAndUnloadLoaded()
-        => StopAndUnloadLoaded(clearArmedPlan: true);
+        => StopAndUnloadLoaded(clearArmedPlan: true, releaseBuffers: true);
 
     private void StopAndUnloadLoaded(bool clearArmedPlan)
+        => StopAndUnloadLoaded(clearArmedPlan, releaseBuffers: true);
+
+    private void StopAndUnloadLoaded(bool clearArmedPlan, bool releaseBuffers)
     {
         InvalidateInitialSpawnAssignment();
         var trackedSlots = _loadedSlots.ToHashSet();
@@ -4058,10 +4073,20 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         ClearLoadedAutoChat();
         foreach (var slot in _loadedSlots.ToArray())
         {
-            BotControllerNative.StopReplay(slot);
+            if (releaseBuffers)
+            {
+                BotControllerNative.UnloadReplay(slot);
+                _warmReplayBufferSlots.Remove(slot);
+            }
+            else
+            {
+                BotControllerNative.StopReplay(slot);
+                _warmReplayBufferSlots.Add(slot);
+            }
             ReleaseReplaySlot(slot, "unload_all");
-            BotControllerNative.UnloadReplay(slot);
         }
+        if (releaseBuffers)
+            ReleaseUnusedWarmReplayBuffers();
         StopUntrackedNativeReplaySlots(trackedSlots, "unload_all");
         _loadedSlots.Clear();
         _demoTracerOwnedSlots.Clear();
@@ -4115,6 +4140,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _lifecycleResetInProgress = true;
         try
         {
+            CancelReplayPrefetch();
             InvalidateInitialSpawnAssignment();
             ReleaseFreezePrerollBrainLocks();
             ClearReplayLeftHandDesiredLatches();
@@ -4144,6 +4170,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             ClearLoadedAutoChat();
 
             _loadedSlots.Clear();
+            _warmReplayBufferSlots.Clear();
             _demoTracerOwnedSlots.Clear();
             _loadedReplays.Clear();
             _lastEnsuredWeaponDef.Clear();
@@ -4213,7 +4240,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     {
         try
         {
-            BotControllerNative.StopReplay(slot);
             BotControllerNative.UnloadReplay(slot);
             BotControllerNative.ClearBuyPlan(slot);
             BotControllerNative.UnlockReplayControl(slot);
@@ -4256,8 +4282,16 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         SetReplayPovMask(0);
     }
 
+    private void ReleaseUnusedWarmReplayBuffers()
+    {
+        foreach (var slot in _warmReplayBufferSlots)
+            BotControllerNative.UnloadReplay(slot);
+        _warmReplayBufferSlots.Clear();
+    }
+
     private void StopAllState(string reason)
     {
+        CancelReplayPrefetch();
         StopLoadedReplaySlots(reason);
         ClearLoadedAutoVoiceClip();
         ClearLoadedAutoChat();
@@ -4267,6 +4301,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _armedSourceRound = -1;
         StopSequenceState();
         StopPoolState();
+        ReleaseUnusedWarmReplayBuffers();
     }
 
     private bool StopReplayStateForRoundBoundary(string reason)
@@ -4276,7 +4311,10 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             !HasAnyNativeActiveReplaySlot())
             return false;
 
-        StopAndUnloadLoaded(clearArmedPlan: false);
+        var keepWarmBuffers = _sequenceActive || _poolActive || _armed;
+        StopAndUnloadLoaded(
+            clearArmedPlan: false,
+            releaseBuffers: !keepWarmBuffers);
         return true;
     }
 
@@ -4293,7 +4331,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             if (trackedSlots.Contains(slot) || !BotControllerNative.GetReplayState(slot).Playing)
                 continue;
 
-            BotControllerNative.StopReplay(slot);
             BotControllerNative.UnloadReplay(slot);
             BotControllerNative.ClearBuyPlan(slot);
             BotControllerNative.UnlockWeaponSlot(slot);

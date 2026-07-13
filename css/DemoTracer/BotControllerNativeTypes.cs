@@ -36,6 +36,7 @@ internal static partial class BotControllerNative
     internal const ulong CapabilityUsercmdMovementIntent = 1UL << 9;
     internal const ulong CapabilityVoiceSend = 1UL << 10;
     internal const ulong CapabilityNativePerception = 1UL << 11;
+    internal const ulong CapabilityReleaseReplayBuffer = 1UL << 12;
 
     public const ulong RequiredCapabilityMask =
         CapabilityReplaySlotState |

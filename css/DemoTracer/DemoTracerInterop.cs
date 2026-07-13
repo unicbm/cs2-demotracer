@@ -74,6 +74,9 @@ internal static partial class BotControllerNative
     public static bool HasNativePerceptionCapability
         => (Capabilities & CapabilityNativePerception) == CapabilityNativePerception;
 
+    public static bool HasReleaseReplayBufferCapability
+        => (Capabilities & CapabilityReleaseReplayBuffer) == CapabilityReleaseReplayBuffer;
+
     public static bool TryGetNativePerceptionState(int slot, out NativePerceptionState state)
     {
         state = default;
@@ -191,6 +194,7 @@ internal static partial class BotControllerNative
                    $"build={BuildId} usercmd_movement_intent={UsercmdMovementIntentStatus} " +
                    $"voice_send={VoiceStatusText} " +
                    $"left_hand_alias={HasLeftHandIntentAliasExports} left_hand_latch={HasLeftHandDesiredLatchExports} " +
+                   $"release_replay_buffer={HasReleaseReplayBufferCapability} " +
                    $"projectile_birth_align={HasProjectileBirthAlignExports} " +
                    $"dtr_reader={MinRecFormatVersion}..{RecFormatVersion} " +
                    $"platform={RuntimePlatformName} api={DemoTracerApiVersion}";
@@ -531,8 +535,31 @@ internal static partial class BotControllerNative
 
         try
         {
-            EnsureNativeLayout();
             var replay = DtrReplayReader.Read(path);
+            return LoadReplay(slot, replay, out metadata);
+        }
+        catch (Exception ex)
+        {
+            LastLoadError = ex.Message;
+            return false;
+        }
+    }
+
+    internal static bool LoadReplay(
+        int slot,
+        DtrReplayFile replay,
+        out ReplayFileMetadata metadata)
+    {
+        metadata = ReplayFileMetadata.Empty;
+        if (!ValidSlot(slot))
+        {
+            LastLoadError = $"slot {slot} out of range 0..{MaxSlots - 1}";
+            return false;
+        }
+
+        try
+        {
+            EnsureNativeLayout();
             if (!WriteLeftHandDesired)
                 StripLeftHandDesired(replay.CommandFrames);
             metadata = ReplayNativeMapper.BuildMetadata(replay);
@@ -624,9 +651,34 @@ internal static partial class BotControllerNative
     {
         if (!ValidSlot(slot))
             return false;
-        StopReplay(slot);
-        LastLoadError = string.Empty;
-        return true;
+
+        if (!HasReleaseReplayBufferCapability)
+        {
+            var stopped = StopReplay(slot);
+            LastLoadError = stopped
+                ? "native runtime can stop this replay but cannot release its buffer; update BotController"
+                : "native runtime cannot release replay buffers, and stopping the replay failed";
+            return stopped;
+        }
+
+        try
+        {
+            var released = BotController_ReleaseReplayBuffer(slot) == 0;
+            BotController_Unlock(slot, LockKindAll);
+            LastLoadError = released ? string.Empty : "BotController_ReleaseReplayBuffer failed";
+            return released;
+        }
+        catch (EntryPointNotFoundException)
+        {
+            _ = StopReplay(slot);
+            LastLoadError = "runtime advertises replay-buffer release without exporting it";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            LastLoadError = ex.Message;
+            return false;
+        }
     }
 
     public static bool StartReplay(int slot, bool loop)

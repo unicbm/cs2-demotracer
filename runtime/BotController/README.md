@@ -202,11 +202,23 @@ if (BotController.TryGetReplayTick(botSlot, out var tick))
 
 BotController.ReplayCursor(botSlot);          // current tick, <0 if idle
 BotController.ReplayTotal(botSlot);           // loaded tick count
-BotController.StopReplay(botSlot);
+BotController.StopReplay(botSlot);            // retain buffers for a warm restart
+
+// When this slot will not be reused soon, capability-probe and release its
+// native tick/subtick/command buffer capacity as well as stopping replay.
+if ((BotController.Capabilities() & BotController.CapabilityReleaseReplayBuffer) != 0)
+    BotController.ReleaseReplayBuffer(botSlot);
 ```
 
 `ReplayTick` / `SubtickMove` mirror the C++ struct layout byte-for-byte, so the
 buffers can be serialized and reloaded across rounds. Main thread only.
+
+Replay weapon selection caches the resolved inventory cell while its recorded
+definition, `WeaponServices` binding, and exact inventory entry remain
+unchanged, then compares the active handle directly. Load/start/stop, loop
+restart, explicit native weapon switch,
+give/drop/replacement detection, and global reset invalidate or refresh the
+cache; no missing-weapon result is cached.
 
 ------------------------------------------------------------------------
 

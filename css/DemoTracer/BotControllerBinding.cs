@@ -159,6 +159,9 @@ internal static partial class BotControllerNative
     private static extern int BotController_StopReplay(int slot);
 
     [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int BotController_ReleaseReplayBuffer(int slot);
+
+    [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]
     private static extern int BotController_GetReplayCursor(int slot);
 
     [DllImport("BotController", CallingConvention = CallingConvention.Cdecl)]

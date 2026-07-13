@@ -452,11 +452,22 @@ internal static class DtrReplayReader
     {
         using var input = new MemoryStream(compressed, writable: false);
         using var brotli = new BrotliStream(input, CompressionMode.Decompress);
-        using var output = new MemoryStream(expectedLength);
-        brotli.CopyTo(output);
-        if (output.Length != expectedLength)
-            throw new InvalidDataException($"decompressed body length {output.Length} != expected {expectedLength}");
-        return output.ToArray();
+        var output = GC.AllocateUninitializedArray<byte>(expectedLength);
+        var totalRead = 0;
+        while (totalRead < output.Length)
+        {
+            var read = brotli.Read(output, totalRead, output.Length - totalRead);
+            if (read == 0)
+            {
+                throw new InvalidDataException(
+                    $"decompressed body length {totalRead} != expected {expectedLength}");
+            }
+            totalRead += read;
+        }
+
+        if (brotli.ReadByte() != -1)
+            throw new InvalidDataException($"decompressed body exceeds expected length {expectedLength}");
+        return output;
     }
 
     private static NativeMovementSnapshot ReadCurrentSnapshot(BinaryReader reader)

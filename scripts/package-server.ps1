@@ -41,6 +41,14 @@ function Require-Path([string]$Path, [string]$Label) {
     }
 }
 
+function Assert-BinaryContainsExport([string]$Path, [string]$ExportName) {
+    Require-Path $Path "native runtime DLL"
+    $ascii = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($Path))
+    if ($ascii.IndexOf($ExportName + [char]0, [System.StringComparison]::Ordinal) -lt 0) {
+        throw "BotController runtime is older than the packaged ABI metadata (missing export $ExportName): $Path. Rebuild it with -BuildRuntime or pass a current runtime package."
+    }
+}
+
 function Copy-RequiredFile([string]$Source, [string]$Destination) {
     Require-Path $Source "required file"
     $destinationDir = Split-Path -Parent $Destination
@@ -113,7 +121,9 @@ if (-not $SkipCssBuild) {
     Invoke-Checked $resolvedDotnetPath @("build", (Join-Path $repoRoot "runtime\BotHider\csharp\BotHiderImpl\BotHiderImpl.csproj"), "-c", $Configuration)
 }
 
-Require-Path (Join-Path $runtimeRoot "addons\BotController\bin\win64\BotController.dll") "BotController runtime DLL"
+$runtimeDll = Join-Path $runtimeRoot "addons\BotController\bin\win64\BotController.dll"
+Require-Path $runtimeDll "BotController runtime DLL"
+Assert-BinaryContainsExport $runtimeDll "BotController_ReleaseReplayBuffer"
 Require-Path (Join-Path $runtimeRoot "addons\BotController\gamedata.json") "BotController gamedata"
 Require-Path (Join-Path $runtimeRoot "addons\metamod\BotController.vdf") "BotController Metamod VDF"
 Require-Path (Join-Path $botHiderRuntimeRoot "addons\BotHider\bin\win64\BotHider.dll") "DemoTracer BotHider runtime DLL"
@@ -182,7 +192,7 @@ version: v$Version
 git_commit: $gitCommit
 platform: windows-x64
 bundled_botcontroller_abi: 16
-bundled_botcontroller_abi_minor: 30
+bundled_botcontroller_abi_minor: 31
 expected_demotracer_native_abi: 16
 dtr_reader: 3..7
 demotracer_api: 6
@@ -224,10 +234,10 @@ bh_status
 Expected ABI check:
 
 ```text
-expected_abi=16 runtime_abi=16 abi_minor=30
+expected_abi=16 runtime_abi=16 abi_minor=31
 ```
 
-For v__VERSION__, require `runtime_abi=16` and `abi_minor=30` or newer. If the minor
+For v__VERSION__, require `runtime_abi=16` and `abi_minor=31` or newer. If the minor
 version is missing or lower, replace the complete server bundle, including
 `addons/BotController/bin/win64/BotController.dll`,
 `addons/BotController/gamedata.json`, and `addons/metamod/BotController.vdf`.
@@ -270,7 +280,7 @@ through CS2's native `say` / `say_team` path when `dtr_chat_auto on` is enabled
 
 - Required BotController native ABI: 16
 - Bundled BotController native ABI: 16
-- Bundled BotController native ABI minor: 30
+- Bundled BotController native ABI minor: 31
 - Supported `.dtr` reader versions: 3..7
 - DemoTracer companion API: 6
 - DemoTracer BotHider API: 1

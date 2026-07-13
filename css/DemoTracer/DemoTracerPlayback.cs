@@ -9,6 +9,14 @@ namespace DemoTracer;
 
 public sealed partial class DemoTracerPlugin
 {
+    private bool _poolPreparePending;
+    private int _poolPrepareToken;
+    private int _poolPendingRoundIndex = -1;
+    private string _poolPendingManifestPath = string.Empty;
+    private string _poolPendingReason = string.Empty;
+    private string _poolPendingPrepareReason = string.Empty;
+    private RoundPoolCandidate? _poolPendingCandidate;
+
     [ConsoleCommand("dtr_go", "dtr_go <seq|round|pool> ...")]
     public void GoCommand(CCSPlayerController? player, CommandInfo command)
         => DispatchPlanCommand(command, "dtr_go", restart: true);
@@ -32,12 +40,7 @@ public sealed partial class DemoTracerPlugin
     [ConsoleCommand("dtr_stop_sequence", "dtr_stop_sequence")]
     public void StopSequenceCommand(CCSPlayerController? player, CommandInfo command)
     {
-        _sequenceActive = false;
-        _sequenceRounds = [];
-        _sequenceIndex = 0;
-        _sequencePrepared = false;
-        _sequencePreparedRound = -1;
-        InvalidateFreezePreroll();
+        StopSequenceState();
         command.ReplyToCommand("dtr: sequence stopped");
     }
 
@@ -93,11 +96,18 @@ public sealed partial class DemoTracerPlugin
         }
 
         var manifestPath = command.GetArg(argOffset);
-        if (!TryReadManifest(manifestPath, out var manifest, out var readError))
+        var resolvedManifestPath = ResolveReadableManifestPath(manifestPath);
+        var hasManifestStampBefore = ReplayFileStamp.TryRead(resolvedManifestPath, out var manifestStampBefore);
+        if (!TryReadManifest(resolvedManifestPath, out var manifest, out var readError))
         {
             command.ReplyToCommand($"dtr: failed to read manifest: {readError}");
             return;
         }
+        var stableManifestStamp = hasManifestStampBefore &&
+                                  ReplayFileStamp.TryRead(resolvedManifestPath, out var manifestStampAfter) &&
+                                  manifestStampBefore == manifestStampAfter
+            ? manifestStampAfter
+            : (ReplayFileStamp?)null;
         if (!CheckManifestMap(command, manifest.Map, manifestPath))
             return;
 
@@ -126,6 +136,8 @@ public sealed partial class DemoTracerPlugin
             return;
 
         StopAndUnloadLoaded();
+        CancelReplayPrefetch();
+        ClearPoolPreparedState();
         _sequenceManifestPath = manifestPath;
         _sequenceRounds = rounds;
         _sequenceIndex = Array.IndexOf(rounds, startRound);
@@ -138,6 +150,7 @@ public sealed partial class DemoTracerPlugin
         _armedManifestPath = string.Empty;
         _armedSourceRound = -1;
         _poolActive = false;
+        PrefetchRoundReplays(manifestPath, manifest, startRound, stableManifestStamp);
 
         command.ReplyToCommand(
             restart
@@ -180,11 +193,18 @@ public sealed partial class DemoTracerPlugin
             reply($"dtr: ABI mismatch; {BotControllerNative.RuntimeSummary}");
             return;
         }
-        if (!TryReadManifest(manifestPath, out var manifest, out var readError))
+        var resolvedManifestPath = ResolveReadableManifestPath(manifestPath);
+        var hasManifestStampBefore = ReplayFileStamp.TryRead(resolvedManifestPath, out var manifestStampBefore);
+        if (!TryReadManifest(resolvedManifestPath, out var manifest, out var readError))
         {
             reply($"[DTR ERR] failed to read manifest: {readError}");
             return;
         }
+        var stableManifestStamp = hasManifestStampBefore &&
+                                  ReplayFileStamp.TryRead(resolvedManifestPath, out var manifestStampAfter) &&
+                                  manifestStampBefore == manifestStampAfter
+            ? manifestStampAfter
+            : (ReplayFileStamp?)null;
         if (!CurrentMapMatchesManifest(manifest.Map, out var currentMap))
         {
             reply($"[DTR ERR] map mismatch: server=\"{currentMap}\" manifest=\"{manifest.Map}\" path=\"{manifestPath}\"");
@@ -200,6 +220,8 @@ public sealed partial class DemoTracerPlugin
             return;
 
         StopAndUnloadLoaded();
+        CancelReplayPrefetch();
+        ClearPoolPreparedState();
         _sequenceActive = false;
         _sequencePrepared = false;
         _sequencePreparedRound = -1;
@@ -211,6 +233,7 @@ public sealed partial class DemoTracerPlugin
         _armedManifestPath = manifestPath;
         _armedSourceRound = round;
         _armedLabel = $"source_round={round} manifest={manifestPath}";
+        PrefetchRoundReplays(manifestPath, manifest, round, stableManifestStamp);
         reply(
             restart
                 ? $"[DTR OK] Planned SINGLE ROUND. manifest=\"{manifestPath}\"; source_round={round}; restart=now."
@@ -329,12 +352,18 @@ public sealed partial class DemoTracerPlugin
 
     private void StopSequenceState()
     {
+        var hadSequencePrefetch = _sequenceActive || _sequencePrepared;
         _sequenceActive = false;
         _sequenceRounds = [];
         _sequenceIndex = 0;
         _sequencePrepared = false;
         _sequencePreparedRound = -1;
         InvalidateFreezePreroll();
+        if (hadSequencePrefetch)
+        {
+            CancelReplayPrefetch();
+            ReleaseUnusedWarmReplayBuffers();
+        }
     }
 
     [ConsoleCommand("dtr_pool_restart", "dtr_pool_restart <pool_manifest.json> [server_round]")]
@@ -387,6 +416,7 @@ public sealed partial class DemoTracerPlugin
             return;
 
         StopAndUnloadLoaded();
+        CancelReplayPrefetch();
         _sequenceActive = false;
         _sequencePrepared = false;
         _sequencePreparedRound = -1;
@@ -421,16 +451,20 @@ public sealed partial class DemoTracerPlugin
         if (pool == null || pool.Candidates.Count == 0)
         {
             _poolActive = false;
+            ReleaseUnusedWarmReplayBuffers();
             Server.PrintToConsole("dtr: pool stopped, no candidates");
             return false;
         }
 
         if (_poolPrepared && _poolPreparedRoundIndex == _poolRoundIndex)
             return true;
+        if (_poolPreparePending && _poolPendingRoundIndex == _poolRoundIndex)
+            return false;
 
         if (!TryChoosePoolCandidate(pool, _poolRoundIndex, out var candidate, out var reason) ||
             candidate == null)
         {
+            ReleaseUnusedWarmReplayBuffers();
             Server.PrintToConsole($"dtr: pool skipped round {_poolRoundIndex}: {reason}");
             return false;
         }
@@ -438,32 +472,30 @@ public sealed partial class DemoTracerPlugin
         var poolDir = Path.GetDirectoryName(_poolManifestPath) ?? ".";
         if (!TryResolveChildPathUnderRoot(poolDir, candidate.Manifest, out var manifestPath, out var pathError))
         {
+            ReleaseUnusedWarmReplayBuffers();
             Server.PrintToConsole($"dtr: pool skipped round {_poolRoundIndex}: {pathError}");
             return false;
         }
 
-        var load = LoadRound(manifestPath, candidate.SourceRound);
-        if (!load.Ok)
-        {
-            Server.PrintToConsole(
-                $"dtr: pool failed round {_poolRoundIndex}: {load.Message}; candidate={candidate.DemoStem} r{candidate.SourceRound}");
-            return false;
-        }
-
-        PreloadLoadedReplays();
-        MarkPoolCandidateUsed(candidate, pool);
-        _poolPrepared = true;
-        _poolPreparedRoundIndex = _poolRoundIndex;
-        _poolPreparedLabel =
-            $"{candidate.DemoStem} r{candidate.SourceRound} ({reason}); {load.Message}";
-
+        PrefetchRoundReplays(manifestPath, candidate.SourceRound);
+        _poolPreparePending = true;
+        _poolPendingRoundIndex = _poolRoundIndex;
+        _poolPendingManifestPath = manifestPath;
+        _poolPendingCandidate = candidate;
+        _poolPendingReason = reason;
+        _poolPendingPrepareReason = prepareReason;
+        var token = ++_poolPrepareToken;
         Server.PrintToConsole(
-            $"dtr: prepared pool round {_poolRoundIndex} on {prepareReason} -> {_poolPreparedLabel}");
-        return true;
+            $"dtr: pool round {_poolRoundIndex} selected on {prepareReason}; decoding replay data off-thread");
+        PollPendingPoolPreparation(token);
+        return false;
     }
 
     private void StartPreparedPoolRound()
     {
+        if (!_poolPrepared && _poolPreparePending)
+            _ = CompletePendingPoolPreparation(waitForDecode: true, scheduleFreezePreroll: false);
+
         if (!_poolPrepared)
         {
             Server.PrintToConsole($"dtr: pool skipped start for round {_poolRoundIndex}: not prepared at round_start");
@@ -479,6 +511,70 @@ public sealed partial class DemoTracerPlugin
         Server.PrintToConsole($"dtr: pool round {roundIndex} start on round_freeze_end -> {label}; {play}");
         _poolRoundIndex = Math.Max(_poolRoundIndex, roundIndex + 1);
         ClearPoolPreparedState();
+    }
+
+    private void PollPendingPoolPreparation(int token)
+    {
+        Server.NextFrame(() =>
+        {
+            if (!_poolPreparePending || token != _poolPrepareToken)
+                return;
+            if (!ReplayPrefetchReady())
+            {
+                PollPendingPoolPreparation(token);
+                return;
+            }
+
+            _ = CompletePendingPoolPreparation(
+                waitForDecode: false,
+                scheduleFreezePreroll: true);
+        });
+    }
+
+    private bool CompletePendingPoolPreparation(
+        bool waitForDecode,
+        bool scheduleFreezePreroll)
+    {
+        if (!_poolPreparePending || _poolPendingCandidate == null)
+            return _poolPrepared;
+        if (!waitForDecode && !ReplayPrefetchReady())
+            return false;
+
+        var pool = _poolManifest;
+        var candidate = _poolPendingCandidate;
+        var roundIndex = _poolPendingRoundIndex;
+        var manifestPath = _poolPendingManifestPath;
+        var reason = _poolPendingReason;
+        var prepareReason = _poolPendingPrepareReason;
+        ClearPoolPendingPreparation(cancelDecode: false);
+
+        if (!_poolActive || pool == null || roundIndex != _poolRoundIndex)
+            return false;
+
+        var load = LoadRound(manifestPath, candidate.SourceRound);
+        if (!load.Ok)
+        {
+            Server.PrintToConsole(
+                $"dtr: pool failed round {roundIndex}: {load.Message}; candidate={candidate.DemoStem} r{candidate.SourceRound}");
+            return false;
+        }
+
+        PreloadLoadedReplays();
+        MarkPoolCandidateUsed(candidate, pool);
+        _poolPrepared = true;
+        _poolPreparedRoundIndex = roundIndex;
+        _poolPreparedLabel =
+            $"{candidate.DemoStem} r{candidate.SourceRound} ({reason}); {load.Message}";
+
+        Server.PrintToConsole(
+            $"dtr: prepared pool round {roundIndex} on {prepareReason} -> {_poolPreparedLabel}");
+        if (scheduleFreezePreroll &&
+            TryReadFreezePhaseRemaining(out var freezeRemaining, out _) &&
+            freezeRemaining > 0.0f)
+        {
+            ScheduleFreezePrerollStart($"pool round {roundIndex}");
+        }
+        return true;
     }
 
     private bool TryChoosePoolCandidate(
@@ -763,9 +859,24 @@ public sealed partial class DemoTracerPlugin
 
     private void ClearPoolPreparedState()
     {
+        ClearPoolPendingPreparation(cancelDecode: true);
+        ReleaseUnusedWarmReplayBuffers();
         _poolPrepared = false;
         _poolPreparedRoundIndex = -1;
         _poolPreparedLabel = string.Empty;
+    }
+
+    private void ClearPoolPendingPreparation(bool cancelDecode)
+    {
+        _poolPreparePending = false;
+        _poolPrepareToken++;
+        _poolPendingRoundIndex = -1;
+        _poolPendingManifestPath = string.Empty;
+        _poolPendingReason = string.Empty;
+        _poolPendingPrepareReason = string.Empty;
+        _poolPendingCandidate = null;
+        if (cancelDecode)
+            FinishReplayPrefetchRound();
     }
 
     private static void AddRecentPoolKey(Queue<string> queue, HashSet<string> set, string key, int limit)
@@ -815,6 +926,7 @@ public sealed partial class DemoTracerPlugin
 
     private void StopPoolState()
     {
+        var hadPoolPrefetch = _poolActive || _poolPrepared || _poolPreparePending;
         _poolActive = false;
         _poolManifest = null;
         _poolManifestPath = string.Empty;
@@ -822,6 +934,8 @@ public sealed partial class DemoTracerPlugin
         ClearPoolRecentHistory();
         ClearPoolPreparedState();
         InvalidateFreezePreroll();
+        if (hadPoolPrefetch)
+            CancelReplayPrefetch();
     }
 
     [ConsoleCommand("dtr_load", "dtr_load <round|slot> ...")]
@@ -1174,9 +1288,17 @@ public sealed partial class DemoTracerPlugin
             ForgetLoadedReplayMetadata(slot);
         }
 
-        command.ReplyToCommand(ok
-            ? $"dtr: unloaded slot {slot}"
-            : $"dtr: failed to unload slot {slot}");
+        if (!ok)
+        {
+            command.ReplyToCommand(
+                $"dtr: failed to unload slot {slot}: {BotControllerNative.LastLoadError}");
+        }
+        else
+        {
+            command.ReplyToCommand($"dtr: unloaded slot {slot}");
+            if (!string.IsNullOrWhiteSpace(BotControllerNative.LastLoadError))
+                command.ReplyToCommand($"[DTR WARN] {BotControllerNative.LastLoadError}");
+        }
     }
 
     private static TickPlayerSnapshot BuildTickPlayerSnapshot()
