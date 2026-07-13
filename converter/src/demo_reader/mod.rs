@@ -2,9 +2,21 @@ use crate::model::ParsedDemo;
 use crate::{Error, Result};
 use std::path::Path;
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct ReadDemoOptions {
     pub collect_voice: bool,
+    pub collect_cosmetics: bool,
+}
+
+impl Default for ReadDemoOptions {
+    fn default() -> Self {
+        Self {
+            collect_voice: false,
+            // Keep the public read_demo/read_demo_bytes API complete. CLI workflows that
+            // cannot export cosmetics explicitly opt into the lean property set instead.
+            collect_cosmetics: true,
+        }
+    }
 }
 
 #[cfg(feature = "demoparser")]
@@ -26,6 +38,25 @@ mod demoparser_impl {
     use parser::second_pass::variants::{PropColumn, VarVec, Variant};
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
+
+    const COSMETIC_PLAYER_PROPS: &[&str] = &[
+        "inventory_weapon_cosmetics",
+        "agent_skin",
+        "CCSPlayerController.m_nPawnCharacterDefIndex",
+        "active_weapon_original_owner",
+        "item_id_high",
+        "item_id_low",
+        "item_account_id",
+        "weapon_skin_id",
+        "weapon_paint_seed",
+        "weapon_float",
+        "custom_name",
+        "weapon_stickers",
+        "glove_item_idx",
+        "glove_paint_id",
+        "glove_paint_seed",
+        "glove_paint_float",
+    ];
 
     pub fn read_demo(path: &Path) -> Result<ParsedDemo> {
         read_demo_with_options(path, ReadDemoOptions::default())
@@ -133,6 +164,7 @@ mod demoparser_impl {
             "usercmd_subtick_moves",
         ]
         .into_iter()
+        .filter(|prop| should_collect_player_prop(options, prop))
         .map(str::to_string)
         .collect::<Vec<_>>();
 
@@ -421,7 +453,11 @@ mod demoparser_impl {
             voice_frames.sort_by_key(|frame| (frame.xuid, frame.tick));
         }
         let avatar_overrides = parse_avatar_overrides(output.server_avatar_overrides);
-        let econ_items = parse_econ_items(output.skins);
+        let econ_items = if options.collect_cosmetics {
+            parse_econ_items(output.skins)
+        } else {
+            Vec::new()
+        };
 
         Ok(ParsedDemo {
             path: display_path.to_string(),
@@ -439,6 +475,10 @@ mod demoparser_impl {
             avatar_overrides,
             econ_items,
         })
+    }
+
+    fn should_collect_player_prop(options: ReadDemoOptions, prop: &str) -> bool {
+        options.collect_cosmetics || !COSMETIC_PLAYER_PROPS.contains(&prop)
     }
 
     fn parse_avatar_overrides(raw: Vec<(String, Vec<u8>)>) -> Vec<ParsedAvatarOverride> {
@@ -1455,6 +1495,37 @@ mod demoparser_impl {
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        #[test]
+        fn lean_read_skips_only_opt_in_cosmetic_props() {
+            let lean = ReadDemoOptions {
+                collect_voice: false,
+                collect_cosmetics: false,
+            };
+
+            assert_eq!(COSMETIC_PLAYER_PROPS.len(), 16);
+            assert_eq!(
+                COSMETIC_PLAYER_PROPS
+                    .iter()
+                    .copied()
+                    .collect::<BTreeSet<_>>()
+                    .len(),
+                COSMETIC_PLAYER_PROPS.len()
+            );
+            for prop in COSMETIC_PLAYER_PROPS {
+                assert!(!should_collect_player_prop(lean, prop), "{prop}");
+                assert!(should_collect_player_prop(ReadDemoOptions::default(), prop));
+            }
+            for prop in [
+                "item_def_idx",
+                "inventory_as_ids",
+                "music_kit_id",
+                "CCSPlayerController.CCSPlayerController_InventoryServices.m_rank",
+                "crosshair_code",
+            ] {
+                assert!(should_collect_player_prop(lean, prop), "{prop}");
+            }
+        }
 
         #[test]
         fn freeze_end_event_repairs_sticky_freeze_period_rows() {

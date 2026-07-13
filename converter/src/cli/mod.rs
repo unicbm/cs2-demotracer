@@ -174,7 +174,13 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
             max_round_seconds,
         } => {
             warn_debug_build_for_demo_parse();
-            let parsed = read_demo(&demo)?;
+            let parsed = read_demo_with_options(
+                &demo,
+                ReadDemoOptions {
+                    collect_voice: false,
+                    collect_cosmetics: false,
+                },
+            )?;
             let analysis = analyze_demo(
                 &parsed,
                 AnalysisOptions {
@@ -280,6 +286,7 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
                 &demo,
                 ReadDemoOptions {
                     collect_voice: export_voice,
+                    collect_cosmetics: export_cosmetics,
                 },
             )?;
             let report = export_demo(
@@ -454,7 +461,13 @@ fn run_wizard() -> cs2_demotracer::Result<()> {
     let output = prompt_path(&output);
 
     println!("\nAnalyzing {} ...", demo.display());
-    let parsed = read_demo(&demo)?;
+    let parsed = read_demo_with_options(
+        &demo,
+        ReadDemoOptions {
+            collect_voice: false,
+            collect_cosmetics: false,
+        },
+    )?;
     let analysis = analyze_demo(&parsed, AnalysisOptions::default());
     print_analysis_summary(&analysis);
 

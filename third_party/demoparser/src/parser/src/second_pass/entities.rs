@@ -196,13 +196,19 @@ impl<'a> SecondPassParser<'a> {
         // Here we peek ("HUFFMAN_CODE_MAXLEN" == 17) amount of bits and see from a table which
         // symbol it maps to and how many bits should be consumed from the stream.
         // The symbol is then mapped into an op for filling the field path.
+        if self.huffman_lookup_table.len() < (1usize << HUFFMAN_CODE_MAXLEN) {
+            return Err(DemoParserError::MalformedMessage);
+        }
         loop {
             if bitreader.bits_left < HUFFMAN_CODE_MAXLEN {
                 bitreader.refill();
             }
 
             let peeked_bits = bitreader.peek(HUFFMAN_CODE_MAXLEN);
-            let (symbol, code_len) = self.huffman_lookup_table[peeked_bits as usize];
+            // SAFETY: peek() returns at most HUFFMAN_CODE_MAXLEN bits, and the table length was
+            // checked above to cover every value in that bit range.
+            let (symbol, code_len) =
+                unsafe { *self.huffman_lookup_table.get_unchecked(peeked_bits as usize) };
             bitreader.consume(code_len as u32);
             if symbol == STOP_READING_SYMBOL {
                 break;
@@ -248,7 +254,16 @@ impl<'a> SecondPassParser<'a> {
             }
             // Custom events
             if !is_baseline {
-                events_to_emit.extend(SecondPassParser::listen_for_events(entity, &result, field, field_info, &self.prop_controller, &self.prop_controller.special_ids, is_fullpacket));
+                SecondPassParser::listen_for_events(
+                    entity,
+                    &result,
+                    field,
+                    field_info,
+                    &self.prop_controller,
+                    &self.prop_controller.special_ids,
+                    is_fullpacket,
+                    events_to_emit,
+                );
             }
             // Debug
             if self.is_debug_mode {

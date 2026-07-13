@@ -1440,21 +1440,26 @@ impl<'a> SecondPassParser<'a> {
         field_info: Option<FieldInfo>,
         prop_controller: &PropController,
         special_ids: &SpecialIDs,
-        is_fullpacket:bool,
-    ) -> Vec<GameEventInfo> {
+        is_fullpacket: bool,
+        events: &mut Vec<GameEventInfo>,
+    ) {
         // Might want to start splitting this function
-        let mut events = vec![];
         if let Some(fi) = field_info {
-            if entity.entity_type == EntityType::PlayerController{
-                if let Some(f) = field_info{
-                    let connect_ids = [special_ids.teamnum,  special_ids.player_name, special_ids.steamid, special_ids.player_pawn];
+            if entity.entity_type == EntityType::PlayerController {
+                if let Some(f) = field_info {
+                    let connect_ids = [
+                        special_ids.teamnum,
+                        special_ids.player_name,
+                        special_ids.steamid,
+                        special_ids.player_pawn,
+                    ];
                     if connect_ids.contains(&Some(f.prop_id)) {
                         events.push(GameEventInfo::PlayerConnect(entity.entity_id));
                     }
                 }
             }
-            if is_fullpacket{
-                return events;
+            if is_fullpacket {
+                return;
             }
 
             // round end
@@ -1501,7 +1506,6 @@ impl<'a> SecondPassParser<'a> {
                 events.push(GameEventInfo::WeaponCreateDefIdxNew((result.clone(), entity.entity_id, fi.prop_id)));
             }
         }
-        events
     }
 }
 // what is this shit

@@ -1,6 +1,6 @@
 use crate::analysis::quality::AnalysisOptions;
 use crate::demo_id::{demo_id, unique_demo_id};
-use crate::demo_reader::read_demo;
+use crate::demo_reader::{read_demo_with_options, ReadDemoOptions};
 use crate::export::{export_demo, ConvertOptions};
 use crate::model::{
     public_demo_path, RoundPoolCandidate, RoundPoolManifest, Side, SubtickMode, DEMOTRACER_ABI,
@@ -58,7 +58,13 @@ pub fn build_round_pool(options: &BuildPoolOptions) -> Result<BuildPoolReport> {
     let mut failures = 0_usize;
 
     for demo_path in &demo_paths {
-        match read_demo(demo_path) {
+        match read_demo_with_options(
+            demo_path,
+            ReadDemoOptions {
+                collect_voice: false,
+                collect_cosmetics: options.export_cosmetics,
+            },
+        ) {
             Ok(parsed) => {
                 if !map_matches(&parsed.map, &options.map) {
                     log.push(format!("skip {}: map={}", demo_path.display(), parsed.map));

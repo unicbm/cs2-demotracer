@@ -1747,6 +1747,8 @@ fn analyze_worker(demo_path: PathBuf, tx: Sender<WorkerMessage>) {
         &demo_path,
         ReadDemoOptions {
             collect_voice: true,
+            // Analysis is cached, and users may enable cosmetic export afterwards.
+            collect_cosmetics: true,
         },
     )
     .map(|parsed| {
