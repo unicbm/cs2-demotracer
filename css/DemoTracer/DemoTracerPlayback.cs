@@ -18,6 +18,7 @@ public sealed partial class DemoTracerPlugin
     private RoundPoolCandidate? _poolPendingCandidate;
     private bool _playoffEnabled;
     private bool _playoffPreparePending;
+    private bool _playoffPendingCanLoad;
     private int _playoffPrepareToken;
     private int _playoffPendingTRound = -1;
     private int _playoffPendingCtRound = -1;
@@ -506,6 +507,7 @@ public sealed partial class DemoTracerPlugin
     {
         var wasPending = _playoffPreparePending;
         _playoffPreparePending = false;
+        _playoffPendingCanLoad = false;
         _playoffPrepareToken++;
         _playoffPendingTRound = -1;
         _playoffPendingCtRound = -1;
@@ -515,14 +517,28 @@ public sealed partial class DemoTracerPlugin
             FinishReplayPrefetchRound();
     }
 
-    private bool PrepareNextPlayoffRound(string prepareReason)
+    private bool PrepareNextPlayoffRound(string prepareReason, bool allowLoad = true)
     {
         if (!IsPlayoffPlanReady())
             return false;
         if (_playoffPrepared)
             return true;
         if (_playoffPreparePending)
+        {
+            if (!allowLoad)
+                return false;
+
+            _playoffPendingCanLoad = true;
+            if (ReplayPrefetchReady())
+            {
+                return CompletePendingPlayoffPreparation(
+                    waitForDecode: false,
+                    scheduleFreezePreroll: false);
+            }
+
+            PollPendingPlayoffPreparation(_playoffPrepareToken);
             return false;
+        }
 
         var manifestPath = ResolveReadableManifestPath(_sequenceManifestPath);
         if (!TryGetPrefetchedManifest(manifestPath, out var manifest) &&
@@ -591,6 +607,7 @@ public sealed partial class DemoTracerPlugin
             tSteamIds,
             ctSteamIds);
         _playoffPreparePending = true;
+        _playoffPendingCanLoad = allowLoad;
         _playoffPendingTRound = tRound;
         _playoffPendingCtRound = ctRound;
         _playoffPendingReason =
@@ -601,7 +618,8 @@ public sealed partial class DemoTracerPlugin
         Server.PrintToConsole(
             $"dtr: playoff extra round {_playoffRoundIndex + 1} selected on {prepareReason}; " +
             $"{_playoffPendingReason}; decoding replay data off-thread");
-        PollPendingPlayoffPreparation(token);
+        if (allowLoad)
+            PollPendingPlayoffPreparation(token);
         return false;
     }
 
@@ -696,6 +714,8 @@ public sealed partial class DemoTracerPlugin
         Server.NextFrame(() =>
         {
             if (!_playoffPreparePending || token != _playoffPrepareToken)
+                return;
+            if (!_playoffPendingCanLoad)
                 return;
             if (!ReplayPrefetchReady())
             {

@@ -20,6 +20,12 @@ public sealed partial class DemoTracerPlugin
         {
             PrefetchRoundReplays(_sequenceManifestPath, _sequenceRounds[_sequenceIndex]);
         }
+        else if (IsPlayoffPlanReady())
+        {
+            // Select and decode while the completed round still carries the
+            // retained roster evidence, but let round_start own bot loading.
+            _ = PrepareNextPlayoffRound("round_end prefetch", allowLoad: false);
+        }
 
         return HookResult.Continue;
     }
