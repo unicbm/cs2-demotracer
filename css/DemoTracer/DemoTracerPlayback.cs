@@ -1195,6 +1195,8 @@ public sealed partial class DemoTracerPlugin
             slots.Add(slot);
         foreach (var slot in _demoTracerOwnedSlots)
             slots.Add(slot);
+        foreach (var slot in _retainedBotHiderPresentation.Keys)
+            slots.Add(slot);
         foreach (var slot in NativeReplaySlots())
         {
             var state = BotControllerNative.GetReplayState(slot);
@@ -1215,12 +1217,19 @@ public sealed partial class DemoTracerPlugin
             }
 
             _loadedReplays.TryGetValue(slot, out var replay);
+            _retainedBotHiderPresentation.TryGetValue(slot, out var retained);
+            var replayPlayerName = !string.IsNullOrWhiteSpace(replay.PlayerName)
+                ? replay.PlayerName
+                : retained.PlayerName;
+            var replaySteamId = replay.SteamId != 0
+                ? replay.SteamId
+                : retained.SteamId;
             candidates.Add(new DtrKickCandidate(
                 slot,
                 controller.UserId,
                 controller.PlayerName ?? string.Empty,
-                replay.PlayerName ?? string.Empty,
-                replay.SteamId));
+                replayPlayerName ?? string.Empty,
+                replaySteamId));
         }
 
         return candidates;
@@ -1241,6 +1250,7 @@ public sealed partial class DemoTracerPlugin
         var unloaded = BotControllerNative.UnloadReplay(slot);
         ReleaseReplaySlot(slot, "dtr_kick");
         _loadedSlots.Remove(slot);
+        ForgetRetainedBotHiderPresentation(slot);
         ForgetLoadedReplayMetadata(slot);
         Server.ExecuteCommand($"kickid {userId.ToString(CultureInfo.InvariantCulture)}");
 
@@ -1279,24 +1289,28 @@ public sealed partial class DemoTracerPlugin
     {
         if (!CheckAbi(command) || !TryParseSlot(command, out var slot))
             return;
+        var hadRetainedPresentation = _retainedBotHiderPresentation.ContainsKey(slot);
         var ok = BotControllerNative.UnloadReplay(slot);
-        if (ok)
+        if (ok || hadRetainedPresentation)
         {
             StopVoiceTestPlayback("unload", printSummary: false);
             _loadedSlots.Remove(slot);
             ReleaseReplaySlot(slot, "unload");
+            ForgetRetainedBotHiderPresentation(slot);
             ForgetLoadedReplayMetadata(slot);
         }
 
-        if (!ok)
+        if (!ok && !hadRetainedPresentation)
         {
             command.ReplyToCommand(
                 $"dtr: failed to unload slot {slot}: {BotControllerNative.LastLoadError}");
         }
         else
         {
-            command.ReplyToCommand($"dtr: unloaded slot {slot}");
-            if (!string.IsNullOrWhiteSpace(BotControllerNative.LastLoadError))
+            command.ReplyToCommand(ok
+                ? $"dtr: unloaded slot {slot}"
+                : $"dtr: cleared retained BotHider presentation for slot {slot}");
+            if (ok && !string.IsNullOrWhiteSpace(BotControllerNative.LastLoadError))
                 command.ReplyToCommand($"[DTR WARN] {BotControllerNative.LastLoadError}");
         }
     }

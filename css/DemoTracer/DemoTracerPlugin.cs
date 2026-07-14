@@ -225,6 +225,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (playerSlot < 0 || playerSlot >= MaxPlayerSlots)
             return;
 
+        ForgetRetainedBotHiderPresentation(playerSlot);
         ClearReplayCrosshairPresentationEntry(playerSlot);
         _slotCosmeticEvidenceKeys.Remove(playerSlot);
         _appliedGloveCosmetics.Remove(playerSlot);
@@ -2840,6 +2841,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 ? string.Empty
                 : $" chat={chat}";
             ReleaseUnusedWarmReplayBuffers();
+            RetainLoadedBotHiderPresentation();
             loadSucceeded = true;
             return LoadRoundResult.Success($"dtr: loaded {loaded.Count} replays for round {round}{partial}{voiceStatus}{chatStatus}: {string.Join(", ", loaded)}");
         }
@@ -4241,6 +4243,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             _warmReplayBufferSlots.Clear();
             _demoTracerOwnedSlots.Clear();
             _loadedReplays.Clear();
+            ClearRetainedBotHiderPresentation();
             _lastEnsuredWeaponDef.Clear();
             _lastReplayWeaponDef.Clear();
             _lastLockedWeaponTarget.Clear();

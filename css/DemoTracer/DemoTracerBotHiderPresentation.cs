@@ -10,6 +10,7 @@ public sealed partial class DemoTracerPlugin
     private const float BotHiderLeaseHeartbeatSeconds = 1.0f;
     private const float BotHiderLeaseRetrySeconds = 1.0f;
     private readonly Dictionary<int, string> _companionCrosshairOverrides = new();
+    private readonly Dictionary<int, BotHiderPresentationEvidence> _retainedBotHiderPresentation = new();
     private string _botHiderPresentationLeaseToken = string.Empty;
     private string _botHiderPresentationSignature = string.Empty;
     private string _lastBotHiderPresentationError = string.Empty;
@@ -37,7 +38,9 @@ public sealed partial class DemoTracerPlugin
         if (_botHiderPresentationTransitionDepth > 0)
             return;
 
-        if (_loadedSlots.Count == 0 && _companionCrosshairOverrides.Count == 0)
+        if (_loadedSlots.Count == 0 &&
+            _retainedBotHiderPresentation.Count == 0 &&
+            _companionCrosshairOverrides.Count == 0)
         {
             ReleaseBotHiderPresentationLease("no_overrides");
             return;
@@ -165,6 +168,15 @@ public sealed partial class DemoTracerPlugin
             }
         }
 
+        foreach (var evidence in _retainedBotHiderPresentation.Values)
+        {
+            if (_replayIdentityMode != ReplayIdentityMode.Off ||
+                (_crosshairAlignEnabled && HasCrosshairEvidence(evidence.View)))
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -183,42 +195,22 @@ public sealed partial class DemoTracerPlugin
         var bySlot = new Dictionary<int, BotHiderPresentationOverride>();
         foreach (var slot in _loadedSlots.ToArray())
         {
-            if (!_loadedReplays.TryGetValue(slot, out var replay) ||
-                !IsReplaySlotStillSafe(slot) ||
-                !_botHiderBridge.TryGetManagedSlot(slot, out var managed))
-            {
+            if (!_loadedReplays.TryGetValue(slot, out var replay))
                 continue;
-            }
+            AddBotHiderPresentationOverride(
+                bySlot,
+                new BotHiderPresentationEvidence(
+                    slot,
+                    replay.PlayerName,
+                    replay.SteamId,
+                    replay.ScoreboardFlair,
+                    replay.View));
+        }
 
-            var playerName = _replayIdentityMode == ReplayIdentityMode.Off ||
-                             string.IsNullOrWhiteSpace(replay.PlayerName)
-                ? null
-                : replay.PlayerName;
-            ulong? steamId = _replayIdentityMode is ReplayIdentityMode.Steam or ReplayIdentityMode.Avatar &&
-                             replay.SteamId != 0
-                ? replay.SteamId
-                : null;
-            uint? flair = ReplayIdentityShouldApplyScoreboardFlair() && replay.ScoreboardFlair != null
-                ? replay.ScoreboardFlair.ItemDefIndex
-                : null;
-            string? crosshair = null;
-            if (_companionCrosshairOverrides.TryGetValue(slot, out var companionCrosshair))
-                crosshair = companionCrosshair;
-            else if (_crosshairAlignEnabled && HasCrosshairEvidence(replay.View))
-                crosshair = replay.View.CrosshairCode;
-
-            if (playerName == null && !steamId.HasValue && !flair.HasValue && crosshair == null)
-                continue;
-
-            bySlot[slot] = new BotHiderPresentationOverride
-            {
-                Slot = slot,
-                Incarnation = managed.Incarnation,
-                PlayerName = playerName,
-                SteamId = steamId,
-                ScoreboardFlair = flair,
-                CrosshairCode = crosshair
-            };
+        foreach (var evidence in _retainedBotHiderPresentation.Values)
+        {
+            if (!bySlot.ContainsKey(evidence.Slot))
+                AddBotHiderPresentationOverride(bySlot, evidence);
         }
 
         foreach (var pair in _companionCrosshairOverrides.ToArray())
@@ -258,6 +250,73 @@ public sealed partial class DemoTracerPlugin
         return requests;
     }
 
+    private void AddBotHiderPresentationOverride(
+        IDictionary<int, BotHiderPresentationOverride> bySlot,
+        BotHiderPresentationEvidence evidence)
+    {
+        var slot = evidence.Slot;
+        if (!IsReplaySlotStillSafe(slot) ||
+            !_botHiderBridge.TryGetManagedSlot(slot, out var managed))
+        {
+            return;
+        }
+
+        var playerName = _replayIdentityMode == ReplayIdentityMode.Off ||
+                         string.IsNullOrWhiteSpace(evidence.PlayerName)
+            ? null
+            : evidence.PlayerName;
+        ulong? steamId = _replayIdentityMode is ReplayIdentityMode.Steam or ReplayIdentityMode.Avatar &&
+                         evidence.SteamId != 0
+            ? evidence.SteamId
+            : null;
+        uint? flair = ReplayIdentityShouldApplyScoreboardFlair() && evidence.ScoreboardFlair != null
+            ? evidence.ScoreboardFlair.ItemDefIndex
+            : null;
+        string? crosshair = null;
+        if (_companionCrosshairOverrides.TryGetValue(slot, out var companionCrosshair))
+            crosshair = companionCrosshair;
+        else if (_crosshairAlignEnabled && HasCrosshairEvidence(evidence.View))
+            crosshair = evidence.View.CrosshairCode;
+
+        if (playerName == null && !steamId.HasValue && !flair.HasValue && crosshair == null)
+            return;
+
+        bySlot[slot] = new BotHiderPresentationOverride
+        {
+            Slot = slot,
+            Incarnation = managed.Incarnation,
+            PlayerName = playerName,
+            SteamId = steamId,
+            ScoreboardFlair = flair,
+            CrosshairCode = crosshair
+        };
+    }
+
+    private void RetainLoadedBotHiderPresentation()
+    {
+        var replacement = new Dictionary<int, BotHiderPresentationEvidence>();
+        foreach (var pair in _loadedReplays)
+        {
+            var replay = pair.Value;
+            replacement[pair.Key] = new BotHiderPresentationEvidence(
+                pair.Key,
+                replay.PlayerName,
+                replay.SteamId,
+                replay.ScoreboardFlair,
+                replay.View);
+        }
+
+        _retainedBotHiderPresentation.Clear();
+        foreach (var pair in replacement)
+            _retainedBotHiderPresentation[pair.Key] = pair.Value;
+    }
+
+    private void ForgetRetainedBotHiderPresentation(int slot)
+        => _retainedBotHiderPresentation.Remove(slot);
+
+    private void ClearRetainedBotHiderPresentation()
+        => _retainedBotHiderPresentation.Clear();
+
     private void ReleaseBotHiderPresentationLease(string reason)
     {
         if (_botHiderPresentationTransitionDepth > 0)
@@ -286,7 +345,19 @@ public sealed partial class DemoTracerPlugin
                 if (HasCrosshairEvidence(pair.Value.View))
                     slots.Add(pair.Key);
             }
+            foreach (var evidence in _retainedBotHiderPresentation.Values)
+            {
+                if (HasCrosshairEvidence(evidence.View))
+                    slots.Add(evidence.Slot);
+            }
         }
         return slots.Count;
     }
+
+    private readonly record struct BotHiderPresentationEvidence(
+        int Slot,
+        string PlayerName,
+        ulong SteamId,
+        ReplayScoreboardFlair? ScoreboardFlair,
+        ReplayView View);
 }

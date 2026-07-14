@@ -49,15 +49,20 @@ C# BotHider halves. DemoTracer consumes only the versioned
 `demotracer:bot-hider:v1` capability. Temporary name, SteamID64, scoreboard
 flair, and server-replicated crosshair values are one all-or-none presentation
 lease with slot incarnation checks, exact release tokens, heartbeat expiry,
-and provider/map epochs. DemoTracer binds that lease to the loaded replay
-assignment rather than active playback control, so handoff cannot expose the
-underlying persona. Round replacement uses one batch replace instead of a
-release/reacquire gap.
+and provider/map epochs. DemoTracer retains the most recent successful DTR
+presentation batch independently of active playback and replay-buffer cleanup,
+so handoff, sequence completion, later rounds, and match end cannot expose the
+underlying persona. A successful round replacement uses one batch replace
+instead of a release/reacquire gap; a failed partial load keeps the prior batch.
 
 BotHider continuously reconciles the native client identity and the
 CounterStrikeSharp controller fields. Exact SteamID batches are validated for
 duplicates and live-slot conflicts; the provider fails the batch rather than
 substituting another `bot_info` identity.
+
+Ordinary BotHider persona flair remains server-local evidence in
+`bot_info.json`. Missing values remain empty; the runtime does not infer or
+randomize fallback medals.
 
 Do not co-install a separate public BotHider CounterStrikeSharp plugin. Multiple
 presentation publishers can overwrite each other and are unsupported.

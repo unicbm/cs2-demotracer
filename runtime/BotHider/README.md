@@ -27,9 +27,12 @@ Temporary DTR presentation is applied as an all-or-none batch lease:
 - exact SteamID conflicts fail the whole batch instead of selecting another
   persona.
 
-DemoTracer keeps its lease for the lifetime of the loaded replay assignment.
-Playback handoff and replay finish release control only; unload, assignment
-replacement, disconnect, map change, or provider loss end presentation.
+DemoTracer retains the most recent successfully loaded DTR presentation batch
+independently of native replay buffers. Playback handoff, replay finish,
+sequence completion, later server rounds, and match end release control only.
+A later successful DTR batch atomically replaces it; a failed partial load keeps
+the previous complete batch. Explicit slot unload/kick, disconnect, map change,
+slot reuse, plugin unload, or provider loss end the affected presentation.
 
 Crosshair publication uses
 `CCSPlayerController.m_szCrosshairCodes` plus CounterStrikeSharp state-change

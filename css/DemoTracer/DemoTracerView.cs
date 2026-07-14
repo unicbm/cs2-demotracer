@@ -62,7 +62,9 @@ public sealed partial class DemoTracerPlugin
     {
         if (resetCounters)
             _companionCrosshairOverrides.Clear();
-        if (_loadedSlots.Count == 0 && _companionCrosshairOverrides.Count == 0)
+        if (_loadedSlots.Count == 0 &&
+            _retainedBotHiderPresentation.Count == 0 &&
+            _companionCrosshairOverrides.Count == 0)
             ReleaseBotHiderPresentationLease("crosshair_reset");
         else
             _ = SyncBotHiderPresentationLease(announce: false);
@@ -76,7 +78,7 @@ public sealed partial class DemoTracerPlugin
     private string FormatCrosshairStatusCounts()
     {
         var provider = _botHiderBridge.GetProviderInfo();
-        return $"crosshair_evidence={CountLoadedCrosshairEvidence()} crosshair_server_overrides={CountActiveBotHiderCrosshairOverrides()} crosshair_lease={FormatOnOff(!string.IsNullOrWhiteSpace(_botHiderPresentationLeaseToken))} bothider={(provider is { Connected: true, Draining: false } ? "ready" : "unavailable")}";
+        return $"crosshair_evidence={CountLoadedCrosshairEvidence()} crosshair_server_overrides={CountActiveBotHiderCrosshairOverrides()} presentation_retained={_retainedBotHiderPresentation.Count} crosshair_lease={FormatOnOff(!string.IsNullOrWhiteSpace(_botHiderPresentationLeaseToken))} bothider={(provider is { Connected: true, Draining: false } ? "ready" : "unavailable")}";
     }
 
     private string FormatViewmodelStatusCounts()
@@ -106,11 +108,14 @@ public sealed partial class DemoTracerPlugin
 
     private void ClearReplayCrosshairPresentation()
     {
+        var changed = _companionCrosshairOverrides.Count > 0;
         _companionCrosshairOverrides.Clear();
-        if (_loadedSlots.Count == 0)
+        if (_loadedSlots.Count == 0 && _retainedBotHiderPresentation.Count == 0)
             ReleaseBotHiderPresentationLease("crosshair_clear_all");
-        else
+        else if (changed)
             _ = SyncBotHiderPresentationLease(announce: false);
+        else
+            EnsureBotHiderPresentationLease();
     }
 
     private Dictionary<uint, int> BuildReplayPawnSlotMap(TickPlayerSnapshot playerSnapshot)

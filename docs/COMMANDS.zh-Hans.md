@@ -483,10 +483,11 @@ flag 之外又加了 `--export-stickers` 生成时，它才会生效。
 
 开启后，DemoTracer 会为安全 replay bot 租用 converter 从 demo 玩家稳定
 `crosshair_code` 导出的 manifest `view.crosshair_code`。bundle 内置 BotHider 是唯一 writer，
-通过 `CCSPlayerController.m_szCrosshairCodes` 和服务器 state replication 发布。只有 replay
-unload/替换、断线、换图、slot 重用或 reload 才按精确 token 恢复 provider 当前 persona
-基础值；死亡、接触或 C4 handoff 只释放 replay 控制，不释放 presentation。这条路径完全
-由服务器发布，不写真人客户端配置，也不需要向客户端注入代码。
+通过 `CCSPlayerController.m_szCrosshairCodes` 和服务器 state replication 发布。死亡、
+接触、C4 handoff、replay 结束、sequence 完成、后续服务器 round 和比赛结束都只释放
+replay 控制；最近一次成功 DTR 批次的 presentation 会继续保持。只有新成功批次替换、
+显式按 slot unload/kick、断线、换图、slot 重用或插件卸载才恢复 provider 当前 persona
+基础值。这条路径完全由服务器发布，不写真人客户端配置，也不需要向客户端注入代码。
 
 ### `dtr_left_hand_desired <0|1>`
 
@@ -506,11 +507,17 @@ pool plan 需要重新加载后才会应用。
 玩家的 `player_name` 和 `steam_id` 发布给受管 bot slot。默认模式是 `steam`，不会写
 `ServerAvatarOverrides`；`1`/`on` 也表示 `steam`。
 
-identity lease 跟随“已加载 replay 的 slot 分配”，不跟随当前是否仍在注入输入。死亡、
-接触、replay 结束或 C4 handoff 后，demo 名字、SteamID、头像关联、准星和 flair 都继续
-保持；换 round 时原子替换整批 presentation，unload 或 slot 丢失时才恢复 BotHider 当前
-persona 基础值。精确 SteamID 批次若存在无法消解的碰撞会明确拒绝，不会偷偷替换成另一个
-persona。
+identity lease 跟随“最近一次成功加载的完整 DTR presentation 批次”，不跟随当前是否仍
+在注入输入，也不跟随 native replay buffer 的寿命。死亡、接触、replay 结束、C4 handoff、
+sequence 完成、后续服务器 round 和比赛结束后，demo 名字、SteamID、头像关联、准星和
+flair 都继续保持。新 round 成功加载时原子替换整批 presentation；失败或只加载到一半的
+批次不会覆盖上一批完整身份。显式 `dtr_unload`、`dtr_kick`、断线、换图、slot 重用或
+插件卸载才恢复相应 slot 的 BotHider persona 基础值。精确 SteamID 批次若存在无法消解的
+碰撞会明确拒绝，不会偷偷替换成另一个 persona。
+
+普通 BotHider persona 的 `scoreboard_flair` 只来自服务器本地
+`addons/BotHider/bot_info.json`，不冒充 DTR 证据。字段缺失或为 `0` 时保持为空；runtime
+不会根据 SteamID 猜测，也不会随机伪造一枚勋章。
 
 用 `avatar` 可以应用 manifest 里的 PNG 头像覆写，例如队伍/赛事 logo。DemoTracer 会
 保留真实 demo SteamID64，使原生 Steam 资料卡、勋章和称赞信息仍然可用，再把通过校验

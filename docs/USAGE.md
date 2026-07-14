@@ -187,8 +187,10 @@ Crosshair alignment is off by default. If explicitly enabled with
 `dtr_align crosshair on`, DemoTracer leases stable demo-observed
 `crosshair_code` metadata for the safe replay bot. The bundled BotHider is the
 only writer and publishes it through the controller's server-replicated
-crosshair field. Handoff releases playback control without changing the loaded
-replay's presentation. Exact lease release restores the current persona base
-on unload/replacement, disconnect, map change, or reload. The path is fully
+crosshair field. Handoff, replay finish, sequence completion, later server
+rounds, and match end release playback control without changing the most recent
+successful DTR presentation batch. A later successful batch replaces it
+atomically; explicit slot unload/kick, disconnect, map change, slot reuse, or
+plugin unload restores the current persona base. The path is fully
 server-published and neither changes human client configuration nor injects
 client-side code.

@@ -546,12 +546,13 @@ Enables or disables crosshair alignment. It is off by default.
 When enabled, DemoTracer leases manifest `view.crosshair_code` evidence for the
 safe replay bot. The bundled BotHider is the sole writer and publishes the code
 through `CCSPlayerController.m_szCrosshairCodes` with server state replication.
-Missing or contradictory demo evidence is skipped. Exact token release restores
-the provider's current persona base on replay unload/replacement, disconnect,
-map change, slot reuse, or reload. A death/contact/C4 handoff releases replay
-control only; presentation stays bound to the loaded replay assignment. The
-path is fully server-published and does not write human client configuration
-or require client-side code injection.
+Missing or contradictory demo evidence is skipped. A death/contact/C4 handoff,
+replay finish, sequence completion, later server rounds, and match end release
+replay control only. The most recent successful DTR presentation batch remains
+leased until it is replaced by another successful batch, explicitly unloaded
+or kicked by slot, disconnected, invalidated by map/slot reuse, or the plugin is
+unloaded. The path is fully server-published and does not write human client
+configuration or require client-side code injection.
 
 ### `dtr_left_hand_desired <0|1>`
 
@@ -577,12 +578,21 @@ bundled BotHider using the demo player's `player_name` and `steam_id`. The
 default mode is `steam`, which does not write
 `ServerAvatarOverrides`; `1`/`on` also means `steam`.
 
-The identity lease follows the loaded replay assignment, not active input
-playback. Death, contact, replay finish, and C4 handoff therefore keep the same
-demo name, SteamID, avatar association, crosshair, and flair. Round replacement
-atomically replaces the presentation batch; unload or slot loss restores the
-current BotHider persona base. Exact SteamID batches reject unresolved
-collisions instead of silently substituting another persona.
+The identity lease follows the most recent successfully loaded DTR presentation
+batch, not active input playback or native replay-buffer lifetime. Death,
+contact, replay finish, C4 handoff, sequence completion, later server rounds,
+and match end therefore keep the same demo name, SteamID, avatar association,
+crosshair, and flair. A successful round replacement atomically replaces the
+whole batch; a failed or partial replacement leaves the previous complete batch
+in place. Explicit `dtr_unload`, `dtr_kick`, disconnect, map change, slot reuse,
+or plugin unload restores the current BotHider persona base for the affected
+slot. Exact SteamID batches reject unresolved collisions instead of silently
+substituting another persona.
+
+For ordinary BotHider personas, `scoreboard_flair` comes only from the
+server-local `addons/BotHider/bot_info.json`, not from DTR evidence. Omitted or
+zero values remain empty; the runtime does not infer or randomize a fallback
+medal.
 
 Use `avatar` to apply manifest PNG avatar overrides, such as team/event logos.
 DemoTracer keeps the real demo SteamID64 so the native Steam profile card,
