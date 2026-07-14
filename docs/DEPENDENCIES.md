@@ -10,10 +10,14 @@ Normal conversion uses one of the separate packaged Windows x64 downloads:
 - `cs2-demotracer-cli-v<version>-windows-x64.zip`: `cs2-demotracer.exe` for
   inspect, convert, validate, pool conversion, and wizard workflows.
 - `cs2-demotracer-gui-v<version>-windows-x64.zip`:
-  `cs2-demotracer-gui.exe`, the native single-demo GUI workbench.
+  `cs2-demotracer-gui.exe`, the Tauri single-demo desktop workbench.
 
 Python, Node.js, Conda, virtualenvs, and CS2 server plugins are not required for
-normal conversion. Rust is only required when building from source.
+normal conversion with the packaged downloads. The GUI uses the Microsoft Edge
+WebView2 Runtime normally included with current Windows 10 and Windows 11
+installations; install a current WebView2 Runtime if it is absent. Rust is
+required to build the converter core or CLI from source; building the desktop
+GUI also requires Node.js/npm and the Windows Tauri build prerequisites.
 
 ## In-Game Playback
 
@@ -115,7 +119,10 @@ expose standalone replay-library or utility-clip orchestration.
 
 Source builds use the repo-local project files:
 
-- Converter: Rust/Cargo under `converter/`
+- Converter core and CLI: Rust/Cargo under `converter/`
+- Desktop GUI: Tauri/React under `desktop/`; use `npm.cmd ci`,
+  `npm.cmd run check`, and `npm.cmd run tauri:build -- --target
+  x86_64-pc-windows-msvc -- --locked`
 - CounterStrikeSharp plugins: .NET 10 SDK
 - Native BotController and BotHider runtimes: local CS2 Metamod/SDK/CMake toolchain
 

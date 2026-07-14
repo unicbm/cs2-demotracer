@@ -15,7 +15,9 @@ Trace CS2 demos into bot-executable route replays.
 CS2 DemoTracer converts CS2 `.dem` files into compact `.dtr` replay files, then
 plays those routes back through bots on a local CS2 server. The normal converter
 path uses separate packaged Windows x64 CLI and GUI downloads; Python, Node.js,
-Conda, and game-server plugins are not required for conversion.
+Conda, and game-server plugins are not required for conversion. The desktop GUI
+uses Tauri and requires the Microsoft Edge WebView2 Runtime, which is normally
+present on current Windows 10 and Windows 11 installations.
 
 ## Demo
 
@@ -63,6 +65,8 @@ development. It is not intended for matchmaking or cheating.
 
 - **Conversion:** either packaged Windows x64 converter download. No game-server
   plugins are required.
+- **GUI runtime:** Microsoft Edge WebView2, normally included with current
+  Windows 10 and Windows 11 installations.
 - **Playback:** a local Windows x64 CS2 server with
   [Metamod:Source](https://www.sourcemm.net/),
   [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp), and the
@@ -82,8 +86,8 @@ Choose only what you need from the
 
 - `cs2-demotracer-cli-v<version>-windows-x64.zip`: the smallest converter
   download for CLI, wizard, batch, and pool workflows.
-- `cs2-demotracer-gui-v<version>-windows-x64.zip`: the native single-demo
-  desktop converter.
+- `cs2-demotracer-gui-v<version>-windows-x64.zip`: the Tauri single-demo desktop
+  converter.
 - `cs2-demotracer-playback-v<version>-windows-x64.zip`: the server-side
   CounterStrikeSharp/Metamod plugins and runtimes for replaying `.dtr` files on
   a local Windows x64 CS2 server.
@@ -187,7 +191,8 @@ layout is documented in [`docs/FORMAT.md`](docs/FORMAT.md).
 
 ## Repository Layout
 
-- `converter/`: Rust CLI, GUI, local Rust API, and pool conversion.
+- `converter/`: Rust conversion core, CLI, local Rust API, and pool conversion.
+- `desktop/`: Tauri/React single-demo desktop GUI.
 - `runtime/BotController/`: CS2 Metamod runtime used by the playback bundle.
 - `runtime/BotHider/`: DemoTracer-maintained BotHider native/CSS runtime and
   versioned presentation-lease API.

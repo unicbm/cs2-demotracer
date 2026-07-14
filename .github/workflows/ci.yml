@@ -17,6 +17,13 @@ jobs:
         with:
           components: rustfmt
 
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
       - name: Install .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -34,17 +41,33 @@ jobs:
         working-directory: converter
         run: cargo check --locked --no-default-features --features cli,demoparser --bin cs2-demotracer
 
-      - name: Check converter GUI binary
-        working-directory: converter
-        run: cargo check --locked --no-default-features --features gui --bin cs2-demotracer-gui
-
-      - name: Test converter GUI feature
-        working-directory: converter
-        run: cargo test --locked --no-default-features --features gui
-
       - name: Test converter
         working-directory: converter
         run: cargo test --locked
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm.cmd ci
+
+      - name: Check desktop frontend
+        working-directory: desktop
+        run: npm.cmd run check
+
+      - name: Build desktop frontend
+        working-directory: desktop
+        run: npm.cmd run build
+
+      - name: Check desktop Rust formatting
+        working-directory: desktop/src-tauri
+        run: cargo fmt --check
+
+      - name: Test desktop Rust backend
+        working-directory: desktop/src-tauri
+        run: cargo test --locked
+
+      - name: Build desktop GUI
+        working-directory: desktop
+        run: npm.cmd run tauri:build -- --target x86_64-pc-windows-msvc -- --locked
 
       - name: Build CSS plugin
         run: dotnet build css\DemoTracer\DemoTracer.csproj -c Release
@@ -68,7 +91,7 @@ jobs:
             exit 1
           }
 
-          $hits = git grep -n -E 'C:\\Users\\|[Ww][Aa][Ss][Mm]|[Cc]urrent writer format is `\.dtr` v4' -- . ':!converter/Cargo.lock'
+          $hits = git grep -n -E 'C:\\Users\\|[Ww][Aa][Ss][Mm]|[Cc]urrent writer format is `\.dtr` v4' -- . ':!converter/Cargo.lock' ':!desktop/src-tauri/Cargo.lock' ':!desktop/package-lock.json'
           if ($LASTEXITCODE -eq 1) {
             exit 0
           }

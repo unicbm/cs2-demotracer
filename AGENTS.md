@@ -30,6 +30,8 @@ or legacy CS:GO paths.
 
 - `converter/`: Rust CLI, demo parsing, round analysis, `.dtr` writing,
   manifest/pool generation, validation, and the wizard.
+- `desktop/`: Tauri/React single-demo GUI and its thin Rust command bridge to
+  the converter core.
 - `runtime/BotController/`: Metamod runtime hooks, replay buffers, movement and
   input injection, weapon/buy control, and native C ABI exports.
 - `css/DemoTracer/`: CounterStrikeSharp plugin, `dtr_` commands, manifest
@@ -128,8 +130,11 @@ or legacy CS:GO paths.
   manifests, and no trace/debug CSVs.
 - Release notes should be factual and conservative. Do not claim Linux packages
   or non-smoke projectile fixes unless they were built and verified.
-- For version bumps, update `converter/Cargo.toml`, `converter/Cargo.lock`, the
-  DemoTracer CSS module version, and all three packaging scripts together.
+- For version bumps, update `converter/Cargo.toml`, `converter/Cargo.lock`,
+  `desktop/package.json`, `desktop/package-lock.json`, the desktop Tauri Cargo
+  manifest/lock (`desktop/src-tauri/Cargo.toml` and
+  `desktop/src-tauri/Cargo.lock`), the DemoTracer CSS module version, and all
+  three packaging scripts together.
   Current release assets are the separate Windows x64 CLI and GUI converter
   zips, the Windows x64 playback bundle zip, and `SHA256SUMS.txt`.
 
@@ -153,6 +158,15 @@ For converter release builds:
 ```powershell
 cd converter
 cargo build --release
+```
+
+For desktop GUI changes:
+
+```powershell
+cd desktop
+npm.cmd ci
+npm.cmd run check
+npm.cmd run tauri:build -- --target x86_64-pc-windows-msvc -- --locked
 ```
 
 For runtime C++ changes, build with the local CS2 Metamod/SDK toolchain if it is

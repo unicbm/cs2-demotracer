@@ -11,7 +11,9 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $outputRootPath = Join-Path $repoRoot $OutputRoot
 $converterRoot = Join-Path $repoRoot "converter"
-$releaseRoot = Join-Path $converterRoot "target\release"
+$converterReleaseRoot = Join-Path $converterRoot "target\release"
+$desktopRoot = Join-Path $repoRoot "desktop"
+$desktopReleaseRoot = Join-Path $desktopRoot "src-tauri\target\x86_64-pc-windows-msvc\release"
 
 function Require-Path([string]$Path, [string]$Label) {
     if (-not (Test-Path -LiteralPath $Path)) {
@@ -49,7 +51,8 @@ function New-ConverterPackage([ValidateSet("cli", "gui")][string]$Kind) {
     $zipPath = Join-Path $outputRootPath "$packageName.zip"
     $executableName = if ($Kind -eq "cli") { "cs2-demotracer.exe" } else { "cs2-demotracer-gui.exe" }
     $displayName = if ($Kind -eq "cli") { "CLI" } else { "GUI" }
-    $executablePath = Join-Path $releaseRoot $executableName
+    $executableRoot = if ($Kind -eq "cli") { $converterReleaseRoot } else { $desktopReleaseRoot }
+    $executablePath = Join-Path $executableRoot $executableName
     Require-Path $executablePath "converter $displayName executable"
 
     if (Test-Path -LiteralPath $stageRoot) {
@@ -104,7 +107,7 @@ Bundle installed on a local Windows x64 CS2 server.
         $packageReadme = @'
 # CS2 DemoTracer GUI v__VERSION__
 
-This Windows x64 download contains the native single-demo GUI workbench only.
+This Windows x64 download contains the Tauri single-demo desktop workbench only.
 Download the separate CLI package for inspect, validate, wizard, batch, and pool
 workflows.
 
@@ -116,6 +119,11 @@ workflows.
 
 In the GUI, analyze a demo, choose rounds and export options, then convert it to
 `.dtr` replay output. See `docs/USAGE.md` and `docs/USAGE.zh-Hans.md`.
+
+The GUI requires the Microsoft Edge WebView2 Runtime, normally present on
+current Windows 10 and Windows 11 installations. Install a current WebView2
+Runtime if it is absent. Node.js is needed only when building the GUI from
+source; it is not required to run this packaged executable.
 
 Generated replay output is consumed by the separate CS2 DemoTracer Playback
 Bundle installed on a local Windows x64 CS2 server.
@@ -148,10 +156,15 @@ if (-not $SkipBuild) {
             "--bin", "cs2-demotracer")
     }
     if ($buildGui) {
-        Invoke-Checked "cargo" @(
-            "build", "--manifest-path", (Join-Path $converterRoot "Cargo.toml"),
-            "--release", "--locked", "--no-default-features", "--features", "gui",
-            "--bin", "cs2-demotracer-gui")
+        Push-Location $desktopRoot
+        try {
+            Invoke-Checked "npm.cmd" @("ci")
+            Invoke-Checked "npm.cmd" @(
+                "run", "tauri:build", "--",
+                "--target", "x86_64-pc-windows-msvc", "--", "--locked")
+        } finally {
+            Pop-Location
+        }
     }
 }
 

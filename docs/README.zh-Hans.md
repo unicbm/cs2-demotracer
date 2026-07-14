@@ -33,7 +33,7 @@ CS2 服务器里让 bot 执行这些路线。
 
 - `cs2-demotracer-cli-v<version>-windows-x64.zip`：体积最小，适合命令行、wizard、
   批量转换和 pool 工作流。
-- `cs2-demotracer-gui-v<version>-windows-x64.zip`：单 demo 的原生桌面图形转换器。
+- `cs2-demotracer-gui-v<version>-windows-x64.zip`：基于 Tauri 的单 demo 桌面图形转换器。
 - `cs2-demotracer-playback-v<version>-windows-x64.zip`：安装在本地 Windows x64
   CS2 服务器里的 CounterStrikeSharp/Metamod 回放 plugin 和 runtime。
 
@@ -77,6 +77,8 @@ dtr_go round "<manifest.json>" 0
 ## 环境要求
 
 - **转换：**按需下载 Windows x64 CLI 或 GUI 包，不需要游戏服务器 plugin。
+- **GUI 运行环境：**Microsoft Edge WebView2；当前 Windows 10 和 Windows 11
+  通常已随系统提供，缺失时需要另行安装当前版本的 WebView2 Runtime。
 - **播放：**安装了 [Metamod:Source](https://www.sourcemm.net/)、
   [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp) 和
   DemoTracer playback bundle 的本地 Windows x64 CS2 服务器。
