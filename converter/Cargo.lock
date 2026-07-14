@@ -756,6 +756,7 @@ dependencies = [
  "eframe",
  "egui_extras",
  "parser",
+ "rayon",
  "rfd",
  "serde",
  "serde_json",

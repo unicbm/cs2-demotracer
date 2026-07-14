@@ -30,12 +30,17 @@ mod demoparser_impl {
         ProjectileEffectSource, ProjectileKind, SubtickMove,
     };
     use ahash::AHashMap;
-    use parser::first_pass::parser_settings::{rm_user_friendly_names, ParserInputs};
-    use parser::parse_demo::{Parser, ParsingMode};
+    use parser::first_pass::parser_settings::{
+        check_multithreadability, rm_user_friendly_names, ParserInputs,
+    };
+    use parser::first_pass::prop_controller::{PropInfo, ENTITY_ID_ID, STEAMID_ID, TICK_ID};
+    use parser::first_pass::read_bits::DemoParserError;
+    use parser::parse_demo::{DemoOutput, Parser, ParsingMode};
     use parser::second_pass::collect_data::ProjectileRecord;
     use parser::second_pass::game_events::GameEvent;
     use parser::second_pass::parser_settings::create_huffman_lookup_table;
     use parser::second_pass::variants::{PropColumn, VarVec, Variant};
+    use rayon::prelude::*;
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
 
@@ -57,6 +62,454 @@ mod demoparser_impl {
         "glove_paint_seed",
         "glove_paint_float",
     ];
+
+    const DUCKED_PROP: &str = "ducked";
+    const DUCKING_PROP: &str = "ducking";
+    const ENTITY_ID_PROP: &str = "entity_id";
+    const ROUND_PROP: &str = "total_rounds_played";
+    const SINGLE_THREADED_OVERLAY_PROPS: &[&str] = &[
+        DUCKED_PROP,
+        DUCKING_PROP,
+        "velocity_X",
+        "velocity_Y",
+        "velocity_Z",
+        "usercmd_subtick_moves",
+        "usercmd_buttonstate_1",
+        "usercmd_buttonstate_2",
+        "usercmd_buttonstate_3",
+        "usercmd_forward_move",
+        "usercmd_left_move",
+        "usercmd_up_move",
+        "usercmd_viewangle_x",
+        "usercmd_viewangle_y",
+        "usercmd_viewangle_z",
+        "usercmd_mouse_dx",
+        "usercmd_mouse_dy",
+        "usercmd_weapon_select",
+        "usercmd_left_hand_desired",
+    ];
+
+    macro_rules! define_resolved_columns {
+        ($($field:ident => $name:literal),+ $(,)?) => {
+            struct ResolvedColumns<'a> {
+                len: usize,
+                $($field: Option<&'a PropColumn>,)+
+            }
+
+            impl<'a> ResolvedColumns<'a> {
+                fn new(
+                    prop_infos: &[PropInfo],
+                    df: &'a AHashMap<u32, PropColumn>,
+                ) -> Self {
+                    let mut by_name: AHashMap<&str, &PropColumn> = AHashMap::default();
+                    for info in prop_infos {
+                        if let Some(column) = df.get(&info.id) {
+                            by_name.insert(info.prop_friendly_name.as_str(), column);
+                        }
+                    }
+                    Self {
+                        len: by_name
+                            .values()
+                            .map(|column| column.len())
+                            .max()
+                            .unwrap_or_default(),
+                        $($field: by_name.get($name).copied(),)+
+                    }
+                }
+            }
+        };
+    }
+
+    define_resolved_columns! {
+        steam_id => "steamid",
+        tick => "tick",
+        round => "total_rounds_played",
+        team_num => "team_num",
+        is_airborne => "is_airborne",
+        entity_flags => "CCSPlayerPawn.m_fFlags",
+        subtick_moves => "usercmd_subtick_moves",
+        name => "name",
+        is_alive => "is_alive",
+        round_in_progress => "round_in_progress",
+        is_freeze_period => "is_freeze_period",
+        game_time => "game_time",
+        origin_x => "X",
+        origin_y => "Y",
+        origin_z => "Z",
+        velocity_x => "velocity_X",
+        velocity_y => "velocity_Y",
+        velocity_z => "velocity_Z",
+        pitch => "pitch",
+        yaw => "yaw",
+        buttons => "buttons",
+        buttonstate1 => "usercmd_buttonstate_1",
+        buttonstate2 => "usercmd_buttonstate_2",
+        buttonstate3 => "usercmd_buttonstate_3",
+        usercmd_forward_move => "usercmd_forward_move",
+        usercmd_left_move => "usercmd_left_move",
+        usercmd_up_move => "usercmd_up_move",
+        usercmd_pitch => "usercmd_viewangle_x",
+        usercmd_yaw => "usercmd_viewangle_y",
+        usercmd_roll => "usercmd_viewangle_z",
+        usercmd_mouse_dx => "usercmd_mouse_dx",
+        usercmd_mouse_dy => "usercmd_mouse_dy",
+        usercmd_weapon_select => "usercmd_weapon_select",
+        usercmd_left_hand_desired => "usercmd_left_hand_desired",
+        item_def_idx => "item_def_idx",
+        inventory_as_ids => "inventory_as_ids",
+        music_kit_id => "music_kit_id",
+        scoreboard_flair => "CCSPlayerController.CCSPlayerController_InventoryServices.m_rank",
+        agent_item_def_index => "CCSPlayerController.m_nPawnCharacterDefIndex",
+        agent_skin => "agent_skin",
+        active_weapon_paint_kit => "weapon_skin_id",
+        active_weapon_paint_seed => "weapon_paint_seed",
+        active_weapon_paint_wear => "weapon_float",
+        active_weapon_original_owner => "active_weapon_original_owner",
+        active_weapon_item_account_id => "item_account_id",
+        active_weapon_item_id_high => "item_id_high",
+        active_weapon_item_id_low => "item_id_low",
+        active_weapon_custom_name => "custom_name",
+        glove_item_def_index => "glove_item_idx",
+        glove_paint_kit => "glove_paint_id",
+        glove_paint_seed => "glove_paint_seed",
+        glove_paint_wear => "glove_paint_float",
+        crosshair_code => "crosshair_code",
+        viewmodel_left_handed => "CCSPlayerPawn.m_bLeftHanded",
+        viewmodel_fov => "CCSPlayerPawn.m_flViewmodelFOV",
+        viewmodel_offset_x => "CCSPlayerPawn.m_flViewmodelOffsetX",
+        viewmodel_offset_y => "CCSPlayerPawn.m_flViewmodelOffsetY",
+        viewmodel_offset_z => "CCSPlayerPawn.m_flViewmodelOffsetZ",
+        scoreboard_score => "score",
+        scoreboard_mvps => "mvps",
+        scoreboard_kills => "kills_total",
+        scoreboard_deaths => "deaths_total",
+        scoreboard_assists => "assists_total",
+        armor_value => "armor_value",
+        has_helmet => "has_helmet",
+        has_defuser => "has_defuser",
+        round_start_equip_value => "round_start_equip_value",
+        equipment_value_total => "equipment_value_total",
+        money_saved_total => "money_saved_total",
+        cash_spent_this_round => "cash_spent_this_round",
+        move_type => "move_type",
+        duck_amount => "duck_amount",
+        duck_speed => "duck_speed",
+        ladder_normal => "CCSPlayerPawn.CCSPlayer_MovementServices.m_vecLadderNormal",
+        ducked => "ducked",
+        ducking => "ducking",
+        desires_duck => "CCSPlayerPawn.CCSPlayer_MovementServices.m_bDesiresDuck",
+        player_user_id => "user_id",
+        player_entity_id => "entity_id",
+        player_color => "player_color",
+        team_rounds_total => "team_rounds_total",
+        team_name => "team_name",
+        team_clan_name => "team_clan_name",
+    }
+
+    struct SingleThreadedOverlay {
+        columns: AHashMap<&'static str, PropColumn>,
+    }
+
+    impl SingleThreadedOverlay {
+        fn get(&self, friendly_name: &'static str) -> Option<&PropColumn> {
+            self.columns.get(friendly_name)
+        }
+    }
+
+    struct SupplementalColumns {
+        tick: PropColumn,
+        entity_id: PropColumn,
+        steam_id: PropColumn,
+        round: PropColumn,
+        overlay: SingleThreadedOverlay,
+    }
+
+    impl SupplementalColumns {
+        fn from_output(mut output: DemoOutput) -> Option<Self> {
+            let round_id = friendly_prop_id(&output.prop_controller.prop_infos, ROUND_PROP)?;
+            let tick = output.df.remove(&TICK_ID)?;
+            let entity_id = output.df.remove(&ENTITY_ID_ID)?;
+            let steam_id = output.df.remove(&STEAMID_ID)?;
+            let round = output.df.remove(&round_id)?;
+            let len = tick.len();
+            if entity_id.len() != len || steam_id.len() != len || round.len() != len {
+                return None;
+            }
+
+            let mut columns = AHashMap::with_capacity(SINGLE_THREADED_OVERLAY_PROPS.len());
+            for friendly_name in SINGLE_THREADED_OVERLAY_PROPS {
+                let id = friendly_prop_id(&output.prop_controller.prop_infos, friendly_name)?;
+                let column = output.df.remove(&id)?;
+                if column.len() != len || !overlay_column_type_is_valid(friendly_name, &column) {
+                    return None;
+                }
+                columns.insert(*friendly_name, column);
+            }
+
+            Some(Self {
+                tick,
+                entity_id,
+                steam_id,
+                round,
+                overlay: SingleThreadedOverlay { columns },
+            })
+        }
+
+        fn align(self, primary: &DemoOutput) -> Option<SingleThreadedOverlay> {
+            let primary_round_id =
+                friendly_prop_id(&primary.prop_controller.prop_infos, ROUND_PROP)?;
+            if !strict_movement_keys_match(
+                &self.tick,
+                &self.entity_id,
+                &self.steam_id,
+                &self.round,
+                primary.df.get(&TICK_ID)?,
+                primary.df.get(&ENTITY_ID_ID)?,
+                primary.df.get(&STEAMID_ID)?,
+                primary.df.get(&primary_round_id)?,
+            ) {
+                return None;
+            }
+            Some(self.overlay)
+        }
+    }
+
+    fn overlay_column_type_is_valid(friendly_name: &str, column: &PropColumn) -> bool {
+        match column.data.as_ref() {
+            None => true,
+            Some(VarVec::Bool(_)) => matches!(
+                friendly_name,
+                DUCKED_PROP | DUCKING_PROP | "usercmd_left_hand_desired"
+            ),
+            Some(VarVec::F32(_)) => matches!(
+                friendly_name,
+                "usercmd_forward_move"
+                    | "usercmd_left_move"
+                    | "usercmd_up_move"
+                    | "velocity_X"
+                    | "velocity_Y"
+                    | "velocity_Z"
+                    | "usercmd_viewangle_x"
+                    | "usercmd_viewangle_y"
+                    | "usercmd_viewangle_z"
+            ),
+            Some(VarVec::U64(_)) => matches!(
+                friendly_name,
+                "usercmd_buttonstate_1" | "usercmd_buttonstate_2" | "usercmd_buttonstate_3"
+            ),
+            Some(VarVec::I32(_)) => matches!(
+                friendly_name,
+                "usercmd_mouse_dx" | "usercmd_mouse_dy" | "usercmd_weapon_select"
+            ),
+            Some(VarVec::UserCmdSubtickMoves(_)) => friendly_name == "usercmd_subtick_moves",
+            _ => false,
+        }
+    }
+
+    #[cfg(test)]
+    fn all_none_overlay(len: usize) -> SingleThreadedOverlay {
+        SingleThreadedOverlay {
+            columns: SINGLE_THREADED_OVERLAY_PROPS
+                .iter()
+                .map(|friendly_name| {
+                    (
+                        *friendly_name,
+                        PropColumn {
+                            data: None,
+                            num_nones: len,
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    fn friendly_prop_id(prop_infos: &[PropInfo], friendly_name: &str) -> Option<u32> {
+        prop_infos
+            .iter()
+            .rev()
+            .find(|info| info.prop_friendly_name == friendly_name)
+            .map(|info| info.id)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn strict_movement_keys_match(
+        left_tick: &PropColumn,
+        left_entity_id: &PropColumn,
+        left_steam_id: &PropColumn,
+        left_round: &PropColumn,
+        right_tick: &PropColumn,
+        right_entity_id: &PropColumn,
+        right_steam_id: &PropColumn,
+        right_round: &PropColumn,
+    ) -> bool {
+        let (
+            Some(VarVec::I32(left_tick)),
+            Some(VarVec::I32(left_entity_id)),
+            Some(VarVec::U64(left_steam_id)),
+            Some(VarVec::I32(left_round)),
+            Some(VarVec::I32(right_tick)),
+            Some(VarVec::I32(right_entity_id)),
+            Some(VarVec::U64(right_steam_id)),
+            Some(VarVec::I32(right_round)),
+        ) = (
+            left_tick.data.as_ref(),
+            left_entity_id.data.as_ref(),
+            left_steam_id.data.as_ref(),
+            left_round.data.as_ref(),
+            right_tick.data.as_ref(),
+            right_entity_id.data.as_ref(),
+            right_steam_id.data.as_ref(),
+            right_round.data.as_ref(),
+        )
+        else {
+            return false;
+        };
+
+        let len = left_tick.len();
+        if [
+            left_entity_id.len(),
+            left_steam_id.len(),
+            left_round.len(),
+            right_tick.len(),
+            right_entity_id.len(),
+            right_steam_id.len(),
+            right_round.len(),
+        ]
+        .into_iter()
+        .any(|column_len| column_len != len)
+        {
+            return false;
+        }
+        if left_tick.iter().any(Option::is_none)
+            || left_entity_id.iter().any(Option::is_none)
+            || left_steam_id.iter().any(Option::is_none)
+            || right_tick.iter().any(Option::is_none)
+            || right_entity_id.iter().any(Option::is_none)
+            || right_steam_id.iter().any(Option::is_none)
+        {
+            return false;
+        }
+
+        left_tick == right_tick
+            && left_entity_id == right_entity_id
+            && left_steam_id == right_steam_id
+            && left_round == right_round
+    }
+
+    fn parse_demo_channels<'a>(
+        bytes: &[u8],
+        settings: ParserInputs<'a>,
+    ) -> std::result::Result<(DemoOutput, Option<SingleThreadedOverlay>), DemoParserError> {
+        if check_multithreadability(&settings.wanted_player_props)
+            || !settings.parse_ents
+            || settings.order_by_steamid
+            || !settings.wanted_players.is_empty()
+            || !settings.wanted_ticks.is_empty()
+            || !settings.wanted_prop_states.is_empty()
+            || settings.only_header
+            || settings.only_convars
+            || settings.list_props
+            || settings.fallback_bytes.is_some()
+        {
+            return parse_demo_once(bytes, settings, ParsingMode::Normal)
+                .map(|output| (output, None));
+        }
+
+        let Some(ducked_real) = wanted_real_prop(&settings, DUCKED_PROP) else {
+            return parse_demo_once(bytes, settings, ParsingMode::Normal)
+                .map(|output| (output, None));
+        };
+        let Some(ducking_real) = wanted_real_prop(&settings, DUCKING_PROP) else {
+            return parse_demo_once(bytes, settings, ParsingMode::Normal)
+                .map(|output| (output, None));
+        };
+        let Some(entity_id_real) = wanted_real_prop(&settings, ENTITY_ID_PROP) else {
+            return parse_demo_once(bytes, settings, ParsingMode::Normal)
+                .map(|output| (output, None));
+        };
+        let Some(round_real) = wanted_real_prop(&settings, ROUND_PROP) else {
+            return parse_demo_once(bytes, settings, ParsingMode::Normal)
+                .map(|output| (output, None));
+        };
+        let Some(mut supplemental_real_props) = SINGLE_THREADED_OVERLAY_PROPS
+            .iter()
+            .map(|friendly_name| wanted_real_prop(&settings, friendly_name))
+            .collect::<Option<Vec<_>>>()
+        else {
+            return parse_demo_once(bytes, settings, ParsingMode::Normal)
+                .map(|output| (output, None));
+        };
+        supplemental_real_props.push(entity_id_real);
+        supplemental_real_props.push(round_real);
+
+        let mut supplemental_settings = settings.clone();
+        supplemental_settings
+            .wanted_player_props
+            .retain(|prop| supplemental_real_props.contains(prop));
+        supplemental_settings.wanted_other_props.clear();
+        supplemental_settings.wanted_events.clear();
+        supplemental_settings.parse_projectiles = false;
+        supplemental_settings.collect_projectile_records = false;
+        supplemental_settings.parse_grenades = false;
+
+        let supplemental_output = match parse_demo_once(
+            bytes,
+            supplemental_settings,
+            ParsingMode::ForceSingleThreaded,
+        ) {
+            Ok(output) => output,
+            Err(_) => {
+                return parse_demo_once(bytes, settings, ParsingMode::Normal)
+                    .map(|output| (output, None));
+            }
+        };
+        let Some(supplemental) = SupplementalColumns::from_output(supplemental_output) else {
+            return parse_demo_once(bytes, settings, ParsingMode::Normal)
+                .map(|output| (output, None));
+        };
+
+        let mut primary_settings = settings.clone();
+        primary_settings
+            .wanted_player_props
+            .retain(|prop| prop != &ducked_real && prop != &ducking_real);
+        if !check_multithreadability(&primary_settings.wanted_player_props) {
+            return parse_demo_once(bytes, settings, ParsingMode::Normal)
+                .map(|output| (output, None));
+        }
+
+        let primary = match parse_demo_once(bytes, primary_settings, ParsingMode::Normal) {
+            Ok(output) => output,
+            Err(_) => {
+                return parse_demo_once(bytes, settings, ParsingMode::Normal)
+                    .map(|output| (output, None));
+            }
+        };
+        let Some(overlay) = supplemental.align(&primary) else {
+            return parse_demo_once(bytes, settings, ParsingMode::Normal)
+                .map(|output| (output, None));
+        };
+        Ok((primary, Some(overlay)))
+    }
+
+    fn wanted_real_prop(settings: &ParserInputs<'_>, friendly_name: &str) -> Option<String> {
+        settings
+            .real_name_to_og_name
+            .iter()
+            .find(|(real_name, original_name)| {
+                original_name.as_str() == friendly_name
+                    && settings.wanted_player_props.contains(real_name)
+            })
+            .map(|(real_name, _)| real_name.clone())
+    }
+
+    fn parse_demo_once<'a>(
+        bytes: &[u8],
+        settings: ParserInputs<'a>,
+        mode: ParsingMode,
+    ) -> std::result::Result<DemoOutput, DemoParserError> {
+        Parser::new(settings, mode).parse_demo(bytes)
+    }
 
     pub fn read_demo(path: &Path) -> Result<ParsedDemo> {
         read_demo_with_options(path, ReadDemoOptions::default())
@@ -226,10 +679,8 @@ mod demoparser_impl {
             list_props: false,
             fallback_bytes: None,
         };
-        let mut parser = Parser::new(settings, ParsingMode::Normal);
-        let mut output = parser
-            .parse_demo(bytes)
-            .map_err(|e| Error::Parser(format!("{e:?}")))?;
+        let (mut output, single_threaded_overlay) =
+            parse_demo_channels(bytes, settings).map_err(|e| Error::Parser(format!("{e:?}")))?;
 
         // These nested columns are already owned by the parser output. Take them out so row
         // materialization can move their vectors and strings instead of deep-cloning every tick.
@@ -255,159 +706,210 @@ mod demoparser_impl {
             .cloned()
             .unwrap_or_else(|| "unknown".to_string());
 
-        let mut columns: AHashMap<String, &PropColumn> = AHashMap::default();
-        for info in &output.prop_controller.prop_infos {
-            if let Some(column) = output.df.get(&info.id) {
-                columns.insert(info.prop_friendly_name.clone(), column);
-            }
+        let columns = ResolvedColumns::new(&output.prop_controller.prop_infos, &output.df);
+        macro_rules! overlay_column {
+            ($friendly_name:literal, $primary:expr) => {
+                single_threaded_overlay
+                    .as_ref()
+                    .and_then(|overlay| overlay.get($friendly_name))
+                    .or($primary)
+            };
         }
-
-        let len = columns.values().map(|c| c.len()).max().unwrap_or_default();
-        let mut rows = Vec::with_capacity(len);
-        for idx in 0..len {
-            let steam_id = get_u64(&columns, "steamid", idx).unwrap_or_default();
+        let velocity_x_column = overlay_column!("velocity_X", columns.velocity_x);
+        let velocity_y_column = overlay_column!("velocity_Y", columns.velocity_y);
+        let velocity_z_column = overlay_column!("velocity_Z", columns.velocity_z);
+        let subtick_moves_column = overlay_column!("usercmd_subtick_moves", columns.subtick_moves);
+        let buttonstate1_column = overlay_column!("usercmd_buttonstate_1", columns.buttonstate1);
+        let buttonstate2_column = overlay_column!("usercmd_buttonstate_2", columns.buttonstate2);
+        let buttonstate3_column = overlay_column!("usercmd_buttonstate_3", columns.buttonstate3);
+        let usercmd_forward_move_column =
+            overlay_column!("usercmd_forward_move", columns.usercmd_forward_move);
+        let usercmd_left_move_column =
+            overlay_column!("usercmd_left_move", columns.usercmd_left_move);
+        let usercmd_up_move_column = overlay_column!("usercmd_up_move", columns.usercmd_up_move);
+        let usercmd_pitch_column = overlay_column!("usercmd_viewangle_x", columns.usercmd_pitch);
+        let usercmd_yaw_column = overlay_column!("usercmd_viewangle_y", columns.usercmd_yaw);
+        let usercmd_roll_column = overlay_column!("usercmd_viewangle_z", columns.usercmd_roll);
+        let usercmd_mouse_dx_column = overlay_column!("usercmd_mouse_dx", columns.usercmd_mouse_dx);
+        let usercmd_mouse_dy_column = overlay_column!("usercmd_mouse_dy", columns.usercmd_mouse_dy);
+        let usercmd_weapon_select_column =
+            overlay_column!("usercmd_weapon_select", columns.usercmd_weapon_select);
+        let usercmd_left_hand_desired_column = overlay_column!(
+            "usercmd_left_hand_desired",
+            columns.usercmd_left_hand_desired
+        );
+        let ducked_column = overlay_column!("ducked", columns.ducked);
+        let ducking_column = overlay_column!("ducking", columns.ducking);
+        let mut row_order = Vec::with_capacity(columns.len);
+        for idx in 0..columns.len {
+            let steam_id = get_u64(columns.steam_id, idx).unwrap_or_default();
             if steam_id == 0 {
                 continue;
             }
-            let tick = get_i32(&columns, "tick", idx).unwrap_or_default();
-            let round = get_u32(&columns, "total_rounds_played", idx).unwrap_or_default();
-            let team_num = get_u32(&columns, "team_num", idx).unwrap_or_default() as u8;
-            let is_airborne = get_bool(&columns, "is_airborne", idx).unwrap_or(false);
-            let explicit_flags = get_u32(&columns, "CCSPlayerPawn.m_fFlags", idx);
-            let (subtick_moves, subtick_button_truncated) =
-                get_subtick_moves(&columns, "usercmd_subtick_moves", idx).unwrap_or_default();
-            rows.push(ParsedPlayerTick {
-                tick,
-                steam_id,
-                name: get_string(&columns, "name", idx).unwrap_or_default(),
-                team_num,
-                is_alive: get_bool(&columns, "is_alive", idx).unwrap_or(false),
-                round,
-                round_in_progress: get_bool(&columns, "round_in_progress", idx).unwrap_or(false),
-                is_freeze_period: get_bool(&columns, "is_freeze_period", idx).unwrap_or(false),
-                game_time: get_f32(&columns, "game_time", idx),
-                origin: [
-                    get_f32(&columns, "X", idx).unwrap_or_default(),
-                    get_f32(&columns, "Y", idx).unwrap_or_default(),
-                    get_f32(&columns, "Z", idx).unwrap_or_default(),
-                ],
-                velocity: [
-                    get_f32(&columns, "velocity_X", idx).unwrap_or_default(),
-                    get_f32(&columns, "velocity_Y", idx).unwrap_or_default(),
-                    get_f32(&columns, "velocity_Z", idx).unwrap_or_default(),
-                ],
-                pitch: get_f32(&columns, "pitch", idx).unwrap_or_default(),
-                yaw: get_f32(&columns, "yaw", idx).unwrap_or_default(),
-                buttons: get_u64(&columns, "buttons", idx).unwrap_or_default(),
-                buttonstate1: get_u64(&columns, "usercmd_buttonstate_1", idx).unwrap_or_default(),
-                buttonstate2: get_u64(&columns, "usercmd_buttonstate_2", idx).unwrap_or_default(),
-                buttonstate3: get_u64(&columns, "usercmd_buttonstate_3", idx).unwrap_or_default(),
-                usercmd_forward_move: get_f32(&columns, "usercmd_forward_move", idx),
-                usercmd_left_move: get_f32(&columns, "usercmd_left_move", idx),
-                usercmd_up_move: get_f32(&columns, "usercmd_up_move", idx),
-                usercmd_pitch: get_f32(&columns, "usercmd_viewangle_x", idx),
-                usercmd_yaw: get_f32(&columns, "usercmd_viewangle_y", idx),
-                usercmd_roll: get_f32(&columns, "usercmd_viewangle_z", idx),
-                usercmd_mouse_dx: get_i32(&columns, "usercmd_mouse_dx", idx),
-                usercmd_mouse_dy: get_i32(&columns, "usercmd_mouse_dy", idx),
-                usercmd_weapon_select: get_i32(&columns, "usercmd_weapon_select", idx),
-                usercmd_left_hand_desired: get_bool(&columns, "usercmd_left_hand_desired", idx),
-                item_def_idx: get_i32(&columns, "item_def_idx", idx)
-                    .or_else(|| get_u32(&columns, "item_def_idx", idx).map(|v| v as i32))
-                    .unwrap_or(-1),
-                inventory_as_ids: get_u32_vec(&columns, "inventory_as_ids", idx)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|v| v as i32)
-                    .collect(),
-                inventory_weapon_cosmetics: take_inventory_weapon_cosmetics(
-                    &mut inventory_weapon_cosmetics_column,
-                    idx,
-                )
-                .unwrap_or_default(),
-                music_kit_id: get_u32(&columns, "music_kit_id", idx).filter(|value| *value != 0),
-                scoreboard_flair: get_scoreboard_flair(&columns, idx),
-                agent_item_def_index: get_u32(
-                    &columns,
-                    "CCSPlayerController.m_nPawnCharacterDefIndex",
-                    idx,
-                )
-                .filter(|value| *value != 0),
-                agent_skin: get_string(&columns, "agent_skin", idx).and_then(normalize_agent_skin),
-                active_weapon_paint_kit: get_u32(&columns, "weapon_skin_id", idx),
-                active_weapon_paint_seed: get_u32(&columns, "weapon_paint_seed", idx),
-                active_weapon_paint_wear: get_f32(&columns, "weapon_float", idx),
-                active_weapon_original_owner_steam_id: get_string(
-                    &columns,
-                    "active_weapon_original_owner",
-                    idx,
-                )
-                .and_then(|value| value.parse::<u64>().ok())
-                .filter(|value| *value != 0),
-                active_weapon_item_account_id: get_u32(&columns, "item_account_id", idx)
-                    .filter(|value| *value != 0),
-                active_weapon_item_id: combine_item_id(
-                    get_u32(&columns, "item_id_high", idx),
-                    get_u32(&columns, "item_id_low", idx),
-                )
-                .filter(|value| *value != 0),
-                active_weapon_custom_name: get_string(&columns, "custom_name", idx)
-                    .and_then(normalize_custom_name),
-                active_weapon_stickers: take_weapon_stickers(&mut weapon_stickers_column, idx)
-                    .unwrap_or_default(),
-                glove_item_def_index: get_i32(&columns, "glove_item_idx", idx),
-                glove_paint_kit: get_u32(&columns, "glove_paint_id", idx),
-                glove_paint_seed: get_u32(&columns, "glove_paint_seed", idx),
-                glove_paint_wear: get_f32(&columns, "glove_paint_float", idx),
-                crosshair_code: get_string(&columns, "crosshair_code", idx)
-                    .and_then(normalize_crosshair_code),
-                viewmodel_left_handed: get_bool(&columns, "CCSPlayerPawn.m_bLeftHanded", idx),
-                viewmodel_fov: get_f32(&columns, "CCSPlayerPawn.m_flViewmodelFOV", idx),
-                viewmodel_offset_x: get_f32(&columns, "CCSPlayerPawn.m_flViewmodelOffsetX", idx),
-                viewmodel_offset_y: get_f32(&columns, "CCSPlayerPawn.m_flViewmodelOffsetY", idx),
-                viewmodel_offset_z: get_f32(&columns, "CCSPlayerPawn.m_flViewmodelOffsetZ", idx),
-                scoreboard_score: get_i32(&columns, "score", idx),
-                scoreboard_mvps: get_u32(&columns, "mvps", idx),
-                scoreboard_kills: get_u32(&columns, "kills_total", idx),
-                scoreboard_deaths: get_u32(&columns, "deaths_total", idx),
-                scoreboard_assists: get_u32(&columns, "assists_total", idx),
-                armor_value: get_u32(&columns, "armor_value", idx).unwrap_or_default(),
-                has_helmet: get_bool(&columns, "has_helmet", idx).unwrap_or(false),
-                has_defuser: get_bool(&columns, "has_defuser", idx).unwrap_or(false),
-                round_start_equip_value: get_u32(&columns, "round_start_equip_value", idx)
-                    .unwrap_or_default(),
-                equipment_value_total: get_u32(&columns, "equipment_value_total", idx)
-                    .unwrap_or_default(),
-                money_saved_total: get_u32(&columns, "money_saved_total", idx).unwrap_or_default(),
-                cash_spent_this_round: get_u32(&columns, "cash_spent_this_round", idx)
-                    .unwrap_or_default(),
-                entity_flags: explicit_flags.unwrap_or(if is_airborne { 0 } else { 1 }),
-                move_type: get_u32(&columns, "move_type", idx).unwrap_or(2) as u8,
-                duck_amount: get_f32(&columns, "duck_amount", idx),
-                duck_speed: get_f32(&columns, "duck_speed", idx),
-                ladder_normal: get_vec3(
-                    &columns,
-                    "CCSPlayerPawn.CCSPlayer_MovementServices.m_vecLadderNormal",
-                    idx,
-                ),
-                ducked: get_bool(&columns, "ducked", idx),
-                ducking: get_bool(&columns, "ducking", idx),
-                desires_duck: get_bool(
-                    &columns,
-                    "CCSPlayerPawn.CCSPlayer_MovementServices.m_bDesiresDuck",
-                    idx,
-                ),
-                subtick_moves,
-                subtick_button_truncated,
-                player_user_id: get_i32(&columns, "user_id", idx),
-                player_entity_id: get_i32(&columns, "entity_id", idx),
-                player_color: get_string(&columns, "player_color", idx),
-                team_rounds_total: get_u32(&columns, "team_rounds_total", idx),
-                team_name: get_string(&columns, "team_name", idx),
-                team_clan_name: get_string(&columns, "team_clan_name", idx),
-            });
+            let tick = get_i32(columns.tick, idx).unwrap_or_default();
+            let round = get_u32(columns.round, idx).unwrap_or_default();
+            row_order.push((idx, round, tick, steam_id));
         }
-        rows.sort_by_key(|row| (row.round, row.tick, row.steam_id));
+        row_order.sort_by_key(|(_, round, tick, steam_id)| (*round, *tick, *steam_id));
+
+        let row_materialization = row_order
+            .into_iter()
+            .map(|(idx, round, tick, steam_id)| {
+                (
+                    idx,
+                    round,
+                    tick,
+                    steam_id,
+                    take_inventory_weapon_cosmetics(&mut inventory_weapon_cosmetics_column, idx)
+                        .unwrap_or_default(),
+                    take_weapon_stickers(&mut weapon_stickers_column, idx).unwrap_or_default(),
+                )
+            })
+            .collect::<Vec<_>>();
+        drop(inventory_weapon_cosmetics_column);
+        drop(weapon_stickers_column);
+
+        let mut rows = row_materialization
+            .into_par_iter()
+            .map(
+                |(
+                    idx,
+                    round,
+                    tick,
+                    steam_id,
+                    inventory_weapon_cosmetics,
+                    active_weapon_stickers,
+                )| {
+                    let team_num = get_u32(columns.team_num, idx).unwrap_or_default() as u8;
+                    let is_airborne = get_bool(columns.is_airborne, idx).unwrap_or(false);
+                    let explicit_flags = get_u32(columns.entity_flags, idx);
+                    let (subtick_moves, subtick_button_truncated) =
+                        get_subtick_moves(subtick_moves_column, idx).unwrap_or_default();
+                    ParsedPlayerTick {
+                        tick,
+                        steam_id,
+                        name: get_string(columns.name, idx).unwrap_or_default(),
+                        team_num,
+                        is_alive: get_bool(columns.is_alive, idx).unwrap_or(false),
+                        round,
+                        round_in_progress: get_bool(columns.round_in_progress, idx)
+                            .unwrap_or(false),
+                        is_freeze_period: get_bool(columns.is_freeze_period, idx).unwrap_or(false),
+                        game_time: get_f32(columns.game_time, idx),
+                        origin: [
+                            get_f32(columns.origin_x, idx).unwrap_or_default(),
+                            get_f32(columns.origin_y, idx).unwrap_or_default(),
+                            get_f32(columns.origin_z, idx).unwrap_or_default(),
+                        ],
+                        velocity: [
+                            get_f32(velocity_x_column, idx).unwrap_or_default(),
+                            get_f32(velocity_y_column, idx).unwrap_or_default(),
+                            get_f32(velocity_z_column, idx).unwrap_or_default(),
+                        ],
+                        pitch: get_f32(columns.pitch, idx).unwrap_or_default(),
+                        yaw: get_f32(columns.yaw, idx).unwrap_or_default(),
+                        buttons: get_u64(columns.buttons, idx).unwrap_or_default(),
+                        buttonstate1: get_u64(buttonstate1_column, idx).unwrap_or_default(),
+                        buttonstate2: get_u64(buttonstate2_column, idx).unwrap_or_default(),
+                        buttonstate3: get_u64(buttonstate3_column, idx).unwrap_or_default(),
+                        usercmd_forward_move: get_f32(usercmd_forward_move_column, idx),
+                        usercmd_left_move: get_f32(usercmd_left_move_column, idx),
+                        usercmd_up_move: get_f32(usercmd_up_move_column, idx),
+                        usercmd_pitch: get_f32(usercmd_pitch_column, idx),
+                        usercmd_yaw: get_f32(usercmd_yaw_column, idx),
+                        usercmd_roll: get_f32(usercmd_roll_column, idx),
+                        usercmd_mouse_dx: get_i32(usercmd_mouse_dx_column, idx),
+                        usercmd_mouse_dy: get_i32(usercmd_mouse_dy_column, idx),
+                        usercmd_weapon_select: get_i32(usercmd_weapon_select_column, idx),
+                        usercmd_left_hand_desired: get_bool(usercmd_left_hand_desired_column, idx),
+                        item_def_idx: get_i32(columns.item_def_idx, idx)
+                            .or_else(|| get_u32(columns.item_def_idx, idx).map(|v| v as i32))
+                            .unwrap_or(-1),
+                        inventory_as_ids: get_u32_vec(columns.inventory_as_ids, idx)
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|v| v as i32)
+                            .collect(),
+                        inventory_weapon_cosmetics,
+                        music_kit_id: get_u32(columns.music_kit_id, idx)
+                            .filter(|value| *value != 0),
+                        scoreboard_flair: get_scoreboard_flair(columns.scoreboard_flair, idx),
+                        agent_item_def_index: get_u32(columns.agent_item_def_index, idx)
+                            .filter(|value| *value != 0),
+                        agent_skin: get_string(columns.agent_skin, idx)
+                            .and_then(normalize_agent_skin),
+                        active_weapon_paint_kit: get_u32(columns.active_weapon_paint_kit, idx),
+                        active_weapon_paint_seed: get_u32(columns.active_weapon_paint_seed, idx),
+                        active_weapon_paint_wear: get_f32(columns.active_weapon_paint_wear, idx),
+                        active_weapon_original_owner_steam_id: get_string(
+                            columns.active_weapon_original_owner,
+                            idx,
+                        )
+                        .and_then(|value| value.parse::<u64>().ok())
+                        .filter(|value| *value != 0),
+                        active_weapon_item_account_id: get_u32(
+                            columns.active_weapon_item_account_id,
+                            idx,
+                        )
+                        .filter(|value| *value != 0),
+                        active_weapon_item_id: combine_item_id(
+                            get_u32(columns.active_weapon_item_id_high, idx),
+                            get_u32(columns.active_weapon_item_id_low, idx),
+                        )
+                        .filter(|value| *value != 0),
+                        active_weapon_custom_name: get_string(
+                            columns.active_weapon_custom_name,
+                            idx,
+                        )
+                        .and_then(normalize_custom_name),
+                        active_weapon_stickers,
+                        glove_item_def_index: get_i32(columns.glove_item_def_index, idx),
+                        glove_paint_kit: get_u32(columns.glove_paint_kit, idx),
+                        glove_paint_seed: get_u32(columns.glove_paint_seed, idx),
+                        glove_paint_wear: get_f32(columns.glove_paint_wear, idx),
+                        crosshair_code: get_string(columns.crosshair_code, idx)
+                            .and_then(normalize_crosshair_code),
+                        viewmodel_left_handed: get_bool(columns.viewmodel_left_handed, idx),
+                        viewmodel_fov: get_f32(columns.viewmodel_fov, idx),
+                        viewmodel_offset_x: get_f32(columns.viewmodel_offset_x, idx),
+                        viewmodel_offset_y: get_f32(columns.viewmodel_offset_y, idx),
+                        viewmodel_offset_z: get_f32(columns.viewmodel_offset_z, idx),
+                        scoreboard_score: get_i32(columns.scoreboard_score, idx),
+                        scoreboard_mvps: get_u32(columns.scoreboard_mvps, idx),
+                        scoreboard_kills: get_u32(columns.scoreboard_kills, idx),
+                        scoreboard_deaths: get_u32(columns.scoreboard_deaths, idx),
+                        scoreboard_assists: get_u32(columns.scoreboard_assists, idx),
+                        armor_value: get_u32(columns.armor_value, idx).unwrap_or_default(),
+                        has_helmet: get_bool(columns.has_helmet, idx).unwrap_or(false),
+                        has_defuser: get_bool(columns.has_defuser, idx).unwrap_or(false),
+                        round_start_equip_value: get_u32(columns.round_start_equip_value, idx)
+                            .unwrap_or_default(),
+                        equipment_value_total: get_u32(columns.equipment_value_total, idx)
+                            .unwrap_or_default(),
+                        money_saved_total: get_u32(columns.money_saved_total, idx)
+                            .unwrap_or_default(),
+                        cash_spent_this_round: get_u32(columns.cash_spent_this_round, idx)
+                            .unwrap_or_default(),
+                        entity_flags: explicit_flags.unwrap_or(if is_airborne { 0 } else { 1 }),
+                        move_type: get_u32(columns.move_type, idx).unwrap_or(2) as u8,
+                        duck_amount: get_f32(columns.duck_amount, idx),
+                        duck_speed: get_f32(columns.duck_speed, idx),
+                        ladder_normal: get_vec3(columns.ladder_normal, idx),
+                        ducked: get_bool(ducked_column, idx),
+                        ducking: get_bool(ducking_column, idx),
+                        desires_duck: get_bool(columns.desires_duck, idx),
+                        subtick_moves,
+                        subtick_button_truncated,
+                        player_user_id: get_i32(columns.player_user_id, idx),
+                        player_entity_id: get_i32(columns.player_entity_id, idx),
+                        player_color: get_string(columns.player_color, idx),
+                        team_rounds_total: get_u32(columns.team_rounds_total, idx),
+                        team_name: get_string(columns.team_name, idx),
+                        team_clan_name: get_string(columns.team_clan_name, idx),
+                    }
+                },
+            )
+            .collect::<Vec<_>>();
 
         let tick_rate = estimate_tick_rate(&rows).unwrap_or(64.0);
         let mut round_freeze_end_ticks = output
@@ -1073,64 +1575,58 @@ mod demoparser_impl {
             return;
         }
 
-        let mut rounds: BTreeMap<u32, RoundPhaseRows> = BTreeMap::new();
-        for (idx, row) in rows.iter().enumerate() {
-            rounds
-                .entry(row.round)
-                .and_modify(|round_rows| {
-                    round_rows.min_tick = round_rows.min_tick.min(row.tick);
-                    round_rows.max_tick = round_rows.max_tick.max(row.tick);
-                    round_rows.indices.push(idx);
-                })
-                .or_insert_with(|| RoundPhaseRows {
-                    min_tick: row.tick,
-                    max_tick: row.tick,
-                    indices: vec![idx],
-                });
-        }
+        let mut start = 0;
+        while start < rows.len() {
+            let round = rows[start].round;
+            let mut end = start + 1;
+            while end < rows.len() && rows[end].round == round {
+                end += 1;
+            }
 
-        let mut phase_by_round = BTreeMap::new();
-        for (round, round_rows) in &rounds {
-            let candidates = freeze_end_ticks
-                .iter()
-                .copied()
-                .filter(|tick| *tick >= round_rows.min_tick && *tick <= round_rows.max_tick)
-                .collect::<Vec<_>>();
-            let freeze_end = if is_pistol_round_number(*round) {
-                candidates.into_iter().max().map(|freeze_end| {
-                    let round_end =
-                        round_end_after(round_end_ticks, freeze_end, round_rows.max_tick);
-                    (freeze_end, round_end, (0, 0))
-                })
-            } else {
-                candidates
-                    .into_iter()
-                    .map(|freeze_end| {
-                        let round_end =
-                            round_end_after(round_end_ticks, freeze_end, round_rows.max_tick);
-                        let score =
-                            round_phase_candidate_score(rows, round_rows, freeze_end, round_end);
-                        (freeze_end, round_end, score)
+            let phase = {
+                let round_rows = &rows[start..end];
+                let min_tick = round_rows[0].tick;
+                let max_tick = round_rows[round_rows.len() - 1].tick;
+                let first_candidate = freeze_end_ticks.partition_point(|tick| *tick < min_tick);
+                let after_last_candidate =
+                    freeze_end_ticks.partition_point(|tick| *tick <= max_tick);
+                let candidates = &freeze_end_ticks[first_candidate..after_last_candidate];
+
+                if is_pistol_round_number(round) {
+                    candidates.last().copied().map(|freeze_end| {
+                        let round_end = round_end_after(round_end_ticks, freeze_end, max_tick);
+                        (freeze_end, round_end, (0, 0))
                     })
-                    .max_by_key(|(freeze_end, _round_end, score)| (*score, *freeze_end))
+                } else {
+                    candidates
+                        .iter()
+                        .copied()
+                        .map(|freeze_end| {
+                            let round_end = round_end_after(round_end_ticks, freeze_end, max_tick);
+                            let score = round_phase_candidate_score(
+                                round_rows, max_tick, freeze_end, round_end,
+                            );
+                            (freeze_end, round_end, score)
+                        })
+                        .max_by_key(|(freeze_end, _round_end, score)| (*score, *freeze_end))
+                }
             };
-            if let Some((freeze_end, round_end, _score)) = freeze_end {
-                phase_by_round.insert(*round, (freeze_end, round_end));
-            }
-        }
 
-        for row in rows {
-            let Some((freeze_end, round_end)) = phase_by_round.get(&row.round).copied() else {
-                continue;
-            };
-            if row.tick >= freeze_end {
-                row.is_freeze_period = false;
+            if let Some((freeze_end, round_end, _score)) = phase {
+                for row in &mut rows[start..end] {
+                    if row.tick >= freeze_end {
+                        row.is_freeze_period = false;
+                    }
+                    if row.tick >= freeze_end
+                        && round_end.map_or(true, |round_end| row.tick < round_end)
+                    {
+                        row.round_in_progress = true;
+                    } else if round_end.is_some_and(|round_end| row.tick >= round_end) {
+                        row.round_in_progress = false;
+                    }
+                }
             }
-            if row.tick >= freeze_end && round_end.map_or(true, |round_end| row.tick < round_end) {
-                row.round_in_progress = true;
-            } else if round_end.is_some_and(|round_end| row.tick >= round_end) {
-                row.round_in_progress = false;
-            }
+            start = end;
         }
     }
 
@@ -1146,24 +1642,16 @@ mod demoparser_impl {
             .min()
     }
 
-    #[derive(Clone, Debug)]
-    struct RoundPhaseRows {
-        min_tick: i32,
-        max_tick: i32,
-        indices: Vec<usize>,
-    }
-
     fn round_phase_candidate_score(
-        rows: &[ParsedPlayerTick],
-        round_rows: &RoundPhaseRows,
+        round_rows: &[ParsedPlayerTick],
+        max_tick: i32,
         freeze_end: i32,
         round_end: Option<i32>,
     ) -> (usize, usize) {
-        let live_end = round_end.unwrap_or(round_rows.max_tick.saturating_add(1));
+        let live_end = round_end.unwrap_or(max_tick.saturating_add(1));
         let mut players = BTreeSet::new();
         let mut live_rows = 0_usize;
-        for idx in &round_rows.indices {
-            let row = &rows[*idx];
+        for row in round_rows {
             if row.tick < freeze_end
                 || row.tick >= live_end
                 || !row.is_alive
@@ -1210,8 +1698,8 @@ mod demoparser_impl {
         None
     }
 
-    fn get_f32(columns: &AHashMap<String, &PropColumn>, name: &str, idx: usize) -> Option<f32> {
-        match columns.get(name)?.data.as_ref()? {
+    fn get_f32(column: Option<&PropColumn>, idx: usize) -> Option<f32> {
+        match column?.data.as_ref()? {
             VarVec::F32(v) => v.get(idx).copied().flatten(),
             VarVec::I32(v) => v.get(idx).copied().flatten().map(|v| v as f32),
             VarVec::U32(v) => v.get(idx).copied().flatten().map(|v| v as f32),
@@ -1219,8 +1707,8 @@ mod demoparser_impl {
         }
     }
 
-    fn get_i32(columns: &AHashMap<String, &PropColumn>, name: &str, idx: usize) -> Option<i32> {
-        match columns.get(name)?.data.as_ref()? {
+    fn get_i32(column: Option<&PropColumn>, idx: usize) -> Option<i32> {
+        match column?.data.as_ref()? {
             VarVec::I32(v) => v.get(idx).copied().flatten(),
             VarVec::U32(v) => v.get(idx).copied().flatten().map(|v| v as i32),
             VarVec::U64(v) => v.get(idx).copied().flatten().map(|v| v as i32),
@@ -1241,8 +1729,8 @@ mod demoparser_impl {
         }
     }
 
-    fn get_u32(columns: &AHashMap<String, &PropColumn>, name: &str, idx: usize) -> Option<u32> {
-        match columns.get(name)?.data.as_ref()? {
+    fn get_u32(column: Option<&PropColumn>, idx: usize) -> Option<u32> {
+        match column?.data.as_ref()? {
             VarVec::U32(v) => v.get(idx).copied().flatten(),
             VarVec::I32(v) => v.get(idx).copied().flatten().map(|v| v as u32),
             VarVec::U64(v) => v.get(idx).copied().flatten().map(|v| v as u32),
@@ -1259,8 +1747,8 @@ mod demoparser_impl {
         }
     }
 
-    fn get_u64(columns: &AHashMap<String, &PropColumn>, name: &str, idx: usize) -> Option<u64> {
-        match columns.get(name)?.data.as_ref()? {
+    fn get_u64(column: Option<&PropColumn>, idx: usize) -> Option<u64> {
+        match column?.data.as_ref()? {
             VarVec::U64(v) => v.get(idx).copied().flatten(),
             VarVec::U32(v) => v.get(idx).copied().flatten().map(u64::from),
             VarVec::I32(v) => v.get(idx).copied().flatten().map(|v| v as u64),
@@ -1272,34 +1760,25 @@ mod demoparser_impl {
         }
     }
 
-    fn get_u32_vec(
-        columns: &AHashMap<String, &PropColumn>,
-        name: &str,
-        idx: usize,
-    ) -> Option<Vec<u32>> {
-        match columns.get(name)?.data.as_ref()? {
+    fn get_u32_vec(column: Option<&PropColumn>, idx: usize) -> Option<Vec<u32>> {
+        match column?.data.as_ref()? {
             VarVec::U32Vec(v) => v.get(idx).cloned(),
             _ => None,
         }
     }
 
-    fn get_vec3(
-        columns: &AHashMap<String, &PropColumn>,
-        name: &str,
-        idx: usize,
-    ) -> Option<[f32; 3]> {
-        match columns.get(name)?.data.as_ref()? {
+    fn get_vec3(column: Option<&PropColumn>, idx: usize) -> Option<[f32; 3]> {
+        match column?.data.as_ref()? {
             VarVec::XYZVec(v) => v.get(idx).copied().flatten(),
             _ => None,
         }
     }
 
     fn get_subtick_moves(
-        columns: &AHashMap<String, &PropColumn>,
-        name: &str,
+        column: Option<&PropColumn>,
         idx: usize,
     ) -> Option<(Vec<SubtickMove>, usize)> {
-        match columns.get(name)?.data.as_ref()? {
+        match column?.data.as_ref()? {
             VarVec::UserCmdSubtickMoves(v) => {
                 let raw = v.get(idx)?;
                 let mut truncated = 0_usize;
@@ -1326,8 +1805,8 @@ mod demoparser_impl {
         }
     }
 
-    fn get_bool(columns: &AHashMap<String, &PropColumn>, name: &str, idx: usize) -> Option<bool> {
-        match columns.get(name)?.data.as_ref()? {
+    fn get_bool(column: Option<&PropColumn>, idx: usize) -> Option<bool> {
+        match column?.data.as_ref()? {
             VarVec::Bool(v) => v.get(idx).copied().flatten(),
             VarVec::U32(v) => v.get(idx).copied().flatten().map(|v| v != 0),
             VarVec::I32(v) => v.get(idx).copied().flatten().map(|v| v != 0),
@@ -1335,12 +1814,8 @@ mod demoparser_impl {
         }
     }
 
-    fn get_string(
-        columns: &AHashMap<String, &PropColumn>,
-        name: &str,
-        idx: usize,
-    ) -> Option<String> {
-        match columns.get(name)?.data.as_ref()? {
+    fn get_string(column: Option<&PropColumn>, idx: usize) -> Option<String> {
+        match column?.data.as_ref()? {
             VarVec::String(v) => v.get(idx).cloned().flatten(),
             _ => None,
         }
@@ -1451,15 +1926,10 @@ mod demoparser_impl {
     }
 
     fn get_scoreboard_flair(
-        columns: &AHashMap<String, &PropColumn>,
+        column: Option<&PropColumn>,
         idx: usize,
     ) -> Option<ParsedScoreboardFlair> {
-        let item_def_index = get_u64(
-            columns,
-            "CCSPlayerController.CCSPlayerController_InventoryServices.m_rank",
-            idx,
-        )
-        .and_then(|value| u32::try_from(value).ok())?;
+        let item_def_index = get_u64(column, idx).and_then(|value| u32::try_from(value).ok())?;
 
         Some(ParsedScoreboardFlair { item_def_index })
     }
@@ -1543,6 +2013,83 @@ mod demoparser_impl {
         }
 
         #[test]
+        fn strict_movement_alignment_accepts_identical_duplicate_rows() {
+            let tick = i32_column(&[Some(100), Some(100), Some(101)]);
+            let entity_id = i32_column(&[Some(7), Some(7), Some(9)]);
+            let steam_id = u64_column(&[Some(70), Some(70), Some(90)]);
+            let round = i32_column(&[Some(1), Some(1), None]);
+
+            assert!(strict_movement_keys_match(
+                &tick, &entity_id, &steam_id, &round, &tick, &entity_id, &steam_id, &round,
+            ));
+        }
+
+        #[test]
+        fn strict_movement_alignment_rejects_reordered_equal_multiset() {
+            let left_tick = i32_column(&[Some(100), Some(100), Some(101)]);
+            let left_entity_id = i32_column(&[Some(7), Some(7), Some(9)]);
+            let left_steam_id = u64_column(&[Some(70), Some(70), Some(90)]);
+            let left_round = i32_column(&[Some(1), Some(1), Some(1)]);
+            let right_tick = i32_column(&[Some(100), Some(101), Some(100)]);
+            let right_entity_id = i32_column(&[Some(7), Some(9), Some(7)]);
+            let right_steam_id = u64_column(&[Some(70), Some(90), Some(70)]);
+            let right_round = i32_column(&[Some(1), Some(1), Some(1)]);
+
+            assert!(!strict_movement_keys_match(
+                &left_tick,
+                &left_entity_id,
+                &left_steam_id,
+                &left_round,
+                &right_tick,
+                &right_entity_id,
+                &right_steam_id,
+                &right_round,
+            ));
+        }
+
+        #[test]
+        fn strict_movement_alignment_rejects_missing_or_wrong_type_keys() {
+            let tick = i32_column(&[Some(100), Some(101)]);
+            let missing_entity_id = i32_column(&[Some(7), None]);
+            let entity_id = i32_column(&[Some(7), Some(9)]);
+            let steam_id = u64_column(&[Some(70), Some(90)]);
+            let round = i32_column(&[Some(1), Some(1)]);
+            assert!(!strict_movement_keys_match(
+                &tick,
+                &missing_entity_id,
+                &steam_id,
+                &round,
+                &tick,
+                &entity_id,
+                &steam_id,
+                &round,
+            ));
+
+            let wrong_tick_type = u32_column(&[Some(100), Some(101)]);
+            assert!(!strict_movement_keys_match(
+                &wrong_tick_type,
+                &entity_id,
+                &steam_id,
+                &round,
+                &tick,
+                &entity_id,
+                &steam_id,
+                &round,
+            ));
+        }
+
+        #[test]
+        fn all_none_columns_remain_a_valid_overlay() {
+            let overlay = all_none_overlay(3);
+            assert_eq!(overlay.columns.len(), SINGLE_THREADED_OVERLAY_PROPS.len());
+            for friendly_name in SINGLE_THREADED_OVERLAY_PROPS {
+                let column = overlay.get(friendly_name).unwrap();
+                assert!(overlay_column_type_is_valid(friendly_name, column));
+                assert_eq!(column.len(), 3);
+            }
+        }
+
+        #[test]
         fn freeze_end_event_repairs_sticky_freeze_period_rows() {
             let mut rows = vec![
                 row(1, 90, true),
@@ -1622,6 +2169,27 @@ mod demoparser_impl {
                 team_num: 2,
                 is_alive: true,
                 ..row(round, tick, is_freeze_period)
+            }
+        }
+
+        fn i32_column(values: &[Option<i32>]) -> PropColumn {
+            PropColumn {
+                data: Some(VarVec::I32(values.to_vec())),
+                num_nones: 0,
+            }
+        }
+
+        fn u32_column(values: &[Option<u32>]) -> PropColumn {
+            PropColumn {
+                data: Some(VarVec::U32(values.to_vec())),
+                num_nones: 0,
+            }
+        }
+
+        fn u64_column(values: &[Option<u64>]) -> PropColumn {
+            PropColumn {
+                data: Some(VarVec::U64(values.to_vec())),
+                num_nones: 0,
             }
         }
     }

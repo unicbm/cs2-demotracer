@@ -20,6 +20,7 @@ use crate::replay::synthesis::{
     synthesize_player_rec_with_row_refs, SynthesisOptions, SynthesisStats,
 };
 use crate::{io_error, Error, Result};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -108,6 +109,18 @@ pub struct ConversionArtifact {
     pub kind: ConversionArtifactKind,
     pub round: Option<u32>,
     pub steam_id: Option<u64>,
+}
+
+enum PlayerExportOutcome {
+    Skipped {
+        steam_id: u64,
+        rows: usize,
+    },
+    Written {
+        file: ConvertedFile,
+        artifact: ConversionArtifact,
+        stats: SynthesisStats,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -313,131 +326,160 @@ fn export_demo_to_memory_inner(
         );
         let cosmetic_players = cosmetic_rows_by_player(round_rows, end_tick, options.side);
 
-        for (steam_id, mut player_rows) in players {
-            player_rows.sort_by_key(|row| row.tick);
-            player_rows.dedup_by_key(|row| row.tick);
-            if player_rows.len() < 2 {
-                let reason = format!("{} rows", player_rows.len());
-                log.push(format!(
-                    "skip round {} player {steam_id}: {reason}",
-                    round.round
-                ));
-                emit_conversion_progress(
-                    &mut progress,
-                    ConversionProgress::PlayerSkipped {
-                        round: round.round,
+        let player_exports = players
+            .into_iter()
+            .collect::<Vec<_>>()
+            .into_par_iter()
+            .map(|(steam_id, mut player_rows)| {
+                player_rows.sort_by_key(|row| row.tick);
+                player_rows.dedup_by_key(|row| row.tick);
+                if player_rows.len() < 2 {
+                    return Ok(PlayerExportOutcome::Skipped {
                         steam_id,
-                        reason,
-                    },
-                );
-                continue;
-            }
-            let play_start_tick_index = play_start_tick_index(&player_rows, round.start_tick);
-            let player_projectiles = projectiles_by_steam_id
-                .get(&steam_id)
-                .map(Vec::as_slice)
-                .unwrap_or(&[]);
-            let cosmetic_player_rows = cosmetic_players
-                .get(&steam_id)
-                .map(Vec::as_slice)
-                .unwrap_or(player_rows.as_slice());
-            let (mut rec, stats) = synthesize_player_rec_with_row_refs(
-                &player_rows,
-                player_projectiles,
-                &parsed.map,
-                parsed.tick_rate,
-                round.round,
-                SynthesisOptions {
-                    subtick_mode: options.subtick_mode,
-                    play_start_tick_index,
-                },
-            )?;
-            rec.high_fidelity = build_player_high_fidelity_metadata(
-                parsed,
-                round.round,
-                recording_start_tick,
-                round.start_tick,
-                end_tick,
-                &player_rows,
-                round_rows,
-                player_projectiles,
-            );
-            subtick_stats.add_assign(&stats);
-            let team_dir = Side::team_dir(player_rows[0].team_num);
-            let player_name = if player_rows[0].name.is_empty() {
-                steam_id.to_string()
-            } else {
-                player_rows[0].name.clone()
-            };
-            let rel_path = Path::new(&format!("round{:02}", round.round))
-                .join(team_dir)
-                .join(format!("{}_{}.dtr", steam_id, slugify(&player_name)));
-            let mut bytes = Vec::new();
-            write_rec(&mut bytes, &rec)?;
-            let path = rel_path.to_string_lossy().replace('\\', "/");
-            let ticks = rec.ticks.len();
-            let subticks = rec.subticks.len();
-            let play_start_row = player_rows
-                .get(rec.header.play_start_tick_index as usize)
-                .copied()
-                .unwrap_or(player_rows[0]);
-            manifest.files.push(ConvertedFile {
-                path: path.clone(),
-                round: round.round,
-                side: team_dir.to_string(),
-                steam_id,
-                player_name: player_name.clone(),
-                ticks,
-                subticks,
-                play_start_tick_index: rec.header.play_start_tick_index,
-                first_weapon_def_index: first_weapon_def_index_from_play_start(
-                    &rec,
-                    rec.header.play_start_tick_index,
-                ),
-                preload_weapon_def_indices: preload_weapon_def_indices_from_refs_from_play_start(
+                        rows: player_rows.len(),
+                    });
+                }
+                let play_start_tick_index = play_start_tick_index(&player_rows, round.start_tick);
+                let player_projectiles = projectiles_by_steam_id
+                    .get(&steam_id)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                let cosmetic_player_rows = cosmetic_players
+                    .get(&steam_id)
+                    .map(Vec::as_slice)
+                    .unwrap_or(player_rows.as_slice());
+                let (mut rec, stats) = synthesize_player_rec_with_row_refs(
                     &player_rows,
-                    &rec,
-                    rec.header.play_start_tick_index,
-                ),
-                hifi_event_count: rec.high_fidelity.events.len(),
-                inventory_snapshot_count: rec.high_fidelity.inventory_snapshots.len(),
-                loadout: replay_loadout(play_start_row),
-                music_kit_id: stable_music_kit_id(&player_rows),
-                scoreboard_flair: stable_scoreboard_flair(&player_rows),
-                cosmetics: if options.export_cosmetics {
-                    replay_cosmetics_at(
-                        &player_rows,
-                        cosmetic_player_rows,
-                        rec.header.play_start_tick_index,
-                        econ_gloves.get(&steam_id),
-                        options.export_stickers,
-                        options.export_charms,
-                    )
+                    player_projectiles,
+                    &parsed.map,
+                    parsed.tick_rate,
+                    round.round,
+                    SynthesisOptions {
+                        subtick_mode: options.subtick_mode,
+                        play_start_tick_index,
+                    },
+                )?;
+                rec.high_fidelity = build_player_high_fidelity_metadata(
+                    parsed,
+                    round.round,
+                    recording_start_tick,
+                    round.start_tick,
+                    end_tick,
+                    &player_rows,
+                    round_rows,
+                    player_projectiles,
+                );
+                let team_dir = Side::team_dir(player_rows[0].team_num);
+                let player_name = if player_rows[0].name.is_empty() {
+                    steam_id.to_string()
                 } else {
-                    None
-                },
-                view: replay_view(&player_rows),
-                scoreboard: replay_player_scoreboard(cosmetic_player_rows),
-            });
-            artifacts.push(ConversionArtifact {
-                path: path.clone(),
-                bytes,
-                kind: ConversionArtifactKind::Dtr,
-                round: Some(round.round),
-                steam_id: Some(steam_id),
-            });
-            emit_conversion_progress(
-                &mut progress,
-                ConversionProgress::PlayerWritten {
+                    player_rows[0].name.clone()
+                };
+                let rel_path = Path::new(&format!("round{:02}", round.round))
+                    .join(team_dir)
+                    .join(format!("{}_{}.dtr", steam_id, slugify(&player_name)));
+                let mut bytes = Vec::new();
+                write_rec(&mut bytes, &rec)?;
+                let path = rel_path.to_string_lossy().replace('\\', "/");
+                let ticks = rec.ticks.len();
+                let subticks = rec.subticks.len();
+                let play_start_row = player_rows
+                    .get(rec.header.play_start_tick_index as usize)
+                    .copied()
+                    .unwrap_or(player_rows[0]);
+                let file = ConvertedFile {
+                    path: path.clone(),
                     round: round.round,
+                    side: team_dir.to_string(),
                     steam_id,
                     player_name,
-                    side: team_dir.to_string(),
-                    path,
                     ticks,
                     subticks,
-                },
-            );
+                    play_start_tick_index: rec.header.play_start_tick_index,
+                    first_weapon_def_index: first_weapon_def_index_from_play_start(
+                        &rec,
+                        rec.header.play_start_tick_index,
+                    ),
+                    preload_weapon_def_indices:
+                        preload_weapon_def_indices_from_refs_from_play_start(
+                            &player_rows,
+                            &rec,
+                            rec.header.play_start_tick_index,
+                        ),
+                    hifi_event_count: rec.high_fidelity.events.len(),
+                    inventory_snapshot_count: rec.high_fidelity.inventory_snapshots.len(),
+                    loadout: replay_loadout(play_start_row),
+                    music_kit_id: stable_music_kit_id(&player_rows),
+                    scoreboard_flair: stable_scoreboard_flair(&player_rows),
+                    cosmetics: if options.export_cosmetics {
+                        replay_cosmetics_at(
+                            &player_rows,
+                            cosmetic_player_rows,
+                            rec.header.play_start_tick_index,
+                            econ_gloves.get(&steam_id),
+                            options.export_stickers,
+                            options.export_charms,
+                        )
+                    } else {
+                        None
+                    },
+                    view: replay_view(&player_rows),
+                    scoreboard: replay_player_scoreboard(cosmetic_player_rows),
+                };
+                let artifact = ConversionArtifact {
+                    path,
+                    bytes,
+                    kind: ConversionArtifactKind::Dtr,
+                    round: Some(round.round),
+                    steam_id: Some(steam_id),
+                };
+                Ok(PlayerExportOutcome::Written {
+                    file,
+                    artifact,
+                    stats,
+                })
+            })
+            .collect::<Vec<Result<PlayerExportOutcome>>>();
+
+        for player_export in player_exports {
+            match player_export? {
+                PlayerExportOutcome::Skipped { steam_id, rows } => {
+                    let reason = format!("{rows} rows");
+                    log.push(format!(
+                        "skip round {} player {steam_id}: {reason}",
+                        round.round
+                    ));
+                    emit_conversion_progress(
+                        &mut progress,
+                        ConversionProgress::PlayerSkipped {
+                            round: round.round,
+                            steam_id,
+                            reason,
+                        },
+                    );
+                }
+                PlayerExportOutcome::Written {
+                    file,
+                    artifact,
+                    stats,
+                } => {
+                    subtick_stats.add_assign(&stats);
+                    emit_conversion_progress(
+                        &mut progress,
+                        ConversionProgress::PlayerWritten {
+                            round: file.round,
+                            steam_id: file.steam_id,
+                            player_name: file.player_name.clone(),
+                            side: file.side.clone(),
+                            path: file.path.clone(),
+                            ticks: file.ticks,
+                            subticks: file.subticks,
+                        },
+                    );
+                    manifest.files.push(file);
+                    artifacts.push(artifact);
+                }
+            }
         }
 
         let files = manifest.files.len() - first_file_index;
