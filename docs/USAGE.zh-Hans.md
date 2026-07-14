@@ -46,6 +46,9 @@ cs2-demotracer.exe convert --demo <demo.dem> --output <输出目录> --include-s
 cs2-demotracer.exe convert --demo <demo.dem> --output <输出目录> --freeze-preroll-seconds 10
 ```
 
+`--rounds` 等回合过滤参数只筛选分析/导出结果。Demoparser 仍然会解析整场比赛，
+所以只选一个回合也不是廉价的局部解析。
+
 `--export-voice` 会写出 `voice/roundXX.dtv`，用于 runtime 自动语音回放。它只在
 demo 本身录到了游戏内语音时生效。社区服、FACEIT、5E demo 更可能包含语音；
 被平台剥离 voice data 的 demo 不会生成语音 sidecar。完整流程见

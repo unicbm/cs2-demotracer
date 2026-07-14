@@ -14,7 +14,7 @@ or legacy CS:GO paths.
   `dtr_`.
 - The replay extension is `.dtr`. The binary magic is `CSDTRREC`; current
   writer format is `.dtr` v7. Current manifest ABI is 17,
-  BotController native ABI is 16, and DemoTracer companion API is 5. Do not
+  BotController native ABI is 16, and DemoTracer companion API is 6. Do not
   change magic, ABI, API, or format layout without an explicit version decision
   and matching docs.
 - The maintained packaged converter target is Windows x64. Linux may work from
@@ -52,8 +52,12 @@ or legacy CS:GO paths.
   inspection, and wizard round choices filter analysis/export after demoparser
   parses the whole demo, so even one selected round still requires a full-match
   parse. Explain this in CLI/docs/workflows that expose round filters.
-- Avoid repeated full-demo parsing inside one workflow. Parse once, then pass
-  the parsed demo into analysis/export steps when the code path already has it.
+- Avoid redundant workflow-level full-demo parsing. Reuse `ParsedDemo` across
+  analysis/export steps when the code path already has it. Parser-internal
+  channel splitting is allowed only as a deliberate performance optimization
+  when supplemental columns use strict row-key alignment, output ordering stays
+  deterministic, and any parse or alignment mismatch falls back to the normal
+  parser path.
 - Default conversion should prefer recommended rounds and avoid suspicious
   tail/garbage rounds.
 - Export one `.dtr` per player per round under

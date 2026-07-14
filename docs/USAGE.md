@@ -49,6 +49,10 @@ cs2-demotracer.exe convert --demo <demo.dem> --output <output-dir> --include-sus
 cs2-demotracer.exe convert --demo <demo.dem> --output <output-dir> --freeze-preroll-seconds 10
 ```
 
+Round filters such as `--rounds` select analysis/export output only. Demoparser
+still parses the full match, so selecting one round does not make parsing a
+cheap partial operation.
+
 `--export-voice` writes `voice/roundXX.dtv` files for automatic runtime voice
 playback. It only works when the demo contains recorded in-game voice data.
 Community, FACEIT, and 5E demos are more likely to include it than demos whose
