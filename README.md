@@ -59,31 +59,21 @@ movement, view angles, firing, weapon state, and projectile alignment.
 This is local replay tooling for research, content creation, and plugin
 development. It is not intended for matchmaking or cheating.
 
-## Dependencies
+## Requirements
 
-Conversion only needs the release converter package.
+- **Conversion:** the packaged Windows x64 converter. No game-server plugins
+  are required.
+- **Playback:** a local Windows x64 CS2 server with
+  [Metamod:Source](https://www.sourcemm.net/),
+  [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp), and the
+  DemoTracer server bundle.
+- **Optional:** [Ray-Trace](https://github.com/FUNPLAY-pro-CS2/Ray-Trace), or a
+  compatible provider, for stricter handoff line-of-sight filtering.
 
-In-game playback needs a local Windows x64 CS2 server with:
-
-- [Metamod:Source](https://www.sourcemm.net/)
-- [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp)
-- The DemoTracer server bundle, which includes the `BotController` Metamod
-  runtime, the DemoTracer-maintained `BotHider` runtime,
-  `DemoTracer`/`DemoTracerBotHider` CounterStrikeSharp plugins, their API
-  assemblies, and sanitized example config. All CounterStrikeSharp projects
-  target .NET 10.
-
-Optional integrations:
-
-- [Ray-Trace](https://github.com/FUNPLAY-pro-CS2/Ray-Trace), or another provider
-  exposing `raytrace:craytraceinterface`, for stricter line-of-sight filtering
-  in handoff 360 threat detection. DemoTracer works without it and reports the
-  status through `dtr_doctor`.
-
-The server bundle does not include Metamod:Source, CounterStrikeSharp, or a
-RayTrace provider. Do not co-install a separate public BotHider CSS plugin;
-DemoTracer's bundled provider is the sole identity/crosshair publisher. Full dependency notes are in
-[`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md).
+The server bundle supplies DemoTracer's runtime and plugins, but not
+Metamod:Source, CounterStrikeSharp, or a RayTrace provider. See
+[`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md) for versions, bundled components,
+optional integrations, and compatibility boundaries.
 
 ## Quick Start
 
@@ -190,29 +180,15 @@ layout is documented in [`docs/FORMAT.md`](docs/FORMAT.md).
 - `examples/`: small Python and Node.js CLI integration examples.
 - `third_party/`: vendored third-party source and license files.
 
-## Acknowledgements
+## Credits and License
 
-CS2 DemoTracer builds on several excellent open-source projects.
+CS2 DemoTracer builds on
+[CS2-Bot-Controller](https://github.com/XBribo/CS2-Bot-Controller),
+[CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider),
+[demoparser](https://github.com/LaihoE/demoparser), Metamod:Source, and
+CounterStrikeSharp. [minidemo-encoder](https://github.com/csgowiki/minidemo-encoder)
+provided historical workflow inspiration.
 
-- [XBribo/CS2-Bot-Controller](https://github.com/XBribo/CS2-Bot-Controller)
-  provides the AGPL-3.0 BotController foundation for replay hooks, recording,
-  input injection, and weapon locking.
-- [XBribo/CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider) provides the
-  AGPL foundation for the maintained `runtime/BotHider` fake-client and persona
-  runtime. DemoTracer adds its versioned presentation-lease provider.
-- [LaihoE/demoparser](https://github.com/LaihoE/demoparser) provides the Rust
-  CS2 demo parser used by the converter. The vendored source is preserved under
-  `third_party/demoparser`.
-- [csgowiki/minidemo-encoder](https://github.com/csgowiki/minidemo-encoder)
-  provided historical `.dem -> replay file` workflow inspiration. No Go source
-  from that project is copied.
-- [Metamod:Source](https://github.com/alliedmodders/metamod-source) and
-  [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp) provide
-  the runtime/plugin stack.
-
-## License
-
-CS2 DemoTracer is AGPL-3.0-only. See [`LICENSE`](LICENSE) for the full license
-text. Vendored third-party components keep their upstream license files under
-`third_party/`; the maintained BotHider copy preserves its original license and
-tracking notes under `runtime/BotHider/`.
+The project is AGPL-3.0-only; see [`LICENSE`](LICENSE). Vendored components keep
+their upstream licenses and attribution under `third_party/` and
+`runtime/BotHider/`.

@@ -61,33 +61,18 @@ dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
 dtr_go round "<manifest.json>" 0
 ```
 
-## 依赖概览
+## 环境要求
 
-转换只需要 Windows x64 converter 包。
+- **转换：**Windows x64 converter 包，不需要游戏服务器 plugin。
+- **播放：**安装了 [Metamod:Source](https://www.sourcemm.net/)、
+  [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp) 和
+  DemoTracer server bundle 的本地 Windows x64 CS2 服务器。
+- **可选：**[Ray-Trace](https://github.com/FUNPLAY-pro-CS2/Ray-Trace) 或兼容
+  provider，用于更严格的 handoff LOS 判断。
 
-服务器播放需要：
-
-- [Metamod:Source](https://www.sourcemm.net/)
-- [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp)
-- DemoTracer server bundle
-
-server bundle 自带：
-
-- `BotController` Metamod runtime
-- DemoTracer 自维护的 `BotHider` Metamod runtime
-- `.NET 10` 的 `DemoTracer` 和 `DemoTracerBotHider` CounterStrikeSharp plugin
-- `DemoTracerApi.dll` 和 `DemoTracerBotHiderApi.dll`
-- `demotracer-econ-index.v1.json`
-- `demotracer.config.example.json`
-
-不要同时安装另一个公开 BotHider CSS plugin；bundle 内置 provider 是 identity 和
-服务器准星的唯一 writer。
-
-可选集成：
-
-- [Ray-Trace](https://github.com/FUNPLAY-pro-CS2/Ray-Trace) 或其他提供
-  `raytrace:craytraceinterface` 的 RayTrace API provider：用于 handoff 360 threat
-  的更严格 LOS 判断；没有它也能运行，`dtr_doctor` 会显示当前 RayTrace 状态。
+server bundle 提供 DemoTracer 自身的 runtime 和 plugin，但不包含 Metamod:Source、
+CounterStrikeSharp 或 RayTrace provider。完整版本、bundle 内容和兼容性边界见
+[依赖说明](DEPENDENCIES.md)。
 
 ## GSLT 和饰品边界
 
