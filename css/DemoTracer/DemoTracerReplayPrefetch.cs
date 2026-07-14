@@ -83,6 +83,38 @@ public sealed partial class DemoTracerPlugin
         PrefetchRoundReplays(resolvedManifestPath, manifest, round, after);
     }
 
+    private void PrefetchPlayoffRoundReplays(
+        string manifestPath,
+        ConversionManifest manifest,
+        int tRound,
+        int ctRound,
+        IReadOnlySet<ulong> tSteamIds,
+        IReadOnlySet<ulong> ctSteamIds)
+    {
+        var resolvedManifestPath = ResolveReadableManifestPath(manifestPath);
+        var manifestDir = Path.GetDirectoryName(resolvedManifestPath) ?? ".";
+        var paths = new List<string>(tSteamIds.Count + ctSteamIds.Count);
+        AddSide("t", tRound, tSteamIds);
+        AddSide("ct", ctRound, ctSteamIds);
+        _dtrReplayPrefetch.Begin(paths);
+
+        void AddSide(string side, int round, IReadOnlySet<ulong> steamIds)
+        {
+            if (round < 0 || steamIds.Count == 0)
+                return;
+
+            foreach (var file in manifest.Files
+                         .Where(file => file.Round == round &&
+                                        file.Side.Equals(side, StringComparison.OrdinalIgnoreCase) &&
+                                        steamIds.Contains(file.SteamId))
+                         .OrderBy(file => file.SteamId))
+            {
+                if (TryResolveChildPathUnderRoot(manifestDir, file.Path, out var path, out _))
+                    paths.Add(path);
+            }
+        }
+    }
+
     private bool TryTakePrefetchedReplay(string path, out DtrReplayFile replay)
         => _dtrReplayPrefetch.TryTake(path, out replay);
 

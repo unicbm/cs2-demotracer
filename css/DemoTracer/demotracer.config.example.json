@@ -1,6 +1,7 @@
 {
   "identity": "steam",
   "allow_partial": true,
+  "playoff": false,
   "chat_auto": true,
   "handoff": {
     "mode": "death_contact_c4",

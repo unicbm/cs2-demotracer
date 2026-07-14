@@ -1355,13 +1355,15 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 ? _sequenceIndex < _sequenceRounds.Length
                     ? $"sequence from_source_round={_sequenceRounds[_sequenceIndex]} prepared={_sequencePrepared}:{_sequencePreparedRound}"
                     : "sequence complete"
+                : HasPlayoffSchedulingState()
+                    ? $"playoff {FormatPlayoffPlanStatus()}"
                 : _armed
                     ? $"single source_round={_armedSourceRound} prepared={_armedPrepared}"
                     : _poolActive
                         ? $"pool server_round={_poolRoundIndex} candidates={_poolManifest?.Candidates.Count ?? 0}"
                         : "none";
             command.ReplyToCommand(
-                $"[DTR OK] status plan={plan} loaded_slots={_loadedSlots.Count} settings identity={ReplayIdentityModeName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} projectile_ticks={FormatProjectileAlignTicks()} molotov_point={FormatMolotovPointAlignMode(_molotovPointAlignMode)}:{_molotovPointAlignLeadTicks} cosmetics={FormatOnOff(_cosmeticAlignEnabled)} agents={FormatOnOff(_cosmeticAgentsEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)} scoreboard={FormatOnOff(_scoreboardAlignEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} allow_partial={FormatOnOff(_partialReplayEnabled)} {FormatVoiceAutoStatusInline()} {FormatChatAutoStatusInline()} mp_freezetime={(float.IsFinite(freezeTime) ? freezeTime.ToString("F2", CultureInfo.InvariantCulture) : "unknown")} {(string.IsNullOrEmpty(freezeReason) ? "" : freezeReason)} {FormatCosmeticStatusCounts()} {FormatCrosshairStatusCounts()} {FormatViewmodelStatusCounts()} {FormatScoreboardStatusCounts()}");
+                $"[DTR OK] status plan={plan} loaded_slots={_loadedSlots.Count} settings identity={ReplayIdentityModeName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} projectile_ticks={FormatProjectileAlignTicks()} molotov_point={FormatMolotovPointAlignMode(_molotovPointAlignMode)}:{_molotovPointAlignLeadTicks} cosmetics={FormatOnOff(_cosmeticAlignEnabled)} agents={FormatOnOff(_cosmeticAgentsEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)} scoreboard={FormatOnOff(_scoreboardAlignEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} allow_partial={FormatOnOff(_partialReplayEnabled)} playoff={FormatOnOff(_playoffEnabled)}:{FormatPlayoffPlanStatus()} {FormatVoiceAutoStatusInline()} {FormatChatAutoStatusInline()} mp_freezetime={(float.IsFinite(freezeTime) ? freezeTime.ToString("F2", CultureInfo.InvariantCulture) : "unknown")} {(string.IsNullOrEmpty(freezeReason) ? "" : freezeReason)} {FormatCosmeticStatusCounts()} {FormatCrosshairStatusCounts()} {FormatViewmodelStatusCounts()} {FormatScoreboardStatusCounts()}");
             return;
         }
 
@@ -1375,8 +1377,11 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         var pool = _poolActive
             ? $" pool_next={_poolRoundIndex}"
             : string.Empty;
+        var playoff = _playoffEnabled
+            ? $" playoff={FormatPlayoffPlanStatus()}"
+            : string.Empty;
         command.ReplyToCommand(
-            $"dtr: abi={BotControllerNative.AbiVersion} slot={slot} playing={state.Playing} cursor={state.Cursor} total={state.Total} handoff={FormatHandoffMode(_handoffMode)} scope={(_handoffAllSlots ? "all" : "slot")} handoff_360={_handoffThreat360Enabled}:{_handoffThreat360Range.ToString("F0", CultureInfo.InvariantCulture)} los={_handoffThreat360LosEnabled}:{_rayTraceLosProbe.ProbeStatus} partial={_partialReplayEnabled} identity={ReplayIdentityModeName()} projectile_align={_projectileAlignEnabled} projectile_ticks={FormatProjectileAlignTicks()} molotov_point={FormatMolotovPointAlignMode(_molotovPointAlignMode)}:{_molotovPointAlignLeadTicks} cosmetic_align={_cosmeticAlignEnabled} agent_align={_cosmeticAgentsEnabled} sticker_align={_stickerAlignEnabled} charm_align={_charmAlignEnabled} preserve_native={_preserveNativeBotCosmetics} crosshair_align={_crosshairAlignEnabled} left_hand_desired={_leftHandDesiredEnabled} scoreboard_align={_scoreboardAlignEnabled} {FormatVoiceAutoStatusInline()} {FormatChatAutoStatusInline()}{sequence}{pool}");
+            $"dtr: abi={BotControllerNative.AbiVersion} slot={slot} playing={state.Playing} cursor={state.Cursor} total={state.Total} handoff={FormatHandoffMode(_handoffMode)} scope={(_handoffAllSlots ? "all" : "slot")} handoff_360={_handoffThreat360Enabled}:{_handoffThreat360Range.ToString("F0", CultureInfo.InvariantCulture)} los={_handoffThreat360LosEnabled}:{_rayTraceLosProbe.ProbeStatus} partial={_partialReplayEnabled} identity={ReplayIdentityModeName()} projectile_align={_projectileAlignEnabled} projectile_ticks={FormatProjectileAlignTicks()} molotov_point={FormatMolotovPointAlignMode(_molotovPointAlignMode)}:{_molotovPointAlignLeadTicks} cosmetic_align={_cosmeticAlignEnabled} agent_align={_cosmeticAgentsEnabled} sticker_align={_stickerAlignEnabled} charm_align={_charmAlignEnabled} preserve_native={_preserveNativeBotCosmetics} crosshair_align={_crosshairAlignEnabled} left_hand_desired={_leftHandDesiredEnabled} scoreboard_align={_scoreboardAlignEnabled} {FormatVoiceAutoStatusInline()} {FormatChatAutoStatusInline()}{sequence}{pool}{playoff}");
     }
 
     [ConsoleCommand("dtr_runtime", "dtr_runtime")]
@@ -1414,7 +1419,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 ? "[DTR DOCTOR] bot_hider provider=unavailable"
                 : $"[DTR DOCTOR] bot_hider api={botHiderProvider.ApiVersion} connected={botHiderProvider.Connected} draining={botHiderProvider.Draining} map_epoch={botHiderProvider.MapEpoch} leases={botHiderDiagnostics.ActiveLeases}/{botHiderDiagnostics.LeasedSlots} writes={botHiderDiagnostics.PublishedWrites} controller_repairs={botHiderDiagnostics.ControllerRepairs}");
         command.ReplyToCommand(
-            $"[DTR DOCTOR] replay loaded={_loadedSlots.Count} playing={loadedPlaying} identity={ReplayIdentityModeName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} projectile_ticks={FormatProjectileAlignTicks()} molotov_point={FormatMolotovPointAlignMode(_molotovPointAlignMode)}:{_molotovPointAlignLeadTicks} cosmetics={FormatOnOff(_cosmeticAlignEnabled)} agents={FormatOnOff(_cosmeticAgentsEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)} scoreboard={FormatOnOff(_scoreboardAlignEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} partial={FormatOnOff(_partialReplayEnabled)} raytrace={_rayTraceLosProbe.ProbeStatus} {FormatCosmeticStatusCounts()} {FormatCrosshairStatusCounts()} {FormatViewmodelStatusCounts()} {FormatScoreboardStatusCounts()}");
+            $"[DTR DOCTOR] replay loaded={_loadedSlots.Count} playing={loadedPlaying} identity={ReplayIdentityModeName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} projectile_ticks={FormatProjectileAlignTicks()} molotov_point={FormatMolotovPointAlignMode(_molotovPointAlignMode)}:{_molotovPointAlignLeadTicks} cosmetics={FormatOnOff(_cosmeticAlignEnabled)} agents={FormatOnOff(_cosmeticAgentsEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand_desired={FormatOnOff(_leftHandDesiredEnabled)} scoreboard={FormatOnOff(_scoreboardAlignEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} partial={FormatOnOff(_partialReplayEnabled)} playoff={FormatOnOff(_playoffEnabled)}:{FormatPlayoffPlanStatus()} raytrace={_rayTraceLosProbe.ProbeStatus} {FormatCosmeticStatusCounts()} {FormatCrosshairStatusCounts()} {FormatViewmodelStatusCounts()} {FormatScoreboardStatusCounts()}");
 
         if (command.ArgCount >= 2)
             ReplyDoctorManifest(command, command.GetArg(1));
@@ -1454,7 +1459,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             if (StopReplayStateForRoundBoundary("round_start"))
                 Server.PrintToConsole("[DTR WARN] round_start stopped stale DTR replay state");
 
-            if ((_sequenceActive || _poolActive || _armed) && IsWarmupPeriod())
+            if ((_sequenceActive || _poolActive || _armed || HasPlayoffSchedulingState()) && IsWarmupPeriod())
             {
                 Server.PrintToConsole("[DTR ERR] 热身阶段无法进行回放");
                 StopAllState("warmup_block");
@@ -1465,6 +1470,11 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             {
                 if (PrepareNextSequenceRound("round_start"))
                     ScheduleFreezePrerollStart($"sequence round {_sequencePreparedRound}");
+            }
+            else if (IsPlayoffPlanReady())
+            {
+                if (PrepareNextPlayoffRound("round_start"))
+                    ScheduleFreezePrerollStart($"playoff extra round {_playoffRoundIndex + 1}");
             }
             else if (_armed)
             {
@@ -1491,7 +1501,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         ReleaseFreezePrerollBrainLocks();
         InvalidateFreezePreroll();
 
-        if ((_sequenceActive || _poolActive || _armed) && IsWarmupPeriod())
+        if ((_sequenceActive || _poolActive || _armed || HasPlayoffSchedulingState()) && IsWarmupPeriod())
         {
             Server.PrintToConsole("[DTR ERR] 热身阶段无法进行回放");
             StopAllState("warmup_block");
@@ -1501,6 +1511,12 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         if (_sequenceActive)
         {
             Server.NextFrame(StartPreparedSequenceRound);
+            return HookResult.Continue;
+        }
+
+        if (HasPlayoffSchedulingState())
+        {
+            Server.NextFrame(StartPreparedPlayoffRound);
             return HookResult.Continue;
         }
 
@@ -2765,10 +2781,23 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     private LoadRoundResult LoadRound(string manifestPath, int round)
+        => LoadRoundSelection(manifestPath, round, round, steamIdMatch: false);
+
+    private LoadRoundResult LoadPlayoffRound(string manifestPath, int tRound, int ctRound)
+        => LoadRoundSelection(manifestPath, tRound, ctRound, steamIdMatch: true);
+
+    private LoadRoundResult LoadRoundSelection(
+        string manifestPath,
+        int tRound,
+        int ctRound,
+        bool steamIdMatch)
     {
         var replayStateReplaced = false;
         var presentationTransitionStarted = false;
         var loadSucceeded = false;
+        var selectionLabel = steamIdMatch
+            ? $"playoff T=r{tRound}/CT=r{ctRound}"
+            : $"round {tRound}";
         try
         {
             var resolvedManifestPath = ResolveReadableManifestPath(manifestPath);
@@ -2783,16 +2812,24 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
             var manifestDir = Path.GetDirectoryName(resolvedManifestPath) ?? ".";
             var avatarOverrides = BuildAvatarOverrideMap(manifest.AvatarOverrides);
-            var roundFiles = manifest.Files
-                .Where(file => file.Round == round)
-                .ToList();
-            if (roundFiles.Count == 0)
-                return LoadRoundResult.Fail($"dtr: manifest has no files for round {round}");
-            var roundMetadata = manifest.Rounds.FirstOrDefault(item => item.Round == round);
+            var allTFiles = tRound < 0
+                ? []
+                : SortReplayFilesForScoreboard(
+                    manifest.Files.Where(file => file.Round == tRound),
+                    "t");
+            var allCtFiles = ctRound < 0
+                ? []
+                : SortReplayFilesForScoreboard(
+                    manifest.Files.Where(file => file.Round == ctRound),
+                    "ct");
+            if (allTFiles.Count == 0 && allCtFiles.Count == 0)
+                return LoadRoundResult.Fail($"dtr: manifest has no files for {selectionLabel}");
+
+            var roundMetadata = !steamIdMatch && tRound == ctRound
+                ? manifest.Rounds.FirstOrDefault(item => item.Round == tRound)
+                : null;
             var roundScoreboard = roundMetadata?.Scoreboard;
 
-            var allTFiles = SortReplayFilesForScoreboard(roundFiles, "t");
-            var allCtFiles = SortReplayFilesForScoreboard(roundFiles, "ct");
             var targets = FindReplayTargets();
             var tBots = targets.Where(bot => bot.Team == CsTeam.Terrorist).ToList();
             var ctBots = targets.Where(bot => bot.Team == CsTeam.CounterTerrorist).ToList();
@@ -2803,8 +2840,20 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                     $"dtr: not enough bots, need T={allTFiles.Count}/CT={allCtFiles.Count}, have T={tBots.Count}/CT={ctBots.Count}");
             }
 
-            var tAssignments = BuildReplayAssignments(allTFiles, tBots);
-            var ctAssignments = BuildReplayAssignments(allCtFiles, ctBots);
+            List<ReplayAssignment> tAssignments;
+            List<ReplayAssignment> ctAssignments;
+            if (steamIdMatch)
+            {
+                if (!TryBuildSteamMatchedReplayAssignments(allTFiles, tBots, out tAssignments, out var tMatchError))
+                    return LoadRoundResult.Fail($"dtr: {selectionLabel} T SteamID match failed: {tMatchError}");
+                if (!TryBuildSteamMatchedReplayAssignments(allCtFiles, ctBots, out ctAssignments, out var ctMatchError))
+                    return LoadRoundResult.Fail($"dtr: {selectionLabel} CT SteamID match failed: {ctMatchError}");
+            }
+            else
+            {
+                tAssignments = BuildReplayAssignments(allTFiles, tBots);
+                ctAssignments = BuildReplayAssignments(allCtFiles, ctBots);
+            }
             if (tAssignments.Count == 0 && ctAssignments.Count == 0)
             {
                 return LoadRoundResult.Fail(
@@ -2820,17 +2869,33 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             replayStateReplaced = true;
             _loadedRoundScoreboard = roundScoreboard;
             var loaded = new List<string>();
-            if (!LoadSide(tAssignments, manifestDir, avatarOverrides, loaded, out var loadError))
-                return FailLoadRoundAfterPartialLoad(round, loadError);
-            if (!LoadSide(ctAssignments, manifestDir, avatarOverrides, loaded, out loadError))
-                return FailLoadRoundAfterPartialLoad(round, loadError);
+            if (!LoadSide(
+                    tAssignments,
+                    manifestDir,
+                    avatarOverrides,
+                    includeScoreboardEvidence: !steamIdMatch,
+                    loaded,
+                    out var loadError))
+                return FailLoadRoundAfterPartialLoad(selectionLabel, loadError);
+            if (!LoadSide(
+                    ctAssignments,
+                    manifestDir,
+                    avatarOverrides,
+                    includeScoreboardEvidence: !steamIdMatch,
+                    loaded,
+                    out loadError))
+                return FailLoadRoundAfterPartialLoad(selectionLabel, loadError);
 
-            var voice = ConfigureLoadedAutoVoiceClip(
-                resolvedManifestPath,
-                round,
-                roundMetadata,
-                manifest.TickRate);
-            var chat = ConfigureLoadedAutoChat(round, roundMetadata, manifest.TickRate);
+            var voice = steamIdMatch
+                ? string.Empty
+                : ConfigureLoadedAutoVoiceClip(
+                    resolvedManifestPath,
+                    tRound,
+                    roundMetadata,
+                    manifest.TickRate);
+            var chat = steamIdMatch
+                ? string.Empty
+                : ConfigureLoadedAutoChat(tRound, roundMetadata, manifest.TickRate);
             var partial = skippedT > 0 || skippedCt > 0
                 ? $" partial replay skipped T={skippedT}/CT={skippedCt}"
                 : string.Empty;
@@ -2843,7 +2908,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             ReleaseUnusedWarmReplayBuffers();
             RetainLoadedBotHiderPresentation();
             loadSucceeded = true;
-            return LoadRoundResult.Success($"dtr: loaded {loaded.Count} replays for round {round}{partial}{voiceStatus}{chatStatus}: {string.Join(", ", loaded)}");
+            return LoadRoundResult.Success($"dtr: loaded {loaded.Count} replays for {selectionLabel}{partial}{voiceStatus}{chatStatus}: {string.Join(", ", loaded)}");
         }
         catch (Exception ex)
         {
@@ -2861,16 +2926,17 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         }
     }
 
-    private LoadRoundResult FailLoadRoundAfterPartialLoad(int round, string error)
+    private LoadRoundResult FailLoadRoundAfterPartialLoad(string selectionLabel, string error)
     {
         StopAndUnloadLoaded();
-        return LoadRoundResult.Fail($"dtr: failed while loading round {round}: {error}");
+        return LoadRoundResult.Fail($"dtr: failed while loading {selectionLabel}: {error}");
     }
 
     private bool LoadSide(
         IReadOnlyList<ReplayAssignment> assignments,
         string manifestDir,
         IReadOnlyDictionary<ulong, ManifestAvatarOverride> avatarOverrides,
+        bool includeScoreboardEvidence,
         List<string> loaded,
         out string error)
     {
@@ -2916,7 +2982,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 file.ScoreboardFlair,
                 file.Cosmetics,
                 file.View,
-                file.Scoreboard,
+                includeScoreboardEvidence ? file.Scoreboard : null,
                 manifestTeam: ReplayTeamFromManifestSide(file.Side),
                 replayMetadata: replayMetadata);
             BotControllerNative.SetBuySkip(slot);
@@ -2935,6 +3001,54 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         for (var i = 0; i < count; i++)
             assignments.Add(new ReplayAssignment(files[i], bots[i]));
         return assignments;
+    }
+
+    private bool TryBuildSteamMatchedReplayAssignments(
+        IReadOnlyList<ManifestFile> files,
+        IReadOnlyList<CCSPlayerController> bots,
+        out List<ReplayAssignment> assignments,
+        out string error)
+    {
+        assignments = new List<ReplayAssignment>(bots.Count);
+        error = string.Empty;
+        var fileGroupsBySteamId = files
+            .Where(file => file.SteamId != 0)
+            .GroupBy(file => file.SteamId)
+            .ToDictionary(group => group.Key, group => group.ToArray());
+        var assignedSteamIds = new HashSet<ulong>();
+
+        foreach (var bot in bots.OrderBy(candidate => candidate.Slot))
+        {
+            ulong steamId = 0;
+            if (_loadedReplays.TryGetValue(bot.Slot, out var loaded))
+                steamId = loaded.SteamId;
+            else if (_retainedBotHiderPresentation.TryGetValue(bot.Slot, out var retained))
+                steamId = retained.SteamId;
+
+            if (steamId == 0)
+            {
+                error = $"slot={bot.Slot} has no retained DTR SteamID evidence";
+                return false;
+            }
+            if (!assignedSteamIds.Add(steamId))
+            {
+                error = $"SteamID {steamId} is assigned to more than one replay target";
+                return false;
+            }
+            if (!fileGroupsBySteamId.TryGetValue(steamId, out var matchingFiles))
+            {
+                error = $"slot={bot.Slot} SteamID={steamId} has no source-side replay";
+                return false;
+            }
+            if (matchingFiles.Length != 1)
+            {
+                error = $"slot={bot.Slot} SteamID={steamId} has {matchingFiles.Length} ambiguous source-side replays";
+                return false;
+            }
+
+            assignments.Add(new ReplayAssignment(matchingFiles[0], bot));
+        }
+        return true;
     }
 
     private static CsTeam? ReplayTeamFromManifestSide(string side)
@@ -4222,6 +4336,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                                  _chatPlayback != null ||
                                  _armed ||
                                  _sequenceActive ||
+                                 HasPlayoffSchedulingState() ||
                                  _poolActive;
 
             StopVoiceTestPlayback(reason, printSummary: false);
@@ -4299,6 +4414,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             _pendingProjectileAlign.Count > 0 ||
             _armed ||
             _sequenceActive ||
+            HasPlayoffSchedulingState() ||
             _poolActive)
         {
             return true;

@@ -64,6 +64,15 @@ public sealed partial class DemoTracerPlugin
         [JsonPropertyName("duration_seconds")]
         public float DurationSeconds { get; set; }
 
+        [JsonPropertyName("pistol_round")]
+        public bool PistolRound { get; set; }
+
+        [JsonPropertyName("t_economy")]
+        public PoolTeamEconomy? TEconomy { get; set; }
+
+        [JsonPropertyName("ct_economy")]
+        public PoolTeamEconomy? CtEconomy { get; set; }
+
         [JsonPropertyName("scoreboard")]
         public ReplayRoundScoreboard? Scoreboard { get; set; }
 
@@ -497,6 +506,7 @@ public sealed partial class DemoTracerPlugin
     private static void ValidateConversionManifest(string manifestPath, ConversionManifest manifest)
     {
         manifest.Files ??= new List<ManifestFile>();
+        manifest.Rounds ??= new List<ManifestRound>();
         manifest.AvatarOverrides ??= new List<ManifestAvatarOverride>();
         ValidateManifestAbi(manifest.Abi);
         if (string.IsNullOrWhiteSpace(manifest.Map))

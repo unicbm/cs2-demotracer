@@ -37,6 +37,7 @@ DemoTracer 会从 `DemoTracer.dll` 同目录读取可选的 `demotracer.config.j
 {
   "identity": "steam",
   "allow_partial": true,
+  "playoff": false,
   "chat_auto": true,
   "handoff": {
     "mode": "death_contact_c4",
@@ -74,6 +75,7 @@ DemoTracer 会从 `DemoTracer.dll` 同目录读取可选的 `demotracer.config.j
 | `dtr_cosmetics off` | off | 高风险饰品证据 replay，包括皮肤、刀、手套、名字、探员、贴纸和挂件。 |
 | `dtr_handoff` | `death_contact_c4 slot` | 接触或死亡后释放触发的 replay slot；C4 安装后释放全部 active replay slot。 |
 | `dtr_partial` | `1` | bot 数量不足时允许部分 replay。 |
+| `dtr_playoff` | `off` | manifest sequence 耗尽后，继续从该 manifest 调度按 SteamID 匹配的长枪局开局。 |
 | `dtr_chat_auto` | `on` | 按 manifest 元数据和同一回合时间线 replay demo 文字聊天。 |
 | `dtr_replay_identity` | `steam` | 通过 bundle 内置 BotHider 的 presentation lease 向受管 replay bot slot 发布 demo 名字和 SteamID64。队伍/赛事 PNG 头像需要显式 `avatar`；`full` 是 `avatar` 的兼容别名。 |
 | `dtr_util_trace` | `0` | 默认不写 utility CSV trace。 |
@@ -117,13 +119,34 @@ round hint，用于经济/手枪局匹配，不是 manifest source round。
 - `round_freeze_end` 时启动所有已加载 replay。
 - 每启动一个 source round 后，自动推进到 manifest 里的下一个 source round。
 
+### `dtr_playoff <true|false>`
+
+这是 manifest 证据先耗尽、但本地比赛仍未结束时使用的显式续播开关。可以在
+`dtr_arm seq` / `dtr_go seq` 之前或 sequence 播放期间开启。最后一个正常 source
+round 启动后，后续每个服务器回合都会独立抽取：
+
+- 一个 manifest 中 `t_economy.class` 为 `full` 的历史 T source round；
+- 一个 manifest 中 `ct_economy.class` 为 `full` 的历史 CT source round。
+
+T 和 CT 默认解耦，可以来自两个不同的 source round。分配仍严格按人：当前 replay
+bot 保留上一回合的 demo SteamID，只能拿到所选 side/round 中同一 SteamID 的 `.dtr`。
+不会跨玩家随机，也不会退化成跨 manifest 的 pool 随机。如果任一侧缺少保留的 SteamID
+证据，或没有一个长枪局候选能覆盖该侧所有 replay bot，整个 playoff round 会安全跳过。
+
+因为一个 playoff round 可以由两个来源拼成，所以不会 replay 任何单一来源回合的
+scoreboard、聊天或语音 metadata。关闭 playoff 会取消未来或尚未进入 live 的 playoff
+调度，但不会中止已经进入 live round 的 replay。默认关闭。
+如果希望服务器默认开启，在 `demotracer.config.json` 顶层设置 `"playoff": true`；命令
+修改的是当前生效值，下次 reload config 或重新加载插件时会重新采用 JSON 默认值。
+
 给旧脚本保留的兼容 alias，不作为推荐 quick start：
 `dtr_run_manifest <manifest.json> [from_source_round]`。
 
 ### `dtr_stop_sequence`
 
-停止已经 armed 或正在推进的 manifest sequence。它不会删除文件，也不会修改插件开关。
-它只停止后续 sequence 调度；如果要同时停止已经开始播放的 slot，用 `dtr_stop_all`。
+停止已经 armed 或正在推进的 manifest sequence，也会停止它未来的 playoff 续播。
+它不会删除文件，也不会修改 `dtr_playoff` 开关；如果要同时停止已经进入 live 的 slot，
+用 `dtr_stop_all`。
 
 ### `dtr_arm pool <pool_manifest.json> [server_round]`
 

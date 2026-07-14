@@ -43,6 +43,7 @@ only; it is not written into `.dtr` files or manifests.
 {
   "identity": "steam",
   "allow_partial": true,
+  "playoff": false,
   "chat_auto": true,
   "handoff": {
     "mode": "death_contact_c4",
@@ -81,6 +82,7 @@ matching legacy fields.
 | `dtr_cosmetics off` | off | High-risk cosmetic evidence replay for skins, knives, gloves, names, agents, stickers, and charms. |
 | `dtr_handoff` | `death_contact_c4 slot` | Release the contacted/dead replay slot after contact or death; C4 planted releases all active replay slots. |
 | `dtr_partial` | `1` | Allow replay with fewer bots than manifest players. |
+| `dtr_playoff` | `off` | After a manifest sequence is exhausted, keep scheduling SteamID-matched full-buy openings from that manifest. |
 | `dtr_chat_auto` | `on` | Replay demo chat messages from manifest metadata on the same round timeline. |
 | `dtr_replay_identity` | `steam` | Lease demo name and SteamID64 through bundled BotHider-managed replay bot slots. Team/event avatar PNGs require explicit `avatar`; `full` is a compatibility alias for `avatar`. |
 | `dtr_util_trace` | `0` | Utility CSV trace disabled. |
@@ -126,14 +128,38 @@ Implementation:
 - On `round_freeze_end`, starts all loaded replays.
 - After each started round, advances to the next round in the manifest.
 
+### `dtr_playoff <true|false>`
+
+Opt-in continuation for a manifest sequence that ends before the local match.
+Enable it before or during `dtr_arm seq` / `dtr_go seq` playback. After the last
+source round has started, each later server round independently samples:
+
+- one prior T source round whose manifest `t_economy.class` is `full`;
+- one prior CT source round whose manifest `ct_economy.class` is `full`.
+
+T and CT are intentionally decoupled and may come from different source rounds.
+Assignments remain strict per-person matches: each current replay bot keeps its
+retained demo SteamID and only receives that SteamID's `.dtr` from the selected
+side/round. There is no cross-player or cross-manifest pool fallback. The
+playoff round is skipped if either current replay roster lacks retained SteamID
+evidence or no full-buy source round covers every replay bot on that side.
+
+Mixed playoff rounds do not replay scoreboard, chat, or voice metadata because
+those surfaces cannot truthfully come from two source rounds.
+Disabling playoff cancels future/prepared playoff scheduling but does not stop a
+replay that has already entered the live round. The setting is off by default.
+Set top-level `"playoff": true` in `demotracer.config.json` to make it the
+server-local default; the command changes the effective value until the next
+config reload or plugin load.
+
 Compatibility alias for old scripts, not the preferred quick start:
 `dtr_run_manifest <manifest.json> [from_source_round]`.
 
 ### `dtr_stop_sequence`
 
-Stops an armed or running manifest sequence. It does not delete files and does
-not change plugin settings. It only stops future sequence scheduling; use
-`dtr_stop_all` if you also need to stop already playing slots.
+Stops an armed or running manifest sequence, including its future playoff
+continuation. It does not delete files or change the `dtr_playoff` toggle. Use
+`dtr_stop_all` if you also need to stop slots that are already live.
 
 ### `dtr_arm pool <pool_manifest.json> [server_round]`
 
