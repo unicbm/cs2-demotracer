@@ -9,7 +9,6 @@ publish = false
 default = ["cli", "demoparser"]
 cli = ["dep:clap", "dep:dialoguer"]
 demoparser = ["dep:ahash", "dep:parser"]
-gui = ["demoparser", "dep:eframe", "dep:egui_extras", "dep:rfd"]
 
 [lib]
 name = "cs2_demotracer"
@@ -20,19 +19,11 @@ name = "cs2-demotracer"
 path = "src/main.rs"
 required-features = ["cli"]
 
-[[bin]]
-name = "cs2-demotracer-gui"
-path = "src/gui_main.rs"
-required-features = ["gui"]
-
 [dependencies]
 ahash = { version = "0.8", optional = true, default-features = false, features = ["std", "no-rng"] }
 brotli = "8.0.3"
 clap = { version = "4.5", features = ["derive"], optional = true }
 dialoguer = { version = "0.11", optional = true }
-eframe = { version = "0.31", optional = true, default-features = false, features = ["default_fonts", "glow"] }
-egui_extras = { version = "0.31", optional = true, default-features = false }
-rfd = { version = "0.15", optional = true }
 rayon = "1.12"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

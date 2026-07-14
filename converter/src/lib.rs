@@ -3,8 +3,6 @@ pub mod browser_analysis;
 pub mod demo_id;
 pub mod demo_reader;
 pub mod export;
-#[cfg(feature = "gui")]
-pub mod gui;
 pub mod model;
 pub mod pool;
 pub mod quality;
