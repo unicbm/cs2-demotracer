@@ -4,7 +4,7 @@
 和 CounterStrikeSharp 插件 `DemoTracer` 已经加载。只有在需要把多条指令粘成一行
 时，才需要在每条后面加分号。
 
-服务器前置依赖是 Metamod:Source 和 CounterStrikeSharp。DemoTracer server bundle
+服务器前置依赖是 Metamod:Source 和 CounterStrikeSharp。DemoTracer playback bundle
 自带 `BotController`、DemoTracer 自维护的 `BotHider`、`DemoTracer`、
 `DemoTracerBotHider`、对应 API assembly、`demotracer-econ-index.v1.json` 和示例配置。
 不要同时运行另一个公开 BotHider CSS 插件。

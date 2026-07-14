@@ -6,7 +6,7 @@ loaded. Add semicolons only when you want to paste several commands as one
 console line.
 
 Server prerequisites are Metamod:Source and CounterStrikeSharp. The DemoTracer
-server bundle supplies `BotController`, the DemoTracer-maintained `BotHider`,
+playback bundle supplies `BotController`, the DemoTracer-maintained `BotHider`,
 `DemoTracer`, `DemoTracerBotHider`, their API assemblies,
 `demotracer-econ-index.v1.json`, and the example config. Do not run another
 public BotHider CSS plugin beside the bundled presentation provider.

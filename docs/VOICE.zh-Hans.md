@@ -116,7 +116,7 @@ cs2-demotracer.exe export-voice-clip --demo "<demo.dem>" --output "<clip.dtv>" -
 
 `voice_auto=unavailable`：
 
-- 更新完整 server bundle。
+- 更新完整 playback bundle。
 - 检查 `dtr_runtime`；BotController 必须暴露 voice send capability。
 
 `voice_auto=map_failed`：

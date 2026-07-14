@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.5.2",
+    [string]$Version = "0.6.0",
     [string]$Configuration = "Release",
     [string]$OutputRoot = "dist",
     [string]$DotnetPath = "",
@@ -7,6 +7,7 @@ param(
     [switch]$ReuseLatestRuntimePackage,
     [switch]$SkipConverterBuild,
     [switch]$BuildRuntime,
+    [switch]$BuildBotHiderRuntime,
     [switch]$SkipCssBuild,
     [switch]$IncludeSymbols
 )
@@ -15,7 +16,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $outputRootPath = Join-Path $repoRoot $OutputRoot
-$serverPackageName = "cs2-demotracer-server-v$Version-windows-x64"
+$playbackPackageName = "cs2-demotracer-playback-v$Version-windows-x64"
 
 function Test-RuntimePackageRoot([string]$Path) {
     return (Test-Path -LiteralPath (Join-Path $Path "addons\BotController\bin\win64\BotController.dll")) `
@@ -38,8 +39,11 @@ function Resolve-RuntimePackageArgument() {
         return $RuntimePackage
     }
 
-    $candidate = Get-ChildItem -LiteralPath $outputRootPath -Directory -Filter "cs2-demotracer-server-v*-windows-x64" -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -ne $serverPackageName -and (Test-RuntimePackageRoot $_.FullName) } |
+    $candidate = @(
+        Get-ChildItem -LiteralPath $outputRootPath -Directory -Filter "cs2-demotracer-playback-v*-windows-x64" -ErrorAction SilentlyContinue
+        Get-ChildItem -LiteralPath $outputRootPath -Directory -Filter "cs2-demotracer-server-v*-windows-x64" -ErrorAction SilentlyContinue
+    ) |
+        Where-Object { $_.Name -ne $playbackPackageName -and (Test-RuntimePackageRoot $_.FullName) } |
         Sort-Object LastWriteTime -Descending |
         Select-Object -First 1
 
@@ -48,7 +52,7 @@ function Resolve-RuntimePackageArgument() {
         return $candidate.FullName
     }
 
-    throw "BotController runtime package not found. Pass -RuntimePackage, run with -BuildRuntime after configuring native tools, or keep a previous server package under $outputRootPath."
+    throw "BotController runtime package not found. Pass -RuntimePackage, run with -BuildRuntime after configuring native tools, or keep a previous playback bundle under $outputRootPath."
 }
 
 $converterArgs = @{
@@ -60,7 +64,7 @@ if ($SkipConverterBuild) {
 }
 & (Join-Path $PSScriptRoot "package-converter.ps1") @converterArgs
 
-$serverArgs = @{
+$playbackArgs = @{
     Version = $Version
     Configuration = $Configuration
     OutputRoot = $OutputRoot
@@ -68,19 +72,23 @@ $serverArgs = @{
     RuntimePackage = (Resolve-RuntimePackageArgument)
 }
 if ($BuildRuntime) {
-    $serverArgs.BuildRuntime = $true
+    $playbackArgs.BuildRuntime = $true
+}
+if ($BuildBotHiderRuntime) {
+    $playbackArgs.BuildBotHiderRuntime = $true
 }
 if ($SkipCssBuild) {
-    $serverArgs.SkipCssBuild = $true
+    $playbackArgs.SkipCssBuild = $true
 }
 if ($IncludeSymbols) {
-    $serverArgs.IncludeSymbols = $true
+    $playbackArgs.IncludeSymbols = $true
 }
-& (Join-Path $PSScriptRoot "package-server.ps1") @serverArgs
+& (Join-Path $PSScriptRoot "package-server.ps1") @playbackArgs
 
 $assetNames = @(
-    "cs2-demotracer-v$Version-windows-x64.zip",
-    "cs2-demotracer-server-v$Version-windows-x64.zip"
+    "cs2-demotracer-cli-v$Version-windows-x64.zip",
+    "cs2-demotracer-gui-v$Version-windows-x64.zip",
+    "cs2-demotracer-playback-v$Version-windows-x64.zip"
 )
 
 $lines = foreach ($assetName in $assetNames) {

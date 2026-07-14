@@ -2,7 +2,7 @@
 
 > [!CAUTION]
 > **2026 年 7 月 CS2 更新（1.41.6.9）：**服务器播放需要 CounterStrikeSharp
-> v1.0.371 或更新版本；Ray-Trace 需要 v1.0.16 或更新版本。server bundle
+> v1.0.371 或更新版本；Ray-Trace 需要 v1.0.16 或更新版本。playback bundle（播放包）
 > 已自带包含所需 Windows identity offset 的 DemoTracer BotHider runtime。
 > DemoTracer 的 Windows 核心 replay 链路已在本地验证；
 > 使用新版 delta user-command 编码的 demo 需要 converter v0.5.0 或更新版本，
@@ -16,7 +16,7 @@ CS2 服务器里让 bot 执行这些路线。
 - [使用说明](USAGE.zh-Hans.md)：converter CLI、GUI、pool 和服务器播放流程。
 - [语音导出和回放](VOICE.zh-Hans.md)：`--export-voice`、`.dtv` sidecar、自动播放和排错。
 - [命令参考](COMMANDS.zh-Hans.md)：`dtr_` 指令、状态检查和诊断输出。
-- [依赖说明](DEPENDENCIES.md)：必需依赖、server bundle 自带 BotHider、RayTrace
+- [依赖说明](DEPENDENCIES.md)：必需依赖、playback bundle 自带 BotHider、RayTrace
   可选集成边界。
 - [限制和边界](LIMITATIONS.zh-Hans.md)：已知问题、handoff、头像、BotHider、饰品等边界。
 
@@ -26,6 +26,19 @@ CS2 服务器里让 bot 执行这些路线。
 - [Voice Export and Replay](VOICE.md)
 - [Commands](COMMANDS.md)
 - [Format Contract](FORMAT.md)
+
+## 下载选择
+
+在 [GitHub 最新版本](https://github.com/unicbm/cs2-demotracer/releases/latest) 中按需下载：
+
+- `cs2-demotracer-cli-v<version>-windows-x64.zip`：体积最小，适合命令行、wizard、
+  批量转换和 pool 工作流。
+- `cs2-demotracer-gui-v<version>-windows-x64.zip`：单 demo 的原生桌面图形转换器。
+- `cs2-demotracer-playback-v<version>-windows-x64.zip`：安装在本地 Windows x64
+  CS2 服务器里的 CounterStrikeSharp/Metamod 回放 plugin 和 runtime。
+
+playback bundle 不是云服务器或托管服务。只做 demo 转换时下载 CLI 或 GUI 即可；
+只有需要在本地 CS2 服务器里回放路线时才需要安装播放包。
 
 ## 最短流程
 
@@ -63,14 +76,14 @@ dtr_go round "<manifest.json>" 0
 
 ## 环境要求
 
-- **转换：**Windows x64 converter 包，不需要游戏服务器 plugin。
+- **转换：**按需下载 Windows x64 CLI 或 GUI 包，不需要游戏服务器 plugin。
 - **播放：**安装了 [Metamod:Source](https://www.sourcemm.net/)、
   [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp) 和
-  DemoTracer server bundle 的本地 Windows x64 CS2 服务器。
+  DemoTracer playback bundle 的本地 Windows x64 CS2 服务器。
 - **可选：**[Ray-Trace](https://github.com/FUNPLAY-pro-CS2/Ray-Trace) 或兼容
   provider，用于更严格的 handoff LOS 判断。
 
-server bundle 提供 DemoTracer 自身的 runtime 和 plugin，但不包含 Metamod:Source、
+playback bundle 提供 DemoTracer 自身的 runtime 和 plugin，但不包含 Metamod:Source、
 CounterStrikeSharp 或 RayTrace provider。完整版本、bundle 内容和兼容性边界见
 [依赖说明](DEPENDENCIES.md)。
 

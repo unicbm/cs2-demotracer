@@ -147,12 +147,12 @@ Make sure your local CS2 server has loaded:
 - the DemoTracer Metamod runtime plugin: `BotController`
 - the DemoTracer CounterStrikeSharp plugin: `DemoTracer`
 
-The server bundle includes `BotController`, the DemoTracer-maintained
+The playback bundle includes `BotController`, the DemoTracer-maintained
 `BotHider`, `DemoTracer`, `DemoTracerBotHider`, their API assemblies,
 `demotracer-econ-index.v1.json`, and the sanitized example config. It does not
 include Metamod:Source or CounterStrikeSharp. All bundled CounterStrikeSharp
 plugins target .NET 10. Remove separately installed public BotHider CSS plugins
-before installing the bundle.
+before installing the playback bundle.
 
 Then use the server commands in [`COMMANDS.md`](COMMANDS.md).
 

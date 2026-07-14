@@ -5,11 +5,12 @@ runtime integrations.
 
 ## Converter
 
-Normal conversion uses the packaged Windows x64 converter zip:
+Normal conversion uses one of the separate packaged Windows x64 downloads:
 
-- `cs2-demotracer.exe`: CLI for inspect, convert, validate, pool conversion,
-  and wizard workflows.
-- `cs2-demotracer-gui.exe`: native single-demo GUI workbench.
+- `cs2-demotracer-cli-v<version>-windows-x64.zip`: `cs2-demotracer.exe` for
+  inspect, convert, validate, pool conversion, and wizard workflows.
+- `cs2-demotracer-gui-v<version>-windows-x64.zip`:
+  `cs2-demotracer-gui.exe`, the native single-demo GUI workbench.
 
 Python, Node.js, Conda, virtualenvs, and CS2 server plugins are not required for
 normal conversion. Rust is only required when building from source.
@@ -21,9 +22,9 @@ Playback needs a local Windows x64 CS2 server with:
 - [Metamod:Source](https://www.sourcemm.net/)
 - [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp) v1.0.371
   or newer for the July 2026 CS2 1.41.6.9 update
-- The DemoTracer server bundle
+- The DemoTracer playback bundle
 
-The server bundle includes:
+The playback bundle includes:
 
 - `BotController`: the DemoTracer Metamod runtime
 - `BotHider`: the DemoTracer-maintained fake-client/identity Metamod runtime
@@ -35,7 +36,7 @@ The server bundle includes:
 - `demotracer.config.example.json`
 
 All bundled CounterStrikeSharp projects target .NET 10 and compile against
-CounterStrikeSharp.API 1.0.371. The server bundle does not include
+CounterStrikeSharp.API 1.0.371. The playback bundle does not include
 Metamod:Source, CounterStrikeSharp itself, or a RayTrace provider.
 
 ## Bundled BotHider Boundary
@@ -95,7 +96,7 @@ that runtime through a C ABI / P/Invoke layer.
 
 Upstream `XBribo/CS2-Bot-Controller` also has a newer C# shared capability path
 whose projects may target newer .NET versions. That upstream API is not bundled
-or required by the current DemoTracer server bundle. Migrating to it should be a
+or required by the current DemoTracer playback bundle. Migrating to it should be a
 deliberate compatibility change, not an incidental package update.
 
 Current release compatibility:

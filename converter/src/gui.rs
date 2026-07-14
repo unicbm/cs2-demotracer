@@ -2969,6 +2969,7 @@ mod tests {
             inventory_snapshot_count: 0,
             loadout: crate::model::ReplayLoadout::default(),
             music_kit_id: None,
+            scoreboard_flair: None,
             cosmetics: None,
             view: None,
             scoreboard: None,

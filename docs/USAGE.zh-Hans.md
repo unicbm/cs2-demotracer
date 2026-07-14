@@ -132,10 +132,10 @@ write_rec_file("copy.dtr", &rec)?;
 - DemoTracer Metamod runtime：`BotController`
 - DemoTracer CounterStrikeSharp 插件：`DemoTracer`
 
-server bundle 包含 `BotController`、DemoTracer 自维护的 `BotHider`、
+playback bundle 包含 `BotController`、DemoTracer 自维护的 `BotHider`、
 `DemoTracer`、`DemoTracerBotHider`、对应 API assembly、
 `demotracer-econ-index.v1.json` 和干净的示例配置；不包含 Metamod:Source 或
-CounterStrikeSharp。全部 CounterStrikeSharp 插件统一以 .NET 10 为目标。安装 bundle 前
+CounterStrikeSharp。全部 CounterStrikeSharp 插件统一以 .NET 10 为目标。安装播放包前
 必须移除另外安装的公开 BotHider CSS 插件。
 
 然后使用 [`COMMANDS.zh-Hans.md`](COMMANDS.zh-Hans.md) 里的服务器指令。

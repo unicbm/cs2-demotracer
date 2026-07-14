@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.5.2",
+    [string]$Version = "0.6.0",
     [string]$Configuration = "Release",
     [string]$OutputRoot = "dist",
     [string]$RuntimePackage = "runtime\BotController\build\package",
@@ -17,7 +17,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $outputRootPath = Join-Path $repoRoot $OutputRoot
-$packageName = "cs2-demotracer-server-v$Version-windows-x64"
+$packageName = "cs2-demotracer-playback-v$Version-windows-x64"
 $stageRoot = Join-Path $outputRootPath $packageName
 $zipPath = Join-Path $outputRootPath "$packageName.zip"
 $runtimeRoot = if ([System.IO.Path]::IsPathRooted($RuntimePackage)) {
@@ -117,8 +117,8 @@ if ($BuildBotHiderRuntime) {
 
 if (-not $SkipCssBuild) {
     $resolvedDotnetPath = Resolve-DotnetPath $DotnetPath
-    Invoke-Checked $resolvedDotnetPath @("build", (Join-Path $repoRoot "css\DemoTracer\DemoTracer.csproj"), "-c", $Configuration)
-    Invoke-Checked $resolvedDotnetPath @("build", (Join-Path $repoRoot "runtime\BotHider\csharp\BotHiderImpl\BotHiderImpl.csproj"), "-c", $Configuration)
+    Invoke-Checked $resolvedDotnetPath @("build", (Join-Path $repoRoot "css\DemoTracer\DemoTracer.csproj"), "-c", $Configuration, "-m:1")
+    Invoke-Checked $resolvedDotnetPath @("build", (Join-Path $repoRoot "runtime\BotHider\csharp\BotHiderImpl\BotHiderImpl.csproj"), "-c", $Configuration, "-m:1")
 }
 
 $runtimeDll = Join-Path $runtimeRoot "addons\BotController\bin\win64\BotController.dll"
@@ -187,7 +187,7 @@ try {
 }
 
 $versionText = @"
-CS2 DemoTracer Server Bundle
+CS2 DemoTracer Playback Bundle
 version: v$Version
 git_commit: $gitCommit
 platform: windows-x64
@@ -205,10 +205,11 @@ Copy this package's addons directory into your CS2 server game/csgo directory.
 Set-Content -LiteralPath (Join-Path $stageRoot "VERSION.txt") -Value $versionText -Encoding UTF8
 
 $readme = @'
-# CS2 DemoTracer Server Bundle v__VERSION__
+# CS2 DemoTracer Playback Bundle v__VERSION__
 
-This is the complete Windows x64 server playback package. It includes the
-Metamod BotController and BotHider runtimes plus their CounterStrikeSharp
+This is the complete Windows x64 local playback package. Install it into the CS2
+server used for replay; it is not a hosted or cloud service. The bundle includes
+the Metamod BotController and BotHider runtimes plus their CounterStrikeSharp
 plugins as one matching runtime set.
 
 ## Install
@@ -238,7 +239,7 @@ expected_abi=16 runtime_abi=16 abi_minor=31
 ```
 
 For v__VERSION__, require `runtime_abi=16` and `abi_minor=31` or newer. If the minor
-version is missing or lower, replace the complete server bundle, including
+version is missing or lower, replace the complete playback bundle, including
 `addons/BotController/bin/win64/BotController.dll`,
 `addons/BotController/gamedata.json`, and `addons/metamod/BotController.vdf`.
 
@@ -323,7 +324,7 @@ if (-not $IncludeSymbols) {
     $pdbFiles = @(Get-ChildItem -LiteralPath $stageRoot -Recurse -Filter "*.pdb" -File -ErrorAction SilentlyContinue)
     if ($pdbFiles.Count -gt 0) {
         $pdbList = ($pdbFiles | ForEach-Object { $_.FullName }) -join "`n"
-        throw "default server bundle must not contain PDB files:`n$pdbList"
+        throw "default playback bundle must not contain PDB files:`n$pdbList"
     }
 }
 

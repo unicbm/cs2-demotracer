@@ -20,7 +20,7 @@ jobs:
       - name: Install .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
 
       - name: Check converter formatting
         working-directory: converter
@@ -30,9 +30,17 @@ jobs:
         working-directory: converter
         run: cargo check --workspace --locked
 
+      - name: Check converter CLI binary
+        working-directory: converter
+        run: cargo check --locked --no-default-features --features cli,demoparser --bin cs2-demotracer
+
       - name: Check converter GUI binary
         working-directory: converter
-        run: cargo check --locked --features gui --bin cs2-demotracer-gui
+        run: cargo check --locked --no-default-features --features gui --bin cs2-demotracer-gui
+
+      - name: Test converter GUI feature
+        working-directory: converter
+        run: cargo test --locked --no-default-features --features gui
 
       - name: Test converter
         working-directory: converter

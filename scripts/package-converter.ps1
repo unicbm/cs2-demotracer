@@ -1,6 +1,8 @@
 param(
-    [string]$Version = "0.5.2",
+    [string]$Version = "0.6.0",
     [string]$OutputRoot = "dist",
+    [ValidateSet("All", "Cli", "Gui")]
+    [string]$Package = "All",
     [switch]$SkipBuild
 )
 
@@ -8,9 +10,6 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $outputRootPath = Join-Path $repoRoot $OutputRoot
-$packageName = "cs2-demotracer-v$Version-windows-x64"
-$stageRoot = Join-Path $outputRootPath $packageName
-$zipPath = Join-Path $outputRootPath "$packageName.zip"
 $converterRoot = Join-Path $repoRoot "converter"
 $releaseRoot = Join-Path $converterRoot "target\release"
 
@@ -34,72 +33,60 @@ function Invoke-Checked([string]$Command, [string[]]$Arguments) {
     }
 }
 
-if (-not $SkipBuild) {
-    Invoke-Checked "cargo" @("build", "--manifest-path", (Join-Path $converterRoot "Cargo.toml"), "--release", "--locked", "--bin", "cs2-demotracer")
-    Invoke-Checked "cargo" @("build", "--manifest-path", (Join-Path $converterRoot "Cargo.toml"), "--release", "--locked", "--features", "gui", "--bin", "cs2-demotracer-gui")
+function Copy-ConverterDocs([string]$StageRoot) {
+    Copy-RequiredFile (Join-Path $repoRoot "README.md") (Join-Path $StageRoot "README.md")
+    Copy-RequiredFile (Join-Path $repoRoot "docs\README.zh-Hans.md") (Join-Path $StageRoot "docs\README.zh-Hans.md")
+    Copy-RequiredFile (Join-Path $repoRoot "docs\USAGE.md") (Join-Path $StageRoot "docs\USAGE.md")
+    Copy-RequiredFile (Join-Path $repoRoot "docs\USAGE.zh-Hans.md") (Join-Path $StageRoot "docs\USAGE.zh-Hans.md")
+    Copy-RequiredFile (Join-Path $repoRoot "docs\VOICE.md") (Join-Path $StageRoot "docs\VOICE.md")
+    Copy-RequiredFile (Join-Path $repoRoot "docs\VOICE.zh-Hans.md") (Join-Path $StageRoot "docs\VOICE.zh-Hans.md")
+    Copy-RequiredFile (Join-Path $repoRoot "LICENSE") (Join-Path $StageRoot "LICENSE")
 }
 
-$cliExe = Join-Path $releaseRoot "cs2-demotracer.exe"
-$guiExe = Join-Path $releaseRoot "cs2-demotracer-gui.exe"
-Require-Path $cliExe "converter CLI executable"
-Require-Path $guiExe "converter GUI executable"
+function New-ConverterPackage([ValidateSet("cli", "gui")][string]$Kind) {
+    $packageName = "cs2-demotracer-$Kind-v$Version-windows-x64"
+    $stageRoot = Join-Path $outputRootPath $packageName
+    $zipPath = Join-Path $outputRootPath "$packageName.zip"
+    $executableName = if ($Kind -eq "cli") { "cs2-demotracer.exe" } else { "cs2-demotracer-gui.exe" }
+    $displayName = if ($Kind -eq "cli") { "CLI" } else { "GUI" }
+    $executablePath = Join-Path $releaseRoot $executableName
+    Require-Path $executablePath "converter $displayName executable"
 
-if (Test-Path -LiteralPath $stageRoot) {
-    Remove-Item -LiteralPath $stageRoot -Recurse -Force
-}
-New-Item -ItemType Directory -Force -Path $stageRoot | Out-Null
+    if (Test-Path -LiteralPath $stageRoot) {
+        Remove-Item -LiteralPath $stageRoot -Recurse -Force
+    }
+    New-Item -ItemType Directory -Force -Path $stageRoot | Out-Null
 
-Copy-RequiredFile $cliExe (Join-Path $stageRoot "cs2-demotracer.exe")
-Copy-RequiredFile $guiExe (Join-Path $stageRoot "cs2-demotracer-gui.exe")
-Copy-RequiredFile (Join-Path $repoRoot "README.md") (Join-Path $stageRoot "README.md")
-Copy-RequiredFile (Join-Path $repoRoot "docs\README.zh-Hans.md") (Join-Path $stageRoot "docs\README.zh-Hans.md")
-Copy-RequiredFile (Join-Path $repoRoot "docs\USAGE.md") (Join-Path $stageRoot "docs\USAGE.md")
-Copy-RequiredFile (Join-Path $repoRoot "docs\USAGE.zh-Hans.md") (Join-Path $stageRoot "docs\USAGE.zh-Hans.md")
-Copy-RequiredFile (Join-Path $repoRoot "docs\VOICE.md") (Join-Path $stageRoot "docs\VOICE.md")
-Copy-RequiredFile (Join-Path $repoRoot "docs\VOICE.zh-Hans.md") (Join-Path $stageRoot "docs\VOICE.zh-Hans.md")
-Copy-RequiredFile (Join-Path $repoRoot "LICENSE") (Join-Path $stageRoot "LICENSE")
+    Copy-RequiredFile $executablePath (Join-Path $stageRoot $executableName)
+    Copy-ConverterDocs $stageRoot
 
-$gitCommit = "unknown"
-try {
-    $gitCommit = (git -C $repoRoot rev-parse --short=12 HEAD).Trim()
-} catch {
-}
+    $gitCommit = "unknown"
+    try {
+        $gitCommit = (git -C $repoRoot rev-parse --short=12 HEAD).Trim()
+    } catch {
+    }
 
-$versionText = @"
-CS2 DemoTracer Converter
+    $versionText = @"
+CS2 DemoTracer Converter $displayName
 version: v$Version
 git_commit: $gitCommit
 platform: windows-x64
-cli: cs2-demotracer.exe
-gui: cs2-demotracer-gui.exe
+package: $Kind
+entrypoint: $executableName
 dtr_writer: 7
 manifest_abi: 17
-
-Use cs2-demotracer.exe for CLI, batch, pool, and wizard workflows.
-Use cs2-demotracer-gui.exe for the single-demo Windows GUI workbench.
 "@
-Set-Content -LiteralPath (Join-Path $stageRoot "VERSION.txt") -Value $versionText -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $stageRoot "VERSION.txt") -Value $versionText -Encoding UTF8
 
-$readme = @'
-# CS2 DemoTracer Converter v__VERSION__
+    if ($Kind -eq "cli") {
+        $packageReadme = @'
+# CS2 DemoTracer CLI v__VERSION__
 
-This Windows x64 package contains both converter entry points:
-
-- `cs2-demotracer.exe`: CLI for inspect, convert, validate, wizard, and pool workflows.
-- `cs2-demotracer-gui.exe`: native Rust GUI for single-demo conversion.
-
-The GUI does not replace the CLI. Batch pool conversion remains a CLI workflow
-in this release.
+This Windows x64 download contains the command-line converter only. It is the
+smaller package for inspect, convert, validate, wizard, batch, and pool workflows.
+Download the separate GUI package if you prefer a desktop single-demo workbench.
 
 ## Quick Start
-
-Open the GUI:
-
-```powershell
-.\cs2-demotracer-gui.exe
-```
-
-Or run the CLI:
 
 ```powershell
 .\cs2-demotracer.exe inspect --demo "<demo.dem>"
@@ -107,22 +94,70 @@ Or run the CLI:
 .\cs2-demotracer.exe validate --input "<output-dir>"
 ```
 
-To export demo-backed in-game voice sidecars for automatic server playback, add
+To export demo-backed in-game voice sidecars for automatic playback, add
 `--export-voice`. See `docs/VOICE.md` and `docs/VOICE.zh-Hans.md`.
 
-Generated replay output is consumed by the CS2 DemoTracer server bundle.
+Generated replay output is consumed by the separate CS2 DemoTracer Playback
+Bundle installed on a local Windows x64 CS2 server.
 '@
-$readme = $readme.Replace("__VERSION__", $Version)
-Set-Content -LiteralPath (Join-Path $stageRoot "PACKAGE.md") -Value $readme -Encoding UTF8
+    } else {
+        $packageReadme = @'
+# CS2 DemoTracer GUI v__VERSION__
 
-if (Test-Path -LiteralPath $zipPath) {
-    Remove-Item -LiteralPath $zipPath -Force
+This Windows x64 download contains the native single-demo GUI workbench only.
+Download the separate CLI package for inspect, validate, wizard, batch, and pool
+workflows.
+
+## Quick Start
+
+```powershell
+.\cs2-demotracer-gui.exe
+```
+
+In the GUI, analyze a demo, choose rounds and export options, then convert it to
+`.dtr` replay output. See `docs/USAGE.md` and `docs/USAGE.zh-Hans.md`.
+
+Generated replay output is consumed by the separate CS2 DemoTracer Playback
+Bundle installed on a local Windows x64 CS2 server.
+'@
+    }
+    $packageReadme = $packageReadme.Replace("__VERSION__", $Version)
+    Set-Content -LiteralPath (Join-Path $stageRoot "PACKAGE.md") -Value $packageReadme -Encoding UTF8
+
+    if (Test-Path -LiteralPath $zipPath) {
+        Remove-Item -LiteralPath $zipPath -Force
+    }
+    Compress-Archive -LiteralPath $stageRoot -DestinationPath $zipPath -Force
+
+    $hash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $sumPath = Join-Path $outputRootPath "$packageName.sha256.txt"
+    Set-Content -LiteralPath $sumPath -Value "$hash  $packageName.zip" -Encoding ASCII
+
+    Write-Host "Wrote $zipPath"
+    Write-Host "SHA256 $hash"
 }
-Compress-Archive -LiteralPath $stageRoot -DestinationPath $zipPath -Force
 
-$hash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
-$sumPath = Join-Path $outputRootPath "$packageName.sha256.txt"
-Set-Content -LiteralPath $sumPath -Value "$hash  $packageName.zip" -Encoding ASCII
+$buildCli = $Package -eq "All" -or $Package -eq "Cli"
+$buildGui = $Package -eq "All" -or $Package -eq "Gui"
 
-Write-Host "Wrote $zipPath"
-Write-Host "SHA256 $hash"
+if (-not $SkipBuild) {
+    if ($buildCli) {
+        Invoke-Checked "cargo" @(
+            "build", "--manifest-path", (Join-Path $converterRoot "Cargo.toml"),
+            "--release", "--locked", "--no-default-features", "--features", "cli,demoparser",
+            "--bin", "cs2-demotracer")
+    }
+    if ($buildGui) {
+        Invoke-Checked "cargo" @(
+            "build", "--manifest-path", (Join-Path $converterRoot "Cargo.toml"),
+            "--release", "--locked", "--no-default-features", "--features", "gui",
+            "--bin", "cs2-demotracer-gui")
+    }
+}
+
+if ($buildCli) {
+    New-ConverterPackage "cli"
+}
+if ($buildGui) {
+    New-ConverterPackage "gui"
+}

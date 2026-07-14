@@ -122,7 +122,7 @@ No `voice/` directory:
 
 `voice_auto=unavailable`:
 
-- Update the full server bundle.
+- Update the full playback bundle.
 - Check `dtr_runtime`; BotController must expose voice send capability.
 
 `voice_auto=map_failed`:

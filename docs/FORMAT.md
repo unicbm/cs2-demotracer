@@ -22,7 +22,7 @@ Compatibility notes:
 - v3 files do not contain projectile metadata.
 - v3/v4 files use `play_start_tick_index = 0`.
 - v3-v5 files do not contain high-fidelity metadata JSON.
-- v7 files require the matching server bundle with BotController native ABI 16
+- v7 files require the matching playback bundle with BotController native ABI 16
   and extended replay capability.
 
 ## Header

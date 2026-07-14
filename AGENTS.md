@@ -128,9 +128,10 @@ or legacy CS:GO paths.
   manifests, and no trace/debug CSVs.
 - Release notes should be factual and conservative. Do not claim Linux packages
   or non-smoke projectile fixes unless they were built and verified.
-- For version bumps, update `converter/Cargo.toml`, `converter/Cargo.lock`, and
-  `scripts/package-server.ps1` together. Current release assets are the Windows
-  x64 converter CLI zip, the Windows x64 server bundle zip, and `SHA256SUMS.txt`.
+- For version bumps, update `converter/Cargo.toml`, `converter/Cargo.lock`, the
+  DemoTracer CSS module version, and all three packaging scripts together.
+  Current release assets are the separate Windows x64 CLI and GUI converter
+  zips, the Windows x64 playback bundle zip, and `SHA256SUMS.txt`.
 
 ## Validation
 

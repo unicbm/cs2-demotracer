@@ -7,15 +7,15 @@ Trace CS2 demos into bot-executable route replays.
 > [!CAUTION]
 > **July 2026 CS2 update (1.41.6.9):** Server playback requires
 > CounterStrikeSharp v1.0.371 or newer. Ray-Trace users need v1.0.16 or newer.
-> The server bundle now carries DemoTracer's maintained BotHider runtime with
+> The playback bundle now carries DemoTracer's maintained BotHider runtime with
 > the required Windows identity offsets. DemoTracer's Windows core replay path
 > has been locally verified. Demos using the newer delta user-command encoding
 > require converter v0.5.0 or newer; the `.dtr` format is unchanged.
 
 CS2 DemoTracer converts CS2 `.dem` files into compact `.dtr` replay files, then
 plays those routes back through bots on a local CS2 server. The normal converter
-path is a packaged Windows x64 CLI/GUI; Python, Node.js, Conda, and game-server
-plugins are not required for conversion.
+path uses separate packaged Windows x64 CLI and GUI downloads; Python, Node.js,
+Conda, and game-server plugins are not required for conversion.
 
 ## Demo
 
@@ -61,19 +61,36 @@ development. It is not intended for matchmaking or cheating.
 
 ## Requirements
 
-- **Conversion:** the packaged Windows x64 converter. No game-server plugins
-  are required.
+- **Conversion:** either packaged Windows x64 converter download. No game-server
+  plugins are required.
 - **Playback:** a local Windows x64 CS2 server with
   [Metamod:Source](https://www.sourcemm.net/),
   [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp), and the
-  DemoTracer server bundle.
+  DemoTracer playback bundle.
 - **Optional:** [Ray-Trace](https://github.com/FUNPLAY-pro-CS2/Ray-Trace), or a
   compatible provider, for stricter handoff line-of-sight filtering.
 
-The server bundle supplies DemoTracer's runtime and plugins, but not
+The playback bundle supplies DemoTracer's runtime and plugins, but not
 Metamod:Source, CounterStrikeSharp, or a RayTrace provider. See
 [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md) for versions, bundled components,
 optional integrations, and compatibility boundaries.
+
+## Downloads
+
+Choose only what you need from the
+[latest GitHub release](https://github.com/unicbm/cs2-demotracer/releases/latest):
+
+- `cs2-demotracer-cli-v<version>-windows-x64.zip`: the smallest converter
+  download for CLI, wizard, batch, and pool workflows.
+- `cs2-demotracer-gui-v<version>-windows-x64.zip`: the native single-demo
+  desktop converter.
+- `cs2-demotracer-playback-v<version>-windows-x64.zip`: the server-side
+  CounterStrikeSharp/Metamod plugins and runtimes for replaying `.dtr` files on
+  a local Windows x64 CS2 server.
+
+The playback bundle is not a hosted or cloud service. Install it only on the
+local CS2 server where converted routes should be replayed. CLI and GUI users
+who only convert demos do not need it.
 
 ## Quick Start
 
@@ -111,7 +128,7 @@ More commands:
 
 - Converter usage: [`docs/USAGE.md`](docs/USAGE.md)
 - Voice export and replay: [`docs/VOICE.md`](docs/VOICE.md)
-- Server commands: [`docs/COMMANDS.md`](docs/COMMANDS.md)
+- Playback commands: [`docs/COMMANDS.md`](docs/COMMANDS.md)
 - Examples: [`examples/`](examples/)
 
 ## Cosmetic Alignment and GSLT Safety
@@ -163,7 +180,7 @@ layout is documented in [`docs/FORMAT.md`](docs/FORMAT.md).
 
 - Docs index: [`docs/README.md`](docs/README.md)
 - Usage: [`docs/USAGE.md`](docs/USAGE.md)
-- Server commands: [`docs/COMMANDS.md`](docs/COMMANDS.md)
+- Playback commands: [`docs/COMMANDS.md`](docs/COMMANDS.md)
 - Dependencies: [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md)
 - File format: [`docs/FORMAT.md`](docs/FORMAT.md)
 - Limitations: [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md)
@@ -171,7 +188,7 @@ layout is documented in [`docs/FORMAT.md`](docs/FORMAT.md).
 ## Repository Layout
 
 - `converter/`: Rust CLI, GUI, local Rust API, and pool conversion.
-- `runtime/BotController/`: CS2 Metamod runtime used by the server bundle.
+- `runtime/BotController/`: CS2 Metamod runtime used by the playback bundle.
 - `runtime/BotHider/`: DemoTracer-maintained BotHider native/CSS runtime and
   versioned presentation-lease API.
 - `css/DemoTracer/`: CounterStrikeSharp playback plugin.
