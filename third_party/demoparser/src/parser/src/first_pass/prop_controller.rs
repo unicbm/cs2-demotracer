@@ -9,7 +9,8 @@ use crate::second_pass::parser_settings::SpecialIDs;
 use crate::second_pass::variants::Variant;
 use ahash::AHashMap;
 
-pub const PLAYER_ENTITY_HANDLE_MISSING: i32 = 2047;
+pub const PLAYER_ENTITY_HANDLE_MISSING: i32 =
+    crate::demo_network_handle::DEMO_NETWORK_EHANDLE_INVALID_INDEX;
 pub const SPECTATOR_TEAM_NUM: u32 = 1;
 pub const BUTTONS_BASEID: u32 = 100000;
 pub const NORMAL_PROP_BASEID: u32 = 1000;

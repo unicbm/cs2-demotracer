@@ -1,3 +1,4 @@
+use crate::demo_network_handle::demo_network_ehandle_index;
 use crate::first_pass::parser::Frame;
 use crate::first_pass::parser::HEADER_ENDS_AT_BYTE;
 use crate::first_pass::parser_settings::FirstPassParser;
@@ -545,7 +546,7 @@ impl<'a> SecondPassParser<'a> {
 
             let left_hand_desired = user_cmd.left_hand_desired();
             if let Some(base) = user_cmd.base {
-                let entity_id = base.pawn_entity_handle() & 0x7FF;
+                let entity_id = demo_network_ehandle_index(base.pawn_entity_handle());
                 if let Some(Some(ent)) = self.entities.get_mut(entity_id as usize) {
                     let mut history = vec![];
                     for input in user_cmd.input_history {
@@ -641,14 +642,14 @@ impl<'a> SecondPassParser<'a> {
         let explicit_pawn = base
             .pawn_entity_handle
             .filter(|handle| *handle != 0x00FF_FFFF)
-            .map(|handle| (handle & 0x7FF) as i32);
+            .map(demo_network_ehandle_index);
         let controller_entid = player_slot.checked_add(1);
         let controller_pawn = controller_entid.and_then(|controller| {
             self.prop_controller
                 .special_ids
                 .player_pawn
                 .and_then(|id| match self.get_prop_from_ent(&id, &controller) {
-                    Ok(Variant::U32(handle)) => Some((handle & 0x7FF) as i32),
+                    Ok(Variant::U32(handle)) => Some(demo_network_ehandle_index(handle)),
                     _ => None,
                 })
         });

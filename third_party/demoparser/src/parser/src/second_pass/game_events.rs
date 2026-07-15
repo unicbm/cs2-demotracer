@@ -1,4 +1,6 @@
-use crate::first_pass::prop_controller::PLAYER_ENTITY_HANDLE_MISSING;
+use crate::demo_network_handle::{
+    demo_network_ehandle_index, DEMO_NETWORK_EHANDLE_INVALID_INDEX,
+};
 use crate::first_pass::prop_controller::PropController;
 use crate::first_pass::prop_controller::PropInfo;
 use crate::first_pass::prop_controller::ITEM_PURCHASE_COST;
@@ -75,7 +77,6 @@ pub enum GameEventInfo {
 static ENTITIES_FIRST_EVENTS: &'static [&str] = &["inferno_startburn", "decoy_started", "inferno_expire"];
 static REMOVEDEVENTS: &'static [&str] = &["server_cvar", "player_connect"];
 
-const ENTITYIDNONE: i32 = 2047;
 // https://developer.valvesoftware.com/wiki/SteamID
 const STEAMID64INDIVIDUALIDENTIFIER: u64 = 0x0110000100000000;
 
@@ -263,7 +264,7 @@ impl<'a> SecondPassParser<'a> {
         Ok(extra_fields)
     }
     pub fn entity_id_from_user_pawn(&self, pawn_handle: i32) -> Option<i32> {
-        Some(pawn_handle & 0x7FF)
+        Some(demo_network_ehandle_index(pawn_handle as u32))
     }
     pub fn grenade_owner_entid_from_grenade(&self, id_field: &Option<Variant>) -> Option<i32> {
         let prop_id = match self.prop_controller.special_ids.grenade_owner_id {
@@ -272,7 +273,7 @@ impl<'a> SecondPassParser<'a> {
         };
         if let Some(Variant::I32(id)) = id_field {
             if let Ok(Variant::U32(entity_id)) = self.get_prop_from_ent(&prop_id, &id) {
-                return Some((entity_id & 0x7ff) as i32);
+                return Some(demo_network_ehandle_index(entity_id));
             }
         }
         None
@@ -376,7 +377,7 @@ impl<'a> SecondPassParser<'a> {
             if prop_info.prop_name == "tick" || prop_info.prop_name == "name" || prop_info.prop_name == "steamid" {
                 continue;
             }
-            if entity_id == ENTITYIDNONE {
+            if entity_id == DEMO_NETWORK_EHANDLE_INVALID_INDEX {
                 extra_pairs.push(EventField {
                     name: prefix.to_owned() + "_" + &prop_info.prop_friendly_name,
                     data: None,
@@ -408,7 +409,7 @@ impl<'a> SecondPassParser<'a> {
         extra_pairs
     }
     pub fn create_player_name_field(&self, entity_id: i32, prefix: &str) -> EventField {
-        if entity_id == ENTITYIDNONE {
+        if entity_id == DEMO_NETWORK_EHANDLE_INVALID_INDEX {
             return EventField {
                 name: prefix.to_owned() + "_name",
                 data: None,
@@ -427,7 +428,7 @@ impl<'a> SecondPassParser<'a> {
         }
     }
     pub fn create_player_steamid_field(&self, entity_id: i32, prefix: &str) -> EventField {
-        if entity_id == ENTITYIDNONE {
+        if entity_id == DEMO_NETWORK_EHANDLE_INVALID_INDEX {
             return EventField {
                 name: prefix.to_owned() + "_steamid",
                 data: None,
@@ -539,7 +540,7 @@ impl<'a> SecondPassParser<'a> {
     fn handle_player_connect(&mut self, events: &[GameEventInfo]) -> Result<(), DemoParserError>{
         for event in events{
             if let GameEventInfo::PlayerConnect(id) = event{
-                let entity_id = &(id & 0x7ff);
+                let entity_id = id;
                 let team_num = match self.prop_controller.special_ids.teamnum {
                     Some(team_num_id) => match self.get_prop_from_ent(&team_num_id, entity_id) {
                         Ok(team_num) => match team_num {
@@ -574,7 +575,7 @@ impl<'a> SecondPassParser<'a> {
                 let player_entid = match self.prop_controller.special_ids.player_pawn {
                     Some(id) => match self.get_prop_from_ent(&id, entity_id) {
                         Ok(player_entid) => match player_entid {
-                            Variant::U32(handle) => Some((handle & 0x7FF) as i32),
+                            Variant::U32(handle) => Some(demo_network_ehandle_index(handle)),
                             _ => return Err(DemoParserError::IncorrectMetaDataProp),
                         },
                         Err(_) => None,
@@ -582,7 +583,10 @@ impl<'a> SecondPassParser<'a> {
                     _ => None,
                 };
                 if let Some(e) = player_entid {
-                    if e != PLAYER_ENTITY_HANDLE_MISSING && steamid != Some(0) && team_num != Some(SPECTATOR_TEAM_NUM) {
+                    if e != DEMO_NETWORK_EHANDLE_INVALID_INDEX
+                        && steamid != Some(0)
+                        && team_num != Some(SPECTATOR_TEAM_NUM)
+                    {
                         match self.should_remove(steamid) {
                             Some(eid) => {
                                 self.players.remove(&eid);
@@ -697,7 +701,7 @@ impl<'a> SecondPassParser<'a> {
                                 cost: *cost,
                                 name: Some(name.to_string()),
                                 entid: *entid,
-                                weapon_entid: (handle & 0x7ff) as i32,
+                                weapon_entid: demo_network_ehandle_index(*handle as u32),
                                 inventory_slot: (prop_id - ITEM_PURCHASE_DEF_IDX),
                             });
                         }
@@ -706,7 +710,7 @@ impl<'a> SecondPassParser<'a> {
                                 cost: *cost,
                                 name: None,
                                 entid: *entid,
-                                weapon_entid: (handle & 0x7ff) as i32,
+                                weapon_entid: demo_network_ehandle_index(*handle as u32),
                                 inventory_slot: (prop_id - ITEM_PURCHASE_DEF_IDX),
                             });
                         }
@@ -724,7 +728,7 @@ impl<'a> SecondPassParser<'a> {
                                 cost: *cost,
                                 name: Some(name.to_string()),
                                 entid: *entid,
-                                weapon_entid: ENTITYIDNONE,
+                                weapon_entid: DEMO_NETWORK_EHANDLE_INVALID_INDEX,
                                 inventory_slot: (prop_id - ITEM_PURCHASE_DEF_IDX),
                             });
                         }
@@ -733,7 +737,7 @@ impl<'a> SecondPassParser<'a> {
                                 cost: *cost,
                                 name: None,
                                 entid: *entid,
-                                weapon_entid: ENTITYIDNONE,
+                                weapon_entid: DEMO_NETWORK_EHANDLE_INVALID_INDEX,
                                 inventory_slot: (prop_id - ITEM_PURCHASE_DEF_IDX),
                             });
                         }
@@ -1362,7 +1366,7 @@ impl<'a> SecondPassParser<'a> {
             name: "player_scoped".to_string(),
             data: msg.player_scoped.map(Variant::Bool),
         });
-        let entity_id = (msg.player.unwrap_or(0) & 0x7FF) as i32;
+        let entity_id = demo_network_ehandle_index(msg.player.unwrap_or(0));
         fields.push(self.create_player_name_field(entity_id, "user"));
         fields.push(self.create_player_steamid_field(entity_id, "user"));
         fields.extend(self.find_extra_props_events(entity_id, "user"));
