@@ -3214,10 +3214,10 @@ mod tests {
                 active_weapon_paint_wear: Some(0.125),
                 active_weapon_custom_name: Some("alpha rifle".to_string()),
                 active_weapon_stickers: Vec::new(),
-                glove_item_def_index: Some(5030),
-                glove_paint_kit: Some(10006),
-                glove_paint_seed: Some(4),
-                glove_paint_wear: Some(0.2),
+                glove_item_def_index: Some(5032),
+                glove_paint_kit: Some(10036),
+                glove_paint_seed: Some(23),
+                glove_paint_wear: Some(0.138_722_94),
                 ..sample_row(100)
             }),
             ParsedPlayerTick {
@@ -3228,10 +3228,10 @@ mod tests {
                 active_weapon_paint_wear: Some(0.01),
                 active_weapon_custom_name: Some("alpha knife".to_string()),
                 active_weapon_stickers: Vec::new(),
-                glove_item_def_index: Some(5030),
-                glove_paint_kit: Some(10006),
-                glove_paint_seed: Some(4),
-                glove_paint_wear: Some(0.2),
+                glove_item_def_index: Some(5032),
+                glove_paint_kit: Some(10036),
+                glove_paint_seed: Some(23),
+                glove_paint_wear: Some(0.138_722_94),
                 ..sample_row(164)
             },
         ];
@@ -3280,12 +3280,12 @@ mod tests {
             .unwrap()
             .steam_url
             .is_some());
-        assert_eq!(cosmetics.glove.as_ref().unwrap().item_def_index, Some(5030));
-        assert_eq!(cosmetics.glove.as_ref().unwrap().paint_kit, 10006);
-        assert_eq!(cosmetics.glove.as_ref().unwrap().seed, 4);
+        assert_eq!(cosmetics.glove.as_ref().unwrap().item_def_index, Some(5032));
+        assert_eq!(cosmetics.glove.as_ref().unwrap().paint_kit, 10036);
+        assert_eq!(cosmetics.glove.as_ref().unwrap().seed, 23);
         assert_eq!(
             cosmetics.glove.as_ref().unwrap().wear.to_bits(),
-            0.2_f32.to_bits()
+            0.138_722_94_f32.to_bits()
         );
         assert!(cosmetics
             .glove

@@ -166,7 +166,11 @@ $gloveDefs = @(
     $itemDefs.items.PSObject.Properties |
         ForEach-Object {
             $item = $_.Value
-            if ($item.category -eq "gloves") {
+            # The source index currently categorizes Hand Wraps (5032) as
+            # "other", but its schema prefab still identifies it as a
+            # paintable glove. Keep the category lane for stock gloves and use
+            # the prefab as the authoritative fallback for painted gloves.
+            if ($item.category -eq "gloves" -or $item.prefab -eq "hands_paintable") {
                 [int] $item.defidx
             }
         } |
