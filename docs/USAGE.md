@@ -159,6 +159,8 @@ Then use the server commands in [`COMMANDS.md`](COMMANDS.md).
 Round manifests should use the high-level `dtr_go seq|round|pool` commands.
 `dtr_run_manifest` and `dtr_run_pool` are compatibility aliases for old scripts,
 not the preferred quick-start path.
+The desktop GUI result view remembers playback switches locally and generates a
+compact `dtr_preset 0x...; dtr_go ...` command for the current manifest.
 
 Cosmetic alignment is optional and off by default. It has no effect unless the
 round manifest was exported with `--export-cosmetics` plus the two risk

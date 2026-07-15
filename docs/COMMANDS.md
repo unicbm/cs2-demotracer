@@ -17,7 +17,7 @@ public BotHider CSS plugin beside the bundled presentation provider.
 css_plugins reload DemoTracer
 bh_status
 dtr_config_status
-dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
+dtr_preset 0x15; dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
 ```
 
 Replay identity, weapon/loadout alignment, and projectile alignment are on by
@@ -87,6 +87,41 @@ matching legacy fields.
 | `dtr_replay_identity` | `steam` | Lease demo name and SteamID64 through bundled BotHider-managed replay bot slots. Team/event avatar PNGs require explicit `avatar`; `full` is a compatibility alias for `avatar`. |
 | `dtr_util_trace` | `0` | Utility CSV trace disabled. |
 | `bc_replay_pov` | `spectated` | Publish expensive native first-person POV updates only for replay bots watched in-eye. |
+
+## Compact Playback Preset: `dtr_preset`
+
+`dtr_preset [status|0xMASK]` applies the six playback choices exposed by the
+desktop converter, so one generated console line can configure the server and
+start playback:
+
+```text
+dtr_preset 0x15; dtr_go seq "<manifest.json>" 0
+```
+
+The v1 mask is hexadecimal. The `0x` prefix is optional, but generated commands
+always include it. Bit assignments are stable and will not be reused:
+
+| Bit | Hex | Behavior |
+| ---: | ---: | --- |
+| 0 | `0x01` | Weapon/loadout alignment |
+| 1 | `0x02` | Full demo-backed cosmetic alignment |
+| 2 | `0x04` | Demo name and SteamID64 identity |
+| 3 | `0x08` | Manifest avatar override, with Steam avatar fallback |
+| 4 | `0x10` | Automatic demo voice playback |
+| 5 | `0x20` | Playoff sequence continuation |
+
+`0x15` is the recommended baseline: weapons, Steam identity, and voice. `0x00`
+disables all six managed choices, while `0x3F` enables all of them. Avatar sync
+requires Steam identity (`0x08` requires `0x04`), and cosmetic sync requires
+weapon alignment (`0x02` requires `0x01`). Unknown bits and non-canonical
+combinations are rejected instead of silently normalized.
+
+The mask completely replaces these six choices only. Projectile, left-hand,
+crosshair, handoff, match presentation, partial replay, and chat settings keep
+their current values. Cosmetic alignment still consumes only explicitly
+exported demo evidence and retains the same Valve / GSLT risk. Preset changes
+are temporary runtime overrides; config or plugin reload restores server-local
+defaults.
 
 ## High-Level Playback
 

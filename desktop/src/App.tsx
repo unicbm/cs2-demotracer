@@ -1,39 +1,38 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AppChrome } from "./components/AppChrome";
+import { DialogPrimitive } from "./components/Dialog";
+import { ExportInspector } from "./components/ExportInspector";
+import type { PlaybackPresetOptions } from "./components/PlaybackCommandBuilder";
+import { RoundWorkspace } from "./components/RoundWorkspace";
 import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import {
-  AlertIcon,
-  ArrowIcon,
-  CheckIcon,
-  ChevronIcon,
-  CloseIcon,
-  CopyIcon,
-  FolderIcon,
-  MoonIcon,
-  ReplayIcon,
-  SlidersIcon,
-  SunIcon,
-  TraceMark,
-} from "./icons";
+  AnalysisFailedView,
+  AnalysisProgressView,
+  type CommandMode,
+  ConversionProgressView,
+  type CopyTarget,
+  DemoPickerView,
+  ResultView,
+  ValidationFailedView,
+} from "./components/TaskViews";
+import { AlertIcon, ArrowIcon, CheckIcon, CloseIcon, CopyIcon, FolderIcon } from "./icons";
 import { COSMETIC_PHRASE, TEXT } from "./i18n";
 import type {
   AnalysisResult,
+  CommandErrorDto,
+  ConversionProgressEvent,
   ConversionSummary,
   ConverterSettings,
-  CosmeticConsent,
   Language,
+  OutputPreflight,
   Phase,
+  ProgressPhase,
   ProgressState,
   RoundInfo,
   TaskEvent,
+  TaskPhase,
   Theme,
 } from "./types";
 
@@ -48,13 +47,29 @@ const DEFAULT_SETTINGS: ConverterSettings = {
   includeSuspicious: false,
 };
 
-const EMPTY_PROGRESS: ProgressState = {
-  phase: "preparing",
-  message: "",
-  written: 0,
-  estimated: 0,
-  log: [],
+const DEFAULT_PLAYBACK_PRESET: PlaybackPresetOptions = {
+  weapons: true,
+  cosmetics: false,
+  steamIdentity: true,
+  avatar: false,
+  voice: true,
+  playoff: false,
 };
+
+function emptyProgress(): ProgressState {
+  return {
+    phase: "preparing",
+    message: "",
+    written: 0,
+    estimated: 0,
+    unit: null,
+    completedRounds: 0,
+    selectedRounds: 0,
+    log: [],
+    warnings: [],
+    announcement: "",
+  };
+}
 
 function storedLanguage(): Language {
   const saved = localStorage.getItem("demotracer.language");
@@ -64,15 +79,38 @@ function storedLanguage(): Language {
 
 function storedTheme(): Theme {
   const saved = localStorage.getItem("demotracer.theme");
-  return saved === "light" || saved === "dark" || saved === "system" ? saved : "system";
+  return saved === "light" || saved === "dark" || saved === "system" ? saved : "light";
 }
 
 function storedSettings(): ConverterSettings {
   try {
     const saved = JSON.parse(localStorage.getItem("demotracer.settings") ?? "null") as Partial<ConverterSettings> | null;
-    return saved ? { ...DEFAULT_SETTINGS, ...saved } : DEFAULT_SETTINGS;
+    return saved
+      ? { ...DEFAULT_SETTINGS, ...saved, exportCosmetics: false, includeSuspicious: false }
+      : { ...DEFAULT_SETTINGS };
   } catch {
-    return DEFAULT_SETTINGS;
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
+function storedPlaybackPreset(): PlaybackPresetOptions {
+  try {
+    const saved = JSON.parse(localStorage.getItem("demotracer.playback-preset.v1") ?? "null") as Partial<PlaybackPresetOptions> | null;
+    if (!saved || typeof saved !== "object") return { ...DEFAULT_PLAYBACK_PRESET };
+    const read = (key: keyof PlaybackPresetOptions) =>
+      typeof saved[key] === "boolean" ? saved[key] : DEFAULT_PLAYBACK_PRESET[key];
+    const cosmetics = read("cosmetics");
+    const avatar = read("avatar");
+    return {
+      weapons: read("weapons") || cosmetics,
+      cosmetics,
+      steamIdentity: read("steamIdentity") || avatar,
+      avatar,
+      voice: read("voice"),
+      playoff: read("playoff"),
+    };
+  } catch {
+    return { ...DEFAULT_PLAYBACK_PRESET };
   }
 }
 
@@ -95,148 +133,65 @@ function formatBytes(value: number | string): string {
   return `${(bytes / 1024 ** power).toFixed(power === 0 ? 0 : 1)} ${units[power]}`;
 }
 
-function formatDuration(seconds: number): string {
-  const whole = Math.max(0, Math.round(seconds));
-  const minutes = Math.floor(whole / 60);
-  return `${minutes}:${String(whole % 60).padStart(2, "0")}`;
-}
-
-function describeError(error: unknown): string {
+function parseCommandError(error: unknown): CommandErrorDto {
+  if (error && typeof error === "object" && "code" in error && "message" in error) {
+    const value = error as { code: unknown; message: unknown; path?: unknown };
+    return {
+      code: String(value.code),
+      message: String(value.message),
+      path: typeof value.path === "string" ? value.path : undefined,
+    };
+  }
   if (typeof error === "string") {
     try {
-      const parsed = JSON.parse(error) as { message?: string };
-      return parsed.message ?? error;
+      return parseCommandError(JSON.parse(error));
     } catch {
-      return error;
+      return { code: "unknown", message: error };
     }
   }
-  if (error && typeof error === "object" && "message" in error) return String(error.message);
-  return String(error);
+  if (error && typeof error === "object" && "message" in error) {
+    return { code: "unknown", message: String(error.message) };
+  }
+  return { code: "unknown", message: String(error) };
 }
 
-function isOutputConflict(error: unknown): boolean {
-  const value = typeof error === "string" ? error : JSON.stringify(error);
-  return value.toLowerCase().includes("output_exists") || value.toLowerCase().includes("already exists");
+function phaseFromBackend(phase: TaskPhase, current: ProgressPhase): ProgressPhase {
+  if (phase === "parsing") return "parsing";
+  if (phase === "analyzing") return "analyzing";
+  if (phase === "voice") return "voice";
+  if (phase === "validating") return "validating";
+  if (phase === "complete") return "complete";
+  return current;
 }
 
-function eventRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
+function consentIsValid(phrase: string): boolean {
+  return phrase.trim() === COSMETIC_PHRASE;
 }
 
-function extractProgressEvent(raw: TaskEvent): Record<string, unknown> {
-  const nested = eventRecord(raw.progress) ?? eventRecord(raw.event);
-  return nested ?? raw;
-}
-
-function phaseLabel(phase: string, words: (typeof TEXT)[Language]): string {
-  const labels: Record<string, string> = {
-    preparing: words.preparing,
-    parsing: words.parsing,
-    analyzing: words.analyzing,
-    exporting: words.exporting,
-    voice: words.voiceStage,
-    validating: words.validating,
-    complete: words.completeTitle,
-  };
-  return labels[phase] ?? words.preparing;
-}
-
-interface SwitchProps {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  disabled?: boolean;
-  label: string;
-}
-
-function Switch({ checked, onChange, disabled, label }: SwitchProps) {
-  return (
-    <button
-      className="switch"
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-    >
-      <span />
-    </button>
-  );
-}
-
-function useFocusBoundary(active: boolean, onDismiss?: () => void) {
-  const boundary = useRef<HTMLElement | null>(null);
-  const dismissRef = useRef(onDismiss);
-  dismissRef.current = onDismiss;
-
+function useElapsed(active: boolean): number {
+  const [seconds, setSeconds] = useState(0);
   useEffect(() => {
-    if (!active || !boundary.current) return;
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const container = boundary.current;
-    const focusableSelector = "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex='-1'])";
-    const focusable = () => [...container.querySelectorAll<HTMLElement>(focusableSelector)].filter((element) => element.offsetParent !== null);
-    (focusable()[0] ?? container).focus();
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && dismissRef.current) {
-        event.preventDefault();
-        dismissRef.current();
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const candidates = focusable();
-      if (candidates.length === 0) {
-        event.preventDefault();
-        container.focus();
-        return;
-      }
-      const first = candidates[0];
-      const last = candidates[candidates.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-      previous?.focus();
-    };
+    if (!active) {
+      setSeconds(0);
+      return;
+    }
+    const started = Date.now();
+    const timer = window.setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => window.clearInterval(timer);
   }, [active]);
-
-  return boundary;
+  return seconds;
 }
 
-function Modal({ children, onDismiss, labelledBy }: { children: ReactNode; onDismiss?: () => void; labelledBy: string }) {
-  const boundary = useFocusBoundary(true, onDismiss);
-  return (
-    <div className="modal-layer" role="presentation" onMouseDown={onDismiss}>
-      <section
-        className="modal"
-        ref={boundary}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={labelledBy}
-        tabIndex={-1}
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        {children}
-      </section>
-    </div>
-  );
-}
-
-function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) {
-  return (
-    <div className="metric">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      {detail ? <small>{detail}</small> : null}
-    </div>
-  );
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const update = () => setMatches(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [query]);
+  return matches;
 }
 
 function App() {
@@ -245,128 +200,289 @@ function App() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [sourcePath, setSourcePath] = useState("");
   const [outputDir, setOutputDir] = useState(() => localStorage.getItem("demotracer.output") ?? "");
+  const [outputRoot, setOutputRoot] = useState("");
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [selectedRounds, setSelectedRounds] = useState<Set<number>>(new Set());
   const [settings, setSettings] = useState<ConverterSettings>(storedSettings);
-  const [progress, setProgress] = useState<ProgressState>(EMPTY_PROGRESS);
+  const [playbackPreset, setPlaybackPreset] = useState<PlaybackPresetOptions>(storedPlaybackPreset);
+  const [progress, setProgress] = useState<ProgressState>(emptyProgress);
   const [result, setResult] = useState<ConversionSummary | null>(null);
-  const [error, setError] = useState("");
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [overwriteOpen, setOverwriteOpen] = useState(false);
+  const [conversionWarnings, setConversionWarnings] = useState<string[]>([]);
+  const [analysisError, setAnalysisError] = useState("");
+  const [validationError, setValidationError] = useState("");
+  const [globalError, setGlobalError] = useState<CommandErrorDto | null>(null);
+  const [inspectorSheetOpen, setInspectorSheetOpen] = useState(false);
+  const [overwriteConflict, setOverwriteConflict] = useState<OutputPreflight | null>(null);
   const [cosmeticOpen, setCosmeticOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [activityOpen, setActivityOpen] = useState(false);
-  const [consent, setConsent] = useState<CosmeticConsent>({
-    acknowledgeGsltRisk: false,
-    acceptExportDisclaimer: false,
-    phrase: "",
-  });
+  const [dragActive, setDragActive] = useState(false);
+  const [cosmeticPhrase, setCosmeticPhrase] = useState("");
+  const [copiedTarget, setCopiedTarget] = useState<CopyTarget | null>(null);
+  const [commandMode, setCommandMode] = useState<CommandMode>("sequence");
+  const [liveMessage, setLiveMessage] = useState("");
+
+  const taskTokenRef = useRef(0);
+  const taskWarningsRef = useRef<string[]>([]);
+  const isBusyRef = useRef(false);
+  const chooseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const retryButtonRef = useRef<HTMLButtonElement | null>(null);
+  const resultHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const settingsTriggerRef = useRef<HTMLElement | null>(null);
+  const cosmeticInputRef = useRef<HTMLInputElement | null>(null);
+  const chooseOtherOutputRef = useRef<HTMLButtonElement | null>(null);
+  const keepWorkingRef = useRef<HTMLButtonElement | null>(null);
 
   const words = TEXT[language];
   const numberFormat = useMemo(() => new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en-US"), [language]);
-  const stepIndex = phase === "ready" ? 1 : phase === "converting" || phase === "complete" ? 2 : 0;
   const isBusy = phase === "analyzing" || phase === "converting";
+  isBusyRef.current = isBusy;
+  const inspectorDocked = useMediaQuery("(min-width: 1080px)");
+  const inspectorVisible = inspectorDocked || inspectorSheetOpen;
+  const elapsedSeconds = useElapsed(phase === "analyzing");
+  const sourceFileName = analysis?.fileName || fileName(sourcePath);
+  const themeTitle = theme === "system" ? words.systemTheme : theme === "light" ? words.lightTheme : words.darkTheme;
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
     localStorage.setItem("demotracer.theme", theme);
     localStorage.setItem("demotracer.language", language);
+    if ("__TAURI_INTERNALS__" in window) {
+      void getCurrentWindow().setTheme(theme === "system" ? null : theme).catch(() => undefined);
+    }
   }, [language, theme]);
 
   useEffect(() => {
-    localStorage.setItem("demotracer.settings", JSON.stringify(settings));
+    if (inspectorDocked) setInspectorSheetOpen(false);
+  }, [inspectorDocked]);
+
+  useEffect(() => {
+    const persisted = { ...settings, exportCosmetics: false, includeSuspicious: false };
+    localStorage.setItem("demotracer.settings", JSON.stringify(persisted));
   }, [settings]);
+
+  useEffect(() => {
+    localStorage.setItem("demotracer.playback-preset.v1", JSON.stringify(playbackPreset));
+  }, [playbackPreset]);
 
   useEffect(() => {
     if (outputDir) localStorage.setItem("demotracer.output", outputDir);
   }, [outputDir]);
 
-  const absorbEvent = useCallback((raw: TaskEvent) => {
-    const kind = typeof raw.kind === "string" ? raw.kind : "";
-    if (kind === "phase" && typeof raw.phase === "string") {
-      setProgress((current) => ({ ...current, phase: raw.phase as string, message: String(raw.message ?? "") }));
-      return;
+  useEffect(() => {
+    if (phase === "idle") chooseButtonRef.current?.focus({ preventScroll: true });
+    if (phase === "analysisFailed") retryButtonRef.current?.focus({ preventScroll: true });
+    if (phase === "complete") resultHeadingRef.current?.focus({ preventScroll: true });
+    if (phase === "selecting") {
+      window.requestAnimationFrame(() => {
+        const firstRound = document.querySelector<HTMLInputElement>('.round-data-table input[data-round-select="true"]:not(:disabled)');
+        const suspiciousToggle = document.querySelector<HTMLInputElement>(".allow-suspicious-control input");
+        (firstRound ?? suspiciousToggle)?.focus({ preventScroll: true });
+      });
     }
-    if (kind === "log") {
-      const message = String(raw.message ?? "");
-      if (message) setProgress((current) => ({ ...current, log: [...current.log.slice(-9), message] }));
+  }, [phase]);
+
+  const absorbEvent = useCallback((raw: TaskEvent, token: number) => {
+    if (token !== taskTokenRef.current) return;
+
+    if (raw.kind === "phase") {
+      setProgress((current) => ({
+        ...current,
+        phase: phaseFromBackend(raw.phase, current.phase),
+        unit: raw.phase === "voice" || raw.phase === "validating" ? null : current.unit,
+        currentItem: raw.phase === "voice" || raw.phase === "validating" ? undefined : current.currentItem,
+        announcement: raw.phase,
+      }));
       return;
     }
 
-    const event = extractProgressEvent(raw);
-    const name = String(event.event ?? event.kind ?? "");
+    if (raw.kind === "log") {
+      if (raw.level === "warning" && !taskWarningsRef.current.includes(raw.message) && taskWarningsRef.current.length < 6) {
+        taskWarningsRef.current = [...taskWarningsRef.current, raw.message];
+      }
+      setProgress((current) => ({
+        ...current,
+        log: [...current.log.slice(-199), { level: raw.level, message: raw.message }],
+        warnings: taskWarningsRef.current,
+      }));
+      return;
+    }
+
+    const event: ConversionProgressEvent = raw.progress;
     setProgress((current) => {
-      const next = { ...current };
-      if (name === "analysis_finished" || name === "analysisFinished") next.estimated = Number(event.estimatedFiles ?? event.estimated_files ?? 0);
-      if (name === "round_started" || name === "roundStarted") next.currentRound = Number(event.round);
-      if (name === "player_written" || name === "playerWritten") next.written = current.written + 1;
-      if (name === "artifacts_writing_started" || name === "artifactsWritingStarted") next.phase = "exporting";
-      if (name === "finished") next.phase = "validating";
-      return next;
+      switch (event.event) {
+        case "analysisStarted":
+          return { ...current, phase: "preparing", announcement: words.preparing };
+        case "analysisFinished":
+          return {
+            ...current,
+            phase: "writing",
+            written: 0,
+            estimated: event.estimatedFiles,
+            unit: "playerFiles",
+            selectedRounds: event.selectedRounds,
+            announcement: words.writingPlayers,
+          };
+        case "roundStarted":
+          return { ...current, phase: "writing", currentRound: event.round, currentItem: undefined };
+        case "playerWritten":
+          return { ...current, written: current.written + 1, currentItem: `${event.playerName} · ${event.side}` };
+        case "roundFinished":
+          return {
+            ...current,
+            completedRounds: current.completedRounds + 1,
+            announcement: `Round ${event.round}`,
+          };
+        case "roundSkipped": {
+          if (event.reason === "not selected") return current;
+          const message = `Round ${event.round}: ${event.reason}`;
+          const policySkip = event.reason.startsWith("suspicious (");
+          if (!taskWarningsRef.current.includes(message) && taskWarningsRef.current.length < 6) taskWarningsRef.current = [...taskWarningsRef.current, message];
+          return {
+            ...current,
+            completedRounds: current.completedRounds + (policySkip ? 0 : 1),
+            log: [...current.log.slice(-199), { level: "warning", message }],
+            warnings: taskWarningsRef.current,
+            announcement: `Round ${event.round}`,
+          };
+        }
+        case "playerSkipped": {
+          const message = `Round ${event.round}: ${event.reason}`;
+          if (!taskWarningsRef.current.includes(message) && taskWarningsRef.current.length < 6) taskWarningsRef.current = [...taskWarningsRef.current, message];
+          return {
+            ...current,
+            log: [...current.log.slice(-199), { level: "warning", message }],
+            warnings: taskWarningsRef.current,
+          };
+        }
+        case "artifactsWritingStarted":
+          return {
+            ...current,
+            phase: "artifacts",
+            written: 0,
+            estimated: event.artifacts,
+            unit: "artifacts",
+            currentItem: event.root,
+            announcement: words.writingArtifacts,
+          };
+        case "artifactWritten":
+          return { ...current, written: current.written + 1, currentItem: fileName(event.path) };
+        case "finished":
+          return { ...current, currentItem: fileName(event.manifestPath) };
+      }
     });
-  }, []);
+  }, [words]);
 
-  const runAnalysis = useCallback(
-    async (path: string) => {
-      if (!path.toLowerCase().endsWith(".dem")) {
-        setError(language === "zh" ? "请选择 CS2 .dem 文件。" : "Choose a CS2 .dem file.");
+  const runAnalysis = useCallback(async (path: string) => {
+    if (!path.toLowerCase().endsWith(".dem")) {
+      setGlobalError({ code: "invalid_demo_path", message: words.invalidDemo, path });
+      return;
+    }
+
+    const token = ++taskTokenRef.current;
+    setGlobalError(null);
+    setAnalysisError("");
+    setValidationError("");
+    setSourcePath(path);
+    setAnalysis(null);
+    setResult(null);
+    setOutputRoot("");
+    setSelectedRounds(new Set());
+    setInspectorSheetOpen(false);
+    setCosmeticPhrase("");
+    setSettings((current) => ({ ...current, exportCosmetics: false, includeSuspicious: false }));
+    setProgress({ ...emptyProgress(), phase: "parsing" });
+    setPhase("analyzing");
+    taskWarningsRef.current = [];
+
+    const events = new Channel<TaskEvent>();
+    events.onmessage = (event) => absorbEvent(event, token);
+    try {
+      const next = await invoke<AnalysisResult>("analyze_demo", { request: { path }, events });
+      if (token !== taskTokenRef.current) return;
+      setSourcePath(next.sourcePath);
+      setAnalysis(next);
+      setSelectedRounds(new Set(next.rounds.filter((round) => round.selectedByDefault).map((round) => round.round)));
+      setOutputDir((current) => current || suggestOutput(next.sourcePath));
+      setPhase("selecting");
+    } catch (reason) {
+      if (token !== taskTokenRef.current) return;
+      const error = parseCommandError(reason);
+      setAnalysisError(error.message);
+      setPhase("analysisFailed");
+    }
+  }, [absorbEvent, words.invalidDemo]);
+
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window) || !analysis || !outputDir || phase !== "selecting") return;
+    let disposed = false;
+    void invoke<OutputPreflight>("preflight_output", {
+      request: { analysisId: analysis.analysisId, outputDir },
+    }).then((preflight) => {
+      if (!disposed) setOutputRoot(preflight.root);
+    }).catch((reason) => {
+      if (!disposed) setGlobalError(parseCommandError(reason));
+    });
+    return () => { disposed = true; };
+  }, [analysis, outputDir, phase]);
+
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    let unlisten: (() => void) | undefined;
+    void getCurrentWebview().onDragDropEvent((event) => {
+      if (event.payload.type === "enter" || event.payload.type === "over") {
+        if (!isBusy) setDragActive(true);
         return;
       }
-      setError("");
-      setSourcePath(path);
-      setAnalysis(null);
-      setResult(null);
-      setPhase("analyzing");
-      setProgress({ ...EMPTY_PROGRESS, phase: "parsing" });
-      const events = new Channel<TaskEvent>();
-      events.onmessage = absorbEvent;
-      try {
-        const next = await invoke<AnalysisResult>("analyze_demo", { request: { path }, events });
-        setAnalysis(next);
-        setSelectedRounds(new Set(next.rounds.filter((round) => round.selectedByDefault).map((round) => round.round)));
-        setOutputDir((current) => current || suggestOutput(path));
-        setPhase("ready");
-      } catch (reason) {
-        setError(describeError(reason));
-        setPhase("idle");
+      if (event.payload.type === "leave") {
+        setDragActive(false);
+        return;
       }
-    },
-    [absorbEvent, language],
-  );
+      setDragActive(false);
+      if (isBusy) return;
+      if (event.payload.paths.length !== 1) {
+        setGlobalError({ code: "single_demo_only", message: words.singleDemoOnly });
+        return;
+      }
+      const path = event.payload.paths[0];
+      if (!path.toLowerCase().endsWith(".dem")) {
+        setGlobalError({ code: "invalid_demo_path", message: words.invalidDemo, path });
+        return;
+      }
+      void runAnalysis(path);
+    }).then((stop) => { unlisten = stop; });
+    return () => unlisten?.();
+  }, [isBusy, runAnalysis, words.invalidDemo, words.singleDemoOnly]);
 
   useEffect(() => {
     if (!("__TAURI_INTERNALS__" in window)) return;
+    let disposed = false;
     let unlisten: (() => void) | undefined;
-    void getCurrentWebview()
-      .onDragDropEvent((event) => {
-        if (event.payload.type === "drop") {
-          const path = event.payload.paths.find((candidate) => candidate.toLowerCase().endsWith(".dem"));
-          if (path && !isBusy) void runAnalysis(path);
-        }
-      })
-      .then((stop) => {
-        unlisten = stop;
-      });
-    return () => unlisten?.();
-  }, [isBusy, runAnalysis]);
+    void getCurrentWindow().onCloseRequested((event) => {
+      if (isBusyRef.current) {
+        event.preventDefault();
+        setCloseOpen(true);
+      }
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    }).catch(() => undefined);
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
-    if (!("__TAURI_INTERNALS__" in window)) return;
-    let unlisten: (() => void) | undefined;
-    void getCurrentWindow()
-      .onCloseRequested((event) => {
-        if (isBusy) {
-          event.preventDefault();
-          setCloseOpen(true);
-        }
-      })
-      .then((stop) => {
-        unlisten = stop;
-      });
-    return () => unlisten?.();
-  }, [isBusy]);
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== "o") return;
+      if (isBusy || overwriteConflict || cosmeticOpen || closeOpen || inspectorSheetOpen) return;
+      event.preventDefault();
+      void chooseDemo();
+    };
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  });
 
   async function chooseDemo() {
     if (isBusy) return;
@@ -374,17 +490,34 @@ function App() {
       const path = await invoke<string | null>("choose_demo");
       if (path) await runAnalysis(path);
     } catch (reason) {
-      setError(describeError(reason));
+      setGlobalError(parseCommandError(reason));
     }
   }
 
   async function chooseOutput(): Promise<string | null> {
     try {
       const path = await invoke<string | null>("choose_output_dir");
-      if (path) setOutputDir(path);
+      if (path) {
+        setOutputDir(path);
+        setOutputRoot("");
+      }
       return path;
     } catch (reason) {
-      setError(describeError(reason));
+      setGlobalError(parseCommandError(reason));
+      return null;
+    }
+  }
+
+  async function preflightOutput(destination: string): Promise<OutputPreflight | null> {
+    if (!analysis) return null;
+    try {
+      const preflight = await invoke<OutputPreflight>("preflight_output", {
+        request: { analysisId: analysis.analysisId, outputDir: destination },
+      });
+      setOutputRoot(preflight.root);
+      return preflight;
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
       return null;
     }
   }
@@ -404,551 +537,336 @@ function App() {
     setSelectedRounds(new Set(analysis.rounds.filter((round) => round.selectedByDefault).map((round) => round.round)));
   }
 
+  function handleAllowSuspicious(checked: boolean) {
+    setSettings((current) => ({ ...current, includeSuspicious: checked }));
+    if (!checked && analysis) {
+      const blocked = new Set(analysis.rounds.filter((round) => round.status === "suspicious").map((round) => round.round));
+      setSelectedRounds((current) => new Set([...current].filter((round) => !blocked.has(round))));
+    }
+  }
+
   function updateSettings(patch: Partial<ConverterSettings>) {
+    if (patch.exportCosmetics === false) setCosmeticPhrase("");
     setSettings((current) => ({ ...current, ...patch }));
   }
 
-  const performConvert = useCallback(
-    async (overwrite: boolean, approvedConsent?: CosmeticConsent, destinationOverride?: string) => {
-      const destination = destinationOverride ?? outputDir;
-      if (!analysis || selectedRounds.size === 0 || !destination) return;
-      setError("");
-      setOverwriteOpen(false);
-      setCosmeticOpen(false);
-      setPhase("converting");
-      setActivityOpen(false);
-      setProgress({ ...EMPTY_PROGRESS, phase: "preparing" });
-      const events = new Channel<TaskEvent>();
-      events.onmessage = absorbEvent;
-      const cosmeticConsent = settings.exportCosmetics ? (approvedConsent ?? consent) : null;
-      try {
-        const summary = await invoke<ConversionSummary>("convert_demo", {
-          request: {
-            analysisId: analysis.analysisId,
-            outputDir: destination,
-            selectedRounds: [...selectedRounds].sort((a, b) => a - b),
-            includeSuspicious: settings.includeSuspicious,
-            fullRound: settings.fullRound,
-            side: settings.side,
-            freezePrerollSeconds: settings.freezePrerollSeconds,
-            exportVoice: settings.exportVoice,
-            exportCosmetics: settings.exportCosmetics,
-            exportStickers: settings.exportCosmetics && settings.exportStickers,
-            exportCharms: settings.exportCosmetics && settings.exportCharms,
-            cosmeticConsent,
-            overwrite: overwrite ? "replace" : "deny",
-          },
-          events,
-        });
-        setResult(summary);
-        setProgress((current) => ({ ...current, phase: "complete" }));
-        setPhase("complete");
-      } catch (reason) {
-        setPhase("ready");
-        if (isOutputConflict(reason)) setOverwriteOpen(true);
-        else setError(describeError(reason));
-      }
-    },
-    [absorbEvent, analysis, consent, outputDir, selectedRounds, settings],
-  );
+  function restoreDefaultSettings() {
+    setSettings({ ...DEFAULT_SETTINGS });
+    setCosmeticPhrase("");
+    if (analysis) {
+      const suspicious = new Set(analysis.rounds.filter((round) => round.status === "suspicious").map((round) => round.round));
+      setSelectedRounds((current) => new Set([...current].filter((round) => !suspicious.has(round))));
+    }
+  }
 
   async function beginConvert() {
     if (!analysis || selectedRounds.size === 0) return;
     let destination = outputDir;
     if (!destination) destination = (await chooseOutput()) ?? "";
     if (!destination) return;
-    if (settings.exportCosmetics) {
+    if (settings.exportCosmetics && !consentIsValid(cosmeticPhrase)) {
       setCosmeticOpen(true);
       return;
     }
-    await performConvert(false, undefined, destination);
+    const preflight = await preflightOutput(destination);
+    if (!preflight) return;
+    if (preflight.exists) {
+      setOverwriteConflict(preflight);
+      return;
+    }
+    await performConvert(false, destination);
   }
 
-  async function openOutput() {
-    if (!result) return;
+  async function performConvert(overwrite: boolean, destination = outputDir) {
+    if (!analysis || selectedRounds.size === 0 || !destination) return;
+    const token = ++taskTokenRef.current;
+    taskWarningsRef.current = [];
+    setGlobalError(null);
+    setValidationError("");
+    setConversionWarnings([]);
+    setOverwriteConflict(null);
+    setInspectorSheetOpen(false);
+    setResult(null);
+    setProgress(emptyProgress());
+    setPhase("converting");
+
+    const events = new Channel<TaskEvent>();
+    events.onmessage = (event) => absorbEvent(event, token);
     try {
-      await invoke("open_output", { request: { path: result.root } });
+      const summary = await invoke<ConversionSummary>("convert_demo", {
+        request: {
+          analysisId: analysis.analysisId,
+          outputDir: destination,
+          selectedRounds: [...selectedRounds].sort((left, right) => left - right),
+          includeSuspicious: settings.includeSuspicious,
+          fullRound: settings.fullRound,
+          side: settings.side,
+          freezePrerollSeconds: settings.freezePrerollSeconds,
+          exportVoice: settings.exportVoice,
+          exportCosmetics: settings.exportCosmetics,
+          exportStickers: settings.exportCosmetics && settings.exportStickers,
+          exportCharms: settings.exportCosmetics && settings.exportCharms,
+          cosmeticConsent: settings.exportCosmetics ? { phrase: cosmeticPhrase } : null,
+          overwrite: overwrite ? "replace" : "deny",
+        },
+        events,
+      });
+      if (token !== taskTokenRef.current) return;
+      setResult(summary);
+      setOutputRoot(summary.root);
+      setConversionWarnings(taskWarningsRef.current);
+      setCommandMode(summary.rounds.length > 1 ? "sequence" : "round");
+      setProgress((current) => ({ ...current, phase: "complete" }));
+      setPhase("complete");
     } catch (reason) {
-      setError(describeError(reason));
+      if (token !== taskTokenRef.current) return;
+      const error = parseCommandError(reason);
+      if (error.code === "output_exists") {
+        setOverwriteConflict({ root: error.path || outputRoot, exists: true });
+        setPhase("selecting");
+      } else if (error.code === "validation_failed") {
+        setValidationError(error.message);
+        setPhase("validationFailed");
+      } else {
+        setGlobalError(error);
+        setPhase("selecting");
+      }
     }
   }
 
-  async function copyCommand() {
-    if (!result) return;
-    const command = result.commands.cosmeticSequence || result.commands.sequence;
+  async function openPath(path: string) {
+    if (!path) return;
     try {
-      await navigator.clipboard.writeText(command);
-    } catch {
-      const textArea = document.createElement("textarea");
-      textArea.value = command;
-      textArea.style.position = "fixed";
-      textArea.style.opacity = "0";
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand("copy");
-      textArea.remove();
+      await invoke("open_output", { request: { path } });
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
     }
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
   }
 
-  function resetAll() {
+  async function copyText(value: string, target: CopyTarget) {
+    try {
+      try {
+        await navigator.clipboard.writeText(value);
+      } catch {
+        const textArea = document.createElement("textarea");
+        textArea.value = value;
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.select();
+        const copied = document.execCommand("copy");
+        textArea.remove();
+        if (!copied) throw new Error(words.copyFailed);
+      }
+      setCopiedTarget(target);
+      setLiveMessage(words.copied);
+      window.setTimeout(() => {
+        setCopiedTarget((current) => current === target ? null : current);
+        setLiveMessage("");
+      }, 2000);
+    } catch (reason) {
+      setGlobalError({ code: "copy_failed", message: parseCommandError(reason).message });
+      setLiveMessage(words.copyFailed);
+    }
+  }
+
+  function resetSession() {
+    ++taskTokenRef.current;
     setPhase("idle");
     setSourcePath("");
+    setOutputRoot("");
     setAnalysis(null);
     setResult(null);
     setSelectedRounds(new Set());
-    setError("");
-    setProgress(EMPTY_PROGRESS);
+    setProgress(emptyProgress());
+    setAnalysisError("");
+    setValidationError("");
+    setGlobalError(null);
+    setInspectorSheetOpen(false);
+    setCosmeticPhrase("");
+    setSettings((current) => ({ ...current, exportCosmetics: false, includeSuspicious: false }));
   }
-
-  const progressFraction = progress.estimated > 0 ? Math.min(progress.written / progress.estimated, 0.96) : 0.08;
-  const recommendedCount = analysis?.rounds.filter((round) => round.status === "recommended").length ?? 0;
-  const suspiciousCount = analysis?.rounds.filter((round) => round.status === "suspicious").length ?? 0;
-  const themeTitle = theme === "system" ? words.systemTheme : theme === "light" ? words.lightTheme : words.darkTheme;
-  const closeAdvanced = useCallback(() => setAdvancedOpen(false), []);
-  const settingsBoundary = useFocusBoundary(advancedOpen, closeAdvanced);
 
   function cycleTheme() {
-    setTheme((current) => (current === "system" ? "light" : current === "light" ? "dark" : "system"));
+    setTheme((current) => current === "system" ? "light" : current === "light" ? "dark" : "system");
   }
 
-  function renderIdle() {
-    return (
-      <div className="idle-view enter">
-        <header className="pane-header">
-          <h1>{words.idleTitle}</h1>
-          <p>{words.idleBody}</p>
-        </header>
-        <div className="file-row">
-          <span className="file-row-icon" aria-hidden="true"><TraceMark size={30} /></span>
-          <div>
-            <strong>{words.notSelected}</strong>
-            <span>{words.fullParse}</span>
-          </div>
-          <button className="primary-button" type="button" onClick={() => void chooseDemo()}>
-            <FolderIcon />
-            {words.chooseDemo}
-          </button>
-        </div>
-        <button className="drop-inline" type="button" onClick={() => void chooseDemo()}>{words.dropHint} · .dem</button>
-      </div>
-    );
+  async function requestWindowClose() {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    try {
+      await getCurrentWindow().close();
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
+    }
   }
 
-  function renderAnalyzing() {
-    return (
-      <div className="analyzing-view enter">
-        <header className="pane-header centered">
-          <h1>{words.analyzingTitle}</h1>
-          <p>{words.analyzingBody}</p>
-        </header>
-        <div className="trace-loader" aria-label={words.analyzing}>
-          <svg viewBox="0 0 680 92" preserveAspectRatio="none" aria-hidden="true">
-            <path className="trace-bed" d="M4 56C86 56 80 21 164 21s78 50 164 50 80-50 166-50 78 35 182 35" />
-            <path className="trace-live" d="M4 56C86 56 80 21 164 21s78 50 164 50 80-50 166-50 78 35 182 35" />
-          </svg>
-          <div className="loader-meta" role="status" aria-live="polite">
-            <span>{fileName(sourcePath)}</span>
-            <span>{phaseLabel(progress.phase, words)}</span>
-          </div>
-        </div>
-        <div className="quiet-note centered">
-          <span className="note-dot pulse" />
-          <span>{words.localOnly}</span>
-        </div>
-      </div>
-    );
-  }
-
-  function renderReady() {
-    if (!analysis) return null;
-    return (
-      <div className="ready-view enter">
-        <header className="workspace-header">
-          <div>
-            <h1>{analysis.fileName}</h1>
-            <p>{words.readyTitle}</p>
-          </div>
-          <button className="secondary-button" type="button" onClick={() => setAdvancedOpen(true)}>
-            <SlidersIcon />
-            {words.advanced}
-          </button>
-        </header>
-
-        <section className="demo-facts" aria-label={words.demoSummary}>
-          <Metric label={words.map} value={analysis.map || "—"} />
-          <Metric label={words.tickRate} value={analysis.tickRate.toFixed(2)} />
-          <Metric label={words.rounds} value={numberFormat.format(analysis.rounds.length)} detail={`${recommendedCount} ${words.recommended.toLowerCase()}`} />
-          <Metric label={words.rows} value={numberFormat.format(analysis.rowCount)} />
-        </section>
-
-        <section className="round-panel">
-          <div className="round-toolbar">
-            <div className="round-legend">
-              <span><i className="legend-dot stable" />{recommendedCount} {words.recommended}</span>
-              {suspiciousCount > 0 ? <span><i className="legend-dot review" />{suspiciousCount} {words.suspicious}</span> : null}
-            </div>
-            <div className="toolbar-actions">
-              <button type="button" onClick={restoreRecommended}>{words.allRecommended}</button>
-              <button type="button" onClick={() => setSelectedRounds(new Set())}>{words.clear}</button>
-            </div>
-          </div>
-
-          {suspiciousCount > 0 ? (
-            <label className="suspicious-control">
-              <Switch
-                checked={settings.includeSuspicious}
-                onChange={(checked) => {
-                  updateSettings({ includeSuspicious: checked });
-                  if (!checked && analysis) {
-                    const blocked = new Set(analysis.rounds.filter((round) => round.status === "suspicious").map((round) => round.round));
-                    setSelectedRounds((current) => new Set([...current].filter((round) => !blocked.has(round))));
-                  }
-                }}
-                label={words.includeSuspicious}
-              />
-              <span>{words.includeSuspicious}</span>
-            </label>
-          ) : null}
-
-          <div className="round-table" aria-label={words.rounds}>
-            <div className="round-table-head" aria-hidden="true">
-              <span />
-              <span>{words.round}</span>
-              <span>{words.quality}</span>
-              <span>{words.duration}</span>
-              <span>{words.players}</span>
-              <span>{words.data}</span>
-            </div>
-            <div className="round-table-body">
-              {analysis.rounds.map((round) => {
-                const disabled = round.status === "suspicious" && !settings.includeSuspicious;
-                const checked = selectedRounds.has(round.round);
-                return (
-                  <button
-                    className={`round-row ${checked ? "selected" : ""} ${disabled ? "disabled" : ""}`}
-                    type="button"
-                    key={round.round}
-                    onClick={() => toggleRound(round)}
-                    aria-pressed={checked}
-                    disabled={disabled}
-                  >
-                    <span className="round-check" aria-hidden="true">{checked ? <CheckIcon size={15} /> : null}</span>
-                    <span className="round-number"><b>{String(round.round).padStart(2, "0")}</b><small>#{round.startTick}</small></span>
-                    <span className="quality-cell">
-                      <i className={`quality-pill ${round.status}`}>
-                        {round.status === "recommended" ? words.recommendedLabel : words.suspiciousLabel}
-                      </i>
-                      <small title={round.problems.join(" · ")}>{round.problems[0] || words.noProblems}</small>
-                    </span>
-                    <span>{formatDuration(round.durationSeconds)}</span>
-                    <span className="team-count"><i>T {round.tPlayers}</i><i>CT {round.ctPlayers}</i></span>
-                    <span>{numberFormat.format(round.validRows)}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-
-        <div className="conversion-dock">
-          <div>
-            <strong>{words.selected.replace("{count}", String(selectedRounds.size))}</strong>
-            <span>{outputDir ? fileName(outputDir) : words.notSelected}</span>
-          </div>
-          <button className="primary-button" type="button" disabled={selectedRounds.size === 0} onClick={() => void beginConvert()}>
-            <span>{outputDir ? words.convert : words.chooseOutput}</span>
-            <ArrowIcon />
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  function renderConverting() {
-    return (
-      <div className="converting-view enter">
-        <header className="pane-header centered">
-          <h1>{words.convertingTitle}</h1>
-          <p>{words.convertingBody}</p>
-        </header>
-
-        <div className="progress-stage">
-          <div className="progress-trace" aria-hidden="true">
-            <svg viewBox="0 0 720 84" preserveAspectRatio="none">
-              <path d="M4 50C88 50 96 17 180 17s92 50 180 50 96-50 180-50 92 33 176 33" />
-            </svg>
-            <span className="progress-fill" style={{ width: `${Math.max(progressFraction * 100, 7)}%` }} />
-            {[0, 0.25, 0.5, 0.75, 1].map((point) => (
-              <i key={point} className={progressFraction >= point ? "passed" : ""} style={{ left: `${point * 100}%` }} />
-            ))}
-          </div>
-          <div className="progress-meta" role="status" aria-live="polite">
-            <strong>{phaseLabel(progress.phase, words)}</strong>
-            <span>
-              {progress.estimated > 0
-                ? words.filesWritten.replace("{written}", String(progress.written)).replace("{total}", String(progress.estimated))
-                : progress.currentRound
-                  ? words.roundWorking.replace("{round}", String(progress.currentRound))
-                  : fileName(sourcePath)}
-            </span>
-          </div>
-        </div>
-
-        {progress.log.length > 0 ? (
-          <div className={`activity ${activityOpen ? "open" : ""}`}>
-            <button type="button" onClick={() => setActivityOpen((current) => !current)}>
-              <span>{words.activity}</span>
-              <ChevronIcon />
-            </button>
-            {activityOpen ? (
-              <div className="activity-log">
-                {progress.log.map((line, index) => <span key={`${line}-${index}`}>{line}</span>)}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-    );
-  }
-
-  function renderComplete() {
-    if (!result) return null;
-    const command = result.commands.cosmeticSequence || result.commands.sequence;
-    return (
-      <div className="complete-view enter">
-        <div className="success-mark"><CheckIcon size={32} /></div>
-        <h1>{words.completeTitle}</h1>
-        <p>{words.completeBody}</p>
-        <div className="complete-actions">
-          <button className="primary-button" type="button" onClick={() => void openOutput()}>
-            <FolderIcon />
-            {words.openFolder}
-          </button>
-          <button className="secondary-button" type="button" onClick={() => void copyCommand()}>
-            {copied ? <CheckIcon /> : <CopyIcon />}
-            {copied ? words.copied : words.copySequence}
-          </button>
-        </div>
-
-        <section className="result-summary">
-          <Metric label={words.exportedRounds} value={numberFormat.format(result.rounds.length)} />
-          <Metric label={words.validated} value={numberFormat.format(result.validatedFiles)} />
-          <Metric label={words.outputSize} value={formatBytes(result.outputBytes)} />
-          <Metric label={words.voiceFiles} value={numberFormat.format(result.voice.sidecars)} />
-        </section>
-
-        <section className="result-details">
-          <details open>
-            <summary>{words.commands}<ChevronIcon /></summary>
-            <button className="command-line" type="button" onClick={() => void copyCommand()} title={command}>
-              <code>{command}</code><CopyIcon size={16} />
-            </button>
-          </details>
-          <details>
-            <summary>{words.playerFiles} · {result.players.length}<ChevronIcon /></summary>
-            <div className="player-grid">
-              {result.players.map((player) => (
-                <div key={`${player.steamId}-${player.team}`}>
-                  <span>{typeof player.team === "number" ? `TEAM ${player.team}` : player.team}</span>
-                  <strong>{player.name}</strong>
-                  <small>{player.files} files · {player.rounds} rounds</small>
-                </div>
-              ))}
-            </div>
-          </details>
-          <details>
-            <summary>{words.manifest}<ChevronIcon /></summary>
-            <div className="path-line">{result.manifestPath}</div>
-          </details>
-        </section>
-
-        <div className="complete-footer">
-          <button type="button" onClick={() => setPhase("ready")}><ReplayIcon />{words.exportAgain}</button>
-          <button type="button" onClick={resetAll}>{words.newDemo}<ArrowIcon /></button>
-        </div>
-      </div>
-    );
-  }
+  const selectingView = analysis && phase === "selecting" ? (
+    <div className="selection-layout">
+      <RoundWorkspace
+        words={words}
+        analysis={analysis}
+        selectedRounds={selectedRounds}
+        allowSuspicious={settings.includeSuspicious}
+        outputDir={outputDir}
+        outputRoot={outputRoot}
+        onToggleRound={toggleRound}
+        onRestoreRecommended={restoreRecommended}
+        onClearSelection={() => setSelectedRounds(new Set())}
+        onAllowSuspiciousChange={handleAllowSuspicious}
+        onChooseOutput={() => void chooseOutput()}
+        onOpenSettings={(trigger) => {
+          settingsTriggerRef.current = trigger;
+          setInspectorSheetOpen(true);
+        }}
+        onConvert={() => void beginConvert()}
+        formatNumber={(value) => numberFormat.format(value)}
+      />
+      {inspectorVisible ? (
+        <ExportInspector
+          words={words}
+          settings={settings}
+          docked={inspectorDocked}
+          returnFocusRef={settingsTriggerRef}
+          onChange={updateSettings}
+          onRequestCosmetics={() => {
+            setCosmeticPhrase("");
+            setCosmeticOpen(true);
+          }}
+          onClose={() => setInspectorSheetOpen(false)}
+          onRestoreDefaults={restoreDefaultSettings}
+        />
+      ) : null}
+    </div>
+  ) : null;
 
   return (
     <div className="app-shell">
-      <aside className="rail">
-        <div className="brand">
-          <span className="brand-mark"><TraceMark /></span>
-          <span><strong>DemoTracer</strong><small>{words.appSubtitle}</small></span>
-        </div>
+      <AppChrome
+        words={words}
+        language={language}
+        theme={theme}
+        themeTitle={themeTitle}
+        phase={phase}
+        sourcePath={sourcePath}
+        sourceFileName={sourceFileName}
+        analysis={analysis}
+        busy={isBusy}
+        onToggleLanguage={() => setLanguage((current) => current === "zh" ? "en" : "zh")}
+        onCycleTheme={cycleTheme}
+        onChangeDemo={() => void chooseDemo()}
+        onRequestClose={() => void requestWindowClose()}
+      />
 
-        <nav className="workflow" aria-label={words.workflowLabel}>
-          {words.steps.map((step, index) => (
-            <div className={`workflow-step ${index === stepIndex ? "active" : ""} ${index < stepIndex ? "done" : ""}`} key={step}>
-              <span>{index < stepIndex ? <CheckIcon size={14} /> : index + 1}</span>
-              <div><strong>{step}</strong><i /></div>
-            </div>
-          ))}
-        </nav>
-
-        <div className="rail-context">
-          <section>
-            <header><span>{words.source}</span>{sourcePath && !isBusy ? <button type="button" onClick={() => void chooseDemo()}>{words.change}</button> : null}</header>
-            <div className={sourcePath ? "has-value" : ""}>
-              <i>{words.sourceBadge}</i>
-              <strong title={sourcePath}>{sourcePath ? fileName(sourcePath) : words.notSelected}</strong>
-            </div>
-          </section>
-          <section>
-            <header><span>{words.output}</span>{!isBusy ? <button type="button" onClick={() => void chooseOutput()}>{words.change}</button> : null}</header>
-            <div className={outputDir ? "has-value" : ""}>
-              <FolderIcon size={17} />
-              <strong title={outputDir}>{outputDir ? fileName(outputDir) : words.notSelected}</strong>
-            </div>
-          </section>
-        </div>
-
-        <div className="rail-footer">
-          <button type="button" onClick={cycleTheme} title={`${words.theme}: ${themeTitle}`}>
-            {theme === "dark" ? <MoonIcon /> : <SunIcon />}
-            <span>{themeTitle}</span>
-          </button>
-          <button type="button" onClick={() => setLanguage((current) => (current === "zh" ? "en" : "zh"))} title={words.language}>
-            <span className="language-glyph">{language === "zh" ? "中" : "EN"}</span>
-            <span>{language === "zh" ? "中文" : "English"}</span>
-          </button>
-        </div>
-      </aside>
-
-      <main className="workspace">
-        {error ? (
-          <div className="error-banner" role="alert">
-            <AlertIcon />
-            <span><strong>{words.errorTitle}</strong>{error}</span>
-            <button type="button" aria-label={words.close} onClick={() => setError("")}><CloseIcon /></button>
+      <main className="app-workspace">
+        {globalError ? (
+          <div className="error-strip" role="alert">
+            <AlertIcon size={17} />
+            <div><strong>{words.errorTitle}</strong><span>{globalError.message}</span></div>
+            <button className="icon-button" type="button" onClick={() => setGlobalError(null)} aria-label={words.dismiss}><CloseIcon size={15} /></button>
           </div>
         ) : null}
-        {phase === "idle" ? renderIdle() : null}
-        {phase === "analyzing" ? renderAnalyzing() : null}
-        {phase === "ready" ? renderReady() : null}
-        {phase === "converting" ? renderConverting() : null}
-        {phase === "complete" ? renderComplete() : null}
+
+        {phase === "idle" ? <DemoPickerView words={words} chooseButtonRef={chooseButtonRef} onChoose={() => void chooseDemo()} /> : null}
+        {phase === "analyzing" ? <AnalysisProgressView words={words} sourceFileName={sourceFileName} elapsedSeconds={elapsedSeconds} /> : null}
+        {phase === "analysisFailed" ? (
+          <AnalysisFailedView words={words} error={analysisError} retryButtonRef={retryButtonRef} onRetry={() => void runAnalysis(sourcePath)} onChangeDemo={() => void chooseDemo()} />
+        ) : null}
+        {selectingView}
+        {phase === "converting" ? <ConversionProgressView words={words} progress={progress} outputRoot={outputRoot} /> : null}
+        {phase === "validationFailed" ? (
+          <ValidationFailedView words={words} error={validationError} outputRoot={outputRoot} onOpenFolder={() => void openPath(outputRoot)} onBack={() => setPhase("selecting")} />
+        ) : null}
+        {phase === "complete" && result ? (
+          <ResultView
+            words={words}
+            result={result}
+            warnings={conversionWarnings}
+            copiedTarget={copiedTarget}
+            commandMode={commandMode}
+            playbackPreset={playbackPreset}
+            resultHeadingRef={resultHeadingRef}
+            onCommandModeChange={setCommandMode}
+            onPlaybackPresetChange={(patch) => setPlaybackPreset((current) => ({ ...current, ...patch }))}
+            onCopy={(value, target) => void copyText(value, target)}
+            onOpenFolder={() => void openPath(result.root)}
+            onBack={() => setPhase("selecting")}
+            onNewDemo={resetSession}
+            formatNumber={(value) => numberFormat.format(value)}
+            formatBytes={formatBytes}
+          />
+        ) : null}
       </main>
 
-      {advancedOpen ? (
-        <div className="sheet-layer" onMouseDown={closeAdvanced}>
-          <aside className="settings-sheet" ref={settingsBoundary} role="dialog" aria-modal="true" aria-labelledby="settings-title" tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
-            <header>
-              <div><span className="eyebrow">DEMOTRACER</span><h2 id="settings-title">{words.settingsTitle}</h2><p>{words.settingsBody}</p></div>
-              <button type="button" aria-label={words.close} onClick={closeAdvanced}><CloseIcon /></button>
-            </header>
-            <div className="settings-group">
-              <label>{words.side}</label>
-              <div className="segmented">
-                {(["both", "t", "ct"] as const).map((side) => (
-                  <button className={settings.side === side ? "active" : ""} type="button" key={side} onClick={() => updateSettings({ side })}>
-                    {side === "both" ? words.both : side === "t" ? words.t : words.ct}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <SettingRow title={words.fullRoundLabel} help={words.fullRoundHelp}>
-              <Switch checked={settings.fullRound} onChange={(fullRound) => updateSettings({ fullRound })} label={words.fullRoundLabel} />
-            </SettingRow>
-            <div className="settings-group preroll-setting">
-              <label htmlFor="preroll">{words.preroll}<span>{settings.freezePrerollSeconds}s</span></label>
-              <input id="preroll" type="range" min="0" max="120" step="1" value={settings.freezePrerollSeconds} onChange={(event) => updateSettings({ freezePrerollSeconds: Number(event.target.value) })} />
-            </div>
-            <SettingRow title={words.voice} help={words.voiceHelp}>
-              <Switch checked={settings.exportVoice} onChange={(exportVoice) => updateSettings({ exportVoice })} label={words.voice} />
-            </SettingRow>
-            <div className={`risk-setting ${settings.exportCosmetics ? "enabled" : ""}`}>
-              <SettingRow title={words.cosmetics} help={words.cosmeticsHelp} risk>
-                <Switch
-                  checked={settings.exportCosmetics}
-                  onChange={(exportCosmetics) => {
-                    updateSettings({ exportCosmetics, exportStickers: exportCosmetics && settings.exportStickers, exportCharms: exportCosmetics && settings.exportCharms });
-                    if (!exportCosmetics) setConsent({ acknowledgeGsltRisk: false, acceptExportDisclaimer: false, phrase: "" });
-                  }}
-                  label={words.cosmetics}
-                />
-              </SettingRow>
-              {settings.exportCosmetics ? (
-                <div className="sub-options">
-                  <label><input type="checkbox" checked={settings.exportStickers} onChange={(event) => updateSettings({ exportStickers: event.target.checked })} />{words.stickers}</label>
-                  <label><input type="checkbox" checked={settings.exportCharms} onChange={(event) => updateSettings({ exportCharms: event.target.checked })} />{words.charms}</label>
-                </div>
-              ) : null}
-            </div>
-            <button className="primary-button sheet-done" type="button" onClick={closeAdvanced}>{words.done}</button>
-          </aside>
+      {dragActive ? (
+        <div className="drop-overlay" role="status">
+          <FolderIcon size={24} />
+          <strong>{words.dropDemo}</strong>
+          <span>.dem</span>
         </div>
       ) : null}
 
-      {overwriteOpen ? (
-        <Modal labelledBy="overwrite-title" onDismiss={() => setOverwriteOpen(false)}>
-          <span className="modal-icon"><ReplayIcon /></span>
-          <h2 id="overwrite-title">{words.overwriteTitle}</h2>
-          <p>{words.overwriteBody}</p>
-          <div className="modal-actions">
-            <button className="secondary-button" type="button" onClick={() => setOverwriteOpen(false)}>{words.cancel}</button>
-            <button className="danger-button" type="button" onClick={() => void performConvert(true)}>{words.replace}</button>
-          </div>
-        </Modal>
+      {overwriteConflict ? (
+        <DialogPrimitive labelledBy="overwrite-title" describedBy="overwrite-description" onDismiss={() => setOverwriteConflict(null)} initialFocusRef={chooseOtherOutputRef} dismissOnScrimClick={false}>
+          <header className="dialog-header">
+            <h2 id="overwrite-title">{words.overwriteTitle}</h2>
+            <button className="icon-button" type="button" onClick={() => setOverwriteConflict(null)} aria-label={words.close}><CloseIcon size={16} /></button>
+          </header>
+          <p id="overwrite-description" className="dialog-description">{words.overwriteBody}</p>
+          <code className="dialog-path">{overwriteConflict.root}</code>
+          <button className="text-button dialog-inline-action" type="button" onClick={() => void openPath(overwriteConflict.root)}><FolderIcon size={15} />{words.openExisting}</button>
+          <footer className="dialog-actions three-actions">
+            <button className="secondary-button" type="button" onClick={() => setOverwriteConflict(null)}>{words.cancel}</button>
+            <button ref={chooseOtherOutputRef} className="secondary-button" type="button" onClick={() => {
+              setOverwriteConflict(null);
+              void chooseOutput();
+            }}>{words.chooseAnotherOutput}</button>
+            <button className="danger-button" type="button" onClick={() => void performConvert(true)}>{words.replaceAndConvert}</button>
+          </footer>
+        </DialogPrimitive>
       ) : null}
 
       {cosmeticOpen ? (
-        <Modal labelledBy="cosmetic-title" onDismiss={() => setCosmeticOpen(false)}>
-          <span className="modal-icon warning"><AlertIcon /></span>
-          <h2 id="cosmetic-title">{words.cosmeticTitle}</h2>
-          <p>{words.cosmeticBody}</p>
-          <div className="consent-list">
-            <label><input type="checkbox" checked={consent.acknowledgeGsltRisk} onChange={(event) => setConsent((current) => ({ ...current, acknowledgeGsltRisk: event.target.checked }))} /><span>{words.acknowledgeRisk}</span></label>
-            <label><input type="checkbox" checked={consent.acceptExportDisclaimer} onChange={(event) => setConsent((current) => ({ ...current, acceptExportDisclaimer: event.target.checked }))} /><span>{words.acceptDisclaimer}</span></label>
-          </div>
-          <label className="phrase-field"><span>{words.typePhrase}</span><code>{COSMETIC_PHRASE}</code><input autoComplete="off" spellCheck={false} value={consent.phrase} onChange={(event) => setConsent((current) => ({ ...current, phrase: event.target.value }))} /></label>
-          <div className="modal-actions">
-            <button className="secondary-button" type="button" onClick={() => setCosmeticOpen(false)}>{words.cancel}</button>
-            <button
-              className="primary-button"
-              type="button"
-              disabled={!consent.acknowledgeGsltRisk || !consent.acceptExportDisclaimer || consent.phrase.trim() !== COSMETIC_PHRASE}
-              onClick={() => void performConvert(false, consent)}
-            >
-              {words.confirmCosmetics}<ArrowIcon />
+        <DialogPrimitive labelledBy="cosmetic-title" describedBy="cosmetic-description" onDismiss={() => setCosmeticOpen(false)} initialFocusRef={cosmeticInputRef} dismissOnScrimClick={false} className="dialog-surface cosmetic-dialog">
+          <header className="dialog-header warning-header">
+            <span><AlertIcon size={18} /></span>
+            <h2 id="cosmetic-title">{words.cosmeticTitle}</h2>
+            <button className="icon-button" type="button" onClick={() => setCosmeticOpen(false)} aria-label={words.close}><CloseIcon size={16} /></button>
+          </header>
+          <p id="cosmetic-description" className="dialog-description">{words.cosmeticBody}</p>
+          <div className="phrase-field">
+            <label htmlFor="cosmetic-confirmation-phrase">{words.typePhrase}</label>
+            <button className="phrase-copy-button" type="button" onClick={() => void copyText(COSMETIC_PHRASE, "phrase")} aria-label={words.copyPhrase}>
+              <code>{COSMETIC_PHRASE}</code>
+              <span>{copiedTarget === "phrase" ? <CheckIcon size={14} /> : <CopyIcon size={14} />}{copiedTarget === "phrase" ? words.copied : words.copyPhrase}</span>
             </button>
+            <input id="cosmetic-confirmation-phrase" ref={cosmeticInputRef} autoComplete="off" spellCheck={false} value={cosmeticPhrase} onChange={(event) => setCosmeticPhrase(event.target.value)} />
+            <small>{words.phraseCaseSensitive}</small>
           </div>
-        </Modal>
+          <footer className="dialog-actions">
+            <button className="secondary-button" type="button" onClick={() => setCosmeticOpen(false)}>{words.cancel}</button>
+            <button className="primary-button" type="button" disabled={!consentIsValid(cosmeticPhrase)} onClick={() => {
+              setSettings((current) => ({ ...current, exportCosmetics: true }));
+              setCosmeticOpen(false);
+            }}>{words.enableCosmetics}<ArrowIcon size={15} /></button>
+          </footer>
+        </DialogPrimitive>
       ) : null}
 
       {closeOpen ? (
-        <Modal labelledBy="close-title" onDismiss={() => setCloseOpen(false)}>
-          <span className="modal-icon warning"><AlertIcon /></span>
-          <h2 id="close-title">{words.closeTitle}</h2>
-          <p>{words.closeBody}</p>
-          <div className="modal-actions">
-            <button className="secondary-button" type="button" onClick={() => setCloseOpen(false)}>{words.keepOpen}</button>
+        <DialogPrimitive labelledBy="close-task-title" describedBy="close-task-description" onDismiss={() => setCloseOpen(false)} initialFocusRef={keepWorkingRef} dismissOnScrimClick={false}>
+          <header className="dialog-header warning-header">
+            <span><AlertIcon size={18} /></span>
+            <h2 id="close-task-title">{words.closeTaskTitle}</h2>
+          </header>
+          <p id="close-task-description" className="dialog-description">{words.closeTaskBody}</p>
+          <footer className="dialog-actions">
+            <button ref={keepWorkingRef} className="primary-button" type="button" onClick={() => setCloseOpen(false)}>{words.keepWorking}</button>
             <button className="danger-button" type="button" onClick={() => void getCurrentWindow().destroy()}>{words.closeAnyway}</button>
-          </div>
-        </Modal>
+          </footer>
+        </DialogPrimitive>
       ) : null}
-    </div>
-  );
-}
 
-function SettingRow({
-  title,
-  help,
-  children,
-  risk,
-}: {
-  title: string;
-  help: string;
-  children: ReactNode;
-  risk?: boolean;
-}) {
-  return (
-    <div className="setting-row">
-      <div><strong>{title}{risk ? <AlertIcon size={15} /> : null}</strong><p>{help}</p></div>
-      {children}
+      <span className="sr-only" role="status" aria-live="polite">{liveMessage}</span>
     </div>
   );
 }

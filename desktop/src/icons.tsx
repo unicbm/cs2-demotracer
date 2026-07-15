@@ -101,6 +101,31 @@ export function CloseIcon({ size = 18, ...props }: IconProps) {
   );
 }
 
+export function MinimizeIcon({ size = 16, ...props }: IconProps) {
+  return (
+    <svg {...base(size)} {...props}>
+      <path d="M6 15.5h12" />
+    </svg>
+  );
+}
+
+export function MaximizeIcon({ size = 16, ...props }: IconProps) {
+  return (
+    <svg {...base(size)} {...props}>
+      <rect x="6" y="6" width="12" height="12" rx="0.8" />
+    </svg>
+  );
+}
+
+export function RestoreIcon({ size = 16, ...props }: IconProps) {
+  return (
+    <svg {...base(size)} {...props}>
+      <path d="M9 8V6h9v9h-2" />
+      <rect x="6" y="9" width="9" height="9" rx="0.8" />
+    </svg>
+  );
+}
+
 export function AlertIcon({ size = 18, ...props }: IconProps) {
   return (
     <svg {...base(size)} {...props}>

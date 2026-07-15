@@ -243,6 +243,18 @@ version is missing or lower, replace the complete playback bundle, including
 `addons/BotController/bin/win64/BotController.dll`,
 `addons/BotController/gamedata.json`, and `addons/metamod/BotController.vdf`.
 
+## Desktop Playback Presets
+
+The desktop GUI generates a compact command such as:
+
+```text
+dtr_preset 0x15; dtr_go seq "<manifest.json>" 0
+```
+
+`dtr_preset status` prints the effective v1 mask and bit assignments. Presets
+from the current desktop GUI require a playback bundle that includes this
+command.
+
 ## Voice Replay
 
 Voice playback uses demo-backed `.dtv` sidecars exported by the converter with

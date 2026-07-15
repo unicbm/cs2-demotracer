@@ -1,7 +1,25 @@
 export type Language = "zh" | "en";
 export type Theme = "system" | "light" | "dark";
 export type SideChoice = "both" | "t" | "ct";
-export type Phase = "idle" | "analyzing" | "ready" | "converting" | "complete";
+
+export type Phase =
+  | "idle"
+  | "analyzing"
+  | "analysisFailed"
+  | "selecting"
+  | "converting"
+  | "validationFailed"
+  | "complete";
+
+export type ProgressPhase =
+  | "preparing"
+  | "parsing"
+  | "analyzing"
+  | "writing"
+  | "artifacts"
+  | "voice"
+  | "validating"
+  | "complete";
 
 export interface RoundInfo {
   round: number;
@@ -28,6 +46,17 @@ export interface AnalysisResult {
   rounds: RoundInfo[];
 }
 
+export interface OutputPreflight {
+  root: string;
+  exists: boolean;
+}
+
+export interface CommandErrorDto {
+  code: string;
+  message: string;
+  path?: string;
+}
+
 export interface PlayerSummary {
   team: string | number;
   name: string;
@@ -47,6 +76,8 @@ export interface ConversionSummary {
   filesWritten: number;
   validatedFiles: number;
   outputBytes: number | string;
+  roundsExported: number;
+  firstExportedRound?: number | null;
   rounds: RoundOutputSummary[];
   players: PlayerSummary[];
   voice: {
@@ -60,6 +91,8 @@ export interface ConversionSummary {
     preset?: "basic" | "full" | null;
   };
   commands: {
+    goRound: string;
+    goSequence: string;
     round: string;
     sequence: string;
     cosmeticRound?: string | null;
@@ -78,19 +111,52 @@ export interface ConverterSettings {
   includeSuspicious: boolean;
 }
 
-export interface CosmeticConsent {
-  acknowledgeGsltRisk: boolean;
-  acceptExportDisclaimer: boolean;
-  phrase: string;
+export type LogLevel = "info" | "warning" | "error";
+
+export interface ActivityLogEntry {
+  level: LogLevel;
+  message: string;
 }
 
 export interface ProgressState {
-  phase: string;
+  phase: ProgressPhase;
   message: string;
   written: number;
   estimated: number;
+  unit: "playerFiles" | "artifacts" | null;
   currentRound?: number;
-  log: string[];
+  completedRounds: number;
+  selectedRounds: number;
+  currentItem?: string;
+  log: ActivityLogEntry[];
+  warnings: string[];
+  announcement: string;
 }
 
-export type TaskEvent = Record<string, unknown>;
+export type TaskPhase = "parsing" | "analyzing" | "exporting" | "voice" | "validating" | "complete";
+
+export type ConversionProgressEvent =
+  | { event: "analysisStarted" }
+  | { event: "analysisFinished"; rounds: number; selectedRounds: number; estimatedFiles: number }
+  | { event: "roundSkipped"; round: number; reason: string }
+  | { event: "roundStarted"; round: number; estimatedPlayers: number }
+  | { event: "playerSkipped"; round: number; steamId: string; reason: string }
+  | {
+      event: "playerWritten";
+      round: number;
+      steamId: string;
+      playerName: string;
+      side: string;
+      path: string;
+      ticks: number;
+      subticks: number;
+    }
+  | { event: "roundFinished"; round: number; files: number }
+  | { event: "artifactsWritingStarted"; root: string; artifacts: number }
+  | { event: "artifactWritten"; path: string; artifactKind: string }
+  | { event: "finished"; root: string; manifestPath: string; filesWritten: number };
+
+export type TaskEvent =
+  | { kind: "phase"; phase: TaskPhase }
+  | { kind: "log"; level: LogLevel; message: string }
+  | { kind: "progress"; progress: ConversionProgressEvent };

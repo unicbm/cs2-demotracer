@@ -15,7 +15,7 @@
 css_plugins reload DemoTracer
 bh_status
 dtr_config_status
-dtr_go seq "<输出目录>\<demo-id>\manifest.json" 0
+dtr_preset 0x15; dtr_go seq "<输出目录>\<demo-id>\manifest.json" 0
 ```
 
 replay identity、武器/loadout 对齐和投掷物对齐默认开启。准星对齐默认关闭，需要显式执行
@@ -80,6 +80,36 @@ DemoTracer 会从 `DemoTracer.dll` 同目录读取可选的 `demotracer.config.j
 | `dtr_replay_identity` | `steam` | 通过 bundle 内置 BotHider 的 presentation lease 向受管 replay bot slot 发布 demo 名字和 SteamID64。队伍/赛事 PNG 头像需要显式 `avatar`；`full` 是 `avatar` 的兼容别名。 |
 | `dtr_util_trace` | `0` | 默认不写 utility CSV trace。 |
 | `bc_replay_pov` | `spectated` | 只给正在被第一人称观察的 replay bot 发布昂贵的 native POV 更新。 |
+
+## 紧凑播放预设：`dtr_preset`
+
+`dtr_preset [status|0xMASK]` 一次应用桌面转换器里提供的六项播放选择，因此一行
+生成的控制台指令即可先配置服务器，再启动播放：
+
+```text
+dtr_preset 0x15; dtr_go seq "<manifest.json>" 0
+```
+
+v1 mask 按十六进制解析。`0x` 前缀可以省略，但生成的指令始终带前缀。以下 bit
+定义是稳定契约，后续不会复用：
+
+| Bit | Hex | 行为 |
+| ---: | ---: | --- |
+| 0 | `0x01` | 武器/loadout 对齐 |
+| 1 | `0x02` | 完整的 demo 证据饰品对齐 |
+| 2 | `0x04` | Demo 玩家名与 SteamID64 identity |
+| 3 | `0x08` | Manifest 头像覆写，不可用时回退 Steam 头像 |
+| 4 | `0x10` | 自动播放 demo 语音 |
+| 5 | `0x20` | Playoff sequence 续播 |
+
+`0x15` 是推荐基础组合：武器、Steam identity 和语音。`0x00` 关闭这六项，`0x3F`
+全部开启。头像同步依赖 Steam identity（`0x08` 需要 `0x04`），饰品同步依赖武器
+对齐（`0x02` 需要 `0x01`）。未知 bit 和非规范组合会被拒绝，不会静默修正。
+
+这个 mask 只完整替换上述六项。投掷物、左右手、准星、handoff、赛事展示、partial
+replay 和聊天设置保持当前值。饰品仍只消费显式导出的 demo 证据，并保留相同的
+Valve / GSLT 风险。Preset 只是当前进程的临时覆盖；reload config 或 plugin 后会恢复
+服务器本地默认值。
 
 ## 高层播放
 

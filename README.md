@@ -121,10 +121,11 @@ Play a converted manifest on a local server:
 ```text
 css_plugins reload DemoTracer
 dtr_config_status
-dtr_voice_auto on
-dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
+dtr_preset 0x15; dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
 ```
 
+`0x15` enables weapon alignment, Steam identity, and automatic voice playback.
+The desktop GUI builds this preset from remembered playback switches.
 `seq` starts a sequence from a source round. Use
 `dtr_go round "<manifest.json>" 0` for a single source round.
 

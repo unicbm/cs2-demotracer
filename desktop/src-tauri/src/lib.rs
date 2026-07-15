@@ -300,8 +300,6 @@ fn default_true() -> bool {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CosmeticConsentDto {
-    pub acknowledge_gslt_risk: bool,
-    pub accept_export_disclaimer: bool,
     pub phrase: String,
 }
 
@@ -366,6 +364,8 @@ pub struct CosmeticSummaryDto {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandSummaryDto {
+    pub go_round: String,
+    pub go_sequence: String,
     pub round: String,
     pub sequence: String,
     pub cosmetic_round: Option<String>,
@@ -376,6 +376,20 @@ pub struct CommandSummaryDto {
 #[serde(rename_all = "camelCase")]
 pub struct OpenOutputRequest {
     pub path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreflightOutputRequest {
+    pub analysis_id: String,
+    pub output_dir: String,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PreflightOutputDto {
+    pub root: String,
+    pub exists: bool,
 }
 
 #[derive(Clone)]
@@ -418,6 +432,19 @@ impl AppState {
         self.cached
             .lock()
             .map_err(|_| CommandErrorDto::new("state_poisoned", "Demo cache is unavailable."))
+    }
+
+    fn cached_demo(&self, analysis_id: &str) -> CommandResult<CachedDemo> {
+        self.cache()?
+            .as_ref()
+            .filter(|cached| cached.analysis_id == analysis_id)
+            .cloned()
+            .ok_or_else(|| {
+                CommandErrorDto::new(
+                    "stale_analysis",
+                    "The analyzed demo is no longer cached. Analyze it again before converting.",
+                )
+            })
     }
 
     fn session_id(&self, parsed: &ParsedDemo) -> String {
@@ -521,17 +548,7 @@ async fn convert_demo(
     state: State<'_, AppState>,
 ) -> CommandResult<ConversionSummaryDto> {
     let _busy = state.acquire_busy()?;
-    let cached = state
-        .cache()?
-        .as_ref()
-        .filter(|cached| cached.analysis_id == request.analysis_id)
-        .cloned()
-        .ok_or_else(|| {
-            CommandErrorDto::new(
-                "stale_analysis",
-                "The analyzed demo is no longer cached. Analyze it again before converting.",
-            )
-        })?;
+    let cached = state.cached_demo(&request.analysis_id)?;
 
     let prepared = prepare_conversion(&request, &cached)?;
     if prepared.root.exists() && request.overwrite == OverwriteModeDto::Deny {
@@ -549,6 +566,15 @@ async fn convert_demo(
         emit_log(&events, LogLevel::Error, error.message.clone());
     }
     result
+}
+
+#[tauri::command]
+async fn preflight_output(
+    request: PreflightOutputRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<PreflightOutputDto> {
+    let cached = state.cached_demo(&request.analysis_id)?;
+    preflight_output_for(&cached, &request.output_dir)
 }
 
 #[tauri::command]
@@ -664,16 +690,7 @@ fn prepare_conversion(
     )?;
     let cosmetics = validate_cosmetic_request(request)?;
 
-    let output_dir = PathBuf::from(request.output_dir.trim());
-    if output_dir.as_os_str().is_empty() {
-        return Err(CommandErrorDto::new(
-            "invalid_output_dir",
-            "Choose an output folder before converting.",
-        ));
-    }
-    let demo_id = output_demo_id(&cached.parsed.stem, &cached.parsed.demo_sha256, None)
-        .map_err(|error| CommandErrorDto::from_core("invalid_demo_id", error))?;
-    let root = output_dir.join(demo_id);
+    let (output_dir, root) = resolve_output_paths(&request.output_dir, &cached.parsed)?;
     let options = ConvertOptions {
         output_dir: output_dir.clone(),
         output_stem: None,
@@ -693,6 +710,34 @@ fn prepare_conversion(
         root,
         options,
     })
+}
+
+fn preflight_output_for(
+    cached: &CachedDemo,
+    output_dir: &str,
+) -> CommandResult<PreflightOutputDto> {
+    let (_, root) = resolve_output_paths(output_dir, &cached.parsed)?;
+    Ok(PreflightOutputDto {
+        exists: root.exists(),
+        root: root.display().to_string(),
+    })
+}
+
+fn resolve_output_paths(
+    output_dir: &str,
+    parsed: &ParsedDemo,
+) -> CommandResult<(PathBuf, PathBuf)> {
+    let output_dir = PathBuf::from(output_dir.trim());
+    if output_dir.as_os_str().is_empty() {
+        return Err(CommandErrorDto::new(
+            "invalid_output_dir",
+            "Choose an output folder before converting.",
+        ));
+    }
+    let demo_id = output_demo_id(&parsed.stem, &parsed.demo_sha256, None)
+        .map_err(|error| CommandErrorDto::from_core("invalid_demo_id", error))?;
+    let root = output_dir.join(demo_id);
+    Ok((output_dir, root))
 }
 
 fn validate_round_selection(
@@ -739,14 +784,14 @@ fn validate_round_selection(
 
 fn validate_cosmetic_request(request: &ConvertDemoRequest) -> CommandResult<CosmeticFlags> {
     if !request.export_cosmetics {
-        if request.cosmetic_consent.as_ref().is_some_and(|consent| {
-            consent.acknowledge_gslt_risk
-                || consent.accept_export_disclaimer
-                || !consent.phrase.trim().is_empty()
-        }) {
+        if request
+            .cosmetic_consent
+            .as_ref()
+            .is_some_and(|consent| !consent.phrase.trim().is_empty())
+        {
             return Err(CommandErrorDto::new(
                 "unexpected_cosmetic_consent",
-                "Cosmetic risk acknowledgements require cosmetic export to be enabled.",
+                "Cosmetic risk confirmation requires cosmetic export to be enabled.",
             ));
         }
         return Ok(CosmeticFlags {
@@ -759,18 +804,13 @@ fn validate_cosmetic_request(request: &ConvertDemoRequest) -> CommandResult<Cosm
     let consent = request.cosmetic_consent.as_ref().ok_or_else(|| {
         CommandErrorDto::new(
             "cosmetic_consent_required",
-            "Cosmetic export requires explicit GSLT risk and export disclaimer acknowledgement.",
+            "Cosmetic export requires the exact risk-confirmation phrase.",
         )
     })?;
-    if !consent.acknowledge_gslt_risk
-        || !consent.accept_export_disclaimer
-        || consent.phrase.trim() != COSMETIC_CONFIRMATION_PHRASE
-    {
+    if consent.phrase.trim() != COSMETIC_CONFIRMATION_PHRASE {
         return Err(CommandErrorDto::new(
             "cosmetic_consent_required",
-            format!(
-                "Accept both cosmetic warnings and type {COSMETIC_CONFIRMATION_PHRASE:?} exactly."
-            ),
+            format!("Type {COSMETIC_CONFIRMATION_PHRASE:?} exactly."),
         ));
     }
     Ok(CosmeticFlags {
@@ -1052,15 +1092,17 @@ fn build_commands(
 ) -> CommandSummaryDto {
     let round = first_round.unwrap_or(0);
     let manifest = console_quote_path(manifest_path);
-    let base_round = format!("dtr_go round \"{manifest}\" {round}");
-    let base_sequence = format!("dtr_go seq \"{manifest}\" {round}");
+    let go_round = format!("dtr_go round \"{manifest}\" {round}");
+    let go_sequence = format!("dtr_go seq \"{manifest}\" {round}");
     CommandSummaryDto {
-        round: command_with_prefixes(&base_round, voice_sidecars, None),
-        sequence: command_with_prefixes(&base_sequence, voice_sidecars, None),
+        go_round: go_round.clone(),
+        go_sequence: go_sequence.clone(),
+        round: command_with_prefixes(&go_round, voice_sidecars, None),
+        sequence: command_with_prefixes(&go_sequence, voice_sidecars, None),
         cosmetic_round: cosmetic_preset
-            .map(|preset| command_with_prefixes(&base_round, voice_sidecars, Some(preset))),
+            .map(|preset| command_with_prefixes(&go_round, voice_sidecars, Some(preset))),
         cosmetic_sequence: cosmetic_preset
-            .map(|preset| command_with_prefixes(&base_sequence, voice_sidecars, Some(preset))),
+            .map(|preset| command_with_prefixes(&go_sequence, voice_sidecars, Some(preset))),
     }
 }
 
@@ -1144,6 +1186,7 @@ pub fn run() {
             choose_demo,
             choose_output_dir,
             analyze_demo,
+            preflight_output,
             convert_demo,
             open_output
         ])
@@ -1282,6 +1325,38 @@ mod tests {
     }
 
     #[test]
+    fn preflight_output_reports_backend_root_and_existing_state_without_creating_it() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let output_dir = std::env::temp_dir().join(format!(
+            "cs2-demotracer-preflight-{}-{unique}",
+            std::process::id()
+        ));
+        let cached = CachedDemo {
+            analysis_id: "analysis-1".to_string(),
+            parsed: Arc::new(ParsedDemo {
+                stem: "match".to_string(),
+                demo_sha256: "aabbccddeeff".repeat(6),
+                ..ParsedDemo::default()
+            }),
+            analysis: analysis(),
+        };
+
+        let first = preflight_output_for(&cached, &output_dir.display().to_string()).unwrap();
+        let expected_root = output_dir.join("match-aabbccddeeff");
+        assert_eq!(PathBuf::from(&first.root), expected_root);
+        assert!(!first.exists);
+        assert!(!output_dir.exists());
+
+        fs::create_dir_all(&expected_root).unwrap();
+        let second = preflight_output_for(&cached, &output_dir.display().to_string()).unwrap();
+        assert!(second.exists);
+        fs::remove_dir_all(output_dir).unwrap();
+    }
+
+    #[test]
     fn progress_serializes_steam_id_as_a_string() {
         let progress = ConversionProgressDto::from(ConversionProgress::PlayerWritten {
             round: 1,
@@ -1305,12 +1380,10 @@ mod tests {
     }
 
     #[test]
-    fn cosmetics_require_both_acknowledgements_and_exact_phrase() {
+    fn cosmetics_require_exact_confirmation_phrase() {
         let mut request = request();
         request.export_cosmetics = true;
         request.cosmetic_consent = Some(CosmeticConsentDto {
-            acknowledge_gslt_risk: true,
-            accept_export_disclaimer: true,
             phrase: "close enough".to_string(),
         });
         assert_eq!(
@@ -1337,6 +1410,10 @@ mod tests {
             Some(7),
             2,
             Some("full"),
+        );
+        assert_eq!(
+            commands.go_sequence,
+            "dtr_go seq \"output/demo/manifest.json\" 7"
         );
         assert_eq!(
             commands.round,

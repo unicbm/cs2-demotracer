@@ -64,10 +64,11 @@ cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>" --export-
 ```text
 css_plugins reload DemoTracer
 dtr_config_status
-dtr_voice_auto on
-dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
+dtr_preset 0x15; dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
 ```
 
+`0x15` 表示武器对齐、Steam identity 和自动语音。桌面 GUI 会根据本机记忆的播放
+开关实时生成这个 preset。
 `seq` 表示从某个 source round 开始连续播放；只播放单个 source round 用：
 
 ```text

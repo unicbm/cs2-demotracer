@@ -143,6 +143,8 @@ CounterStrikeSharp。全部 CounterStrikeSharp 插件统一以 .NET 10 为目标
 普通回合 manifest 推荐使用高层 `dtr_go seq|round|pool` 命令。
 `dtr_run_manifest` 和 `dtr_run_pool` 是给旧脚本保留的兼容 alias，
 不是推荐的新手 quick start 路径。
+桌面 GUI 的完成页会在本机记忆播放开关，并为当前 manifest 生成紧凑的
+`dtr_preset 0x...; dtr_go ...` 指令。
 
 饰品对齐是可选功能，默认关闭。只有 round manifest 是用 `--export-cosmetics` 和两个
 风险确认 flag 导出，并且里面确实有 `cosmetics` 证据时，它才会生效。生效时
