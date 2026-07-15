@@ -5,6 +5,7 @@ public static class DemoTracerBotHiderContract
     public const int ApiVersion = 1;
     public const string Capability = "demotracer:bot-hider:v1";
     public const string DemoTracerOwner = "demotracer";
+    public const int MaxPlayerNameUtf8Bytes = 31;
 }
 
 public interface IBotHiderApi

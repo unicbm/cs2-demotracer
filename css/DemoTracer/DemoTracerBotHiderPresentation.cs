@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using CounterStrikeSharp.API;
@@ -261,10 +262,9 @@ public sealed partial class DemoTracerPlugin
             return;
         }
 
-        var playerName = _replayIdentityMode == ReplayIdentityMode.Off ||
-                         string.IsNullOrWhiteSpace(evidence.PlayerName)
+        var playerName = _replayIdentityMode == ReplayIdentityMode.Off
             ? null
-            : evidence.PlayerName;
+            : DeriveBotHiderPresentationName(evidence.PlayerName);
         ulong? steamId = _replayIdentityMode is ReplayIdentityMode.Steam or ReplayIdentityMode.Avatar &&
                          evidence.SteamId != 0
             ? evidence.SteamId
@@ -290,6 +290,96 @@ public sealed partial class DemoTracerPlugin
             ScoreboardFlair = flair,
             CrosshairCode = crosshair
         };
+    }
+
+    internal static string? DeriveBotHiderPresentationName(string? source)
+    {
+        var derived = BuildBoundedVisiblePresentationName(source);
+        return derived.Length == 0 ? null : derived;
+    }
+
+    private static string BuildBoundedVisiblePresentationName(string? source)
+    {
+        if (string.IsNullOrWhiteSpace(source))
+            return string.Empty;
+
+        var visibleElements = new List<string>();
+        var elements = StringInfo.GetTextElementEnumerator(source);
+        while (elements.MoveNext())
+        {
+            var element = elements.GetTextElement();
+            if (!IsInvisiblePresentationElement(element))
+                visibleElements.Add(element);
+        }
+
+        var first = 0;
+        while (first < visibleElements.Count && IsWhitespacePresentationElement(visibleElements[first]))
+            first++;
+
+        var last = visibleElements.Count;
+        while (last > first && IsWhitespacePresentationElement(visibleElements[last - 1]))
+            last--;
+
+        var boundedElements = new List<string>();
+        var utf8Bytes = 0;
+        for (var index = first; index < last; index++)
+        {
+            var element = visibleElements[index];
+            var elementBytes = Encoding.UTF8.GetByteCount(element);
+            if (utf8Bytes + elementBytes > DemoTracerBotHiderContract.MaxPlayerNameUtf8Bytes)
+                break;
+
+            boundedElements.Add(element);
+            utf8Bytes += elementBytes;
+        }
+
+        while (boundedElements.Count > 0 && IsWhitespacePresentationElement(boundedElements[^1]))
+            boundedElements.RemoveAt(boundedElements.Count - 1);
+
+        return string.Concat(boundedElements);
+    }
+
+    private static bool IsInvisiblePresentationElement(string element)
+    {
+        foreach (var rune in element.EnumerateRunes())
+        {
+            if (!IsInvisiblePresentationRune(rune))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsWhitespacePresentationElement(string element)
+    {
+        var hasWhitespace = false;
+        foreach (var rune in element.EnumerateRunes())
+        {
+            if (Rune.IsWhiteSpace(rune))
+            {
+                hasWhitespace = true;
+                continue;
+            }
+
+            if (!IsInvisiblePresentationRune(rune))
+                return false;
+        }
+
+        return hasWhitespace;
+    }
+
+    private static bool IsInvisiblePresentationRune(Rune rune)
+    {
+        return Rune.GetUnicodeCategory(rune) is
+            UnicodeCategory.Control or
+            UnicodeCategory.Format or
+            UnicodeCategory.LineSeparator or
+            UnicodeCategory.ParagraphSeparator or
+            UnicodeCategory.Surrogate or
+            UnicodeCategory.OtherNotAssigned or
+            UnicodeCategory.NonSpacingMark or
+            UnicodeCategory.SpacingCombiningMark or
+            UnicodeCategory.EnclosingMark;
     }
 
     private void RetainLoadedBotHiderPresentation()

@@ -10,7 +10,6 @@ internal sealed class BotHiderPresentationService : IBotHiderApi, IDisposable
 {
     private const int MaxSlots = 64;
     private const int MaxOwnerLength = 64;
-    private const int MaxPlayerNameBytes = 31;
     private const int MaxCrosshairBytes = 63;
     private static readonly TimeSpan LeaseTimeout = TimeSpan.FromSeconds(4);
 
@@ -369,7 +368,8 @@ internal sealed class BotHiderPresentationService : IBotHiderApi, IDisposable
 
             var playerName = requested.PlayerName?.Trim();
             if (playerName != null &&
-                (playerName.Length == 0 || Encoding.UTF8.GetByteCount(playerName) > MaxPlayerNameBytes))
+                (playerName.Length == 0 ||
+                 Encoding.UTF8.GetByteCount(playerName) > DemoTracerBotHiderContract.MaxPlayerNameUtf8Bytes))
             {
                 reason = $"invalid_name:{requested.Slot}";
                 return false;
