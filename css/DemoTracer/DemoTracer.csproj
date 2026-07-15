@@ -21,4 +21,8 @@
     <None Include="..\..\shared\econ\demotracer-econ-index.v1.json" Link="demotracer-econ-index.v1.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="demotracer.config.example.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DemoTracer.Tests" />
+  </ItemGroup>
 </Project>

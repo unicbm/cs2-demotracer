@@ -72,6 +72,9 @@ jobs:
       - name: Build CSS plugin
         run: dotnet build css\DemoTracer\DemoTracer.csproj -c Release
 
+      - name: Test CSS command policy
+        run: dotnet test css\DemoTracer.Tests\DemoTracer.Tests.csproj -c Release
+
       - name: Check public-source hygiene
         shell: pwsh
         run: |

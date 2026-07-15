@@ -84,7 +84,8 @@ public sealed partial class DemoTracerPlugin
         "message"
     ];
 
-    [ConsoleCommand("dtr_util_trace", "dtr_util_trace <0|1> [path]")]
+    [ConsoleCommand("dtr_util_trace", "dtr_util_trace <0|1> [file.csv]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void UtilityTraceCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount < 2)
@@ -92,7 +93,7 @@ public sealed partial class DemoTracerPlugin
             command.ReplyToCommand(
                 _utilityTraceEnabled
                     ? $"dtr: utility trace on path=\"{_utilityTracePath}\""
-                    : "usage: dtr_util_trace <0|1> [path]");
+                    : "usage: dtr_util_trace <0|1> [file.csv]");
             return;
         }
 
@@ -123,15 +124,21 @@ public sealed partial class DemoTracerPlugin
 
         try
         {
-            var path = string.IsNullOrWhiteSpace(requestedPath)
-                ? DefaultUtilityTracePath()
-                : requestedPath;
-            path = Path.GetFullPath(path);
+            var path = ResolveUtilityTracePath(requestedPath);
             var parent = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(parent))
                 Directory.CreateDirectory(parent);
 
-            _utilityTraceWriter = new StreamWriter(path, append: false);
+            var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+            try
+            {
+                _utilityTraceWriter = new StreamWriter(stream);
+            }
+            catch
+            {
+                stream.Dispose();
+                throw;
+            }
             _utilityTraceWriter.WriteLine(Row(UtilityTraceColumns));
             _utilityTraceWriter.Flush();
             _utilityTracePath = path;
@@ -156,13 +163,37 @@ public sealed partial class DemoTracerPlugin
         _utilityTraceWriter = null;
     }
 
-    private string DefaultUtilityTracePath()
+    private string ResolveUtilityTracePath(string requestedPath)
     {
         var dir = Path.GetDirectoryName(ModulePath);
         if (string.IsNullOrWhiteSpace(dir))
             dir = AppContext.BaseDirectory;
-        var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
-        return Path.Combine(dir, $"dtr_util_trace_{stamp}.csv");
+        return ResolveUtilityTracePathUnder(dir, requestedPath);
+    }
+
+    internal static string ResolveUtilityTracePathUnder(string moduleDirectory, string requestedPath)
+    {
+        var fileName = string.IsNullOrWhiteSpace(requestedPath)
+            ? DefaultUtilityTraceFileName()
+            : requestedPath.Trim();
+        if (Path.IsPathRooted(fileName) ||
+            fileName.Contains('/') ||
+            fileName.Contains('\\') ||
+            fileName.Contains(':') ||
+            fileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+            !fileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException(
+                "trace path must be a .csv file name without directories");
+        }
+
+        return Path.GetFullPath(Path.Combine(moduleDirectory, "traces", fileName));
+    }
+
+    private static string DefaultUtilityTraceFileName()
+    {
+        var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff", CultureInfo.InvariantCulture);
+        return $"dtr_util_trace_{stamp}.csv";
     }
 
     private void TraceUtilityTick()

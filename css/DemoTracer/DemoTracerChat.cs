@@ -22,6 +22,7 @@ public sealed partial class DemoTracerPlugin
     private ChatPlaybackState? _chatPlayback;
 
     [ConsoleCommand("dtr_chat_auto", "dtr_chat_auto [status|on|off]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void ChatAutoCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount >= 2)
@@ -40,6 +41,7 @@ public sealed partial class DemoTracerPlugin
     }
 
     [ConsoleCommand("dtr_chat_test", "dtr_chat_test <loaded|any|slot> [all|team] <message>")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void ChatTestCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount < 3)

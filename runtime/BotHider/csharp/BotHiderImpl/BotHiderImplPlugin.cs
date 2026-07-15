@@ -225,6 +225,7 @@ public sealed class BotHiderImplPlugin : BasePlugin
     }
 
     [ConsoleCommand("bh_status", "Show DemoTracer BotHider provider and managed-slot status")]
+    [CommandHelper(0, "", CommandUsage.SERVER_ONLY)]
     public void OnStatus(CCSPlayerController? player, CommandInfo command)
     {
         if (_presentation == null)
@@ -267,6 +268,7 @@ public sealed class BotHiderImplPlugin : BasePlugin
     }
 
     [ConsoleCommand("bh_disguise", "bh_disguise <0|1>")]
+    [CommandHelper(0, "", CommandUsage.SERVER_ONLY)]
     public void OnDisguise(CCSPlayerController? player, CommandInfo command)
     {
         if (_client == null ||
@@ -283,6 +285,7 @@ public sealed class BotHiderImplPlugin : BasePlugin
     }
 
     [ConsoleCommand("bh_namesource", "bh_namesource <0|1>")]
+    [CommandHelper(0, "", CommandUsage.SERVER_ONLY)]
     public void OnNameSource(CCSPlayerController? player, CommandInfo command)
     {
         if (_client == null ||

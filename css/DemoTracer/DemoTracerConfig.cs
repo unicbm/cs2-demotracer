@@ -22,12 +22,14 @@ public sealed partial class DemoTracerPlugin
     };
 
     [ConsoleCommand("dtr_config_reload", "dtr_config_reload")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void ConfigReloadCommand(CCSPlayerController? player, CommandInfo command)
     {
         LoadRuntimeConfig(command.ReplyToCommand, announceMissing: true);
     }
 
     [ConsoleCommand("dtr_config_status", "dtr_config_status")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void ConfigStatusCommand(CCSPlayerController? player, CommandInfo command)
     {
         var path = RuntimeConfigPath();

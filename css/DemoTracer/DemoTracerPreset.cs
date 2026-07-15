@@ -22,6 +22,7 @@ public sealed partial class DemoTracerPlugin
         PlaybackPresetPlayoff;
 
     [ConsoleCommand("dtr_preset", "dtr_preset [status|0xMASK]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void PlaybackPresetCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (!CheckAbi(command))

@@ -31,26 +31,32 @@ public sealed partial class DemoTracerPlugin
     private int _playoffRoundIndex;
 
     [ConsoleCommand("dtr_go", "dtr_go <seq|round|pool> ...")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void GoCommand(CCSPlayerController? player, CommandInfo command)
         => DispatchPlanCommand(command, "dtr_go", restart: true);
 
     [ConsoleCommand("dtr_arm", "dtr_arm <seq|round|pool> ...")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void ArmCommand(CCSPlayerController? player, CommandInfo command)
         => DispatchPlanCommand(command, "dtr_arm", restart: false);
 
     [ConsoleCommand("dtr_seq_restart", "dtr_seq_restart <manifest.json> [from_source_round]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void SequenceRestartCommand(CCSPlayerController? player, CommandInfo command)
         => RunManifestSequence(command, "dtr_seq_restart", restart: true);
 
     [ConsoleCommand("dtr_round_restart", "dtr_round_restart <manifest.json> <source_round>")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void RoundRestartCommand(CCSPlayerController? player, CommandInfo command)
         => ArmSingleRound(command, "dtr_round_restart", restart: true);
 
     [ConsoleCommand("dtr_run_manifest", "dtr_run_manifest <manifest.json> [from_source_round]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void RunManifestCommand(CCSPlayerController? player, CommandInfo command)
         => RunManifestSequence(command, "dtr_run_manifest", restart: false);
 
     [ConsoleCommand("dtr_stop_sequence", "dtr_stop_sequence")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void StopSequenceCommand(CCSPlayerController? player, CommandInfo command)
     {
         StopSequenceState();
@@ -58,6 +64,7 @@ public sealed partial class DemoTracerPlugin
     }
 
     [ConsoleCommand("dtr_playoff", "dtr_playoff <true|false>")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void PlayoffCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (!CheckAbi(command))
@@ -95,6 +102,7 @@ public sealed partial class DemoTracerPlugin
     }
 
     [ConsoleCommand("dtr_arm_round", "dtr_arm_round <manifest.json> <source_round> [loop:0|1]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void ArmRoundCommand(CCSPlayerController? player, CommandInfo command)
         => ArmSingleRound(command, "dtr_arm_round", restart: false);
 
@@ -796,14 +804,17 @@ public sealed partial class DemoTracerPlugin
     }
 
     [ConsoleCommand("dtr_pool_restart", "dtr_pool_restart <pool_manifest.json> [server_round]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void PoolRestartCommand(CCSPlayerController? player, CommandInfo command)
         => RunPoolPlan(command, "dtr_pool_restart", restart: true);
 
     [ConsoleCommand("dtr_run_pool", "dtr_run_pool <pool_manifest.json> [server_round]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void RunPoolCommand(CCSPlayerController? player, CommandInfo command)
         => RunPoolPlan(command, "dtr_run_pool", restart: false);
 
     [ConsoleCommand("dtr_stop_pool", "dtr_stop_pool")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void StopPoolCommand(CCSPlayerController? player, CommandInfo command)
     {
         StopPoolState();
@@ -1372,6 +1383,7 @@ public sealed partial class DemoTracerPlugin
     }
 
     [ConsoleCommand("dtr_load", "dtr_load <round|slot> ...")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void LoadCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (!CheckAbi(command))
@@ -1421,6 +1433,7 @@ public sealed partial class DemoTracerPlugin
     }
 
     [ConsoleCommand("dtr_load_round", "dtr_load_round <manifest.json> <source_round>")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void LoadRoundCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (!CheckAbi(command))
@@ -1433,6 +1446,7 @@ public sealed partial class DemoTracerPlugin
     }
 
     [ConsoleCommand("dtr_play_loaded", "dtr_play_loaded [loop:0|1]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void PlayLoadedCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (!CheckAbi(command))
@@ -1445,6 +1459,7 @@ public sealed partial class DemoTracerPlugin
     }
 
     [ConsoleCommand("dtr_play", "dtr_play <loaded|slot> ...")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void PlayCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (!CheckAbi(command))
@@ -1495,6 +1510,7 @@ public sealed partial class DemoTracerPlugin
     }
 
     [ConsoleCommand("dtr_stop", "dtr_stop <sequence|pool|replay|slot|all> ...")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void StopCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (!CheckAbi(command))
@@ -1540,6 +1556,7 @@ public sealed partial class DemoTracerPlugin
     }
 
     [ConsoleCommand("dtr_kick", "dtr_kick <exact-name>|slot <slot>|sid <steamid64>")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void KickCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (!CheckAbi(command))
@@ -1711,6 +1728,7 @@ public sealed partial class DemoTracerPlugin
     }
 
     [ConsoleCommand("dtr_stop_all", "dtr_stop_all")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void StopAllCommand(CCSPlayerController? player, CommandInfo command)
     {
         StopAllState("manual_stop_all");
@@ -1718,6 +1736,7 @@ public sealed partial class DemoTracerPlugin
     }
 
     [ConsoleCommand("dtr_unload", "dtr_unload <slot>")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void UnloadCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (!CheckAbi(command) || !TryParseSlot(command, out var slot))

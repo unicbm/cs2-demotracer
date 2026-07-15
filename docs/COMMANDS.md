@@ -2,8 +2,11 @@
 
 These commands are entered in the CS2 server console after the Metamod
 `BotController` runtime and the CounterStrikeSharp `DemoTracer` plugin are
-loaded. Add semicolons only when you want to paste several commands as one
-console line.
+loaded. On a listen server, the local host may also enter `dtr_*` commands in
+their own client console. Other players cannot run them, and dedicated servers
+accept them only from the server console. Add semicolons only when you want to
+paste several commands as one console line. The internal `bh_*` diagnostics
+remain server-console-only.
 
 Server prerequisites are Metamod:Source and CounterStrikeSharp. The DemoTracer
 playback bundle supplies `BotController`, the DemoTracer-maintained `BotHider`,
@@ -831,9 +834,12 @@ Prints native ABI, replay cursor/total, playback state for one slot, handoff
 mode, partial mode, identity mode, projectile align state, and active
 sequence/pool pointer.
 
-### `dtr_util_trace <0|1> [path]`
+### `dtr_util_trace <0|1> [file.csv]`
 
-Writes a CSV trace for utility debugging.
+Writes a CSV trace for utility debugging under the plugin-local `traces/`
+directory. The optional value must be a plain `.csv` file name; absolute paths
+and directory components are rejected, and an existing file is never
+overwritten.
 
 The trace includes slot replay cursor, live/replay positions and velocities,
 weapon state, grenade stash state, smoke projectile state, smoke detonation

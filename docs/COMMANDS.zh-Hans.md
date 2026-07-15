@@ -1,8 +1,10 @@
 # DemoTracer 指令参考
 
 这些指令在 CS2 服务器控制台中输入，前提是 Metamod runtime `BotController`
-和 CounterStrikeSharp 插件 `DemoTracer` 已经加载。只有在需要把多条指令粘成一行
-时，才需要在每条后面加分号。
+和 CounterStrikeSharp 插件 `DemoTracer` 已经加载。listen server 的本机 host 也可在
+自己的客户端控制台执行 `dtr_*`；其他联机玩家无权执行，专用服务器则只接受服务器
+控制台。只有在需要把多条指令粘成一行时，才需要在每条后面加分号。内部诊断指令
+`bh_*` 仍然只允许服务器控制台。
 
 服务器前置依赖是 Metamod:Source 和 CounterStrikeSharp。DemoTracer playback bundle
 自带 `BotController`、DemoTracer 自维护的 `BotHider`、`DemoTracer`、
@@ -722,9 +724,10 @@ slot state、使 pending avatar 写入失效，然后执行 `kickid <userid>`。
 输出 native ABI、某个 slot 的 replay cursor/total、播放状态、handoff mode、partial
 mode、identity mode、projectile align 状态，以及当前 sequence/pool 指针。
 
-### `dtr_util_trace <0|1> [path]`
+### `dtr_util_trace <0|1> [file.csv]`
 
-写 utility 调试 CSV。
+在插件本地的 `traces/` 目录写 utility 调试 CSV。可选参数只能是普通 `.csv`
+文件名；绝对路径和目录片段会被拒绝，已有文件也不会被覆盖。
 
 trace 包含 slot replay cursor、live/replay 位置和速度、武器状态、grenade stash
 状态、烟雾弹 projectile 状态、烟雾弹爆开事件，以及内部 projectile-align message。

@@ -176,6 +176,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     public override void Load(bool hotReload)
     {
+        RegisterControlCommandAuthorization();
         _moduleDirectoryForPathResolution = ModuleDirectory;
         LoadRuntimeConfig(message => Server.PrintToConsole(message), announceMissing: true);
         LoadDemoTracerEconIndex();
@@ -303,6 +304,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_weapon_align", "dtr_weapon_align <0|1>")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void WeaponAlignCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount >= 2)
@@ -313,6 +315,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_projectile_align", "dtr_projectile_align <0|1>")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void ProjectileAlignCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount >= 2)
@@ -323,6 +326,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_projectile_align_ticks", "dtr_projectile_align_ticks <status|default|once|2..512|until_delete>")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void ProjectileAlignTicksCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount >= 2)
@@ -341,6 +345,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_molotov_align_point", "dtr_molotov_align_point <status|off|teleport|detonate> [lead_ticks]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void MolotovAlignPointCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount >= 2)
@@ -373,6 +378,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_projectile_align_log", "dtr_projectile_align_log [clear|all|molotov|fire]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void ProjectileAlignLogCommand(CCSPlayerController? player, CommandInfo command)
     {
         var mode = command.ArgCount >= 2 ? command.GetArg(1).Trim().ToLowerInvariant() : "all";
@@ -402,6 +408,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_cosmetic_align", "dtr_cosmetic_align <0|1>")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void CosmeticAlignCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount >= 2)
@@ -414,6 +421,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_sticker_align", "dtr_sticker_align <0|1>")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void StickerAlignCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount >= 2)
@@ -426,6 +434,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_charm_align", "dtr_charm_align <0|1>")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void CharmAlignCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount >= 2)
@@ -438,6 +447,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_crosshair_align", "dtr_crosshair_align <0|1>")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void CrosshairAlignCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount >= 2)
@@ -448,6 +458,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_left_hand_desired", "dtr_left_hand_desired <0|1>")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void LeftHandDesiredCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount >= 2)
@@ -458,6 +469,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_align", "dtr_align [status|default|full|handoff_safe|off|weapons|projectiles|left_hand|crosshair] [on|off]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void AlignCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount < 2 ||
@@ -525,6 +537,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_match", "dtr_match [status|off|scoreboard|scoreboard <on|off>|full]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void MatchCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount < 2 ||
@@ -563,6 +576,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_cosmetics", "dtr_cosmetics [status|off|weapons|basic|full|weapons|knives|gloves|names|agents|stickers|charms|preserve_native] [on|off]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void CosmeticsCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount < 2 ||
@@ -650,6 +664,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_handoff", "dtr_handoff <off|death|contact|death_or_contact|death_contact_c4> [all|slot]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void HandoffCommand(CCSPlayerController? player, CommandInfo command)
         => SetHandoffMode(command, argOffset: 1);
 
@@ -683,6 +698,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             $"[DTR OK] handoff={FormatHandoffMode(_handoffMode)} scope={(_handoffAllSlots ? "all" : "slot")} viewmodel_continuity={ViewmodelContinuityModeName()}");
     }
     [ConsoleCommand("dtr_handoff_360", "dtr_handoff_360 [0|1] [range] [los|nolos]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void Handoff360Command(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount >= 2)
@@ -1251,6 +1267,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_partial", "dtr_partial <0|1>")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void PartialCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount >= 2)
@@ -1260,6 +1277,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_replay_identity", "dtr_replay_identity <off|name|steam|avatar|full|0|1>")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void ReplayIdentityCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount >= 2)
@@ -1277,6 +1295,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_set", "dtr_set <identity|align|handoff|allow_partial> ...")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void SetCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount < 2)
@@ -1316,6 +1335,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_bots", "dtr_bots")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void BotsCommand(CCSPlayerController? player, CommandInfo command)
     {
         var players = FindTeamPlayers();
@@ -1345,6 +1365,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_status", "dtr_status [slot <slot>|<slot>]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void StatusCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (!CheckAbi(command))
@@ -1386,6 +1407,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_runtime", "dtr_runtime")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void RuntimeCommand(CCSPlayerController? player, CommandInfo command)
     {
         var birth = BotControllerNative.ProjectileBirthAlignStatus;
@@ -1396,6 +1418,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     }
 
     [ConsoleCommand("dtr_doctor", "dtr_doctor [manifest.json|pool_manifest.json]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void DoctorCommand(CCSPlayerController? player, CommandInfo command)
     {
         TryReadFreezeTimeConVar(out var freezeTime, out var freezeReason);

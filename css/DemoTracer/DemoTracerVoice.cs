@@ -70,6 +70,7 @@ public sealed partial class DemoTracerPlugin
     private CancellationTokenSource? _voiceClipPreloadCancellation;
 
     [ConsoleCommand("dtr_voice_auto", "dtr_voice_auto [status|on|off]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void VoiceAutoCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (command.ArgCount >= 2)
@@ -88,6 +89,7 @@ public sealed partial class DemoTracerPlugin
     }
 
     [ConsoleCommand("dtr_voice_test", "dtr_voice_test <voice_clip.dtv> <sender_slot> [recipient_slot|all]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void VoiceTestCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (!CheckAbi(command))
@@ -150,6 +152,7 @@ public sealed partial class DemoTracerPlugin
     }
 
     [ConsoleCommand("dtr_voice_mix", "dtr_voice_mix <voice_clip.dtv> <xuid=slot[,xuid=slot...]|loaded> [recipient_slot|all]")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void VoiceMixCommand(CCSPlayerController? player, CommandInfo command)
     {
         if (!CheckAbi(command))
@@ -192,6 +195,7 @@ public sealed partial class DemoTracerPlugin
     }
 
     [ConsoleCommand("dtr_voice_stop", "dtr_voice_stop")]
+    [CommandHelper(0, "", CommandUsage.CLIENT_AND_SERVER)]
     public void VoiceStopCommand(CCSPlayerController? player, CommandInfo command)
     {
         var stopped = StopVoiceTestPlayback("manual_stop", printSummary: false);
