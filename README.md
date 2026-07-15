@@ -184,6 +184,8 @@ loader and BotController runtime. Detailed binary layout is documented in
 - Current v7 layout: section container with required movement snapshot, tick
   metadata, and subtick sections; optional projectile, high-fidelity metadata,
   command-frame, and movement-extra sections.
+- Maintained Rust/Desktop and C# readers enforce bounded file, section, decoded
+  byte, item-count, and per-tick subtick limits before allocating or decoding.
 
 The format is lossless for stored replay evidence: movement snapshots,
 projectile events, high-fidelity metadata, subtick records, and command-frame

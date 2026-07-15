@@ -19,7 +19,10 @@ pub mod dtr {
         Cs2Rec, Cs2RecHeader, MovementSnapshot, ReplayProjectile, ReplayTick, SubtickMove,
         DTR_FORMAT_VERSION,
     };
-    pub use crate::rec_writer::{read_rec_file, write_rec_file};
+    pub use crate::rec_writer::{
+        read_rec, read_rec_file, read_rec_file_with_limits, read_rec_with_limits, write_rec_file,
+        DtrReadLimits,
+    };
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

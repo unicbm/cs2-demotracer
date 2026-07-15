@@ -25,6 +25,34 @@ Compatibility notes:
 - v7 files require the matching playback bundle with BotController native ABI 16
   and extended replay capability.
 
+## Reader Safety Limits
+
+The maintained Rust/Desktop and C# readers apply the same default resource
+policy before attacker-controlled allocation or Brotli decoding. These are
+reader safety limits, not a change to the v7 binary layout or ABI:
+
+| Resource | Default ceiling |
+| --- | ---: |
+| File bytes | 64 MiB |
+| v7 sections | 32 |
+| Compressed bytes per section | 48 MiB |
+| Total compressed section bytes | 64 MiB |
+| Decoded bytes per section | 48 MiB |
+| Total decoded section bytes | 64 MiB |
+| Replay ticks | 32,768 |
+| Subtick moves | 1,179,648 |
+| Subtick moves per tick | 36 |
+| Projectile events | 4,096 |
+| High-fidelity metadata JSON | 8 MiB |
+
+The tick ceiling still permits about 8.5 minutes at 64 tick or 4.25 minutes at
+128 tick for a single player-round replay.
+
+File-backed readers also compare every declared payload length with the bytes
+actually remaining in the opened file. Unknown v7 sections count against the
+same byte budgets and are skipped through a fixed-size buffer. A Brotli stream
+that produces more than its declared decoded length is rejected immediately.
+
 ## Manifest Cosmetic Inspect Data
 
 Manifest ABI 17 cosmetics may include this additive, optional object on each

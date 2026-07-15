@@ -4,10 +4,48 @@ using System.Text.Json;
 
 namespace DemoTracer;
 
+internal sealed record DtrReadLimits
+{
+    private const long Mebibyte = 1024L * 1024L;
+
+    public static DtrReadLimits Default { get; } = new();
+
+    public long MaxFileBytes { get; init; } = 64 * Mebibyte;
+    public int MaxSectionCount { get; init; } = 32;
+    public long MaxCompressedSectionBytes { get; init; } = 48 * Mebibyte;
+    public long MaxTotalCompressedBytes { get; init; } = 64 * Mebibyte;
+    public long MaxDecodedSectionBytes { get; init; } = 48 * Mebibyte;
+    public long MaxTotalDecodedBytes { get; init; } = 64 * Mebibyte;
+    public int MaxTickCount { get; init; } = 32_768;
+    public int MaxSubtickCount { get; init; } = 1_179_648;
+    public int MaxSubticksPerTick { get; init; } = 36;
+    public int MaxProjectileCount { get; init; } = 4_096;
+    public int MaxMetadataJsonBytes { get; init; } = 8 * (int)Mebibyte;
+
+    public void Validate()
+    {
+        if (MaxFileBytes < 0 ||
+            MaxSectionCount < 0 ||
+            MaxCompressedSectionBytes < 0 ||
+            MaxTotalCompressedBytes < 0 ||
+            MaxDecodedSectionBytes < 0 ||
+            MaxTotalDecodedBytes < 0 ||
+            MaxTickCount < 0 ||
+            MaxSubtickCount < 0 ||
+            MaxSubticksPerTick < 0 ||
+            MaxProjectileCount < 0 ||
+            MaxMetadataJsonBytes < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(DtrReadLimits), "DTR read limits cannot be negative");
+        }
+    }
+}
+
 internal static class DtrReplayReader
 {
     private const byte RecCodecBrotli = 1;
     private const byte SectionCodecNone = 0;
+    private const int SectionHeaderByteSize = 36;
     private const int TickMetadataByteSize = 8;
     private const int ProjectileEventByteSize = 48;
     private const uint SectionSnapshots = 1;
@@ -31,11 +69,20 @@ internal static class DtrReplayReader
     };
 
     public static DtrReplayFile Read(string path)
+        => Read(path, DtrReadLimits.Default);
+
+    public static DtrReplayFile Read(string path, DtrReadLimits limits)
     {
+        ArgumentNullException.ThrowIfNull(limits);
+        limits.Validate();
+
         if (!string.Equals(Path.GetExtension(path), ".dtr", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("expected .dtr replay file");
 
         using var stream = File.OpenRead(path);
+        if (stream.Length > limits.MaxFileBytes)
+            throw new InvalidDataException(
+                $".dtr file length {stream.Length} exceeds limit {limits.MaxFileBytes}");
         using var reader = new BinaryReader(stream);
 
         var magic = reader.ReadBytes(RecMagic.Length);
@@ -52,17 +99,18 @@ internal static class DtrReplayReader
         _ = reader.ReadByte();   // side
         _ = reader.ReadUInt32(); // flags
         _ = reader.ReadUInt64(); // steam_id
-        var tickCount = CheckedCount(reader.ReadUInt32(), "tick_count");
-        var subtickCount = CheckedCount(reader.ReadUInt32(), "subtick_count");
+        var tickCount = CheckedLimitedCount(reader.ReadUInt32(), limits.MaxTickCount, "tick_count");
+        var subtickCount = CheckedLimitedCount(reader.ReadUInt32(), limits.MaxSubtickCount, "subtick_count");
         var projectileCount = version >= 4
-            ? CheckedCount(reader.ReadUInt32(), "projectile_count")
+            ? CheckedLimitedCount(reader.ReadUInt32(), limits.MaxProjectileCount, "projectile_count")
             : 0;
         var playStartTickIndex = version >= 5
             ? CheckedCount(reader.ReadUInt32(), "play_start_tick_index")
             : 0;
         var metadataJsonLength = version >= 6
-            ? CheckedCount(reader.ReadUInt32(), "metadata_json_len")
+            ? CheckedLimitedCount(reader.ReadUInt32(), limits.MaxMetadataJsonBytes, "metadata_json_len")
             : 0;
+        ValidateHeaderSubtickCounts(tickCount, subtickCount, limits.MaxSubticksPerTick);
         ValidatePlayStartTickIndex(tickCount, playStartTickIndex);
         _ = ReadRecString(reader); // map
         _ = ReadRecString(reader); // player name
@@ -76,7 +124,8 @@ internal static class DtrReplayReader
                 subtickCount,
                 projectileCount,
                 playStartTickIndex,
-                metadataJsonLength);
+                metadataJsonLength,
+                limits);
 
         return ReadLegacyBody(
             reader,
@@ -86,7 +135,8 @@ internal static class DtrReplayReader
             subtickCount,
             projectileCount,
             playStartTickIndex,
-            metadataJsonLength);
+            metadataJsonLength,
+            limits);
     }
 
     private static DtrReplayFile ReadLegacyBody(
@@ -97,18 +147,26 @@ internal static class DtrReplayReader
         int subtickCount,
         int projectileCount,
         int playStartTickIndex,
-        int metadataJsonLength)
+        int metadataJsonLength,
+        DtrReadLimits limits)
     {
         var codec = reader.ReadByte();
         if (codec != RecCodecBrotli)
             throw new InvalidDataException($"unsupported .dtr codec {codec}");
 
-        var bodyUncompressedLength = CheckedLength(reader.ReadUInt64(), "body_uncompressed_len");
-        var bodyCompressedLength = CheckedLength(reader.ReadUInt64(), "body_compressed_len");
+        var bodyUncompressedLength = CheckedLimitedLength(
+            reader.ReadUInt64(),
+            Math.Min(limits.MaxDecodedSectionBytes, limits.MaxTotalDecodedBytes),
+            "body_uncompressed_len");
+        var bodyCompressedLength = CheckedLimitedLength(
+            reader.ReadUInt64(),
+            Math.Min(limits.MaxCompressedSectionBytes, limits.MaxTotalCompressedBytes),
+            "body_compressed_len");
         var expectedBodyLength = ExpectedBodyLength(tickCount, subtickCount, projectileCount, metadataJsonLength);
         if (bodyUncompressedLength != expectedBodyLength)
             throw new InvalidDataException($"body length {bodyUncompressedLength} != expected {expectedBodyLength}");
 
+        EnsureRemaining(reader, bodyCompressedLength, "compressed .dtr body");
         var compressed = reader.ReadBytes(bodyCompressedLength);
         if (compressed.Length != bodyCompressedLength)
             throw new EndOfStreamException("truncated compressed .dtr body");
@@ -126,14 +184,16 @@ internal static class DtrReplayReader
         long expectedSubticks = 0;
         for (var i = 0; i < tickCount; i++)
         {
+            var weaponDefIndex = bodyReader.ReadInt32();
+            var numSubtick = bodyReader.ReadUInt32();
+            ValidateAndAddTickSubticks(numSubtick, ref expectedSubticks, subtickCount, limits.MaxSubticksPerTick);
             ticks[i] = new NativeReplayTick
             {
                 Pre = snapshots[i],
                 Post = snapshots[i + 1],
-                WeaponDefIndex = bodyReader.ReadInt32(),
-                NumSubtick = bodyReader.ReadUInt32()
+                WeaponDefIndex = weaponDefIndex,
+                NumSubtick = numSubtick
             };
-            expectedSubticks += ticks[i].NumSubtick;
         }
 
         if (expectedSubticks != subtickCount)
@@ -190,9 +250,10 @@ internal static class DtrReplayReader
         int subtickCount,
         int projectileCount,
         int playStartTickIndex,
-        int metadataJsonLength)
+        int metadataJsonLength,
+        DtrReadLimits limits)
     {
-        var sectionCount = CheckedCount(reader.ReadUInt32(), "section_count");
+        var sectionCount = CheckedLimitedCount(reader.ReadUInt32(), limits.MaxSectionCount, "section_count");
         var snapshotCount = tickCount == 0 ? 0 : checked(tickCount + 1);
         NativeMovementSnapshot[]? snapshots = null;
         TickMetadata[]? tickMetadata = null;
@@ -202,85 +263,100 @@ internal static class DtrReplayReader
         NativeReplayCommandFrame[]? commandFrames = null;
         NativeReplayMovementExtra[]? movementExtras = null;
         var seenHighFidelity = false;
+        var seenKnownSections = new HashSet<uint>();
+        long totalCompressedBytes = 0;
+        long totalDecodedBytes = 0;
 
         for (var i = 0; i < sectionCount; i++)
         {
-            var header = ReadSectionHeader(reader);
+            var header = ReadSectionHeader(
+                reader,
+                limits,
+                ref totalCompressedBytes,
+                ref totalDecodedBytes);
+            var remainingHeaderBytes = checked((sectionCount - i - 1) * SectionHeaderByteSize);
+
             if (!IsKnownSection(header.SectionId))
             {
+                EnsureRemaining(
+                    reader,
+                    checked(header.CompressedLength + remainingHeaderBytes),
+                    "v7 section payload and remaining headers");
                 SkipExact(reader, header.CompressedLength);
                 continue;
             }
 
+            var (name, expectedElementCount, expectedUncompressedLength) = header.SectionId switch
+            {
+                SectionSnapshots => (
+                    "snapshots",
+                    snapshotCount,
+                    ExpectedSectionLength(snapshotCount, BotControllerNative.MovementSnapshotByteSize, "snapshots")),
+                SectionTickMetadata => (
+                    "tick metadata",
+                    tickCount,
+                    ExpectedSectionLength(tickCount, TickMetadataByteSize, "tick metadata")),
+                SectionSubticks => (
+                    "subticks",
+                    subtickCount,
+                    ExpectedSectionLength(subtickCount, BotControllerNative.SubtickMoveByteSize, "subticks")),
+                SectionProjectiles => (
+                    "projectiles",
+                    projectileCount,
+                    ExpectedSectionLength(projectileCount, ProjectileEventByteSize, "projectiles")),
+                SectionHighFidelityJson => (
+                    "high fidelity metadata",
+                    metadataJsonLength == 0 ? 0 : 1,
+                    metadataJsonLength),
+                SectionCommandFrames => (
+                    "command frames",
+                    tickCount,
+                    ExpectedSectionLength(tickCount, BotControllerNative.ReplayCommandFrameByteSize, "command frames")),
+                SectionMovementExtras => (
+                    "movement extras",
+                    tickCount,
+                    ExpectedSectionLength(tickCount, BotControllerNative.ReplayMovementExtraByteSize, "movement extras")),
+                _ => throw new InvalidDataException($"unsupported known v7 section {header.SectionId}")
+            };
+            RejectDuplicate(!seenKnownSections.Add(header.SectionId), name);
+            RequireSectionShape(header, name, expectedElementCount, expectedUncompressedLength);
+            ValidateKnownSectionCodec(header, name);
+
+            EnsureRemaining(
+                reader,
+                checked(header.CompressedLength + remainingHeaderBytes),
+                "v7 section payload and remaining headers");
             var compressed = ReadExact(reader, header.CompressedLength, "v7 section payload");
             var body = DecodeSectionBody(compressed, header.Codec, header.UncompressedLength);
 
             switch (header.SectionId)
             {
                 case SectionSnapshots:
-                    RejectDuplicate(snapshots is not null, "snapshots");
-                    RequireSectionShape(
-                        header,
-                        "snapshots",
-                        snapshotCount,
-                        checked(snapshotCount * BotControllerNative.MovementSnapshotByteSize));
                     snapshots = ReadSnapshotsFromSection(body, snapshotCount);
                     break;
                 case SectionTickMetadata:
-                    RejectDuplicate(tickMetadata is not null, "tick metadata");
-                    RequireSectionShape(
-                        header,
-                        "tick metadata",
-                        tickCount,
-                        checked(tickCount * TickMetadataByteSize));
                     tickMetadata = ReadTickMetadataFromSection(body, tickCount);
+                    ValidateTickSubtickMetadata(
+                        tickMetadata,
+                        subtickCount,
+                        limits.MaxSubticksPerTick);
                     break;
                 case SectionSubticks:
-                    RejectDuplicate(subticks is not null, "subticks");
-                    RequireSectionShape(
-                        header,
-                        "subticks",
-                        subtickCount,
-                        checked(subtickCount * BotControllerNative.SubtickMoveByteSize));
                     subticks = ReadSubticksFromSection(body, subtickCount);
                     break;
                 case SectionProjectiles:
-                    RejectDuplicate(projectiles is not null, "projectiles");
-                    RequireSectionShape(
-                        header,
-                        "projectiles",
-                        projectileCount,
-                        checked(projectileCount * ProjectileEventByteSize));
                     projectiles = ReadProjectilesFromSection(body, projectileCount);
                     break;
                 case SectionHighFidelityJson:
-                    RejectDuplicate(seenHighFidelity, "high fidelity metadata");
-                    RequireSectionShape(
-                        header,
-                        "high fidelity metadata",
-                        metadataJsonLength == 0 ? 0 : 1,
-                        metadataJsonLength);
                     highFidelity = metadataJsonLength == 0
                         ? ReplayHighFidelityMetadata.Empty
                         : ReadHighFidelityMetadata(body);
                     seenHighFidelity = true;
                     break;
                 case SectionCommandFrames:
-                    RejectDuplicate(commandFrames is not null, "command frames");
-                    RequireSectionShape(
-                        header,
-                        "command frames",
-                        tickCount,
-                        checked(tickCount * BotControllerNative.ReplayCommandFrameByteSize));
                     commandFrames = ReadCommandFramesFromSection(body, tickCount);
                     break;
                 case SectionMovementExtras:
-                    RejectDuplicate(movementExtras is not null, "movement extras");
-                    RequireSectionShape(
-                        header,
-                        "movement extras",
-                        tickCount,
-                        checked(tickCount * BotControllerNative.ReplayMovementExtraByteSize));
                     movementExtras = ReadMovementExtrasFromSection(body, tickCount);
                     break;
             }
@@ -347,6 +423,13 @@ internal static class DtrReplayReader
         return (int)value;
     }
 
+    private static int CheckedLimitedCount(uint value, int limit, string fieldName)
+    {
+        if (value > (uint)limit)
+            throw new InvalidDataException($"{fieldName} {value} exceeds limit {limit}");
+        return CheckedCount(value, fieldName);
+    }
+
     private static int CheckedLength(ulong value, string fieldName)
     {
         if (value > int.MaxValue)
@@ -354,7 +437,18 @@ internal static class DtrReplayReader
         return (int)value;
     }
 
-    private static DtrSectionHeader ReadSectionHeader(BinaryReader reader)
+    private static int CheckedLimitedLength(ulong value, long limit, string fieldName)
+    {
+        if (value > (ulong)limit)
+            throw new InvalidDataException($"{fieldName} {value} exceeds limit {limit}");
+        return CheckedLength(value, fieldName);
+    }
+
+    private static DtrSectionHeader ReadSectionHeader(
+        BinaryReader reader,
+        DtrReadLimits limits,
+        ref long totalCompressedBytes,
+        ref long totalDecodedBytes)
     {
         var sectionId = reader.ReadUInt32();
         var sectionVersion = reader.ReadUInt32();
@@ -363,8 +457,24 @@ internal static class DtrReplayReader
         _ = reader.ReadUInt16(); // pad
         _ = reader.ReadUInt32(); // flags
         var elementCount = CheckedCount(reader.ReadUInt32(), "section_element_count");
-        var uncompressedLength = CheckedLength(reader.ReadUInt64(), "section_uncompressed_len");
-        var compressedLength = CheckedLength(reader.ReadUInt64(), "section_compressed_len");
+        var uncompressedLength = CheckedLimitedLength(
+            reader.ReadUInt64(),
+            limits.MaxDecodedSectionBytes,
+            "section_uncompressed_len");
+        var compressedLength = CheckedLimitedLength(
+            reader.ReadUInt64(),
+            limits.MaxCompressedSectionBytes,
+            "section_compressed_len");
+        AddToBudget(
+            uncompressedLength,
+            ref totalDecodedBytes,
+            limits.MaxTotalDecodedBytes,
+            "total section decoded bytes");
+        AddToBudget(
+            compressedLength,
+            ref totalCompressedBytes,
+            limits.MaxTotalCompressedBytes,
+            "total section compressed bytes");
         return new DtrSectionHeader(
             sectionId,
             sectionVersion,
@@ -372,6 +482,13 @@ internal static class DtrReplayReader
             elementCount,
             uncompressedLength,
             compressedLength);
+    }
+
+    private static void AddToBudget(int value, ref long total, long limit, string name)
+    {
+        if (value > limit - total)
+            throw new InvalidDataException($"{name} exceeds limit {limit}");
+        total += value;
     }
 
     private static bool IsKnownSection(uint sectionId)
@@ -399,6 +516,17 @@ internal static class DtrReplayReader
                 $"{name} section length {header.UncompressedLength} != expected {expectedUncompressedLength}");
     }
 
+    private static void ValidateKnownSectionCodec(DtrSectionHeader header, string name)
+    {
+        if (header.Codec is not SectionCodecNone and not RecCodecBrotli)
+            throw new InvalidDataException($"unsupported {name} section codec {header.Codec}");
+        if (header.Codec == SectionCodecNone && header.CompressedLength != header.UncompressedLength)
+        {
+            throw new InvalidDataException(
+                $"uncompressed {name} section payload length {header.CompressedLength} != expected {header.UncompressedLength}");
+        }
+    }
+
     private static void RejectDuplicate(bool seen, string name)
     {
         if (seen)
@@ -424,6 +552,7 @@ internal static class DtrReplayReader
 
     private static byte[] ReadExact(BinaryReader reader, int length, string name)
     {
+        EnsureRemaining(reader, length, name);
         var bytes = reader.ReadBytes(length);
         if (bytes.Length != length)
             throw new EndOfStreamException($"truncated {name}");
@@ -432,20 +561,94 @@ internal static class DtrReplayReader
 
     private static void SkipExact(BinaryReader reader, int length)
     {
-        var bytes = reader.ReadBytes(length);
-        if (bytes.Length != length)
-            throw new EndOfStreamException("truncated skipped v7 section");
+        Span<byte> buffer = stackalloc byte[4096];
+        var remaining = length;
+        while (remaining > 0)
+        {
+            var read = reader.Read(buffer[..Math.Min(buffer.Length, remaining)]);
+            if (read == 0)
+                throw new EndOfStreamException("truncated skipped v7 section");
+            remaining -= read;
+        }
     }
 
     private static int ExpectedBodyLength(int tickCount, int subtickCount, int projectileCount, int metadataJsonLength)
     {
-        var snapshotCount = tickCount == 0 ? 0 : checked(tickCount + 1);
-        return checked(
+        var snapshotCount = tickCount == 0 ? 0 : (long)tickCount + 1;
+        var expected = checked(
             snapshotCount * BotControllerNative.MovementSnapshotByteSize +
-            tickCount * TickMetadataByteSize +
-            projectileCount * ProjectileEventByteSize +
+            (long)tickCount * TickMetadataByteSize +
+            (long)projectileCount * ProjectileEventByteSize +
             metadataJsonLength +
-            subtickCount * BotControllerNative.SubtickMoveByteSize);
+            (long)subtickCount * BotControllerNative.SubtickMoveByteSize);
+        if (expected > int.MaxValue)
+            throw new InvalidDataException($"expected .dtr body length too large: {expected}");
+        return (int)expected;
+    }
+
+    private static int ExpectedSectionLength(int count, int elementSize, string name)
+    {
+        var expected = checked((long)count * elementSize);
+        if (expected > int.MaxValue)
+            throw new InvalidDataException($"expected {name} section length too large: {expected}");
+        return (int)expected;
+    }
+
+    private static void EnsureRemaining(BinaryReader reader, int length, string name)
+    {
+        var stream = reader.BaseStream;
+        if (!stream.CanSeek)
+            return;
+        var remaining = stream.Length - stream.Position;
+        if (length > remaining)
+            throw new EndOfStreamException($"truncated {name}: need {length} bytes, have {remaining}");
+    }
+
+    private static void ValidateHeaderSubtickCounts(
+        int tickCount,
+        int subtickCount,
+        int maxSubticksPerTick)
+    {
+        var maximumForTicks = checked((long)tickCount * maxSubticksPerTick);
+        if (subtickCount > maximumForTicks)
+        {
+            throw new InvalidDataException(
+                $"subtick_count {subtickCount} exceeds {maxSubticksPerTick} per tick for {tickCount} ticks");
+        }
+    }
+
+    private static void ValidateAndAddTickSubticks(
+        uint numSubtick,
+        ref long total,
+        int declaredSubtickCount,
+        int maxSubticksPerTick)
+    {
+        if (numSubtick > (uint)maxSubticksPerTick)
+        {
+            throw new InvalidDataException(
+                $"tick subtick count {numSubtick} exceeds limit {maxSubticksPerTick}");
+        }
+        if (numSubtick > declaredSubtickCount - total)
+            throw new InvalidDataException($"tick subtick sum exceeds header subtick count {declaredSubtickCount}");
+        total += numSubtick;
+    }
+
+    private static void ValidateTickSubtickMetadata(
+        TickMetadata[] metadata,
+        int declaredSubtickCount,
+        int maxSubticksPerTick)
+    {
+        long total = 0;
+        foreach (var tick in metadata)
+        {
+            ValidateAndAddTickSubticks(
+                tick.NumSubtick,
+                ref total,
+                declaredSubtickCount,
+                maxSubticksPerTick);
+        }
+        if (total != declaredSubtickCount)
+            throw new InvalidDataException($"tick subtick sum {total} != header subtick count {declaredSubtickCount}");
     }
 
     private static byte[] DecompressBrotli(byte[] compressed, int expectedLength)
@@ -752,6 +955,7 @@ internal static class DtrReplayReader
     private static string ReadRecString(BinaryReader reader)
     {
         var len = reader.ReadUInt16();
+        EnsureRemaining(reader, len, "string in .dtr");
         var bytes = reader.ReadBytes(len);
         if (bytes.Length != len)
             throw new EndOfStreamException("truncated string in .dtr");
