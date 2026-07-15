@@ -141,7 +141,8 @@ public sealed partial class DemoTracerPlugin
             speakerXuid,
             clip.AudioPayload,
             clip.Frames,
-            recipients);
+            recipients,
+            startedFromFreezePreroll: false);
 
         command.ReplyToCommand(
             $"[DTR OK] voice test started frames={clip.Frames.Count} duration={clip.Manifest.DurationSeconds.ToString("F2", CultureInfo.InvariantCulture)}s " +
@@ -182,7 +183,8 @@ public sealed partial class DemoTracerPlugin
             defaultSpeakerXuid: 0,
             clip.AudioPayload,
             frames,
-            recipients);
+            recipients,
+            startedFromFreezePreroll: false);
 
         command.ReplyToCommand(
             $"[DTR OK] voice mix started speakers={speakers.Count} frames={frames.Count}/{clip.Frames.Count} " +
@@ -1235,6 +1237,16 @@ public sealed partial class DemoTracerPlugin
         if (recipients.Count == 0)
             return "; voice_auto=no_human_recipients";
 
+        if (anchor == ReplayStartAnchor.Live &&
+            _voiceTestPlayback is { StartedFromFreezePreroll: true } activePlayback &&
+            string.Equals(activePlayback.Path, clip.Path, StringComparison.OrdinalIgnoreCase) &&
+            activePlayback.NextFrameIndex < activePlayback.Frames.Count)
+        {
+            return
+                $"; voice_auto=continued file={Path.GetFileName(clip.Path)} " +
+                $"frames={activePlayback.NextFrameIndex}/{activePlayback.Frames.Count}";
+        }
+
         var (startTime, initialFrameIndex, offsetSeconds) =
             ComputeAutoVoiceStart(clip.Manifest, frames, anchor, freezeTimeSeconds);
         StopVoiceTestPlayback("voice_auto_replace", printSummary: false);
@@ -1246,7 +1258,8 @@ public sealed partial class DemoTracerPlugin
             defaultSpeakerXuid: 0,
             clip.AudioPayload,
             frames,
-            recipients)
+            recipients,
+            startedFromFreezePreroll: anchor == ReplayStartAnchor.FreezePreroll)
         {
             NextFrameIndex = initialFrameIndex
         };
@@ -1630,7 +1643,8 @@ public sealed partial class DemoTracerPlugin
         ulong defaultSpeakerXuid,
         byte[] audioPayload,
         List<VoiceClipRuntimeFrame> frames,
-        List<int> recipientSlots)
+        List<int> recipientSlots,
+        bool startedFromFreezePreroll)
     {
         public string Path { get; } = path;
         public float TickRate { get; } = tickRate;
@@ -1640,6 +1654,7 @@ public sealed partial class DemoTracerPlugin
         public byte[] AudioPayload { get; } = audioPayload;
         public List<VoiceClipRuntimeFrame> Frames { get; } = frames;
         public List<int> RecipientSlots { get; private set; } = recipientSlots;
+        public bool StartedFromFreezePreroll { get; } = startedFromFreezePreroll;
         public int NextFrameIndex { get; set; }
         public int SentFrames { get; set; }
         public int SkippedSenderFrames { get; set; }

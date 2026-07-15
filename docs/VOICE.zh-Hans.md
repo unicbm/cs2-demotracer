@@ -77,7 +77,14 @@ dtr_replay_identity steam; dtr_align full; dtr_match full; dtr_cosmetics full; d
 
 某个 source round 开始时，DemoTracer 会在 manifest 附近查找
 `voice/roundXX.dtv`，把 speaker XUID 映射到当前 loaded replay bot，然后按回合
-timeline 发送原始 voice payload。
+timeline 发送原始 voice payload。如果转换结果保留了 bounded freeze pre-roll，匹配的
+语音证据会在 freezetime 中开始播放；一句话可以连续跨过 `round_freeze_end`，不会在
+事件边界重新起流。
+
+`.dtv` 会原样保留 demo 中已经编码好的 Opus payload。时间轴和 speaker metadata 使用
+紧凑整数编码，但 Opus audio blob 外面没有再套一层无损压缩。因此文件体积主要取决于
+源 demo 实际包含了多少游戏内语音；直接拿 `.dtv` 和记录路线数据的 `.dtr` 比体积，不能
+用来判断语音压缩率。
 
 ## 谁能听到
 

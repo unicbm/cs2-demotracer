@@ -709,18 +709,18 @@ pub fn export_round_voice_sidecars(
         .iter()
         .filter(|round| round.files > 0)
         .map(|round| {
-            let duration_seconds =
-                if round.duration_seconds.is_finite() && round.duration_seconds > 0.0 {
-                    round.duration_seconds
-                } else {
-                    (round.end_tick - round.start_tick).max(1) as f32 / tick_rate
-                };
+            let (start_tick, duration_seconds) = round_voice_window(
+                round.recording_start_tick,
+                round.start_tick,
+                round.end_tick,
+                tick_rate,
+            );
             VoiceClipWindowExport {
                 output: report
                     .root
                     .join("voice")
                     .join(format!("round{:02}.dtv", round.round)),
-                start_tick: Some(round.start_tick),
+                start_tick: Some(start_tick),
                 duration_seconds,
             }
         })
@@ -739,4 +739,36 @@ pub fn export_round_voice_sidecars(
             windows,
         },
     )
+}
+
+fn round_voice_window(
+    recording_start_tick: i32,
+    live_start_tick: i32,
+    end_tick: i32,
+    tick_rate: f32,
+) -> (i32, f32) {
+    let start_tick = recording_start_tick.min(live_start_tick);
+    let duration_seconds = (end_tick - start_tick).max(1) as f32 / tick_rate.max(1.0);
+    (start_tick, duration_seconds)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::round_voice_window;
+
+    #[test]
+    fn round_voice_window_includes_bounded_freeze_preroll() {
+        let (start_tick, duration_seconds) = round_voice_window(900, 1_000, 1_540, 64.0);
+
+        assert_eq!(start_tick, 900);
+        assert_eq!(duration_seconds, 10.0);
+    }
+
+    #[test]
+    fn round_voice_window_does_not_start_after_live_tick() {
+        let (start_tick, duration_seconds) = round_voice_window(1_100, 1_000, 1_640, 64.0);
+
+        assert_eq!(start_tick, 1_000);
+        assert_eq!(duration_seconds, 10.0);
+    }
 }

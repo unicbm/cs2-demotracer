@@ -82,7 +82,15 @@ dtr_replay_identity steam; dtr_align full; dtr_match full; dtr_cosmetics full; d
 
 When a source round starts, DemoTracer looks for `voice/roundXX.dtv` near the
 manifest, maps speaker XUIDs to loaded replay bots, and sends the original voice
-payload on the round timeline.
+payload on the round timeline. If the converted round includes bounded freeze
+pre-roll, matching voice evidence starts during freeze time and an utterance may
+continue across `round_freeze_end` without being restarted.
+
+The `.dtv` container preserves the demo's encoded Opus payload bytes. Its
+timeline and speaker metadata use compact integer encoding, but the Opus audio
+blob is not wrapped in another lossless compressor. File size therefore mostly
+tracks how much in-game voice the source demo contains; comparing `.dtv` size
+directly with route-oriented `.dtr` size is not a compression-ratio test.
 
 ## Listening Rules
 
