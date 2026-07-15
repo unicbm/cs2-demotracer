@@ -3,6 +3,7 @@
 #include "MotionRecorder.h"
 #include "BotController.h"
 #include "InputInjector.h"
+#include "ReplaySubtickLayout.h"
 #include "WeaponLocker.h"
 #include "ccsbot_slot.h"
 #include "version_targets.h"
@@ -44,7 +45,7 @@ namespace BotController
             std::vector<SubtickMove> subs;
             std::vector<ReplayCommandFrameData> commands;
             std::vector<ReplayMovementExtra> movementExtras;
-            std::vector<uint32_t> subOffset; // prefix sum, size ticks.size()+1
+            std::vector<size_t> subOffset; // prefix sum, size ticks.size()+1
             std::atomic<int> cursor{0};
             std::atomic<int> startCursor{0};
             std::atomic<int> holdBeforeCursor{-1};
@@ -79,7 +80,7 @@ namespace BotController
             std::vector<SubtickMove>().swap(p.subs);
             std::vector<ReplayCommandFrameData>().swap(p.commands);
             std::vector<ReplayMovementExtra>().swap(p.movementExtras);
-            std::vector<uint32_t>().swap(p.subOffset);
+            std::vector<size_t>().swap(p.subOffset);
         }
 
         constexpr uint64_t kPrimeAttackButtons = (1ull << 0) | (1ull << 11);
@@ -880,20 +881,6 @@ namespace BotController
 
         // ---- replay ----
 
-        // Rebuild the prefix-sum offset table from each tick's numSubtick.
-        // subOffset[i] = first subtick index for tick i; size = nTicks+1.
-        static void RebuildSubOffset(ReplayState &p)
-        {
-            p.subOffset.assign(p.ticks.size() + 1, 0);
-            uint32_t acc = 0;
-            for (size_t i = 0; i < p.ticks.size(); ++i)
-            {
-                p.subOffset[i] = acc;
-                acc += p.ticks[i].numSubtick;
-            }
-            p.subOffset[p.ticks.size()] = acc;
-        }
-
         static const ReplayTick *CurrentReplayTickPtr(ReplayState &p, int &cur, int &total)
         {
             total = static_cast<int>(p.ticks.size());
@@ -1044,7 +1031,7 @@ namespace BotController
         }
 
         bool LoadReplay(int slot, const ReplayTick *ticks, int tickCount,
-                        const SubtickMove *subs, int subCount)
+                        const SubtickMove *subs, int subCount) noexcept
         {
             return LoadReplayExtended(slot, ticks, tickCount, subs, subCount,
                                       nullptr, 0, nullptr, 0);
@@ -1055,43 +1042,55 @@ namespace BotController
                                 const ReplayCommandFrameData *commands,
                                 int commandCount,
                                 const ReplayMovementExtra *movementExtras,
-                                int movementExtraCount)
+                                int movementExtraCount) noexcept
         {
-            if (!ValidSlot(slot) || !ticks || tickCount < 0 ||
-                subCount < 0 ||
-                (subCount > 0 && !subs) ||
-                (commandCount != 0 && commandCount != tickCount) ||
-                (commandCount > 0 && !commands) ||
-                (movementExtraCount != 0 && movementExtraCount != tickCount) ||
-                (movementExtraCount > 0 && !movementExtras))
-                return false;
-            ReplayState &p = g_rep[slot];
-            if (p.playing.load(std::memory_order_acquire))
-                return false; // don't swap frames mid-playback
-            std::lock_guard<std::mutex> lk(p.mu);
-            p.ticks.assign(ticks, ticks + tickCount);
-            if (subCount > 0)
-                p.subs.assign(subs, subs + subCount);
-            else
-                p.subs.clear();
-            if (commandCount > 0)
-                p.commands.assign(commands, commands + commandCount);
-            else
-                p.commands.clear();
-            if (movementExtraCount > 0)
-                p.movementExtras.assign(movementExtras, movementExtras + movementExtraCount);
-            else
-                p.movementExtras.clear();
-            RebuildSubOffset(p);
-            p.cursor.store(0, std::memory_order_relaxed);
-            p.startCursor.store(0, std::memory_order_relaxed);
-            p.holdBeforeCursor.store(-1, std::memory_order_relaxed);
-            InvalidateReplayWeaponCache(p);
-            g_lastFinalViewCursor[slot] = -1;
-            g_serverViewChangeIndex[slot] = 0;
-            InputInjector::ClearUsercmdMovementIntent(slot);
-            InputInjector::ClearReplayPawn(slot);
-            return true;
+            bool committed = false;
+            try
+            {
+                if (!ValidSlot(slot))
+                    return false;
+
+                ReplayState &p = g_rep[slot];
+                if (p.playing.load(std::memory_order_acquire))
+                    return false;
+
+                ReplaySubtickLayout::ReplayLoadStaging staged;
+                if (!ReplaySubtickLayout::TryStageReplayLoad(
+                        ticks, tickCount, subs, subCount,
+                        commands, commandCount,
+                        movementExtras, movementExtraCount,
+                        staged))
+                {
+                    return false;
+                }
+
+                std::lock_guard<std::mutex> lk(p.mu);
+                if (p.playing.load(std::memory_order_acquire))
+                    return false; // don't swap frames mid-playback
+
+                p.ticks.swap(staged.ticks);
+                p.subs.swap(staged.subs);
+                p.commands.swap(staged.commands);
+                p.movementExtras.swap(staged.movementExtras);
+                p.subOffset.swap(staged.offsets);
+                committed = true;
+                p.cursor.store(0, std::memory_order_relaxed);
+                p.startCursor.store(0, std::memory_order_relaxed);
+                p.holdBeforeCursor.store(-1, std::memory_order_relaxed);
+                InvalidateReplayWeaponCache(p);
+                g_lastFinalViewCursor[slot] = -1;
+                g_serverViewChangeIndex[slot] = 0;
+                InputInjector::ClearUsercmdMovementIntent(slot);
+                InputInjector::ClearReplayPawn(slot);
+                return true;
+            }
+            catch (...)
+            {
+                // All buffer swaps above are noexcept. If a future post-commit
+                // cleanup gains a throwing operation, do not report failure
+                // after the new replay has already become authoritative.
+                return committed;
+            }
         }
 
         bool StartReplay(int slot, bool loop)
@@ -1104,11 +1103,11 @@ namespace BotController
             if (!ValidSlot(slot))
                 return false;
             ReplayState &p = g_rep[slot];
+            std::lock_guard<std::mutex> lk(p.mu);
+            if (p.ticks.empty() || startIndex < 0 ||
+                startIndex >= static_cast<int>(p.ticks.size()))
             {
-                std::lock_guard<std::mutex> lk(p.mu);
-                if (p.ticks.empty() || startIndex < 0 ||
-                    startIndex >= static_cast<int>(p.ticks.size()))
-                    return false;
+                return false;
             }
             p.cursor.store(startIndex, std::memory_order_relaxed);
             p.startCursor.store(startIndex, std::memory_order_relaxed);
@@ -1127,12 +1126,12 @@ namespace BotController
             if (!ValidSlot(slot))
                 return false;
             ReplayState &p = g_rep[slot];
+            std::lock_guard<std::mutex> lk(p.mu);
+            const int total = static_cast<int>(p.ticks.size());
+            if (total <= 0 || startIndex < 0 || startIndex >= total ||
+                holdBeforeIndex <= startIndex || holdBeforeIndex > total)
             {
-                std::lock_guard<std::mutex> lk(p.mu);
-                const int total = static_cast<int>(p.ticks.size());
-                if (total <= 0 || startIndex < 0 || startIndex >= total ||
-                    holdBeforeIndex <= startIndex || holdBeforeIndex > total)
-                    return false;
+                return false;
             }
             p.cursor.store(startIndex, std::memory_order_relaxed);
             p.startCursor.store(startIndex, std::memory_order_relaxed);
@@ -1151,34 +1150,46 @@ namespace BotController
             if (!ValidSlot(slot))
                 return false;
             ReplayState &p = g_rep[slot];
-            ClearReplayStopMovementResidue(slot, p);
-            const bool wasPlaying =
-                p.playing.exchange(false, std::memory_order_acq_rel);
-            if (wasPlaying)
-                ClearReplayStopJumpResidue(slot);
-            p.holdBeforeCursor.store(-1, std::memory_order_relaxed);
-            InvalidateReplayWeaponCache(p);
-            g_lastFinalViewCursor[slot] = -1;
-            g_serverViewChangeIndex[slot] = 0;
-            InputInjector::ClearUsercmdMovementIntent(slot);
+            {
+                std::lock_guard<std::mutex> lk(p.mu);
+                ClearReplayStopMovementResidue(slot, p);
+                const bool wasPlaying =
+                    p.playing.exchange(false, std::memory_order_acq_rel);
+                if (wasPlaying)
+                    ClearReplayStopJumpResidue(slot);
+                p.holdBeforeCursor.store(-1, std::memory_order_relaxed);
+                InvalidateReplayWeaponCache(p);
+                g_lastFinalViewCursor[slot] = -1;
+                g_serverViewChangeIndex[slot] = 0;
+                InputInjector::ClearUsercmdMovementIntent(slot);
+            }
             return true;
         }
 
         bool ReleaseReplayBuffer(int slot)
         {
-            if (!ValidSlot(slot) || !StopReplay(slot))
+            if (!ValidSlot(slot))
                 return false;
 
             ReplayState &p = g_rep[slot];
             {
                 std::lock_guard<std::mutex> lk(p.mu);
+                ClearReplayStopMovementResidue(slot, p);
+                const bool wasPlaying =
+                    p.playing.exchange(false, std::memory_order_acq_rel);
+                if (wasPlaying)
+                    ClearReplayStopJumpResidue(slot);
+                p.holdBeforeCursor.store(-1, std::memory_order_relaxed);
+                InvalidateReplayWeaponCache(p);
+                g_lastFinalViewCursor[slot] = -1;
+                g_serverViewChangeIndex[slot] = 0;
+                InputInjector::ClearUsercmdMovementIntent(slot);
                 ReleaseReplayVectors(p);
+                p.cursor.store(0, std::memory_order_relaxed);
+                p.startCursor.store(0, std::memory_order_relaxed);
+                p.loop.store(false, std::memory_order_relaxed);
+                InputInjector::ClearReplayPawn(slot);
             }
-            p.cursor.store(0, std::memory_order_relaxed);
-            p.startCursor.store(0, std::memory_order_relaxed);
-            p.holdBeforeCursor.store(-1, std::memory_order_relaxed);
-            p.loop.store(false, std::memory_order_relaxed);
-            InputInjector::ClearReplayPawn(slot);
             return true;
         }
 
@@ -1253,6 +1264,14 @@ namespace BotController
             const ReplayTick *tick = CurrentReplayTickPtr(p, cur, total);
             if (!tick)
                 return false;
+            size_t subtickBegin = 0;
+            size_t subtickEnd = 0;
+            if (!ReplaySubtickLayout::TryGetReplaySubtickRange(
+                    p.ticks.data(), p.ticks.size(), p.subOffset, p.subs.size(),
+                    static_cast<size_t>(cur), subtickBegin, subtickEnd))
+            {
+                return false;
+            }
             out = *tick;
             return true;
         }
@@ -1299,15 +1318,17 @@ namespace BotController
                 b1 |= ReplayPrimeAttackButtonsForStart(p, cur, b0, b1);
 
             const SubtickMove *subticks = nullptr;
-            int subtickCount = 0;
-            if (cur >= 0 &&
-                static_cast<size_t>(cur + 1) < p.subOffset.size())
+            size_t subtickBegin = 0;
+            size_t subtickEnd = 0;
+            if (cur < 0 ||
+                !ReplaySubtickLayout::TryGetReplaySubtickRange(
+                    p.ticks.data(), p.ticks.size(), p.subOffset, p.subs.size(),
+                    static_cast<size_t>(cur), subtickBegin, subtickEnd))
             {
-                const uint32_t begin = p.subOffset[static_cast<size_t>(cur)];
-                const uint32_t end = p.subOffset[static_cast<size_t>(cur + 1)];
-                subtickCount = static_cast<int>(end - begin);
-                subticks = subtickCount > 0 ? &p.subs[static_cast<size_t>(begin)] : nullptr;
+                return false;
             }
+            const int subtickCount = static_cast<int>(subtickEnd - subtickBegin);
+            subticks = subtickCount > 0 ? p.subs.data() + subtickBegin : nullptr;
 
             out.tick = tick;
             out.subticks = subticks;
@@ -1431,13 +1452,19 @@ namespace BotController
             int idx = p.cursor.load(std::memory_order_relaxed);
             if (idx < 0 || idx >= total)
                 return -1;
-            uint32_t begin = p.subOffset[static_cast<size_t>(idx)];
-            uint32_t end = p.subOffset[static_cast<size_t>(idx + 1)];
+            size_t begin = 0;
+            size_t end = 0;
+            if (!ReplaySubtickLayout::TryGetReplaySubtickRange(
+                    p.ticks.data(), p.ticks.size(), p.subOffset, p.subs.size(),
+                    static_cast<size_t>(idx), begin, end))
+            {
+                return -1;
+            }
             int n = static_cast<int>(end - begin);
             if (n > maxOut)
                 n = maxOut;
             for (int i = 0; i < n; ++i)
-                out[i] = p.subs[static_cast<size_t>(begin + i)];
+                out[i] = p.subs[begin + static_cast<size_t>(i)];
             return n;
         }
 

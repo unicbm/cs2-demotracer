@@ -412,13 +412,20 @@ extern "C" __declspec(dllexport) int BotController_CopyRecordedSubticks(int slot
 
 // Load parallel tick + subtick arrays into a slot's replay buffer. 0 ok.
 extern "C" __declspec(dllexport) int BotController_LoadReplay(int slot,
-                                                          const BotController::ReplayTick *ticks, int tickCount,
-                                                          const BotController::SubtickMove *subs, int subCount)
+                                                              const BotController::ReplayTick *ticks, int tickCount,
+                                                              const BotController::SubtickMove *subs, int subCount) noexcept
 {
-    return BotController::MotionRecorder::LoadReplay(slot, ticks, tickCount,
-                                                     subs, subCount)
-               ? 0
-               : -1;
+    try
+    {
+        return BotController::MotionRecorder::LoadReplay(slot, ticks, tickCount,
+                                                         subs, subCount)
+                   ? 0
+                   : -1;
+    }
+    catch (...)
+    {
+        return -1;
+    }
 }
 
 extern "C" __declspec(dllexport) int BotController_LoadReplayExtended(
@@ -426,36 +433,50 @@ extern "C" __declspec(dllexport) int BotController_LoadReplayExtended(
     const BotController::ReplayTick *ticks, int tickCount,
     const BotController::SubtickMove *subs, int subCount,
     const BotController::ReplayCommandFrameData *commands, int commandCount,
-    const BotController::ReplayMovementExtra *movementExtras, int movementExtraCount)
+    const BotController::ReplayMovementExtra *movementExtras, int movementExtraCount) noexcept
 {
-    return BotController::MotionRecorder::LoadReplayExtended(
-               slot, ticks, tickCount, subs, subCount,
-               commands, commandCount, movementExtras, movementExtraCount)
-               ? 0
-               : -1;
+    try
+    {
+        return BotController::MotionRecorder::LoadReplayExtended(
+                   slot, ticks, tickCount, subs, subCount,
+                   commands, commandCount, movementExtras, movementExtraCount)
+                   ? 0
+                   : -1;
+    }
+    catch (...)
+    {
+        return -1;
+    }
 }
 
 // Move a slot's just-recorded buffers into another slot's replay buffer
-extern "C" __declspec(dllexport) int BotController_TransferRecordingToReplay(int srcSlot, int dstSlot)
+extern "C" __declspec(dllexport) int BotController_TransferRecordingToReplay(int srcSlot, int dstSlot) noexcept
 {
-    int nt = BotController::MotionRecorder::RecordedTickCount(srcSlot);
-    if (nt <= 0)
+    try
+    {
+        int nt = BotController::MotionRecorder::RecordedTickCount(srcSlot);
+        if (nt <= 0)
+            return -1;
+        int ns = BotController::MotionRecorder::RecordedSubtickCount(srcSlot);
+        if (ns < 0)
+            ns = 0;
+        std::vector<BotController::ReplayTick> ticks(nt);
+        std::vector<BotController::SubtickMove> subs(ns > 0 ? ns : 1);
+        int gotT = BotController::MotionRecorder::CopyTicks(srcSlot, ticks.data(), nt);
+        int gotS = ns > 0
+                       ? BotController::MotionRecorder::CopySubticks(srcSlot, subs.data(), ns)
+                       : 0;
+        if (gotT <= 0)
+            return -1;
+        return BotController::MotionRecorder::LoadReplay(
+                   dstSlot, ticks.data(), gotT, subs.data(), gotS)
+                   ? 0
+                   : -1;
+    }
+    catch (...)
+    {
         return -1;
-    int ns = BotController::MotionRecorder::RecordedSubtickCount(srcSlot);
-    if (ns < 0)
-        ns = 0;
-    std::vector<BotController::ReplayTick> ticks(nt);
-    std::vector<BotController::SubtickMove> subs(ns > 0 ? ns : 1);
-    int gotT = BotController::MotionRecorder::CopyTicks(srcSlot, ticks.data(), nt);
-    int gotS = ns > 0
-                   ? BotController::MotionRecorder::CopySubticks(srcSlot, subs.data(), ns)
-                   : 0;
-    if (gotT <= 0)
-        return -1;
-    return BotController::MotionRecorder::LoadReplay(
-               dstSlot, ticks.data(), gotT, subs.data(), gotS)
-               ? 0
-               : -1;
+    }
 }
 
 extern "C" __declspec(dllexport) int BotController_StartReplay(int slot, int loop)

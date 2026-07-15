@@ -148,6 +148,7 @@ add_library(BotController SHARED
     src/BotController/BotControllerState.cpp
     src/BotRecorder/InputInjector.cpp
     src/BotRecorder/MotionRecorder.cpp
+    src/BotRecorder/ReplaySubtickLayout.cpp
     src/VoiceSender/VoiceSender.cpp
     src/common/sig_scan.cpp
     src/common/version_targets.cpp

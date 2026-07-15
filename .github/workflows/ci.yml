@@ -75,6 +75,15 @@ jobs:
       - name: Test CSS command policy
         run: dotnet test css\DemoTracer.Tests\DemoTracer.Tests.csproj -c Release
 
+      - name: Configure native replay safety tests
+        run: cmake -S runtime\BotController\tests -B runtime\BotController\out\replay-safety-ci -A x64
+
+      - name: Build native replay safety tests
+        run: cmake --build runtime\BotController\out\replay-safety-ci --config Release
+
+      - name: Test native replay safety
+        run: ctest --test-dir runtime\BotController\out\replay-safety-ci -C Release --output-on-failure
+
       - name: Check public-source hygiene
         shell: pwsh
         run: |
@@ -106,3 +115,35 @@ jobs:
 
       - name: Check diff whitespace
         run: git diff --check
+
+  native-fuzz-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure production replay ABI fuzz target
+        run: >-
+          cmake -S runtime/BotController/tests
+          -B runtime/BotController/out/replay-abi-fuzz-ci
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_CXX_COMPILER=clang++
+          -DBOTCONTROLLER_BUILD_FUZZER=ON
+
+      - name: Build native replay tests and fuzz target
+        run: cmake --build runtime/BotController/out/replay-abi-fuzz-ci --config RelWithDebInfo
+
+      - name: Test native replay safety under Clang
+        run: >-
+          ctest --test-dir runtime/BotController/out/replay-abi-fuzz-ci
+          --output-on-failure
+
+      - name: Smoke fuzz production replay ABI validator
+        timeout-minutes: 2
+        run: >-
+          runtime/BotController/out/replay-abi-fuzz-ci/BotControllerReplayAbiFuzz
+          -runs=2000
+          -max_len=4096
+          -rss_limit_mb=1024
+          -print_final_stats=1

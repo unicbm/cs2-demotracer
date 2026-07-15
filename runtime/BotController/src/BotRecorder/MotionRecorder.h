@@ -244,13 +244,13 @@ namespace BotController
         // ---- replay ----
         // Load parallel arrays into a slot's replay buffer
         bool LoadReplay(int slot, const ReplayTick *ticks, int tickCount,
-                        const SubtickMove *subs, int subCount);
+                        const SubtickMove *subs, int subCount) noexcept;
         bool LoadReplayExtended(int slot, const ReplayTick *ticks, int tickCount,
                                 const SubtickMove *subs, int subCount,
                                 const ReplayCommandFrameData *commands,
                                 int commandCount,
                                 const ReplayMovementExtra *movementExtras,
-                                int movementExtraCount);
+                                int movementExtraCount) noexcept;
         bool StartReplay(int slot, bool loop); // play from tick 0
         bool StartReplayAt(int slot, bool loop, int startIndex);
         bool StartReplayUntil(int slot, bool loop, int startIndex, int holdBeforeIndex);
