@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.6.0",
+    [string]$Version = "0.7.0",
     [string]$OutputRoot = "dist",
     [ValidateSet("All", "Cli", "Gui")]
     [string]$Package = "All",
