@@ -121,11 +121,12 @@ public sealed partial class DemoTracerPlugin
         _handoffThreat360Enabled = true;
         _handoffThreat360Range = HandoffThreat360DefaultRange;
         _handoffThreat360LosEnabled = true;
+        _viewmodelContinuityMode = ViewmodelContinuityMode.Round;
         _chatAutoEnabled = true;
 
         SetWeaponAlignEnabled(true);
         SetProjectileAlignEnabled(true);
-        SetCrosshairAlignEnabled(false);
+        SetCrosshairAlignEnabled(true);
         _leftHandDesiredEnabled = true;
         ApplyCosmeticPreset(CosmeticPreset.Off);
         _preserveNativeBotCosmetics = false;
@@ -171,13 +172,13 @@ public sealed partial class DemoTracerPlugin
                 case "default":
                     SetWeaponAlignEnabled(true);
                     SetProjectileAlignEnabled(true);
-                    SetCrosshairAlignEnabled(false);
+                    SetCrosshairAlignEnabled(true);
                     _leftHandDesiredEnabled = true;
                     break;
                 case "full":
                     SetWeaponAlignEnabled(true);
                     SetProjectileAlignEnabled(true);
-                    SetCrosshairAlignEnabled(false);
+                    SetCrosshairAlignEnabled(true);
                     _leftHandDesiredEnabled = true;
                     break;
                 case "handoff_safe":
@@ -185,7 +186,7 @@ public sealed partial class DemoTracerPlugin
                 case "handoff":
                     SetWeaponAlignEnabled(true);
                     SetProjectileAlignEnabled(true);
-                    SetCrosshairAlignEnabled(false);
+                    SetCrosshairAlignEnabled(true);
                     _leftHandDesiredEnabled = false;
                     reply(LeftHandDesiredFidelityNotice);
                     break;
@@ -345,6 +346,14 @@ public sealed partial class DemoTracerPlugin
             _handoffThreat360LosEnabled = handoff.Threat360Los.Value;
             _pendingThreat360.Clear();
         }
+
+        if (!string.IsNullOrWhiteSpace(handoff.ViewmodelContinuity))
+        {
+            if (TryParseViewmodelContinuityMode(handoff.ViewmodelContinuity, out var continuityMode))
+                _viewmodelContinuityMode = continuityMode;
+            else
+                reply($"[DTR WARN] ignored config handoff.viewmodel_continuity=\"{handoff.ViewmodelContinuity}\"; expected release or round");
+        }
     }
 
     private void ApplyRuntimeConfigSideEffects()
@@ -352,6 +361,10 @@ public sealed partial class DemoTracerPlugin
         if (!_playoffEnabled)
             CancelPlayoffPreparation(unloadPrepared: true);
         BotControllerNative.WriteLeftHandDesired = _leftHandDesiredEnabled;
+        if (!_leftHandDesiredEnabled)
+            ClearReplayLeftHandDesiredLatches(forceNative: true);
+        if (_viewmodelContinuityMode == ViewmodelContinuityMode.Release)
+            RestoreRetainedReplayBotViewmodels();
         BotControllerNative.SetReplayNativeFovOverride(_handoffThreat360Enabled);
         if (_replayIdentityMode != ReplayIdentityMode.Avatar)
             Server.ExecuteCommand("sv_reliableavatardata false");
@@ -362,7 +375,7 @@ public sealed partial class DemoTracerPlugin
     private void ReplyRuntimeSettings(Action<string> reply, string prefix)
     {
         reply($"{prefix} schema=v2 legacy_align={FormatOnOff(_runtimeConfigHadLegacyAlign)} new_sections={FormatOnOff(_runtimeConfigHadNewSections)}");
-        reply($"{prefix} playback identity={ReplayIdentityModeName()} allow_partial={FormatOnOff(_partialReplayEnabled)} playoff={FormatOnOff(_playoffEnabled)} chat_auto={FormatOnOff(_chatAutoEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} handoff_360={FormatOnOff(_handoffThreat360Enabled)} range={_handoffThreat360Range.ToString("F0", CultureInfo.InvariantCulture)} los={FormatOnOff(_handoffThreat360LosEnabled)}");
+        reply($"{prefix} playback identity={ReplayIdentityModeName()} allow_partial={FormatOnOff(_partialReplayEnabled)} playoff={FormatOnOff(_playoffEnabled)} chat_auto={FormatOnOff(_chatAutoEnabled)} handoff={FormatHandoffMode(_handoffMode)}:{(_handoffAllSlots ? "all" : "slot")} viewmodel_continuity={ViewmodelContinuityModeName()} handoff_360={FormatOnOff(_handoffThreat360Enabled)} range={_handoffThreat360Range.ToString("F0", CultureInfo.InvariantCulture)} los={FormatOnOff(_handoffThreat360LosEnabled)}");
         reply($"{prefix} fidelity preset={AlignPresetName()} weapons={FormatOnOff(_weaponAlignEnabled)} projectiles={FormatOnOff(_projectileAlignEnabled)} projectile_ticks={FormatProjectileAlignTicks()} crosshair={FormatOnOff(_crosshairAlignEnabled)} left_hand={FormatOnOff(_leftHandDesiredEnabled)}");
         reply($"{prefix} match preset={(_scoreboardAlignEnabled ? "scoreboard" : "off")} scoreboard={FormatOnOff(_scoreboardAlignEnabled)}");
         reply($"{prefix} cosmetics preset={CosmeticPresetName()} risk={FormatOnOff(_cosmeticAlignEnabled)} weapons={FormatOnOff(_cosmeticWeaponsEnabled)} knives={FormatOnOff(_cosmeticKnivesEnabled)} gloves={FormatOnOff(_cosmeticGlovesEnabled)} names={FormatOnOff(_cosmeticNamesEnabled)} agents={FormatOnOff(_cosmeticAgentsEnabled)} stickers={FormatOnOff(_stickerAlignEnabled)} charms={FormatOnOff(_charmAlignEnabled)} preserve_native={FormatOnOff(_preserveNativeBotCosmetics)}");
@@ -433,6 +446,9 @@ public sealed partial class DemoTracerPlugin
 
         [JsonPropertyName("threat_360_los")]
         public bool? Threat360Los { get; set; }
+
+        [JsonPropertyName("viewmodel_continuity")]
+        public string? ViewmodelContinuity { get; set; }
     }
 
     public sealed class DemoTracerAlignConfig

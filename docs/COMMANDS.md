@@ -20,11 +20,12 @@ dtr_config_status
 dtr_preset 0x15; dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
 ```
 
-Replay identity, weapon/loadout alignment, and projectile alignment are on by
-default. Crosshair alignment is off by default and must be explicitly enabled
-with `dtr_align crosshair on`. Identity alignment leases demo names and
-SteamID64 values through bundled BotHider-managed replay slots. If the manifest
-contains demo-provided PNG avatar overrides, identity
+Replay identity, weapon/loadout alignment, projectile alignment, and crosshair
+alignment are on by default. Crosshairs are published entirely by the bundled
+BotHider through server state and do not write human client configuration.
+Identity alignment leases demo names and SteamID64 values through bundled
+BotHider-managed replay slots. If the manifest contains demo-provided PNG
+avatar overrides, identity
 `full` also applies them for matching SteamID64 values.
 
 Use `seq` for "sequence from source round", `round` for one source round only,
@@ -37,9 +38,11 @@ arms it, then issues `mp_restartgame 1` so playback catches a fresh
 DemoTracer reads optional runtime defaults from `demotracer.config.json` next to
 `DemoTracer.dll`. The repository ships `demotracer.config.example.json` as a
 sanitized starting point. The JSON controls server-local runtime preferences
-only; it is not written into `.dtr` files or manifests.
+only; it is not written into `.dtr` files or manifests. The runtime parser
+accepts `//` comments and trailing commas, so the example file documents
+non-obvious choices in place.
 
-```json
+```jsonc
 {
   "identity": "steam",
   "allow_partial": true,
@@ -50,11 +53,15 @@ only; it is not written into `.dtr` files or manifests.
     "scope": "slot",
     "threat_360": true,
     "threat_360_range": 420,
-    "threat_360_los": true
+    "threat_360_los": true,
+    // "round": retain only the final viewmodel/handedness lease until round boundary.
+    // "release": restore the pre-replay viewmodel immediately at handoff/finish.
+    "viewmodel_continuity": "round"
   },
   "fidelity": {
     "preset": "default",
-    "crosshair": false
+    // Server-published through BotHider; set false to disable.
+    "crosshair": true
   },
   "match": {
     "preset": "off"
@@ -77,10 +84,11 @@ matching legacy fields.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `dtr_align default` | on | Replay fidelity: weapons/loadout, projectiles, and left-hand desired writes. Crosshair alignment stays off unless explicitly enabled. |
+| `dtr_align default` | on | Replay fidelity: weapons/loadout, projectiles, left-hand desired writes, and server-published crosshair alignment. |
 | `dtr_match off` | off | Match presentation sync, including scoreboard/KDA/MVP/team score. |
 | `dtr_cosmetics off` | off | High-risk cosmetic evidence replay for skins, knives, gloves, names, agents, stickers, and charms. |
 | `dtr_handoff` | `death_contact_c4 slot` | Release the contacted/dead replay slot after contact or death; C4 planted releases all active replay slots. |
+| `handoff.viewmodel_continuity` | `round` | Keep the final replay viewmodel and left-hand desired lease after a live handoff until the round boundary. |
 | `dtr_partial` | `1` | Allow replay with fewer bots than manifest players. |
 | `dtr_playoff` | `off` | After a manifest sequence is exhausted, keep scheduling SteamID-matched full-buy openings from that manifest. |
 | `dtr_chat_auto` | `on` | Replay demo chat messages from manifest metadata on the same round timeline. |
@@ -322,10 +330,10 @@ dtr_align left_hand <on|off>
 
 Presets:
 
-- `default` / `full`: weapons, projectiles, and left-hand desired writes are
-  on. Crosshair alignment stays off unless explicitly enabled.
+- `default` / `full`: weapons, projectiles, left-hand desired writes, and
+  server-published crosshair alignment are on.
 - `handoff_safe`: keeps weapons/projectiles on, but turns `left_hand` off for
-  smoother handoff. Crosshair alignment stays off unless explicitly enabled.
+  smoother handoff. Server-published crosshair alignment remains on.
 - `off`: disables replay-fidelity alignment switches; useful for debugging,
   not normal playback.
 
@@ -602,7 +610,7 @@ Implementation when enabled:
 
 ### `dtr_crosshair_align <0|1>`
 
-Enables or disables crosshair alignment. It is off by default.
+Enables or disables crosshair alignment. It is on by default.
 
 When enabled, DemoTracer leases manifest `view.crosshair_code` evidence for the
 safe replay bot. The bundled BotHider is the sole writer and publishes the code
@@ -621,11 +629,12 @@ Controls whether newly loaded `.dtr` v7 command frames keep
 `left_hand_desired` writes.
 
 - `1`: preserve demo left-hand/right-hand desired state. This is the default
-  and highest-fidelity behavior.
+  and highest-fidelity behavior. With the default
+  `handoff.viewmodel_continuity="round"`, a live handoff keeps renewing the
+  final desired side through the rest of the round instead of forcing an
+  immediate hand switch and weapon redraw.
 - `0`: strip left-hand desired writes before loading replay frames into native
-  playback. This lowers replay fidelity, but significantly improves handoff
-  smoothness when a left-hand replay bot would otherwise switch back to the
-  server default right-hand viewmodel after handoff.
+  playback. This lowers replay fidelity and disables the left-hand latch.
 
 The setting affects replays loaded after the command is changed. Reload the
 round, sequence, or pool plan to apply it to already loaded replay slots.
@@ -704,6 +713,20 @@ Scope:
 
 C4 planted is round-phase handoff, not an individual duel trigger. It releases
 all active replay slots even when scope is `slot`.
+
+`handoff.viewmodel_continuity` is configured in `demotracer.config.json`:
+
+- `round` (default): contact/C4 handoff and natural replay completion release
+  movement injection, replay control, buy plans, and weapon locks immediately,
+  but retain the final replay viewmodel and native left-hand desired latch
+  until the next round boundary. This avoids a hand-switch weapon redraw and
+  its firing cooldown during the control transfer.
+- `release`: restore the pre-replay viewmodel and clear the left-hand latch as
+  soon as replay control is released.
+
+Death, unsafe targets, explicit stop/unload/kick, disconnect, map change, and
+plugin unload always clear the viewmodel lease immediately regardless of this
+setting. The retained lease never keeps replay input or a weapon-slot lock.
 
 Contact implementation:
 

@@ -8,11 +8,18 @@
     "scope": "slot",
     "threat_360": true,
     "threat_360_range": 420,
-    "threat_360_los": true
+    "threat_360_los": true,
+    // "round" keeps the final viewmodel and left/right-hand desired latch until
+    // the round boundary after handoff or natural replay completion. Replay
+    // input, movement, buy plans, and weapon locks are still released at once.
+    // Use "release" to restore the pre-replay viewmodel immediately instead.
+    "viewmodel_continuity": "round"
   },
   "fidelity": {
     "preset": "default",
-    "crosshair": false
+    // Safe by default: BotHider publishes demo crosshairs from the server and
+    // never writes human client configuration. Set false to disable alignment.
+    "crosshair": true
   },
   "match": {
     "preset": "off"

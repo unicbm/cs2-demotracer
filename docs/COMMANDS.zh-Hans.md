@@ -18,10 +18,10 @@ dtr_config_status
 dtr_preset 0x15; dtr_go seq "<输出目录>\<demo-id>\manifest.json" 0
 ```
 
-replay identity、武器/loadout 对齐和投掷物对齐默认开启。准星对齐默认关闭，需要显式执行
-`dtr_align crosshair on` 才会启用。identity 对齐通过 bundle 内置 BotHider 的独占 lease
-向受管 replay bot slot 发布 demo 名字和 SteamID64。如果 manifest 包含 demo 提供的 PNG
-头像覆写，`full` identity 也会按 SteamID64 应用。
+replay identity、武器/loadout、投掷物和准星对齐默认开启。准星完全由 bundle 内置
+BotHider 通过服务器 state 发布，不写真人客户端配置。identity 对齐通过 BotHider 的
+独占 lease 向受管 replay bot slot 发布 demo 名字和 SteamID64。如果 manifest 包含
+demo 提供的 PNG 头像覆写，`full` identity 也会按 SteamID64 应用。
 
 `seq` 表示“从某个 source round 开始顺序播放”，`round` 表示“只播放一个
 source round”，`pool` 表示“按本地经济从回合池选择”。`dtr_go` 会先校验并
@@ -31,9 +31,10 @@ armed plan，再执行 `mp_restartgame 1`，确保接住新的 `round_start`。
 
 DemoTracer 会从 `DemoTracer.dll` 同目录读取可选的 `demotracer.config.json`，作为
 服务器本地 runtime 默认值。仓库里提供 `demotracer.config.example.json` 作为干净示例。
-这个 JSON 只控制服务器偏好，不会写进 `.dtr` 或 manifest。
+这个 JSON 只控制服务器偏好，不会写进 `.dtr` 或 manifest。运行时解析器允许 `//`
+注释和尾逗号，因此示例文件会直接在不直观的选项旁说明其作用。
 
-```json
+```jsonc
 {
   "identity": "steam",
   "allow_partial": true,
@@ -44,11 +45,15 @@ DemoTracer 会从 `DemoTracer.dll` 同目录读取可选的 `demotracer.config.j
     "scope": "slot",
     "threat_360": true,
     "threat_360_range": 420,
-    "threat_360_los": true
+    "threat_360_los": true,
+    // "round"：只把最后的 viewmodel/左右手租约保持到回合边界。
+    // "release"：handoff/replay 结束时立即恢复 replay 前 viewmodel。
+    "viewmodel_continuity": "round"
   },
   "fidelity": {
     "preset": "default",
-    "crosshair": false
+    // 由 BotHider 从服务器发布；设为 false 可关闭。
+    "crosshair": true
   },
   "match": {
     "preset": "off"
@@ -70,10 +75,11 @@ DemoTracer 会从 `DemoTracer.dll` 同目录读取可选的 `demotracer.config.j
 
 | 设置 | 默认值 | 含义 |
 | --- | --- | --- |
-| `dtr_align default` | on | Replay 保真：武器/loadout、投掷物、左右手 desired 写入。准星对齐保持关闭，除非显式开启。 |
+| `dtr_align default` | on | Replay 保真：武器/loadout、投掷物、左右手 desired 写入，以及服务器发布的准星对齐。 |
 | `dtr_match off` | off | 赛事展示同步，包括比分板、KDA、MVP、team score。 |
 | `dtr_cosmetics off` | off | 高风险饰品证据 replay，包括皮肤、刀、手套、名字、探员、贴纸和挂件。 |
 | `dtr_handoff` | `death_contact_c4 slot` | 接触或死亡后释放触发的 replay slot；C4 安装后释放全部 active replay slot。 |
+| `handoff.viewmodel_continuity` | `round` | 活体 handoff 后把最后的 replay viewmodel 和左右手 desired 租约保持到回合边界。 |
 | `dtr_partial` | `1` | bot 数量不足时允许部分 replay。 |
 | `dtr_playoff` | `off` | manifest sequence 耗尽后，继续从该 manifest 调度按 SteamID 匹配的长枪局开局。 |
 | `dtr_chat_auto` | `on` | 按 manifest 元数据和同一回合时间线 replay demo 文字聊天。 |
@@ -292,10 +298,9 @@ dtr_align left_hand <on|off>
 
 Preset：
 
-- `default` / `full`：武器、投掷物、左右手 desired 写入开启。准星对齐保持关闭，
-  除非显式开启。
+- `default` / `full`：武器、投掷物、左右手 desired 写入和服务器发布的准星对齐开启。
 - `handoff_safe`：保留武器/投掷物，但关闭 `left_hand`，换取更顺的 handoff。
-  准星对齐保持关闭，除非显式开启。
+  服务器发布的准星对齐仍然开启。
 - `off`：关闭 replay 保真对齐开关，只建议调试用。
 
 `loadout`、`active_weapon`、`slot_lock` 等 alias 仍可用，目前都共享 `weapons`
@@ -532,7 +537,7 @@ flag 之外又加了 `--export-stickers` 生成时，它才会生效。
 
 ### `dtr_crosshair_align <0|1>`
 
-开关准星对齐。默认关闭。
+开关准星对齐。默认开启。
 
 开启后，DemoTracer 会为安全 replay bot 租用 converter 从 demo 玩家稳定
 `crosshair_code` 导出的 manifest `view.crosshair_code`。bundle 内置 BotHider 是唯一 writer，
@@ -547,7 +552,10 @@ replay 控制；最近一次成功 DTR 批次的 presentation 会继续保持。
 控制新加载的 `.dtr` v7 command frames 是否保留 `left_hand_desired` 写入。
 
 - `1`：保留 demo 里的左/右手 desired 状态。这是默认值，也是最高保真度行为。
-- `0`：加载 replay frames 到 native playback 前清掉 left-hand desired 写入。它会降低保真度，但显著增高handoff流畅性，适合左手 replay bot 在 handoff 后会切回服务器默认右手视角并触发前摇的场景。
+  默认 `handoff.viewmodel_continuity="round"` 时，活体 handoff 后会继续续约最后的
+  desired 持枪侧直到本回合结束，不会立即切手并重播切枪动作。
+- `0`：加载 replay frames 到 native playback 前清掉 left-hand desired 写入。它会降低
+  replay 保真度，并禁用 left-hand latch。
 
 这个设置只影响命令改动之后加载的 replay。已经加载到 slot 上的 round、sequence 或
 pool plan 需要重新加载后才会应用。
@@ -614,6 +622,18 @@ flair 都继续保持。新 round 成功加载时原子替换整批 presentation
 
 C4 安装是回合阶段 handoff，不是单个对枪触发；即使 scope 是 `slot`，也会释放所有
 active replay slots。
+
+`demotracer.config.json` 中的 `handoff.viewmodel_continuity` 控制交接后的 viewmodel
+租约：
+
+- `round`（默认）：接触/C4 handoff 或 replay 自然结束时，移动注入、replay control、
+  buy plan 和武器锁仍然立即释放，但最后的 replay viewmodel 与 native left-hand desired
+  latch 会保留到下一个回合边界。这样不会在控制权交接时因为切手重播切枪动作并产生开火
+  cooldown。
+- `release`：replay control 释放时立即恢复 replay 前 viewmodel，并清掉 left-hand latch。
+
+死亡、unsafe target、显式 stop/unload/kick、断线、换图和插件卸载始终立即清理这份
+viewmodel 租约。保留的租约绝不会继续 replay 输入，也不会继续占用武器 slot lock。
 
 接触检测实现：
 

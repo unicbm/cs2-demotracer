@@ -25,7 +25,7 @@ public sealed partial class DemoTracerPlugin
                 continue;
 
             BotControllerNative.StopReplay(slot);
-            ReleaseReplaySlot(slot, reason);
+            ReleaseReplaySlot(slot, reason, ReplayReleaseKind.Handoff);
             stopped++;
 
             if (!forceAll && !_handoffAllSlots)

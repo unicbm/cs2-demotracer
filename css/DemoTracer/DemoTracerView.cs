@@ -5,7 +5,15 @@ namespace DemoTracer;
 
 public sealed partial class DemoTracerPlugin
 {
+    private enum ViewmodelContinuityMode
+    {
+        Release,
+        Round
+    }
+
     private readonly Dictionary<int, bool> _replayLeftHandDesiredLatches = new();
+    private readonly HashSet<int> _retainedReplayViewmodelSlots = new();
+    private ViewmodelContinuityMode _viewmodelContinuityMode = ViewmodelContinuityMode.Round;
 
     private static ReplayView NormalizeReplayView(ReplayView? view)
     {
@@ -82,7 +90,7 @@ public sealed partial class DemoTracerPlugin
     }
 
     private string FormatViewmodelStatusCounts()
-        => $"viewmodel_evidence={CountLoadedViewmodelEvidence()} viewmodel_bots={_replayAppliedViewmodels.Count} viewmodel_failed={_replayFailedViewmodelSlots.Count} left_hand_latches={_replayLeftHandDesiredLatches.Count}";
+        => $"viewmodel_evidence={CountLoadedViewmodelEvidence()} viewmodel_bots={_replayAppliedViewmodels.Count} viewmodel_failed={_replayFailedViewmodelSlots.Count} viewmodel_retained={_retainedReplayViewmodelSlots.Count} left_hand_latches={_replayLeftHandDesiredLatches.Count}";
 
     private int CountLoadedCrosshairEvidence()
         => _loadedReplays.Values.Count(replay => HasCrosshairEvidence(replay.View));
@@ -175,8 +183,12 @@ public sealed partial class DemoTracerPlugin
 
         for (var slot = 0; slot < MaxPlayerSlots; slot++)
         {
-            if ((activeReplaySlotMask & (1UL << slot)) == 0 && IsReplayViewmodelSlotTracked(slot))
+            if ((activeReplaySlotMask & (1UL << slot)) == 0 &&
+                IsReplayViewmodelSlotTracked(slot) &&
+                !_retainedReplayViewmodelSlots.Contains(slot))
+            {
                 RestoreReplayBotViewmodel(slot);
+            }
         }
     }
 
@@ -184,13 +196,51 @@ public sealed partial class DemoTracerPlugin
         => _replayOriginalViewmodels.Count > 0 ||
            _replayAppliedViewmodels.Count > 0 ||
            _replayFailedViewmodelSlots.Count > 0 ||
+           _retainedReplayViewmodelSlots.Count > 0 ||
            _replayLeftHandDesiredLatches.Count > 0;
 
     private bool IsReplayViewmodelSlotTracked(int slot)
         => _replayOriginalViewmodels.ContainsKey(slot) ||
            _replayAppliedViewmodels.ContainsKey(slot) ||
            _replayFailedViewmodelSlots.Contains(slot) ||
+           _retainedReplayViewmodelSlots.Contains(slot) ||
            _replayLeftHandDesiredLatches.ContainsKey(slot);
+
+    private bool RetainReplayBotViewmodelForRound(int slot)
+    {
+        if (_viewmodelContinuityMode != ViewmodelContinuityMode.Round ||
+            !IsReplayViewmodelSlotTracked(slot))
+        {
+            return false;
+        }
+
+        var bot = Utilities.GetPlayerFromSlot(slot);
+        if (bot is not { IsValid: true, PawnIsAlive: true } || !IsReplayTargetBot(bot))
+        {
+            return false;
+        }
+
+        _retainedReplayViewmodelSlots.Add(slot);
+        return true;
+    }
+
+    private void RestoreNonRetainedReplayBotViewmodels()
+    {
+        if (!HasTrackedReplayViewmodelState())
+            return;
+
+        for (var slot = 0; slot < MaxPlayerSlots; slot++)
+        {
+            if (IsReplayViewmodelSlotTracked(slot) && !_retainedReplayViewmodelSlots.Contains(slot))
+                RestoreReplayBotViewmodel(slot);
+        }
+    }
+
+    private void RestoreRetainedReplayBotViewmodels()
+    {
+        foreach (var slot in _retainedReplayViewmodelSlots.ToArray())
+            RestoreReplayBotViewmodel(slot);
+    }
 
     private void ApplyReplayBotViewmodel(CCSPlayerController bot, ReplayViewmodel viewmodel)
     {
@@ -238,11 +288,13 @@ public sealed partial class DemoTracerPlugin
         _replayOriginalViewmodels.Clear();
         _replayAppliedViewmodels.Clear();
         _replayFailedViewmodelSlots.Clear();
+        _retainedReplayViewmodelSlots.Clear();
         ClearReplayLeftHandDesiredLatches();
     }
 
     private void RestoreReplayBotViewmodel(int slot, bool clearLeftHandDesiredLatch = true)
     {
+        _retainedReplayViewmodelSlots.Remove(slot);
         _replayAppliedViewmodels.Remove(slot);
         _replayFailedViewmodelSlots.Remove(slot);
         if (clearLeftHandDesiredLatch)
@@ -259,6 +311,23 @@ public sealed partial class DemoTracerPlugin
 
         _ = TryApplyViewmodelToPawn(pawn, original, $"slot={slot} restore");
     }
+
+    private static bool TryParseViewmodelContinuityMode(string value, out ViewmodelContinuityMode mode)
+    {
+        mode = value.Trim().ToLowerInvariant() switch
+        {
+            "release" or "off" or "none" or "immediate" => ViewmodelContinuityMode.Release,
+            "round" or "retain" or "retain_round" or "retain-round" => ViewmodelContinuityMode.Round,
+            _ => ViewmodelContinuityMode.Release
+        };
+
+        return value.Trim().ToLowerInvariant() is
+            "release" or "off" or "none" or "immediate" or
+            "round" or "retain" or "retain_round" or "retain-round";
+    }
+
+    private string ViewmodelContinuityModeName()
+        => _viewmodelContinuityMode == ViewmodelContinuityMode.Round ? "round" : "release";
 
     private static ReplayViewmodel ReadCurrentViewmodel(CCSPlayerPawn pawn)
     {
