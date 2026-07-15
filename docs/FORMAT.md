@@ -25,6 +25,28 @@ Compatibility notes:
 - v7 files require the matching playback bundle with BotController native ABI 16
   and extended replay capability.
 
+## Manifest Cosmetic Inspect Data
+
+Manifest ABI 17 cosmetics may include this additive, optional object on each
+weapon, knife, or glove cosmetic:
+
+```json
+{
+  "inspect": {
+    "command": "csgo_econ_action_preview <payload-hex>",
+    "steam_url": "steam://rungame/730/76561202255233023/+csgo_econ_action_preview%20<payload-hex>"
+  }
+}
+```
+
+`command` is always present when the cosmetic has a usable item definition,
+paint kit, seed, and wear. `steam_url` is omitted when the complete URL would
+exceed the Steam protocol's 300-character launch limit. The uppercase payload
+is a deterministic CS2 `CEconItemPreviewDataBlock` protobuf with the native
+leading byte and xCRC trailer. It contains appearance evidence only and is not
+an inventory/market asset identifier. Because this is additive derived JSON
+that old readers ignore, it does not change `.dtr` v7 or manifest ABI 17.
+
 ## Header
 
 | Field | Type | Notes |

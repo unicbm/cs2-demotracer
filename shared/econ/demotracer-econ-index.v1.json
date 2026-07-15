@@ -1,7 +1,7 @@
 {
   "name": "demotracer-econ-index",
   "schema_version": 1,
-  "description": "Compact CS2 econ allowlists consumed by CS2 DemoTracer converter and runtime.",
+  "description": "Compact CS2 econ allowlists and inspect metadata consumed by CS2 DemoTracer converter and runtime.",
   "source": {
     "repository": "https://github.com/unicbm/cs2-econ-id-index",
     "commit": "09b4339e95aca53c122d7929b8a9a1d933af9a44",
@@ -17,5827 +17,7283 @@
   "weapon_paints": [
     {
       "weapon_defidx": 1,
-      "paint_kit": 17
+      "paint_kit": 17,
+      "rarity": 1
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 37
+      "paint_kit": 37,
+      "rarity": 3
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 40
+      "paint_kit": 40,
+      "rarity": 1
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 61
+      "paint_kit": 61,
+      "rarity": 4
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 90
+      "paint_kit": 90,
+      "rarity": 1
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 114
+      "paint_kit": 114,
+      "rarity": 2
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 138
+      "paint_kit": 138,
+      "rarity": 1
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 185
+      "paint_kit": 185,
+      "rarity": 5
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 231
+      "paint_kit": 231,
+      "rarity": 4
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 232
+      "paint_kit": 232,
+      "rarity": 3
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 237
+      "paint_kit": 237,
+      "rarity": 2
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 273
+      "paint_kit": 273,
+      "rarity": 3
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 296
+      "paint_kit": 296,
+      "rarity": 2
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 328
+      "paint_kit": 328,
+      "rarity": 3
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 347
+      "paint_kit": 347,
+      "rarity": 3
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 351
+      "paint_kit": 351,
+      "rarity": 4
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 397
+      "paint_kit": 397,
+      "rarity": 3
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 425
+      "paint_kit": 425,
+      "rarity": 2
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 468
+      "paint_kit": 468,
+      "rarity": 1
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 469
+      "paint_kit": 469,
+      "rarity": 3
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 470
+      "paint_kit": 470,
+      "rarity": 3
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 509
+      "paint_kit": 509,
+      "rarity": 2
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 527
+      "paint_kit": 527,
+      "rarity": 4
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 603
+      "paint_kit": 603,
+      "rarity": 3
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 645
+      "paint_kit": 645,
+      "rarity": 2
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 711
+      "paint_kit": 711,
+      "rarity": 5
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 757
+      "paint_kit": 757,
+      "rarity": 3
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 764
+      "paint_kit": 764,
+      "rarity": 4
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 805
+      "paint_kit": 805,
+      "rarity": 4
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 841
+      "paint_kit": 841,
+      "rarity": 3
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 938
+      "paint_kit": 938,
+      "rarity": 4
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 945
+      "paint_kit": 945,
+      "rarity": 2
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 962
+      "paint_kit": 962,
+      "rarity": 5
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 992
+      "paint_kit": 992,
+      "rarity": 1
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 1006
+      "paint_kit": 1006,
+      "rarity": 2
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 1050
+      "paint_kit": 1050,
+      "rarity": 3
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 1054
+      "paint_kit": 1054,
+      "rarity": 4
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 1056
+      "paint_kit": 1056,
+      "rarity": 2
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 1090
+      "paint_kit": 1090,
+      "rarity": 5
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 1189
+      "paint_kit": 1189,
+      "rarity": 3
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 1257
+      "paint_kit": 1257,
+      "rarity": 2
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 1318
+      "paint_kit": 1318,
+      "rarity": 3
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 1360
+      "paint_kit": 1360,
+      "rarity": 2
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 1430
+      "paint_kit": 1430,
+      "rarity": 3
     },
     {
       "weapon_defidx": 1,
-      "paint_kit": 1458
+      "paint_kit": 1458,
+      "rarity": 4
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 28
+      "paint_kit": 28,
+      "rarity": 3
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 43
+      "paint_kit": 43,
+      "rarity": 2
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 46
+      "paint_kit": 46,
+      "rarity": 1
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 47
+      "paint_kit": 47,
+      "rarity": 1
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 112
+      "paint_kit": 112,
+      "rarity": 4
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 139
+      "paint_kit": 139,
+      "rarity": 4
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 153
+      "paint_kit": 153,
+      "rarity": 4
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 190
+      "paint_kit": 190,
+      "rarity": 3
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 220
+      "paint_kit": 220,
+      "rarity": 4
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 249
+      "paint_kit": 249,
+      "rarity": 4
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 261
+      "paint_kit": 261,
+      "rarity": 4
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 276
+      "paint_kit": 276,
+      "rarity": 3
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 307
+      "paint_kit": 307,
+      "rarity": 3
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 330
+      "paint_kit": 330,
+      "rarity": 1
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 396
+      "paint_kit": 396,
+      "rarity": 4
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 447
+      "paint_kit": 447,
+      "rarity": 4
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 450
+      "paint_kit": 450,
+      "rarity": 1
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 453
+      "paint_kit": 453,
+      "rarity": 3
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 491
+      "paint_kit": 491,
+      "rarity": 3
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 528
+      "paint_kit": 528,
+      "rarity": 3
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 544
+      "paint_kit": 544,
+      "rarity": 3
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 625
+      "paint_kit": 625,
+      "rarity": 4
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 658
+      "paint_kit": 658,
+      "rarity": 5
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 710
+      "paint_kit": 710,
+      "rarity": 3
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 747
+      "paint_kit": 747,
+      "rarity": 5
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 824
+      "paint_kit": 824,
+      "rarity": 2
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 860
+      "paint_kit": 860,
+      "rarity": 2
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 895
+      "paint_kit": 895,
+      "rarity": 3
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 903
+      "paint_kit": 903,
+      "rarity": 3
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 978
+      "paint_kit": 978,
+      "rarity": 4
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 998
+      "paint_kit": 998,
+      "rarity": 2
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 1005
+      "paint_kit": 1005,
+      "rarity": 1
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 1086
+      "paint_kit": 1086,
+      "rarity": 1
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 1091
+      "paint_kit": 1091,
+      "rarity": 3
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 1126
+      "paint_kit": 1126,
+      "rarity": 5
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 1156
+      "paint_kit": 1156,
+      "rarity": 4
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 1169
+      "paint_kit": 1169,
+      "rarity": 3
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 1263
+      "paint_kit": 1263,
+      "rarity": 2
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 1290
+      "paint_kit": 1290,
+      "rarity": 2
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 1335
+      "paint_kit": 1335,
+      "rarity": 1
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 1347
+      "paint_kit": 1347,
+      "rarity": 4
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 1373
+      "paint_kit": 1373,
+      "rarity": 1
     },
     {
       "weapon_defidx": 2,
-      "paint_kit": 1459
+      "paint_kit": 1459,
+      "rarity": 2
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 3
+      "paint_kit": 3,
+      "rarity": 2
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 44
+      "paint_kit": 44,
+      "rarity": 4
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 46
+      "paint_kit": 46,
+      "rarity": 1
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 78
+      "paint_kit": 78,
+      "rarity": 1
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 141
+      "paint_kit": 141,
+      "rarity": 2
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 151
+      "paint_kit": 151,
+      "rarity": 1
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 210
+      "paint_kit": 210,
+      "rarity": 1
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 223
+      "paint_kit": 223,
+      "rarity": 3
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 252
+      "paint_kit": 252,
+      "rarity": 3
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 254
+      "paint_kit": 254,
+      "rarity": 3
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 265
+      "paint_kit": 265,
+      "rarity": 3
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 274
+      "paint_kit": 274,
+      "rarity": 4
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 352
+      "paint_kit": 352,
+      "rarity": 5
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 377
+      "paint_kit": 377,
+      "rarity": 2
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 387
+      "paint_kit": 387,
+      "rarity": 3
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 427
+      "paint_kit": 427,
+      "rarity": 5
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 464
+      "paint_kit": 464,
+      "rarity": 4
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 510
+      "paint_kit": 510,
+      "rarity": 4
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 530
+      "paint_kit": 530,
+      "rarity": 4
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 585
+      "paint_kit": 585,
+      "rarity": 3
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 605
+      "paint_kit": 605,
+      "rarity": 3
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 646
+      "paint_kit": 646,
+      "rarity": 3
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 660
+      "paint_kit": 660,
+      "rarity": 6
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 693
+      "paint_kit": 693,
+      "rarity": 3
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 729
+      "paint_kit": 729,
+      "rarity": 3
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 784
+      "paint_kit": 784,
+      "rarity": 1
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 831
+      "paint_kit": 831,
+      "rarity": 4
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 837
+      "paint_kit": 837,
+      "rarity": 6
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 906
+      "paint_kit": 906,
+      "rarity": 4
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 932
+      "paint_kit": 932,
+      "rarity": 2
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 979
+      "paint_kit": 979,
+      "rarity": 5
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 1002
+      "paint_kit": 1002,
+      "rarity": 4
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 1062
+      "paint_kit": 1062,
+      "rarity": 2
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 1082
+      "paint_kit": 1082,
+      "rarity": 5
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 1093
+      "paint_kit": 1093,
+      "rarity": 4
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 1128
+      "paint_kit": 1128,
+      "rarity": 3
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 1168
+      "paint_kit": 1168,
+      "rarity": 4
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 1262
+      "paint_kit": 1262,
+      "rarity": 2
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 1336
+      "paint_kit": 1336,
+      "rarity": 1
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 1380
+      "paint_kit": 1380,
+      "rarity": 3
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 1429
+      "paint_kit": 1429,
+      "rarity": 3
     },
     {
       "weapon_defidx": 3,
-      "paint_kit": 1457
+      "paint_kit": 1457,
+      "rarity": 2
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 2
+      "paint_kit": 2,
+      "rarity": 1
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 3
+      "paint_kit": 3,
+      "rarity": 2
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 38
+      "paint_kit": 38,
+      "rarity": 3
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 40
+      "paint_kit": 40,
+      "rarity": 1
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 48
+      "paint_kit": 48,
+      "rarity": 3
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 84
+      "paint_kit": 84,
+      "rarity": 3
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 129
+      "paint_kit": 129,
+      "rarity": 5
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 152
+      "paint_kit": 152,
+      "rarity": 2
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 159
+      "paint_kit": 159,
+      "rarity": 3
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 208
+      "paint_kit": 208,
+      "rarity": 1
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 230
+      "paint_kit": 230,
+      "rarity": 3
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 278
+      "paint_kit": 278,
+      "rarity": 2
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 293
+      "paint_kit": 293,
+      "rarity": 1
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 353
+      "paint_kit": 353,
+      "rarity": 4
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 367
+      "paint_kit": 367,
+      "rarity": 2
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 381
+      "paint_kit": 381,
+      "rarity": 3
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 399
+      "paint_kit": 399,
+      "rarity": 2
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 437
+      "paint_kit": 437,
+      "rarity": 4
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 479
+      "paint_kit": 479,
+      "rarity": 2
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 495
+      "paint_kit": 495,
+      "rarity": 2
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 532
+      "paint_kit": 532,
+      "rarity": 3
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 586
+      "paint_kit": 586,
+      "rarity": 5
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 607
+      "paint_kit": 607,
+      "rarity": 3
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 623
+      "paint_kit": 623,
+      "rarity": 2
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 680
+      "paint_kit": 680,
+      "rarity": 2
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 694
+      "paint_kit": 694,
+      "rarity": 3
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 713
+      "paint_kit": 713,
+      "rarity": 2
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 732
+      "paint_kit": 732,
+      "rarity": 3
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 789
+      "paint_kit": 789,
+      "rarity": 3
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 799
+      "paint_kit": 799,
+      "rarity": 1
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 808
+      "paint_kit": 808,
+      "rarity": 2
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 832
+      "paint_kit": 832,
+      "rarity": 4
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 918
+      "paint_kit": 918,
+      "rarity": 2
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 957
+      "paint_kit": 957,
+      "rarity": 5
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 963
+      "paint_kit": 963,
+      "rarity": 4
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 988
+      "paint_kit": 988,
+      "rarity": 5
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1016
+      "paint_kit": 1016,
+      "rarity": 3
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1039
+      "paint_kit": 1039,
+      "rarity": 2
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1079
+      "paint_kit": 1079,
+      "rarity": 1
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1100
+      "paint_kit": 1100,
+      "rarity": 4
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1119
+      "paint_kit": 1119,
+      "rarity": 5
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1120
+      "paint_kit": 1120,
+      "rarity": 5
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1121
+      "paint_kit": 1121,
+      "rarity": 5
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1122
+      "paint_kit": 1122,
+      "rarity": 5
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1123
+      "paint_kit": 1123,
+      "rarity": 5
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1158
+      "paint_kit": 1158,
+      "rarity": 2
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1167
+      "paint_kit": 1167,
+      "rarity": 3
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1200
+      "paint_kit": 1200,
+      "rarity": 2
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1208
+      "paint_kit": 1208,
+      "rarity": 4
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1227
+      "paint_kit": 1227,
+      "rarity": 3
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1240
+      "paint_kit": 1240,
+      "rarity": 3
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1265
+      "paint_kit": 1265,
+      "rarity": 1
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1282
+      "paint_kit": 1282,
+      "rarity": 3
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1312
+      "paint_kit": 1312,
+      "rarity": 2
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1348
+      "paint_kit": 1348,
+      "rarity": 4
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1357
+      "paint_kit": 1357,
+      "rarity": 3
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1421
+      "paint_kit": 1421,
+      "rarity": 5
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1450
+      "paint_kit": 1450,
+      "rarity": 5
     },
     {
       "weapon_defidx": 4,
-      "paint_kit": 1460
+      "paint_kit": 1460,
+      "rarity": 3
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 14
+      "paint_kit": 14,
+      "rarity": 4
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 44
+      "paint_kit": 44,
+      "rarity": 4
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 72
+      "paint_kit": 72,
+      "rarity": 1
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 113
+      "paint_kit": 113,
+      "rarity": 4
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 122
+      "paint_kit": 122,
+      "rarity": 1
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 142
+      "paint_kit": 142,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 170
+      "paint_kit": 170,
+      "rarity": 1
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 172
+      "paint_kit": 172,
+      "rarity": 2
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 180
+      "paint_kit": 180,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 226
+      "paint_kit": 226,
+      "rarity": 3
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 282
+      "paint_kit": 282,
+      "rarity": 4
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 300
+      "paint_kit": 300,
+      "rarity": 3
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 302
+      "paint_kit": 302,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 316
+      "paint_kit": 316,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 340
+      "paint_kit": 340,
+      "rarity": 4
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 341
+      "paint_kit": 341,
+      "rarity": 3
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 380
+      "paint_kit": 380,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 394
+      "paint_kit": 394,
+      "rarity": 4
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 422
+      "paint_kit": 422,
+      "rarity": 2
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 456
+      "paint_kit": 456,
+      "rarity": 4
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 474
+      "paint_kit": 474,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 490
+      "paint_kit": 490,
+      "rarity": 4
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 506
+      "paint_kit": 506,
+      "rarity": 4
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 524
+      "paint_kit": 524,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 600
+      "paint_kit": 600,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 639
+      "paint_kit": 639,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 656
+      "paint_kit": 656,
+      "rarity": 3
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 675
+      "paint_kit": 675,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 707
+      "paint_kit": 707,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 724
+      "paint_kit": 724,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 745
+      "paint_kit": 745,
+      "rarity": 1
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 795
+      "paint_kit": 795,
+      "rarity": 3
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 801
+      "paint_kit": 801,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 836
+      "paint_kit": 836,
+      "rarity": 2
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 885
+      "paint_kit": 885,
+      "rarity": 3
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 912
+      "paint_kit": 912,
+      "rarity": 2
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 921
+      "paint_kit": 921,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 941
+      "paint_kit": 941,
+      "rarity": 4
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 959
+      "paint_kit": 959,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1004
+      "paint_kit": 1004,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1018
+      "paint_kit": 1018,
+      "rarity": 4
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1035
+      "paint_kit": 1035,
+      "rarity": 3
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1070
+      "paint_kit": 1070,
+      "rarity": 2
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1087
+      "paint_kit": 1087,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1141
+      "paint_kit": 1141,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1143
+      "paint_kit": 1143,
+      "rarity": 4
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1171
+      "paint_kit": 1171,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1179
+      "paint_kit": 1179,
+      "rarity": 1
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1207
+      "paint_kit": 1207,
+      "rarity": 4
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1218
+      "paint_kit": 1218,
+      "rarity": 3
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1221
+      "paint_kit": 1221,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1238
+      "paint_kit": 1238,
+      "rarity": 2
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1283
+      "paint_kit": 1283,
+      "rarity": 2
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1288
+      "paint_kit": 1288,
+      "rarity": 1
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1309
+      "paint_kit": 1309,
+      "rarity": 4
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1352
+      "paint_kit": 1352,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1358
+      "paint_kit": 1358,
+      "rarity": 3
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1397
+      "paint_kit": 1397,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1425
+      "paint_kit": 1425,
+      "rarity": 4
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1449
+      "paint_kit": 1449,
+      "rarity": 5
     },
     {
       "weapon_defidx": 7,
-      "paint_kit": 1466
+      "paint_kit": 1466,
+      "rarity": 5
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 9
+      "paint_kit": 9,
+      "rarity": 5
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 10
+      "paint_kit": 10,
+      "rarity": 3
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 33
+      "paint_kit": 33,
+      "rarity": 3
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 46
+      "paint_kit": 46,
+      "rarity": 1
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 47
+      "paint_kit": 47,
+      "rarity": 1
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 73
+      "paint_kit": 73,
+      "rarity": 3
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 100
+      "paint_kit": 100,
+      "rarity": 1
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 110
+      "paint_kit": 110,
+      "rarity": 2
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 121
+      "paint_kit": 121,
+      "rarity": 3
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 134
+      "paint_kit": 134,
+      "rarity": 4
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 173
+      "paint_kit": 173,
+      "rarity": 5
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 197
+      "paint_kit": 197,
+      "rarity": 3
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 246
+      "paint_kit": 246,
+      "rarity": 3
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 280
+      "paint_kit": 280,
+      "rarity": 6
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 305
+      "paint_kit": 305,
+      "rarity": 4
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 375
+      "paint_kit": 375,
+      "rarity": 2
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 444
+      "paint_kit": 444,
+      "rarity": 1
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 455
+      "paint_kit": 455,
+      "rarity": 6
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 507
+      "paint_kit": 507,
+      "rarity": 3
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 541
+      "paint_kit": 541,
+      "rarity": 5
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 583
+      "paint_kit": 583,
+      "rarity": 4
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 601
+      "paint_kit": 601,
+      "rarity": 5
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 674
+      "paint_kit": 674,
+      "rarity": 3
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 690
+      "paint_kit": 690,
+      "rarity": 5
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 708
+      "paint_kit": 708,
+      "rarity": 3
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 727
+      "paint_kit": 727,
+      "rarity": 4
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 740
+      "paint_kit": 740,
+      "rarity": 1
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 758
+      "paint_kit": 758,
+      "rarity": 4
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 779
+      "paint_kit": 779,
+      "rarity": 4
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 794
+      "paint_kit": 794,
+      "rarity": 1
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 823
+      "paint_kit": 823,
+      "rarity": 4
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 845
+      "paint_kit": 845,
+      "rarity": 5
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 886
+      "paint_kit": 886,
+      "rarity": 4
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 913
+      "paint_kit": 913,
+      "rarity": 5
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 927
+      "paint_kit": 927,
+      "rarity": 2
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 942
+      "paint_kit": 942,
+      "rarity": 3
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 995
+      "paint_kit": 995,
+      "rarity": 1
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 1033
+      "paint_kit": 1033,
+      "rarity": 3
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 1088
+      "paint_kit": 1088,
+      "rarity": 3
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 1198
+      "paint_kit": 1198,
+      "rarity": 2
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 1249
+      "paint_kit": 1249,
+      "rarity": 1
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 1308
+      "paint_kit": 1308,
+      "rarity": 1
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 1339
+      "paint_kit": 1339,
+      "rarity": 3
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 1362
+      "paint_kit": 1362,
+      "rarity": 3
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 1452
+      "paint_kit": 1452,
+      "rarity": 3
     },
     {
       "weapon_defidx": 8,
-      "paint_kit": 1464
+      "paint_kit": 1464,
+      "rarity": 4
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 30
+      "paint_kit": 30,
+      "rarity": 2
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 51
+      "paint_kit": 51,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 72
+      "paint_kit": 72,
+      "rarity": 1
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 84
+      "paint_kit": 84,
+      "rarity": 3
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 137
+      "paint_kit": 137,
+      "rarity": 4
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 163
+      "paint_kit": 163,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 174
+      "paint_kit": 174,
+      "rarity": 4
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 181
+      "paint_kit": 181,
+      "rarity": 4
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 212
+      "paint_kit": 212,
+      "rarity": 4
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 227
+      "paint_kit": 227,
+      "rarity": 4
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 251
+      "paint_kit": 251,
+      "rarity": 3
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 259
+      "paint_kit": 259,
+      "rarity": 4
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 279
+      "paint_kit": 279,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 344
+      "paint_kit": 344,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 395
+      "paint_kit": 395,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 424
+      "paint_kit": 424,
+      "rarity": 3
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 446
+      "paint_kit": 446,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 451
+      "paint_kit": 451,
+      "rarity": 1
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 475
+      "paint_kit": 475,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 525
+      "paint_kit": 525,
+      "rarity": 4
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 584
+      "paint_kit": 584,
+      "rarity": 3
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 640
+      "paint_kit": 640,
+      "rarity": 4
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 662
+      "paint_kit": 662,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 691
+      "paint_kit": 691,
+      "rarity": 4
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 718
+      "paint_kit": 718,
+      "rarity": 3
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 736
+      "paint_kit": 736,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 756
+      "paint_kit": 756,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 788
+      "paint_kit": 788,
+      "rarity": 2
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 803
+      "paint_kit": 803,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 819
+      "paint_kit": 819,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 838
+      "paint_kit": 838,
+      "rarity": 3
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 887
+      "paint_kit": 887,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 917
+      "paint_kit": 917,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 943
+      "paint_kit": 943,
+      "rarity": 2
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 975
+      "paint_kit": 975,
+      "rarity": 3
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 1026
+      "paint_kit": 1026,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 1029
+      "paint_kit": 1029,
+      "rarity": 4
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 1058
+      "paint_kit": 1058,
+      "rarity": 3
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 1144
+      "paint_kit": 1144,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 1170
+      "paint_kit": 1170,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 1206
+      "paint_kit": 1206,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 1213
+      "paint_kit": 1213,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 1222
+      "paint_kit": 1222,
+      "rarity": 4
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 1239
+      "paint_kit": 1239,
+      "rarity": 2
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 1280
+      "paint_kit": 1280,
+      "rarity": 4
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 1324
+      "paint_kit": 1324,
+      "rarity": 2
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 1346
+      "paint_kit": 1346,
+      "rarity": 4
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 1356
+      "paint_kit": 1356,
+      "rarity": 4
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 1378
+      "paint_kit": 1378,
+      "rarity": 3
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 1422
+      "paint_kit": 1422,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 1465
+      "paint_kit": 1465,
+      "rarity": 5
     },
     {
       "weapon_defidx": 9,
-      "paint_kit": 1467
+      "paint_kit": 1467,
+      "rarity": 3
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 22
+      "paint_kit": 22,
+      "rarity": 1
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 47
+      "paint_kit": 47,
+      "rarity": 1
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 60
+      "paint_kit": 60,
+      "rarity": 3
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 92
+      "paint_kit": 92,
+      "rarity": 2
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 154
+      "paint_kit": 154,
+      "rarity": 5
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 178
+      "paint_kit": 178,
+      "rarity": 3
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 194
+      "paint_kit": 194,
+      "rarity": 4
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 218
+      "paint_kit": 218,
+      "rarity": 3
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 240
+      "paint_kit": 240,
+      "rarity": 2
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 244
+      "paint_kit": 244,
+      "rarity": 3
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 260
+      "paint_kit": 260,
+      "rarity": 4
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 288
+      "paint_kit": 288,
+      "rarity": 4
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 371
+      "paint_kit": 371,
+      "rarity": 4
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 429
+      "paint_kit": 429,
+      "rarity": 5
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 461
+      "paint_kit": 461,
+      "rarity": 2
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 477
+      "paint_kit": 477,
+      "rarity": 4
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 492
+      "paint_kit": 492,
+      "rarity": 3
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 529
+      "paint_kit": 529,
+      "rarity": 4
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 604
+      "paint_kit": 604,
+      "rarity": 6
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 626
+      "paint_kit": 626,
+      "rarity": 5
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 659
+      "paint_kit": 659,
+      "rarity": 3
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 723
+      "paint_kit": 723,
+      "rarity": 5
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 835
+      "paint_kit": 835,
+      "rarity": 3
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 863
+      "paint_kit": 863,
+      "rarity": 1
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 869
+      "paint_kit": 869,
+      "rarity": 3
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 882
+      "paint_kit": 882,
+      "rarity": 2
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 904
+      "paint_kit": 904,
+      "rarity": 3
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 919
+      "paint_kit": 919,
+      "rarity": 6
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 999
+      "paint_kit": 999,
+      "rarity": 4
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 1053
+      "paint_kit": 1053,
+      "rarity": 5
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 1066
+      "paint_kit": 1066,
+      "rarity": 1
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 1092
+      "paint_kit": 1092,
+      "rarity": 4
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 1127
+      "paint_kit": 1127,
+      "rarity": 5
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 1146
+      "paint_kit": 1146,
+      "rarity": 3
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 1184
+      "paint_kit": 1184,
+      "rarity": 6
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 1202
+      "paint_kit": 1202,
+      "rarity": 3
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 1219
+      "paint_kit": 1219,
+      "rarity": 3
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 1241
+      "paint_kit": 1241,
+      "rarity": 5
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 1302
+      "paint_kit": 1302,
+      "rarity": 1
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 1321
+      "paint_kit": 1321,
+      "rarity": 2
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 1365
+      "paint_kit": 1365,
+      "rarity": 2
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 1393
+      "paint_kit": 1393,
+      "rarity": 1
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 1461
+      "paint_kit": 1461,
+      "rarity": 3
     },
     {
       "weapon_defidx": 10,
-      "paint_kit": 1477
+      "paint_kit": 1477,
+      "rarity": 2
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 6
+      "paint_kit": 6,
+      "rarity": 2
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 8
+      "paint_kit": 8,
+      "rarity": 1
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 46
+      "paint_kit": 46,
+      "rarity": 1
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 72
+      "paint_kit": 72,
+      "rarity": 1
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 74
+      "paint_kit": 74,
+      "rarity": 1
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 147
+      "paint_kit": 147,
+      "rarity": 1
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 195
+      "paint_kit": 195,
+      "rarity": 3
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 229
+      "paint_kit": 229,
+      "rarity": 3
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 235
+      "paint_kit": 235,
+      "rarity": 2
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 294
+      "paint_kit": 294,
+      "rarity": 2
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 382
+      "paint_kit": 382,
+      "rarity": 3
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 438
+      "paint_kit": 438,
+      "rarity": 4
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 465
+      "paint_kit": 465,
+      "rarity": 1
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 493
+      "paint_kit": 493,
+      "rarity": 5
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 511
+      "paint_kit": 511,
+      "rarity": 5
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 545
+      "paint_kit": 545,
+      "rarity": 3
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 606
+      "paint_kit": 606,
+      "rarity": 3
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 628
+      "paint_kit": 628,
+      "rarity": 4
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 677
+      "paint_kit": 677,
+      "rarity": 3
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 712
+      "paint_kit": 712,
+      "rarity": 4
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 739
+      "paint_kit": 739,
+      "rarity": 3
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 806
+      "paint_kit": 806,
+      "rarity": 4
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 891
+      "paint_kit": 891,
+      "rarity": 3
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 930
+      "paint_kit": 930,
+      "rarity": 3
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 980
+      "paint_kit": 980,
+      "rarity": 3
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 1034
+      "paint_kit": 1034,
+      "rarity": 2
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 1095
+      "paint_kit": 1095,
+      "rarity": 3
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 1129
+      "paint_kit": 1129,
+      "rarity": 4
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 1305
+      "paint_kit": 1305,
+      "rarity": 1
     },
     {
       "weapon_defidx": 11,
-      "paint_kit": 1328
+      "paint_kit": 1328,
+      "rarity": 1
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 76
+      "paint_kit": 76,
+      "rarity": 2
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 83
+      "paint_kit": 83,
+      "rarity": 4
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 101
+      "paint_kit": 101,
+      "rarity": 1
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 119
+      "paint_kit": 119,
+      "rarity": 1
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 192
+      "paint_kit": 192,
+      "rarity": 3
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 216
+      "paint_kit": 216,
+      "rarity": 3
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 235
+      "paint_kit": 235,
+      "rarity": 2
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 237
+      "paint_kit": 237,
+      "rarity": 2
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 239
+      "paint_kit": 239,
+      "rarity": 3
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 241
+      "paint_kit": 241,
+      "rarity": 1
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 246
+      "paint_kit": 246,
+      "rarity": 3
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 264
+      "paint_kit": 264,
+      "rarity": 3
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 294
+      "paint_kit": 294,
+      "rarity": 2
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 297
+      "paint_kit": 297,
+      "rarity": 3
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 308
+      "paint_kit": 308,
+      "rarity": 3
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 379
+      "paint_kit": 379,
+      "rarity": 4
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 398
+      "paint_kit": 398,
+      "rarity": 6
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 428
+      "paint_kit": 428,
+      "rarity": 5
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 460
+      "paint_kit": 460,
+      "rarity": 3
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 478
+      "paint_kit": 478,
+      "rarity": 3
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 494
+      "paint_kit": 494,
+      "rarity": 4
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 546
+      "paint_kit": 546,
+      "rarity": 4
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 629
+      "paint_kit": 629,
+      "rarity": 3
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 647
+      "paint_kit": 647,
+      "rarity": 4
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 661
+      "paint_kit": 661,
+      "rarity": 5
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 790
+      "paint_kit": 790,
+      "rarity": 2
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 807
+      "paint_kit": 807,
+      "rarity": 4
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 842
+      "paint_kit": 842,
+      "rarity": 3
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 939
+      "paint_kit": 939,
+      "rarity": 2
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 972
+      "paint_kit": 972,
+      "rarity": 4
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 981
+      "paint_kit": 981,
+      "rarity": 3
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 1013
+      "paint_kit": 1013,
+      "rarity": 4
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 1032
+      "paint_kit": 1032,
+      "rarity": 3
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 1038
+      "paint_kit": 1038,
+      "rarity": 5
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 1071
+      "paint_kit": 1071,
+      "rarity": 4
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 1147
+      "paint_kit": 1147,
+      "rarity": 3
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 1178
+      "paint_kit": 1178,
+      "rarity": 5
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 1185
+      "paint_kit": 1185,
+      "rarity": 4
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 1264
+      "paint_kit": 1264,
+      "rarity": 2
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 1275
+      "paint_kit": 1275,
+      "rarity": 1
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 1296
+      "paint_kit": 1296,
+      "rarity": 2
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 1314
+      "paint_kit": 1314,
+      "rarity": 2
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 1383
+      "paint_kit": 1383,
+      "rarity": 3
     },
     {
       "weapon_defidx": 13,
-      "paint_kit": 1434
+      "paint_kit": 1434,
+      "rarity": 4
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 22
+      "paint_kit": 22,
+      "rarity": 1
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 75
+      "paint_kit": 75,
+      "rarity": 2
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 120
+      "paint_kit": 120,
+      "rarity": 3
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 151
+      "paint_kit": 151,
+      "rarity": 1
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 170
+      "paint_kit": 170,
+      "rarity": 1
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 202
+      "paint_kit": 202,
+      "rarity": 1
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 243
+      "paint_kit": 243,
+      "rarity": 2
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 266
+      "paint_kit": 266,
+      "rarity": 3
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 401
+      "paint_kit": 401,
+      "rarity": 3
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 452
+      "paint_kit": 452,
+      "rarity": 2
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 472
+      "paint_kit": 472,
+      "rarity": 1
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 496
+      "paint_kit": 496,
+      "rarity": 4
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 547
+      "paint_kit": 547,
+      "rarity": 3
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 648
+      "paint_kit": 648,
+      "rarity": 4
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 827
+      "paint_kit": 827,
+      "rarity": 3
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 875
+      "paint_kit": 875,
+      "rarity": 2
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 900
+      "paint_kit": 900,
+      "rarity": 3
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 902
+      "paint_kit": 902,
+      "rarity": 4
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 933
+      "paint_kit": 933,
+      "rarity": 2
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 983
+      "paint_kit": 983,
+      "rarity": 3
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 1042
+      "paint_kit": 1042,
+      "rarity": 3
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 1148
+      "paint_kit": 1148,
+      "rarity": 4
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 1242
+      "paint_kit": 1242,
+      "rarity": 1
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 1298
+      "paint_kit": 1298,
+      "rarity": 1
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 1370
+      "paint_kit": 1370,
+      "rarity": 1
     },
     {
       "weapon_defidx": 14,
-      "paint_kit": 1435
+      "paint_kit": 1435,
+      "rarity": 3
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 8
+      "paint_kit": 8,
+      "rarity": 1
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 16
+      "paint_kit": 16,
+      "rarity": 1
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 17
+      "paint_kit": 17,
+      "rarity": 1
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 101
+      "paint_kit": 101,
+      "rarity": 1
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 118
+      "paint_kit": 118,
+      "rarity": 3
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 155
+      "paint_kit": 155,
+      "rarity": 6
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 164
+      "paint_kit": 164,
+      "rarity": 3
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 167
+      "paint_kit": 167,
+      "rarity": 2
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 176
+      "paint_kit": 176,
+      "rarity": 2
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 187
+      "paint_kit": 187,
+      "rarity": 3
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 215
+      "paint_kit": 215,
+      "rarity": 6
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 255
+      "paint_kit": 255,
+      "rarity": 5
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 309
+      "paint_kit": 309,
+      "rarity": 7
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 336
+      "paint_kit": 336,
+      "rarity": 5
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 384
+      "paint_kit": 384,
+      "rarity": 3
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 400
+      "paint_kit": 400,
+      "rarity": 4
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 449
+      "paint_kit": 449,
+      "rarity": 4
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 471
+      "paint_kit": 471,
+      "rarity": 3
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 480
+      "paint_kit": 480,
+      "rarity": 3
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 512
+      "paint_kit": 512,
+      "rarity": 5
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 533
+      "paint_kit": 533,
+      "rarity": 5
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 588
+      "paint_kit": 588,
+      "rarity": 4
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 632
+      "paint_kit": 632,
+      "rarity": 5
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 664
+      "paint_kit": 664,
+      "rarity": 4
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 695
+      "paint_kit": 695,
+      "rarity": 5
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 730
+      "paint_kit": 730,
+      "rarity": 1
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 780
+      "paint_kit": 780,
+      "rarity": 1
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 793
+      "paint_kit": 793,
+      "rarity": 2
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 811
+      "paint_kit": 811,
+      "rarity": 2
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 844
+      "paint_kit": 844,
+      "rarity": 5
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 874
+      "paint_kit": 874,
+      "rarity": 3
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 926
+      "paint_kit": 926,
+      "rarity": 3
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 971
+      "paint_kit": 971,
+      "rarity": 4
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 985
+      "paint_kit": 985,
+      "rarity": 4
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 993
+      "paint_kit": 993,
+      "rarity": 2
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 1041
+      "paint_kit": 1041,
+      "rarity": 5
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 1063
+      "paint_kit": 1063,
+      "rarity": 5
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 1097
+      "paint_kit": 1097,
+      "rarity": 3
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 1149
+      "paint_kit": 1149,
+      "rarity": 2
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 1165
+      "paint_kit": 1165,
+      "rarity": 3
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 1209
+      "paint_kit": 1209,
+      "rarity": 4
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 1210
+      "paint_kit": 1210,
+      "rarity": 2
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 1228
+      "paint_kit": 1228,
+      "rarity": 5
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 1255
+      "paint_kit": 1255,
+      "rarity": 5
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 1266
+      "paint_kit": 1266,
+      "rarity": 1
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 1281
+      "paint_kit": 1281,
+      "rarity": 3
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 1313
+      "paint_kit": 1313,
+      "rarity": 1
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 1353
+      "paint_kit": 1353,
+      "rarity": 5
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 1364
+      "paint_kit": 1364,
+      "rarity": 1
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 1432
+      "paint_kit": 1432,
+      "rarity": 2
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 1446
+      "paint_kit": 1446,
+      "rarity": 2
     },
     {
       "weapon_defidx": 16,
-      "paint_kit": 1463
+      "paint_kit": 1463,
+      "rarity": 4
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 3
+      "paint_kit": 3,
+      "rarity": 2
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 17
+      "paint_kit": 17,
+      "rarity": 1
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 32
+      "paint_kit": 32,
+      "rarity": 2
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 38
+      "paint_kit": 38,
+      "rarity": 3
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 44
+      "paint_kit": 44,
+      "rarity": 4
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 98
+      "paint_kit": 98,
+      "rarity": 3
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 101
+      "paint_kit": 101,
+      "rarity": 1
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 126
+      "paint_kit": 126,
+      "rarity": 4
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 140
+      "paint_kit": 140,
+      "rarity": 3
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 157
+      "paint_kit": 157,
+      "rarity": 2
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 188
+      "paint_kit": 188,
+      "rarity": 4
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 246
+      "paint_kit": 246,
+      "rarity": 3
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 284
+      "paint_kit": 284,
+      "rarity": 4
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 310
+      "paint_kit": 310,
+      "rarity": 4
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 333
+      "paint_kit": 333,
+      "rarity": 1
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 337
+      "paint_kit": 337,
+      "rarity": 4
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 343
+      "paint_kit": 343,
+      "rarity": 2
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 372
+      "paint_kit": 372,
+      "rarity": 3
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 402
+      "paint_kit": 402,
+      "rarity": 4
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 433
+      "paint_kit": 433,
+      "rarity": 6
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 498
+      "paint_kit": 498,
+      "rarity": 3
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 534
+      "paint_kit": 534,
+      "rarity": 3
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 589
+      "paint_kit": 589,
+      "rarity": 3
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 651
+      "paint_kit": 651,
+      "rarity": 4
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 665
+      "paint_kit": 665,
+      "rarity": 3
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 682
+      "paint_kit": 682,
+      "rarity": 3
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 742
+      "paint_kit": 742,
+      "rarity": 4
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 748
+      "paint_kit": 748,
+      "rarity": 2
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 761
+      "paint_kit": 761,
+      "rarity": 3
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 812
+      "paint_kit": 812,
+      "rarity": 4
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 826
+      "paint_kit": 826,
+      "rarity": 1
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 840
+      "paint_kit": 840,
+      "rarity": 3
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 871
+      "paint_kit": 871,
+      "rarity": 1
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 898
+      "paint_kit": 898,
+      "rarity": 6
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 908
+      "paint_kit": 908,
+      "rarity": 3
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 947
+      "paint_kit": 947,
+      "rarity": 5
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 965
+      "paint_kit": 965,
+      "rarity": 4
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 1009
+      "paint_kit": 1009,
+      "rarity": 5
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 1025
+      "paint_kit": 1025,
+      "rarity": 4
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 1045
+      "paint_kit": 1045,
+      "rarity": 4
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 1067
+      "paint_kit": 1067,
+      "rarity": 5
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 1075
+      "paint_kit": 1075,
+      "rarity": 1
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 1098
+      "paint_kit": 1098,
+      "rarity": 5
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 1131
+      "paint_kit": 1131,
+      "rarity": 3
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 1150
+      "paint_kit": 1150,
+      "rarity": 3
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 1164
+      "paint_kit": 1164,
+      "rarity": 3
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 1204
+      "paint_kit": 1204,
+      "rarity": 4
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 1229
+      "paint_kit": 1229,
+      "rarity": 4
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 1244
+      "paint_kit": 1244,
+      "rarity": 2
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 1269
+      "paint_kit": 1269,
+      "rarity": 1
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 1285
+      "paint_kit": 1285,
+      "rarity": 3
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 1295
+      "paint_kit": 1295,
+      "rarity": 2
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 1334
+      "paint_kit": 1334,
+      "rarity": 1
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 1349
+      "paint_kit": 1349,
+      "rarity": 4
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 1367
+      "paint_kit": 1367,
+      "rarity": 2
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 1448
+      "paint_kit": 1448,
+      "rarity": 2
     },
     {
       "weapon_defidx": 17,
-      "paint_kit": 1454
+      "paint_kit": 1454,
+      "rarity": 3
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 20
+      "paint_kit": 20,
+      "rarity": 4
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 67
+      "paint_kit": 67,
+      "rarity": 5
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 100
+      "paint_kit": 100,
+      "rarity": 1
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 111
+      "paint_kit": 111,
+      "rarity": 3
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 124
+      "paint_kit": 124,
+      "rarity": 1
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 127
+      "paint_kit": 127,
+      "rarity": 4
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 133
+      "paint_kit": 133,
+      "rarity": 2
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 156
+      "paint_kit": 156,
+      "rarity": 6
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 169
+      "paint_kit": 169,
+      "rarity": 2
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 175
+      "paint_kit": 175,
+      "rarity": 1
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 182
+      "paint_kit": 182,
+      "rarity": 5
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 228
+      "paint_kit": 228,
+      "rarity": 4
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 234
+      "paint_kit": 234,
+      "rarity": 2
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 244
+      "paint_kit": 244,
+      "rarity": 3
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 283
+      "paint_kit": 283,
+      "rarity": 5
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 311
+      "paint_kit": 311,
+      "rarity": 3
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 335
+      "paint_kit": 335,
+      "rarity": 3
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 342
+      "paint_kit": 342,
+      "rarity": 2
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 359
+      "paint_kit": 359,
+      "rarity": 6
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 486
+      "paint_kit": 486,
+      "rarity": 3
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 516
+      "paint_kit": 516,
+      "rarity": 5
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 593
+      "paint_kit": 593,
+      "rarity": 4
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 611
+      "paint_kit": 611,
+      "rarity": 3
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 636
+      "paint_kit": 636,
+      "rarity": 5
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 669
+      "paint_kit": 669,
+      "rarity": 4
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 717
+      "paint_kit": 717,
+      "rarity": 3
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 726
+      "paint_kit": 726,
+      "rarity": 2
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 744
+      "paint_kit": 744,
+      "rarity": 3
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 759
+      "paint_kit": 759,
+      "rarity": 4
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 776
+      "paint_kit": 776,
+      "rarity": 3
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 828
+      "paint_kit": 828,
+      "rarity": 2
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 849
+      "paint_kit": 849,
+      "rarity": 3
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 911
+      "paint_kit": 911,
+      "rarity": 5
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 925
+      "paint_kit": 925,
+      "rarity": 1
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 936
+      "paint_kit": 936,
+      "rarity": 4
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 969
+      "paint_kit": 969,
+      "rarity": 3
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 977
+      "paint_kit": 977,
+      "rarity": 3
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 1000
+      "paint_kit": 1000,
+      "rarity": 5
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 1015
+      "paint_kit": 1015,
+      "rarity": 3
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 1020
+      "paint_kit": 1020,
+      "rarity": 1
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 1074
+      "paint_kit": 1074,
+      "rarity": 3
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 1154
+      "paint_kit": 1154,
+      "rarity": 4
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 1190
+      "paint_kit": 1190,
+      "rarity": 4
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 1199
+      "paint_kit": 1199,
+      "rarity": 2
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 1233
+      "paint_kit": 1233,
+      "rarity": 4
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 1250
+      "paint_kit": 1250,
+      "rarity": 4
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 1256
+      "paint_kit": 1256,
+      "rarity": 3
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 1277
+      "paint_kit": 1277,
+      "rarity": 1
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 1291
+      "paint_kit": 1291,
+      "rarity": 2
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 1332
+      "paint_kit": 1332,
+      "rarity": 1
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 1361
+      "paint_kit": 1361,
+      "rarity": 3
     },
     {
       "weapon_defidx": 19,
-      "paint_kit": 1419
+      "paint_kit": 1419,
+      "rarity": 5
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 161
+      "paint_kit": 161,
+      "rarity": 2
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 753
+      "paint_kit": 753,
+      "rarity": 1
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 768
+      "paint_kit": 768,
+      "rarity": 2
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 781
+      "paint_kit": 781,
+      "rarity": 3
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 798
+      "paint_kit": 798,
+      "rarity": 2
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 800
+      "paint_kit": 800,
+      "rarity": 4
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 810
+      "paint_kit": 810,
+      "rarity": 5
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 846
+      "paint_kit": 846,
+      "rarity": 4
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 872
+      "paint_kit": 872,
+      "rarity": 1
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 888
+      "paint_kit": 888,
+      "rarity": 3
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 915
+      "paint_kit": 915,
+      "rarity": 4
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 923
+      "paint_kit": 923,
+      "rarity": 5
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 949
+      "paint_kit": 949,
+      "rarity": 3
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 974
+      "paint_kit": 974,
+      "rarity": 4
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 986
+      "paint_kit": 986,
+      "rarity": 3
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 1061
+      "paint_kit": 1061,
+      "rarity": 4
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 1137
+      "paint_kit": 1137,
+      "rarity": 3
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 1180
+      "paint_kit": 1180,
+      "rarity": 3
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 1231
+      "paint_kit": 1231,
+      "rarity": 3
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 1274
+      "paint_kit": 1274,
+      "rarity": 1
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 1294
+      "paint_kit": 1294,
+      "rarity": 3
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 1344
+      "paint_kit": 1344,
+      "rarity": 3
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 1366
+      "paint_kit": 1366,
+      "rarity": 2
     },
     {
       "weapon_defidx": 23,
-      "paint_kit": 1385
+      "paint_kit": 1385,
+      "rarity": 2
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 15
+      "paint_kit": 15,
+      "rarity": 2
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 17
+      "paint_kit": 17,
+      "rarity": 1
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 37
+      "paint_kit": 37,
+      "rarity": 3
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 70
+      "paint_kit": 70,
+      "rarity": 2
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 90
+      "paint_kit": 90,
+      "rarity": 1
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 93
+      "paint_kit": 93,
+      "rarity": 1
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 131
+      "paint_kit": 131,
+      "rarity": 5
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 169
+      "paint_kit": 169,
+      "rarity": 2
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 175
+      "paint_kit": 175,
+      "rarity": 1
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 193
+      "paint_kit": 193,
+      "rarity": 3
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 250
+      "paint_kit": 250,
+      "rarity": 3
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 281
+      "paint_kit": 281,
+      "rarity": 3
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 333
+      "paint_kit": 333,
+      "rarity": 1
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 362
+      "paint_kit": 362,
+      "rarity": 3
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 392
+      "paint_kit": 392,
+      "rarity": 3
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 412
+      "paint_kit": 412,
+      "rarity": 4
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 436
+      "paint_kit": 436,
+      "rarity": 4
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 441
+      "paint_kit": 441,
+      "rarity": 3
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 488
+      "paint_kit": 488,
+      "rarity": 3
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 556
+      "paint_kit": 556,
+      "rarity": 5
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 615
+      "paint_kit": 615,
+      "rarity": 3
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 652
+      "paint_kit": 652,
+      "rarity": 4
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 672
+      "paint_kit": 672,
+      "rarity": 3
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 688
+      "paint_kit": 688,
+      "rarity": 4
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 704
+      "paint_kit": 704,
+      "rarity": 4
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 725
+      "paint_kit": 725,
+      "rarity": 3
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 778
+      "paint_kit": 778,
+      "rarity": 1
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 802
+      "paint_kit": 802,
+      "rarity": 5
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 851
+      "paint_kit": 851,
+      "rarity": 4
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 879
+      "paint_kit": 879,
+      "rarity": 5
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 916
+      "paint_kit": 916,
+      "rarity": 4
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 990
+      "paint_kit": 990,
+      "rarity": 4
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 1003
+      "paint_kit": 1003,
+      "rarity": 4
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 1008
+      "paint_kit": 1008,
+      "rarity": 2
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 1049
+      "paint_kit": 1049,
+      "rarity": 3
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 1085
+      "paint_kit": 1085,
+      "rarity": 2
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 1157
+      "paint_kit": 1157,
+      "rarity": 3
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 1175
+      "paint_kit": 1175,
+      "rarity": 3
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 1194
+      "paint_kit": 1194,
+      "rarity": 5
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 1203
+      "paint_kit": 1203,
+      "rarity": 3
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 1236
+      "paint_kit": 1236,
+      "rarity": 5
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 1303
+      "paint_kit": 1303,
+      "rarity": 1
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 1351
+      "paint_kit": 1351,
+      "rarity": 4
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 1387
+      "paint_kit": 1387,
+      "rarity": 3
     },
     {
       "weapon_defidx": 24,
-      "paint_kit": 1426
+      "paint_kit": 1426,
+      "rarity": 3
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 42
+      "paint_kit": 42,
+      "rarity": 2
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 95
+      "paint_kit": 95,
+      "rarity": 1
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 96
+      "paint_kit": 96,
+      "rarity": 1
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 135
+      "paint_kit": 135,
+      "rarity": 1
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 146
+      "paint_kit": 146,
+      "rarity": 4
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 166
+      "paint_kit": 166,
+      "rarity": 3
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 169
+      "paint_kit": 169,
+      "rarity": 2
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 205
+      "paint_kit": 205,
+      "rarity": 1
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 238
+      "paint_kit": 238,
+      "rarity": 3
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 240
+      "paint_kit": 240,
+      "rarity": 2
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 314
+      "paint_kit": 314,
+      "rarity": 4
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 320
+      "paint_kit": 320,
+      "rarity": 3
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 348
+      "paint_kit": 348,
+      "rarity": 3
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 370
+      "paint_kit": 370,
+      "rarity": 3
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 393
+      "paint_kit": 393,
+      "rarity": 5
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 407
+      "paint_kit": 407,
+      "rarity": 3
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 505
+      "paint_kit": 505,
+      "rarity": 3
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 521
+      "paint_kit": 521,
+      "rarity": 4
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 557
+      "paint_kit": 557,
+      "rarity": 4
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 616
+      "paint_kit": 616,
+      "rarity": 3
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 654
+      "paint_kit": 654,
+      "rarity": 4
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 689
+      "paint_kit": 689,
+      "rarity": 4
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 706
+      "paint_kit": 706,
+      "rarity": 3
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 731
+      "paint_kit": 731,
+      "rarity": 2
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 760
+      "paint_kit": 760,
+      "rarity": 3
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 821
+      "paint_kit": 821,
+      "rarity": 4
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 834
+      "paint_kit": 834,
+      "rarity": 3
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 850
+      "paint_kit": 850,
+      "rarity": 5
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 970
+      "paint_kit": 970,
+      "rarity": 5
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 994
+      "paint_kit": 994,
+      "rarity": 1
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 1021
+      "paint_kit": 1021,
+      "rarity": 4
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 1046
+      "paint_kit": 1046,
+      "rarity": 5
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 1078
+      "paint_kit": 1078,
+      "rarity": 1
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 1103
+      "paint_kit": 1103,
+      "rarity": 3
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 1135
+      "paint_kit": 1135,
+      "rarity": 4
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 1174
+      "paint_kit": 1174,
+      "rarity": 3
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 1182
+      "paint_kit": 1182,
+      "rarity": 3
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 1201
+      "paint_kit": 1201,
+      "rarity": 3
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 1215
+      "paint_kit": 1215,
+      "rarity": 4
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 1254
+      "paint_kit": 1254,
+      "rarity": 1
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 1267
+      "paint_kit": 1267,
+      "rarity": 2
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 1287
+      "paint_kit": 1287,
+      "rarity": 3
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 1333
+      "paint_kit": 1333,
+      "rarity": 1
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 1381
+      "paint_kit": 1381,
+      "rarity": 2
     },
     {
       "weapon_defidx": 25,
-      "paint_kit": 1471
+      "paint_kit": 1471,
+      "rarity": 2
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 3
+      "paint_kit": 3,
+      "rarity": 2
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 13
+      "paint_kit": 13,
+      "rarity": 4
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 25
+      "paint_kit": 25,
+      "rarity": 1
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 70
+      "paint_kit": 70,
+      "rarity": 2
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 148
+      "paint_kit": 148,
+      "rarity": 1
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 149
+      "paint_kit": 149,
+      "rarity": 1
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 159
+      "paint_kit": 159,
+      "rarity": 3
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 164
+      "paint_kit": 164,
+      "rarity": 3
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 171
+      "paint_kit": 171,
+      "rarity": 1
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 203
+      "paint_kit": 203,
+      "rarity": 3
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 224
+      "paint_kit": 224,
+      "rarity": 3
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 236
+      "paint_kit": 236,
+      "rarity": 2
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 267
+      "paint_kit": 267,
+      "rarity": 3
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 293
+      "paint_kit": 293,
+      "rarity": 1
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 306
+      "paint_kit": 306,
+      "rarity": 4
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 349
+      "paint_kit": 349,
+      "rarity": 4
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 376
+      "paint_kit": 376,
+      "rarity": 2
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 457
+      "paint_kit": 457,
+      "rarity": 1
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 508
+      "paint_kit": 508,
+      "rarity": 4
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 526
+      "paint_kit": 526,
+      "rarity": 3
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 542
+      "paint_kit": 542,
+      "rarity": 6
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 594
+      "paint_kit": 594,
+      "rarity": 3
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 641
+      "paint_kit": 641,
+      "rarity": 3
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 676
+      "paint_kit": 676,
+      "rarity": 5
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 692
+      "paint_kit": 692,
+      "rarity": 3
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 770
+      "paint_kit": 770,
+      "rarity": 2
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 775
+      "paint_kit": 775,
+      "rarity": 1
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 829
+      "paint_kit": 829,
+      "rarity": 1
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 873
+      "paint_kit": 873,
+      "rarity": 1
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 884
+      "paint_kit": 884,
+      "rarity": 4
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 973
+      "paint_kit": 973,
+      "rarity": 3
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 1083
+      "paint_kit": 1083,
+      "rarity": 2
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 1099
+      "paint_kit": 1099,
+      "rarity": 3
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 1125
+      "paint_kit": 1125,
+      "rarity": 4
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 1325
+      "paint_kit": 1325,
+      "rarity": 1
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 1374
+      "paint_kit": 1374,
+      "rarity": 1
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 1392
+      "paint_kit": 1392,
+      "rarity": 1
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 1418
+      "paint_kit": 1418,
+      "rarity": 3
     },
     {
       "weapon_defidx": 26,
-      "paint_kit": 1472
+      "paint_kit": 1472,
+      "rarity": 2
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 32
+      "paint_kit": 32,
+      "rarity": 2
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 34
+      "paint_kit": 34,
+      "rarity": 2
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 39
+      "paint_kit": 39,
+      "rarity": 4
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 70
+      "paint_kit": 70,
+      "rarity": 2
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 99
+      "paint_kit": 99,
+      "rarity": 1
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 100
+      "paint_kit": 100,
+      "rarity": 1
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 171
+      "paint_kit": 171,
+      "rarity": 1
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 177
+      "paint_kit": 177,
+      "rarity": 3
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 198
+      "paint_kit": 198,
+      "rarity": 3
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 291
+      "paint_kit": 291,
+      "rarity": 3
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 327
+      "paint_kit": 327,
+      "rarity": 2
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 385
+      "paint_kit": 385,
+      "rarity": 3
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 431
+      "paint_kit": 431,
+      "rarity": 4
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 462
+      "paint_kit": 462,
+      "rarity": 3
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 473
+      "paint_kit": 473,
+      "rarity": 1
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 499
+      "paint_kit": 499,
+      "rarity": 3
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 535
+      "paint_kit": 535,
+      "rarity": 4
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 608
+      "paint_kit": 608,
+      "rarity": 4
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 633
+      "paint_kit": 633,
+      "rarity": 3
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 666
+      "paint_kit": 666,
+      "rarity": 3
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 703
+      "paint_kit": 703,
+      "rarity": 4
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 737
+      "paint_kit": 737,
+      "rarity": 5
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 754
+      "paint_kit": 754,
+      "rarity": 1
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 773
+      "paint_kit": 773,
+      "rarity": 2
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 787
+      "paint_kit": 787,
+      "rarity": 4
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 822
+      "paint_kit": 822,
+      "rarity": 1
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 909
+      "paint_kit": 909,
+      "rarity": 3
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 948
+      "paint_kit": 948,
+      "rarity": 5
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 961
+      "paint_kit": 961,
+      "rarity": 4
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 1072
+      "paint_kit": 1072,
+      "rarity": 4
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 1089
+      "paint_kit": 1089,
+      "rarity": 4
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 1132
+      "paint_kit": 1132,
+      "rarity": 3
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 1188
+      "paint_kit": 1188,
+      "rarity": 3
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 1220
+      "paint_kit": 1220,
+      "rarity": 3
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 1245
+      "paint_kit": 1245,
+      "rarity": 3
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 1306
+      "paint_kit": 1306,
+      "rarity": 1
     },
     {
       "weapon_defidx": 27,
-      "paint_kit": 1355
+      "paint_kit": 1355,
+      "rarity": 3
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 28
+      "paint_kit": 28,
+      "rarity": 3
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 144
+      "paint_kit": 144,
+      "rarity": 2
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 201
+      "paint_kit": 201,
+      "rarity": 2
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 240
+      "paint_kit": 240,
+      "rarity": 2
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 285
+      "paint_kit": 285,
+      "rarity": 3
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 298
+      "paint_kit": 298,
+      "rarity": 1
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 317
+      "paint_kit": 317,
+      "rarity": 3
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 355
+      "paint_kit": 355,
+      "rarity": 3
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 369
+      "paint_kit": 369,
+      "rarity": 2
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 432
+      "paint_kit": 432,
+      "rarity": 3
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 483
+      "paint_kit": 483,
+      "rarity": 4
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 514
+      "paint_kit": 514,
+      "rarity": 4
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 610
+      "paint_kit": 610,
+      "rarity": 3
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 698
+      "paint_kit": 698,
+      "rarity": 4
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 763
+      "paint_kit": 763,
+      "rarity": 5
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 783
+      "paint_kit": 783,
+      "rarity": 2
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 920
+      "paint_kit": 920,
+      "rarity": 1
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 950
+      "paint_kit": 950,
+      "rarity": 3
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 958
+      "paint_kit": 958,
+      "rarity": 3
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 1012
+      "paint_kit": 1012,
+      "rarity": 3
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 1043
+      "paint_kit": 1043,
+      "rarity": 4
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 1080
+      "paint_kit": 1080,
+      "rarity": 3
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 1152
+      "paint_kit": 1152,
+      "rarity": 3
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 1260
+      "paint_kit": 1260,
+      "rarity": 2
     },
     {
       "weapon_defidx": 28,
-      "paint_kit": 1300
+      "paint_kit": 1300,
+      "rarity": 1
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 5
+      "paint_kit": 5,
+      "rarity": 1
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 30
+      "paint_kit": 30,
+      "rarity": 2
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 41
+      "paint_kit": 41,
+      "rarity": 3
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 83
+      "paint_kit": 83,
+      "rarity": 4
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 119
+      "paint_kit": 119,
+      "rarity": 1
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 171
+      "paint_kit": 171,
+      "rarity": 1
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 204
+      "paint_kit": 204,
+      "rarity": 2
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 246
+      "paint_kit": 246,
+      "rarity": 3
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 250
+      "paint_kit": 250,
+      "rarity": 3
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 256
+      "paint_kit": 256,
+      "rarity": 6
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 323
+      "paint_kit": 323,
+      "rarity": 2
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 345
+      "paint_kit": 345,
+      "rarity": 3
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 390
+      "paint_kit": 390,
+      "rarity": 4
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 405
+      "paint_kit": 405,
+      "rarity": 4
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 434
+      "paint_kit": 434,
+      "rarity": 3
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 458
+      "paint_kit": 458,
+      "rarity": 1
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 517
+      "paint_kit": 517,
+      "rarity": 3
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 552
+      "paint_kit": 552,
+      "rarity": 3
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 596
+      "paint_kit": 596,
+      "rarity": 4
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 638
+      "paint_kit": 638,
+      "rarity": 5
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 655
+      "paint_kit": 655,
+      "rarity": 3
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 673
+      "paint_kit": 673,
+      "rarity": 3
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 720
+      "paint_kit": 720,
+      "rarity": 5
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 797
+      "paint_kit": 797,
+      "rarity": 3
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 814
+      "paint_kit": 814,
+      "rarity": 3
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 870
+      "paint_kit": 870,
+      "rarity": 1
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 880
+      "paint_kit": 880,
+      "rarity": 1
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 953
+      "paint_kit": 953,
+      "rarity": 4
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 1014
+      "paint_kit": 1014,
+      "rarity": 1
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 1140
+      "paint_kit": 1140,
+      "rarity": 3
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 1155
+      "paint_kit": 1155,
+      "rarity": 5
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 1160
+      "paint_kit": 1160,
+      "rarity": 4
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 1272
+      "paint_kit": 1272,
+      "rarity": 1
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 1391
+      "paint_kit": 1391,
+      "rarity": 1
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 1427
+      "paint_kit": 1427,
+      "rarity": 3
     },
     {
       "weapon_defidx": 29,
-      "paint_kit": 1475
+      "paint_kit": 1475,
+      "rarity": 3
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 2
+      "paint_kit": 2,
+      "rarity": 1
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 17
+      "paint_kit": 17,
+      "rarity": 1
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 36
+      "paint_kit": 36,
+      "rarity": 3
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 159
+      "paint_kit": 159,
+      "rarity": 3
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 179
+      "paint_kit": 179,
+      "rarity": 4
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 206
+      "paint_kit": 206,
+      "rarity": 1
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 216
+      "paint_kit": 216,
+      "rarity": 3
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 235
+      "paint_kit": 235,
+      "rarity": 2
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 242
+      "paint_kit": 242,
+      "rarity": 1
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 248
+      "paint_kit": 248,
+      "rarity": 4
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 272
+      "paint_kit": 272,
+      "rarity": 4
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 289
+      "paint_kit": 289,
+      "rarity": 3
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 303
+      "paint_kit": 303,
+      "rarity": 3
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 374
+      "paint_kit": 374,
+      "rarity": 3
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 439
+      "paint_kit": 439,
+      "rarity": 2
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 459
+      "paint_kit": 459,
+      "rarity": 1
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 463
+      "paint_kit": 463,
+      "rarity": 3
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 520
+      "paint_kit": 520,
+      "rarity": 4
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 539
+      "paint_kit": 539,
+      "rarity": 3
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 555
+      "paint_kit": 555,
+      "rarity": 4
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 599
+      "paint_kit": 599,
+      "rarity": 3
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 614
+      "paint_kit": 614,
+      "rarity": 5
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 671
+      "paint_kit": 671,
+      "rarity": 3
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 684
+      "paint_kit": 684,
+      "rarity": 3
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 722
+      "paint_kit": 722,
+      "rarity": 3
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 733
+      "paint_kit": 733,
+      "rarity": 2
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 738
+      "paint_kit": 738,
+      "rarity": 2
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 766
+      "paint_kit": 766,
+      "rarity": 2
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 791
+      "paint_kit": 791,
+      "rarity": 5
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 795
+      "paint_kit": 795,
+      "rarity": 3
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 816
+      "paint_kit": 816,
+      "rarity": 3
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 839
+      "paint_kit": 839,
+      "rarity": 4
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 889
+      "paint_kit": 889,
+      "rarity": 5
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 905
+      "paint_kit": 905,
+      "rarity": 3
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 964
+      "paint_kit": 964,
+      "rarity": 4
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 1010
+      "paint_kit": 1010,
+      "rarity": 1
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 1024
+      "paint_kit": 1024,
+      "rarity": 3
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 1159
+      "paint_kit": 1159,
+      "rarity": 3
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 1214
+      "paint_kit": 1214,
+      "rarity": 4
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 1235
+      "paint_kit": 1235,
+      "rarity": 3
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 1252
+      "paint_kit": 1252,
+      "rarity": 3
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 1279
+      "paint_kit": 1279,
+      "rarity": 1
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 1286
+      "paint_kit": 1286,
+      "rarity": 2
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 1299
+      "paint_kit": 1299,
+      "rarity": 1
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 1322
+      "paint_kit": 1322,
+      "rarity": 2
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 1384
+      "paint_kit": 1384,
+      "rarity": 2
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 1447
+      "paint_kit": 1447,
+      "rarity": 2
     },
     {
       "weapon_defidx": 30,
-      "paint_kit": 1462
+      "paint_kit": 1462,
+      "rarity": 3
     },
     {
       "weapon_defidx": 31,
-      "paint_kit": 292
+      "paint_kit": 292,
+      "rarity": 5
     },
     {
       "weapon_defidx": 31,
-      "paint_kit": 1172
+      "paint_kit": 1172,
+      "rarity": 5
     },
     {
       "weapon_defidx": 31,
-      "paint_kit": 1183
+      "paint_kit": 1183,
+      "rarity": 4
     },
     {
       "weapon_defidx": 31,
-      "paint_kit": 1205
+      "paint_kit": 1205,
+      "rarity": 4
     },
     {
       "weapon_defidx": 31,
-      "paint_kit": 1268
+      "paint_kit": 1268,
+      "rarity": 2
     },
     {
       "weapon_defidx": 31,
-      "paint_kit": 1297
+      "paint_kit": 1297,
+      "rarity": 1
     },
     {
       "weapon_defidx": 31,
-      "paint_kit": 1382
+      "paint_kit": 1382,
+      "rarity": 3
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 21
+      "paint_kit": 21,
+      "rarity": 1
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 32
+      "paint_kit": 32,
+      "rarity": 2
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 71
+      "paint_kit": 71,
+      "rarity": 3
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 95
+      "paint_kit": 95,
+      "rarity": 1
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 104
+      "paint_kit": 104,
+      "rarity": 1
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 184
+      "paint_kit": 184,
+      "rarity": 4
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 211
+      "paint_kit": 211,
+      "rarity": 4
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 246
+      "paint_kit": 246,
+      "rarity": 3
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 275
+      "paint_kit": 275,
+      "rarity": 2
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 327
+      "paint_kit": 327,
+      "rarity": 2
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 338
+      "paint_kit": 338,
+      "rarity": 2
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 346
+      "paint_kit": 346,
+      "rarity": 1
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 357
+      "paint_kit": 357,
+      "rarity": 2
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 389
+      "paint_kit": 389,
+      "rarity": 5
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 443
+      "paint_kit": 443,
+      "rarity": 1
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 485
+      "paint_kit": 485,
+      "rarity": 3
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 515
+      "paint_kit": 515,
+      "rarity": 2
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 550
+      "paint_kit": 550,
+      "rarity": 2
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 591
+      "paint_kit": 591,
+      "rarity": 4
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 635
+      "paint_kit": 635,
+      "rarity": 2
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 667
+      "paint_kit": 667,
+      "rarity": 3
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 700
+      "paint_kit": 700,
+      "rarity": 2
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 878
+      "paint_kit": 878,
+      "rarity": 1
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 894
+      "paint_kit": 894,
+      "rarity": 3
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 951
+      "paint_kit": 951,
+      "rarity": 3
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 960
+      "paint_kit": 960,
+      "rarity": 2
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 997
+      "paint_kit": 997,
+      "rarity": 2
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 1019
+      "paint_kit": 1019,
+      "rarity": 1
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 1055
+      "paint_kit": 1055,
+      "rarity": 3
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 1138
+      "paint_kit": 1138,
+      "rarity": 2
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 1181
+      "paint_kit": 1181,
+      "rarity": 2
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 1224
+      "paint_kit": 1224,
+      "rarity": 4
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 1259
+      "paint_kit": 1259,
+      "rarity": 2
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 1292
+      "paint_kit": 1292,
+      "rarity": 1
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 1342
+      "paint_kit": 1342,
+      "rarity": 2
     },
     {
       "weapon_defidx": 32,
-      "paint_kit": 1359
+      "paint_kit": 1359,
+      "rarity": 2
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 5
+      "paint_kit": 5,
+      "rarity": 1
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 11
+      "paint_kit": 11,
+      "rarity": 3
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 15
+      "paint_kit": 15,
+      "rarity": 2
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 28
+      "paint_kit": 28,
+      "rarity": 3
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 102
+      "paint_kit": 102,
+      "rarity": 3
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 141
+      "paint_kit": 141,
+      "rarity": 2
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 175
+      "paint_kit": 175,
+      "rarity": 1
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 209
+      "paint_kit": 209,
+      "rarity": 1
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 213
+      "paint_kit": 213,
+      "rarity": 4
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 245
+      "paint_kit": 245,
+      "rarity": 1
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 250
+      "paint_kit": 250,
+      "rarity": 3
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 354
+      "paint_kit": 354,
+      "rarity": 3
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 365
+      "paint_kit": 365,
+      "rarity": 1
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 423
+      "paint_kit": 423,
+      "rarity": 3
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 442
+      "paint_kit": 442,
+      "rarity": 1
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 481
+      "paint_kit": 481,
+      "rarity": 5
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 500
+      "paint_kit": 500,
+      "rarity": 4
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 536
+      "paint_kit": 536,
+      "rarity": 4
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 627
+      "paint_kit": 627,
+      "rarity": 3
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 649
+      "paint_kit": 649,
+      "rarity": 3
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 696
+      "paint_kit": 696,
+      "rarity": 6
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 719
+      "paint_kit": 719,
+      "rarity": 4
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 728
+      "paint_kit": 728,
+      "rarity": 3
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 752
+      "paint_kit": 752,
+      "rarity": 4
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 782
+      "paint_kit": 782,
+      "rarity": 2
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 847
+      "paint_kit": 847,
+      "rarity": 3
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 893
+      "paint_kit": 893,
+      "rarity": 4
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 935
+      "paint_kit": 935,
+      "rarity": 1
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 940
+      "paint_kit": 940,
+      "rarity": 2
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 1007
+      "paint_kit": 1007,
+      "rarity": 2
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 1023
+      "paint_kit": 1023,
+      "rarity": 2
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 1096
+      "paint_kit": 1096,
+      "rarity": 3
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 1133
+      "paint_kit": 1133,
+      "rarity": 5
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 1163
+      "paint_kit": 1163,
+      "rarity": 4
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 1246
+      "paint_kit": 1246,
+      "rarity": 1
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 1326
+      "paint_kit": 1326,
+      "rarity": 1
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 1354
+      "paint_kit": 1354,
+      "rarity": 5
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 1386
+      "paint_kit": 1386,
+      "rarity": 2
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 1436
+      "paint_kit": 1436,
+      "rarity": 4
     },
     {
       "weapon_defidx": 33,
-      "paint_kit": 1468
+      "paint_kit": 1468,
+      "rarity": 2
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 33
+      "paint_kit": 33,
+      "rarity": 3
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 39
+      "paint_kit": 39,
+      "rarity": 4
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 61
+      "paint_kit": 61,
+      "rarity": 4
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 100
+      "paint_kit": 100,
+      "rarity": 1
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 141
+      "paint_kit": 141,
+      "rarity": 2
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 148
+      "paint_kit": 148,
+      "rarity": 1
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 199
+      "paint_kit": 199,
+      "rarity": 1
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 262
+      "paint_kit": 262,
+      "rarity": 4
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 298
+      "paint_kit": 298,
+      "rarity": 1
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 329
+      "paint_kit": 329,
+      "rarity": 3
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 331
+      "paint_kit": 331,
+      "rarity": 4
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 366
+      "paint_kit": 366,
+      "rarity": 1
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 368
+      "paint_kit": 368,
+      "rarity": 3
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 386
+      "paint_kit": 386,
+      "rarity": 3
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 403
+      "paint_kit": 403,
+      "rarity": 3
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 448
+      "paint_kit": 448,
+      "rarity": 3
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 482
+      "paint_kit": 482,
+      "rarity": 4
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 549
+      "paint_kit": 549,
+      "rarity": 3
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 609
+      "paint_kit": 609,
+      "rarity": 5
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 630
+      "paint_kit": 630,
+      "rarity": 3
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 679
+      "paint_kit": 679,
+      "rarity": 4
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 697
+      "paint_kit": 697,
+      "rarity": 3
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 715
+      "paint_kit": 715,
+      "rarity": 3
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 734
+      "paint_kit": 734,
+      "rarity": 5
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 755
+      "paint_kit": 755,
+      "rarity": 1
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 804
+      "paint_kit": 804,
+      "rarity": 3
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 820
+      "paint_kit": 820,
+      "rarity": 3
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 867
+      "paint_kit": 867,
+      "rarity": 4
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 910
+      "paint_kit": 910,
+      "rarity": 5
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 931
+      "paint_kit": 931,
+      "rarity": 2
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 1037
+      "paint_kit": 1037,
+      "rarity": 5
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 1094
+      "paint_kit": 1094,
+      "rarity": 4
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 1134
+      "paint_kit": 1134,
+      "rarity": 6
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 1193
+      "paint_kit": 1193,
+      "rarity": 3
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 1211
+      "paint_kit": 1211,
+      "rarity": 5
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 1225
+      "paint_kit": 1225,
+      "rarity": 3
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 1258
+      "paint_kit": 1258,
+      "rarity": 3
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 1278
+      "paint_kit": 1278,
+      "rarity": 1
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 1301
+      "paint_kit": 1301,
+      "rarity": 1
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 1310
+      "paint_kit": 1310,
+      "rarity": 3
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 1330
+      "paint_kit": 1330,
+      "rarity": 1
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 1341
+      "paint_kit": 1341,
+      "rarity": 3
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 1375
+      "paint_kit": 1375,
+      "rarity": 1
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 1388
+      "paint_kit": 1388,
+      "rarity": 1
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 1423
+      "paint_kit": 1423,
+      "rarity": 4
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 1469
+      "paint_kit": 1469,
+      "rarity": 3
     },
     {
       "weapon_defidx": 34,
-      "paint_kit": 1473
+      "paint_kit": 1473,
+      "rarity": 2
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 3
+      "paint_kit": 3,
+      "rarity": 2
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 25
+      "paint_kit": 25,
+      "rarity": 1
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 62
+      "paint_kit": 62,
+      "rarity": 5
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 99
+      "paint_kit": 99,
+      "rarity": 1
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 107
+      "paint_kit": 107,
+      "rarity": 1
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 145
+      "paint_kit": 145,
+      "rarity": 3
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 158
+      "paint_kit": 158,
+      "rarity": 1
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 164
+      "paint_kit": 164,
+      "rarity": 3
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 166
+      "paint_kit": 166,
+      "rarity": 3
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 170
+      "paint_kit": 170,
+      "rarity": 1
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 191
+      "paint_kit": 191,
+      "rarity": 3
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 214
+      "paint_kit": 214,
+      "rarity": 4
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 225
+      "paint_kit": 225,
+      "rarity": 3
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 248
+      "paint_kit": 248,
+      "rarity": 4
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 263
+      "paint_kit": 263,
+      "rarity": 4
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 286
+      "paint_kit": 286,
+      "rarity": 5
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 294
+      "paint_kit": 294,
+      "rarity": 2
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 298
+      "paint_kit": 298,
+      "rarity": 1
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 299
+      "paint_kit": 299,
+      "rarity": 2
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 323
+      "paint_kit": 323,
+      "rarity": 2
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 324
+      "paint_kit": 324,
+      "rarity": 3
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 356
+      "paint_kit": 356,
+      "rarity": 4
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 450
+      "paint_kit": 450,
+      "rarity": 1
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 484
+      "paint_kit": 484,
+      "rarity": 3
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 537
+      "paint_kit": 537,
+      "rarity": 5
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 590
+      "paint_kit": 590,
+      "rarity": 3
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 634
+      "paint_kit": 634,
+      "rarity": 4
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 699
+      "paint_kit": 699,
+      "rarity": 4
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 716
+      "paint_kit": 716,
+      "rarity": 4
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 746
+      "paint_kit": 746,
+      "rarity": 4
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 785
+      "paint_kit": 785,
+      "rarity": 1
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 809
+      "paint_kit": 809,
+      "rarity": 3
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 890
+      "paint_kit": 890,
+      "rarity": 3
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 929
+      "paint_kit": 929,
+      "rarity": 3
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 987
+      "paint_kit": 987,
+      "rarity": 4
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 1051
+      "paint_kit": 1051,
+      "rarity": 3
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 1077
+      "paint_kit": 1077,
+      "rarity": 3
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 1162
+      "paint_kit": 1162,
+      "rarity": 3
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 1192
+      "paint_kit": 1192,
+      "rarity": 4
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 1247
+      "paint_kit": 1247,
+      "rarity": 4
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 1261
+      "paint_kit": 1261,
+      "rarity": 2
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 1331
+      "paint_kit": 1331,
+      "rarity": 1
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 1337
+      "paint_kit": 1337,
+      "rarity": 2
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 1350
+      "paint_kit": 1350,
+      "rarity": 4
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 1368
+      "paint_kit": 1368,
+      "rarity": 1
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 1442
+      "paint_kit": 1442,
+      "rarity": 4
     },
     {
       "weapon_defidx": 35,
-      "paint_kit": 1474
+      "paint_kit": 1474,
+      "rarity": 2
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 15
+      "paint_kit": 15,
+      "rarity": 2
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 27
+      "paint_kit": 27,
+      "rarity": 1
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 34
+      "paint_kit": 34,
+      "rarity": 2
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 77
+      "paint_kit": 77,
+      "rarity": 1
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 78
+      "paint_kit": 78,
+      "rarity": 1
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 99
+      "paint_kit": 99,
+      "rarity": 1
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 102
+      "paint_kit": 102,
+      "rarity": 3
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 125
+      "paint_kit": 125,
+      "rarity": 4
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 130
+      "paint_kit": 130,
+      "rarity": 5
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 162
+      "paint_kit": 162,
+      "rarity": 4
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 164
+      "paint_kit": 164,
+      "rarity": 3
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 168
+      "paint_kit": 168,
+      "rarity": 4
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 207
+      "paint_kit": 207,
+      "rarity": 2
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 219
+      "paint_kit": 219,
+      "rarity": 3
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 230
+      "paint_kit": 230,
+      "rarity": 3
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 258
+      "paint_kit": 258,
+      "rarity": 5
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 271
+      "paint_kit": 271,
+      "rarity": 5
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 295
+      "paint_kit": 295,
+      "rarity": 5
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 358
+      "paint_kit": 358,
+      "rarity": 4
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 373
+      "paint_kit": 373,
+      "rarity": 2
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 388
+      "paint_kit": 388,
+      "rarity": 5
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 404
+      "paint_kit": 404,
+      "rarity": 5
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 426
+      "paint_kit": 426,
+      "rarity": 3
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 466
+      "paint_kit": 466,
+      "rarity": 2
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 467
+      "paint_kit": 467,
+      "rarity": 1
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 501
+      "paint_kit": 501,
+      "rarity": 4
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 551
+      "paint_kit": 551,
+      "rarity": 5
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 592
+      "paint_kit": 592,
+      "rarity": 3
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 650
+      "paint_kit": 650,
+      "rarity": 3
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 668
+      "paint_kit": 668,
+      "rarity": 4
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 678
+      "paint_kit": 678,
+      "rarity": 6
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 741
+      "paint_kit": 741,
+      "rarity": 2
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 749
+      "paint_kit": 749,
+      "rarity": 4
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 774
+      "paint_kit": 774,
+      "rarity": 3
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 777
+      "paint_kit": 777,
+      "rarity": 1
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 786
+      "paint_kit": 786,
+      "rarity": 3
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 813
+      "paint_kit": 813,
+      "rarity": 4
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 825
+      "paint_kit": 825,
+      "rarity": 1
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 848
+      "paint_kit": 848,
+      "rarity": 3
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 907
+      "paint_kit": 907,
+      "rarity": 4
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 928
+      "paint_kit": 928,
+      "rarity": 3
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 968
+      "paint_kit": 968,
+      "rarity": 3
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 982
+      "paint_kit": 982,
+      "rarity": 3
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 1030
+      "paint_kit": 1030,
+      "rarity": 3
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 1044
+      "paint_kit": 1044,
+      "rarity": 4
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 1081
+      "paint_kit": 1081,
+      "rarity": 4
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 1153
+      "paint_kit": 1153,
+      "rarity": 5
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 1212
+      "paint_kit": 1212,
+      "rarity": 2
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 1230
+      "paint_kit": 1230,
+      "rarity": 3
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 1248
+      "paint_kit": 1248,
+      "rarity": 5
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 1273
+      "paint_kit": 1273,
+      "rarity": 1
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 1307
+      "paint_kit": 1307,
+      "rarity": 1
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 1315
+      "paint_kit": 1315,
+      "rarity": 3
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 1317
+      "paint_kit": 1317,
+      "rarity": 2
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 1345
+      "paint_kit": 1345,
+      "rarity": 3
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 1369
+      "paint_kit": 1369,
+      "rarity": 1
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 1420
+      "paint_kit": 1420,
+      "rarity": 5
     },
     {
       "weapon_defidx": 36,
-      "paint_kit": 1455
+      "paint_kit": 1455,
+      "rarity": 4
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 46
+      "paint_kit": 46,
+      "rarity": 1
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 70
+      "paint_kit": 70,
+      "rarity": 2
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 100
+      "paint_kit": 100,
+      "rarity": 1
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 116
+      "paint_kit": 116,
+      "rarity": 1
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 117
+      "paint_kit": 117,
+      "rarity": 3
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 157
+      "paint_kit": 157,
+      "rarity": 2
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 159
+      "paint_kit": 159,
+      "rarity": 3
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 165
+      "paint_kit": 165,
+      "rarity": 5
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 196
+      "paint_kit": 196,
+      "rarity": 4
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 232
+      "paint_kit": 232,
+      "rarity": 3
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 298
+      "paint_kit": 298,
+      "rarity": 1
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 312
+      "paint_kit": 312,
+      "rarity": 5
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 391
+      "paint_kit": 391,
+      "rarity": 5
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 406
+      "paint_kit": 406,
+      "rarity": 3
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 502
+      "paint_kit": 502,
+      "rarity": 3
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 518
+      "paint_kit": 518,
+      "rarity": 3
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 597
+      "paint_kit": 597,
+      "rarity": 5
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 612
+      "paint_kit": 612,
+      "rarity": 4
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 642
+      "paint_kit": 642,
+      "rarity": 3
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 685
+      "paint_kit": 685,
+      "rarity": 3
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 865
+      "paint_kit": 865,
+      "rarity": 1
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 883
+      "paint_kit": 883,
+      "rarity": 3
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 896
+      "paint_kit": 896,
+      "rarity": 3
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 914
+      "paint_kit": 914,
+      "rarity": 3
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 954
+      "paint_kit": 954,
+      "rarity": 4
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 1028
+      "paint_kit": 1028,
+      "rarity": 3
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 1139
+      "paint_kit": 1139,
+      "rarity": 3
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 1226
+      "paint_kit": 1226,
+      "rarity": 3
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 1327
+      "paint_kit": 1327,
+      "rarity": 1
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 1343
+      "paint_kit": 1343,
+      "rarity": 3
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 1371
+      "paint_kit": 1371,
+      "rarity": 1
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 1453
+      "paint_kit": 1453,
+      "rarity": 2
     },
     {
       "weapon_defidx": 38,
-      "paint_kit": 1470
+      "paint_kit": 1470,
+      "rarity": 2
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 28
+      "paint_kit": 28,
+      "rarity": 3
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 39
+      "paint_kit": 39,
+      "rarity": 4
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 61
+      "paint_kit": 61,
+      "rarity": 4
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 98
+      "paint_kit": 98,
+      "rarity": 3
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 101
+      "paint_kit": 101,
+      "rarity": 1
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 136
+      "paint_kit": 136,
+      "rarity": 1
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 186
+      "paint_kit": 186,
+      "rarity": 3
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 243
+      "paint_kit": 243,
+      "rarity": 2
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 247
+      "paint_kit": 247,
+      "rarity": 3
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 287
+      "paint_kit": 287,
+      "rarity": 4
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 298
+      "paint_kit": 298,
+      "rarity": 1
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 363
+      "paint_kit": 363,
+      "rarity": 2
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 378
+      "paint_kit": 378,
+      "rarity": 2
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 487
+      "paint_kit": 487,
+      "rarity": 5
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 519
+      "paint_kit": 519,
+      "rarity": 4
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 553
+      "paint_kit": 553,
+      "rarity": 3
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 598
+      "paint_kit": 598,
+      "rarity": 3
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 613
+      "paint_kit": 613,
+      "rarity": 4
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 686
+      "paint_kit": 686,
+      "rarity": 4
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 702
+      "paint_kit": 702,
+      "rarity": 3
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 750
+      "paint_kit": 750,
+      "rarity": 5
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 765
+      "paint_kit": 765,
+      "rarity": 3
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 815
+      "paint_kit": 815,
+      "rarity": 3
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 861
+      "paint_kit": 861,
+      "rarity": 1
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 864
+      "paint_kit": 864,
+      "rarity": 2
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 897
+      "paint_kit": 897,
+      "rarity": 5
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 901
+      "paint_kit": 901,
+      "rarity": 3
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 934
+      "paint_kit": 934,
+      "rarity": 1
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 955
+      "paint_kit": 955,
+      "rarity": 4
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 966
+      "paint_kit": 966,
+      "rarity": 3
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 1022
+      "paint_kit": 1022,
+      "rarity": 1
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 1048
+      "paint_kit": 1048,
+      "rarity": 3
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 1084
+      "paint_kit": 1084,
+      "rarity": 5
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 1151
+      "paint_kit": 1151,
+      "rarity": 4
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 1234
+      "paint_kit": 1234,
+      "rarity": 3
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 1270
+      "paint_kit": 1270,
+      "rarity": 1
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 1320
+      "paint_kit": 1320,
+      "rarity": 2
     },
     {
       "weapon_defidx": 39,
-      "paint_kit": 1394
+      "paint_kit": 1394,
+      "rarity": 1
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 26
+      "paint_kit": 26,
+      "rarity": 1
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 60
+      "paint_kit": 60,
+      "rarity": 3
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 70
+      "paint_kit": 70,
+      "rarity": 2
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 96
+      "paint_kit": 96,
+      "rarity": 1
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 99
+      "paint_kit": 99,
+      "rarity": 1
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 128
+      "paint_kit": 128,
+      "rarity": 4
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 147
+      "paint_kit": 147,
+      "rarity": 1
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 200
+      "paint_kit": 200,
+      "rarity": 2
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 222
+      "paint_kit": 222,
+      "rarity": 6
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 233
+      "paint_kit": 233,
+      "rarity": 2
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 253
+      "paint_kit": 253,
+      "rarity": 3
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 304
+      "paint_kit": 304,
+      "rarity": 3
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 319
+      "paint_kit": 319,
+      "rarity": 3
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 361
+      "paint_kit": 361,
+      "rarity": 3
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 503
+      "paint_kit": 503,
+      "rarity": 5
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 513
+      "paint_kit": 513,
+      "rarity": 3
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 538
+      "paint_kit": 538,
+      "rarity": 3
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 554
+      "paint_kit": 554,
+      "rarity": 4
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 624
+      "paint_kit": 624,
+      "rarity": 6
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 670
+      "paint_kit": 670,
+      "rarity": 4
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 743
+      "paint_kit": 743,
+      "rarity": 3
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 751
+      "paint_kit": 751,
+      "rarity": 3
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 762
+      "paint_kit": 762,
+      "rarity": 1
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 868
+      "paint_kit": 868,
+      "rarity": 4
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 877
+      "paint_kit": 877,
+      "rarity": 2
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 899
+      "paint_kit": 899,
+      "rarity": 5
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 935
+      "paint_kit": 935,
+      "rarity": 1
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 956
+      "paint_kit": 956,
+      "rarity": 4
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 967
+      "paint_kit": 967,
+      "rarity": 3
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 989
+      "paint_kit": 989,
+      "rarity": 4
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 996
+      "paint_kit": 996,
+      "rarity": 3
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 1052
+      "paint_kit": 1052,
+      "rarity": 5
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 1060
+      "paint_kit": 1060,
+      "rarity": 3
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 1101
+      "paint_kit": 1101,
+      "rarity": 5
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 1161
+      "paint_kit": 1161,
+      "rarity": 3
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 1187
+      "paint_kit": 1187,
+      "rarity": 3
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 1251
+      "paint_kit": 1251,
+      "rarity": 2
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 1271
+      "paint_kit": 1271,
+      "rarity": 1
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 1289
+      "paint_kit": 1289,
+      "rarity": 2
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 1304
+      "paint_kit": 1304,
+      "rarity": 1
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 1316
+      "paint_kit": 1316,
+      "rarity": 3
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 1372
+      "paint_kit": 1372,
+      "rarity": 1
     },
     {
       "weapon_defidx": 40,
-      "paint_kit": 1379
+      "paint_kit": 1379,
+      "rarity": 2
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 60
+      "paint_kit": 60,
+      "rarity": 3
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 77
+      "paint_kit": 77,
+      "rarity": 1
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 106
+      "paint_kit": 106,
+      "rarity": 5
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 160
+      "paint_kit": 160,
+      "rarity": 1
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 189
+      "paint_kit": 189,
+      "rarity": 3
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 217
+      "paint_kit": 217,
+      "rarity": 2
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 235
+      "paint_kit": 235,
+      "rarity": 2
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 254
+      "paint_kit": 254,
+      "rarity": 3
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 257
+      "paint_kit": 257,
+      "rarity": 4
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 301
+      "paint_kit": 301,
+      "rarity": 4
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 321
+      "paint_kit": 321,
+      "rarity": 4
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 326
+      "paint_kit": 326,
+      "rarity": 4
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 360
+      "paint_kit": 360,
+      "rarity": 5
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 383
+      "paint_kit": 383,
+      "rarity": 3
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 430
+      "paint_kit": 430,
+      "rarity": 5
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 440
+      "paint_kit": 440,
+      "rarity": 3
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 445
+      "paint_kit": 445,
+      "rarity": 4
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 497
+      "paint_kit": 497,
+      "rarity": 5
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 548
+      "paint_kit": 548,
+      "rarity": 5
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 587
+      "paint_kit": 587,
+      "rarity": 5
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 631
+      "paint_kit": 631,
+      "rarity": 3
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 644
+      "paint_kit": 644,
+      "rarity": 4
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 663
+      "paint_kit": 663,
+      "rarity": 2
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 681
+      "paint_kit": 681,
+      "rarity": 4
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 714
+      "paint_kit": 714,
+      "rarity": 4
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 792
+      "paint_kit": 792,
+      "rarity": 4
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 862
+      "paint_kit": 862,
+      "rarity": 1
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 946
+      "paint_kit": 946,
+      "rarity": 5
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 984
+      "paint_kit": 984,
+      "rarity": 5
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 1001
+      "paint_kit": 1001,
+      "rarity": 5
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 1017
+      "paint_kit": 1017,
+      "rarity": 4
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 1059
+      "paint_kit": 1059,
+      "rarity": 2
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 1073
+      "paint_kit": 1073,
+      "rarity": 5
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 1130
+      "paint_kit": 1130,
+      "rarity": 3
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 1166
+      "paint_kit": 1166,
+      "rarity": 4
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 1177
+      "paint_kit": 1177,
+      "rarity": 5
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 1216
+      "paint_kit": 1216,
+      "rarity": 4
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 1223
+      "paint_kit": 1223,
+      "rarity": 3
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 1243
+      "paint_kit": 1243,
+      "rarity": 1
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 1311
+      "paint_kit": 1311,
+      "rarity": 3
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 1319
+      "paint_kit": 1319,
+      "rarity": 2
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 1338
+      "paint_kit": 1338,
+      "rarity": 4
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 1340
+      "paint_kit": 1340,
+      "rarity": 3
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 1376
+      "paint_kit": 1376,
+      "rarity": 4
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 1433
+      "paint_kit": 1433,
+      "rarity": 3
     },
     {
       "weapon_defidx": 60,
-      "paint_kit": 1476
+      "paint_kit": 1476,
+      "rarity": 4
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 25
+      "paint_kit": 25,
+      "rarity": 1
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 60
+      "paint_kit": 60,
+      "rarity": 3
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 115
+      "paint_kit": 115,
+      "rarity": 2
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 183
+      "paint_kit": 183,
+      "rarity": 3
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 217
+      "paint_kit": 217,
+      "rarity": 2
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 221
+      "paint_kit": 221,
+      "rarity": 4
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 236
+      "paint_kit": 236,
+      "rarity": 2
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 277
+      "paint_kit": 277,
+      "rarity": 2
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 290
+      "paint_kit": 290,
+      "rarity": 3
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 313
+      "paint_kit": 313,
+      "rarity": 4
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 318
+      "paint_kit": 318,
+      "rarity": 3
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 332
+      "paint_kit": 332,
+      "rarity": 1
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 339
+      "paint_kit": 339,
+      "rarity": 4
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 364
+      "paint_kit": 364,
+      "rarity": 2
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 443
+      "paint_kit": 443,
+      "rarity": 1
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 454
+      "paint_kit": 454,
+      "rarity": 1
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 489
+      "paint_kit": 489,
+      "rarity": 2
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 504
+      "paint_kit": 504,
+      "rarity": 5
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 540
+      "paint_kit": 540,
+      "rarity": 2
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 637
+      "paint_kit": 637,
+      "rarity": 3
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 653
+      "paint_kit": 653,
+      "rarity": 5
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 657
+      "paint_kit": 657,
+      "rarity": 2
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 705
+      "paint_kit": 705,
+      "rarity": 4
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 796
+      "paint_kit": 796,
+      "rarity": 2
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 817
+      "paint_kit": 817,
+      "rarity": 3
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 818
+      "paint_kit": 818,
+      "rarity": 2
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 830
+      "paint_kit": 830,
+      "rarity": 2
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 922
+      "paint_kit": 922,
+      "rarity": 3
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 991
+      "paint_kit": 991,
+      "rarity": 4
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 1027
+      "paint_kit": 1027,
+      "rarity": 4
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 1031
+      "paint_kit": 1031,
+      "rarity": 3
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 1040
+      "paint_kit": 1040,
+      "rarity": 5
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 1065
+      "paint_kit": 1065,
+      "rarity": 4
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 1102
+      "paint_kit": 1102,
+      "rarity": 2
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 1136
+      "paint_kit": 1136,
+      "rarity": 3
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 1142
+      "paint_kit": 1142,
+      "rarity": 5
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 1173
+      "paint_kit": 1173,
+      "rarity": 4
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 1186
+      "paint_kit": 1186,
+      "rarity": 2
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 1217
+      "paint_kit": 1217,
+      "rarity": 3
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 1253
+      "paint_kit": 1253,
+      "rarity": 1
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 1284
+      "paint_kit": 1284,
+      "rarity": 2
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 1323
+      "paint_kit": 1323,
+      "rarity": 3
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 1377
+      "paint_kit": 1377,
+      "rarity": 3
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 1431
+      "paint_kit": 1431,
+      "rarity": 2
     },
     {
       "weapon_defidx": 61,
-      "paint_kit": 1451
+      "paint_kit": 1451,
+      "rarity": 4
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 12
+      "paint_kit": 12,
+      "rarity": 3
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 32
+      "paint_kit": 32,
+      "rarity": 2
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 147
+      "paint_kit": 147,
+      "rarity": 1
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 218
+      "paint_kit": 218,
+      "rarity": 3
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 268
+      "paint_kit": 268,
+      "rarity": 4
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 269
+      "paint_kit": 269,
+      "rarity": 5
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 270
+      "paint_kit": 270,
+      "rarity": 6
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 297
+      "paint_kit": 297,
+      "rarity": 3
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 298
+      "paint_kit": 298,
+      "rarity": 1
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 315
+      "paint_kit": 315,
+      "rarity": 3
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 322
+      "paint_kit": 322,
+      "rarity": 3
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 325
+      "paint_kit": 325,
+      "rarity": 4
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 333
+      "paint_kit": 333,
+      "rarity": 1
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 334
+      "paint_kit": 334,
+      "rarity": 3
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 350
+      "paint_kit": 350,
+      "rarity": 4
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 366
+      "paint_kit": 366,
+      "rarity": 1
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 435
+      "paint_kit": 435,
+      "rarity": 4
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 453
+      "paint_kit": 453,
+      "rarity": 3
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 476
+      "paint_kit": 476,
+      "rarity": 5
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 543
+      "paint_kit": 543,
+      "rarity": 4
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 602
+      "paint_kit": 602,
+      "rarity": 3
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 622
+      "paint_kit": 622,
+      "rarity": 3
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 643
+      "paint_kit": 643,
+      "rarity": 5
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 687
+      "paint_kit": 687,
+      "rarity": 4
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 709
+      "paint_kit": 709,
+      "rarity": 4
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 859
+      "paint_kit": 859,
+      "rarity": 3
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 933
+      "paint_kit": 933,
+      "rarity": 2
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 937
+      "paint_kit": 937,
+      "rarity": 4
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 944
+      "paint_kit": 944,
+      "rarity": 3
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 976
+      "paint_kit": 976,
+      "rarity": 3
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 1036
+      "paint_kit": 1036,
+      "rarity": 3
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 1064
+      "paint_kit": 1064,
+      "rarity": 4
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 1076
+      "paint_kit": 1076,
+      "rarity": 1
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 1195
+      "paint_kit": 1195,
+      "rarity": 2
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 1329
+      "paint_kit": 1329,
+      "rarity": 1
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 1390
+      "paint_kit": 1390,
+      "rarity": 1
     },
     {
       "weapon_defidx": 63,
-      "paint_kit": 1443
+      "paint_kit": 1443,
+      "rarity": 4
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 12
+      "paint_kit": 12,
+      "rarity": 3
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 27
+      "paint_kit": 27,
+      "rarity": 1
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 37
+      "paint_kit": 37,
+      "rarity": 3
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 40
+      "paint_kit": 40,
+      "rarity": 1
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 123
+      "paint_kit": 123,
+      "rarity": 3
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 522
+      "paint_kit": 522,
+      "rarity": 6
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 523
+      "paint_kit": 523,
+      "rarity": 5
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 595
+      "paint_kit": 595,
+      "rarity": 4
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 683
+      "paint_kit": 683,
+      "rarity": 5
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 701
+      "paint_kit": 701,
+      "rarity": 3
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 721
+      "paint_kit": 721,
+      "rarity": 3
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 798
+      "paint_kit": 798,
+      "rarity": 2
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 843
+      "paint_kit": 843,
+      "rarity": 5
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 866
+      "paint_kit": 866,
+      "rarity": 1
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 892
+      "paint_kit": 892,
+      "rarity": 3
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 924
+      "paint_kit": 924,
+      "rarity": 1
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 952
+      "paint_kit": 952,
+      "rarity": 3
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 1011
+      "paint_kit": 1011,
+      "rarity": 2
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 1047
+      "paint_kit": 1047,
+      "rarity": 3
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 1145
+      "paint_kit": 1145,
+      "rarity": 4
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 1232
+      "paint_kit": 1232,
+      "rarity": 4
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 1237
+      "paint_kit": 1237,
+      "rarity": 1
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 1276
+      "paint_kit": 1276,
+      "rarity": 1
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 1293
+      "paint_kit": 1293,
+      "rarity": 2
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 1363
+      "paint_kit": 1363,
+      "rarity": 2
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 1389
+      "paint_kit": 1389,
+      "rarity": 1
     },
     {
       "weapon_defidx": 64,
-      "paint_kit": 1445
+      "paint_kit": 1445,
+      "rarity": 3
     }
   ],
   "legacy_bodygroup_paints": [
@@ -23479,6 +24935,7 @@
     "sticker_ids": 11209,
     "keychain_ids": 143,
     "music_kit_ids": 101,
-    "scoreboard_flair_defidx": 662
+    "scoreboard_flair_defidx": 662,
+    "weapon_paint_rarities": 1456
   }
 }

@@ -78,6 +78,13 @@ and optional seed/highlight/sticker metadata, also pass `--export-charms`.
 `convert-pool` accepts the same flags and otherwise keeps every replay manifest
 cosmetic-free.
 
+For every exported weapon, knife, and glove cosmetic, the manifest includes an
+`inspect.command` that can be pasted into the CS2 console. It also includes an
+`inspect.steam_url` that can launch the preview through Steam when the encoded
+payload fits the Steam protocol's 300-character limit. Long sticker/charm
+combinations retain the command and omit only the URL. These synthetic preview
+payloads need no Steam inventory, market listing, GC lookup, or third-party API.
+
 In the GUI, cosmetic export is one high-risk main option. Sticker and charm
 export are saved sub-options under the cosmetic details menu because partial
 cosmetic export does not make runtime cosmetic alignment a GSLT-safe operation.

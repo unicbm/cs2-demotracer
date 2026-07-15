@@ -18,6 +18,7 @@ interface PlaybackCommandBuilderProps {
   result: ConversionSummary;
   options: PlaybackPresetOptions;
   commandMode: CommandMode;
+  sequenceDisabled?: boolean;
   copied: boolean;
   onOptionsChange: (patch: Partial<PlaybackPresetOptions>) => void;
   onCommandModeChange: (mode: CommandMode) => void;
@@ -79,6 +80,7 @@ export function PlaybackCommandBuilder({
   result,
   options,
   commandMode,
+  sequenceDisabled = false,
   copied,
   onOptionsChange,
   onCommandModeChange,
@@ -86,7 +88,8 @@ export function PlaybackCommandBuilder({
 }: PlaybackCommandBuilderProps) {
   const cosmeticsAvailable = result.cosmetics.files > 0;
   const voiceAvailable = result.voice.sidecars > 0;
-  const sequenceMode = commandMode === "sequence";
+  const effectiveCommandMode: CommandMode = sequenceDisabled ? "round" : commandMode;
+  const sequenceMode = effectiveCommandMode === "sequence";
 
   // Dependencies are normalized here as well as in the handlers so stale or
   // manually edited localStorage can never produce an invalid preset.
@@ -105,7 +108,7 @@ export function PlaybackCommandBuilder({
   if (voice) mask |= PRESET_VOICE;
   if (playoff) mask |= PRESET_PLAYOFF;
 
-  const goCommand = commandMode === "round"
+  const goCommand = effectiveCommandMode === "round"
     ? result.commands.goRound
     : result.commands.goSequence;
   const command = `dtr_preset ${formatPreset(mask)}; ${goCommand}`;
@@ -120,6 +123,8 @@ export function PlaybackCommandBuilder({
               className={sequenceMode ? "is-selected" : ""}
               type="button"
               aria-pressed={sequenceMode}
+              disabled={sequenceDisabled}
+              title={sequenceDisabled ? words.sequenceUnavailable : undefined}
               onClick={() => onCommandModeChange("sequence")}
             >
               {words.sequenceMode}

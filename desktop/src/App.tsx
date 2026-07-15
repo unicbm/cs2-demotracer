@@ -3,6 +3,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppChrome } from "./components/AppChrome";
+import { ArchiveWorkspace } from "./components/ArchiveWorkspace";
 import { DialogPrimitive } from "./components/Dialog";
 import { ExportInspector } from "./components/ExportInspector";
 import type { PlaybackPresetOptions } from "./components/PlaybackCommandBuilder";
@@ -14,6 +15,7 @@ import {
   ConversionProgressView,
   type CopyTarget,
   DemoPickerView,
+  OpeningArchiveView,
   ResultView,
   ValidationFailedView,
 } from "./components/TaskViews";
@@ -26,6 +28,7 @@ import type {
   ConversionSummary,
   ConverterSettings,
   Language,
+  ManifestArchive,
   OutputPreflight,
   Phase,
   ProgressPhase,
@@ -207,6 +210,9 @@ function App() {
   const [playbackPreset, setPlaybackPreset] = useState<PlaybackPresetOptions>(storedPlaybackPreset);
   const [progress, setProgress] = useState<ProgressState>(emptyProgress);
   const [result, setResult] = useState<ConversionSummary | null>(null);
+  const [archive, setArchive] = useState<ManifestArchive | null>(null);
+  const [archivePath, setArchivePath] = useState("");
+  const [selectedArchiveRound, setSelectedArchiveRound] = useState<number | null>(null);
   const [conversionWarnings, setConversionWarnings] = useState<string[]>([]);
   const [analysisError, setAnalysisError] = useState("");
   const [validationError, setValidationError] = useState("");
@@ -234,8 +240,8 @@ function App() {
 
   const words = TEXT[language];
   const numberFormat = useMemo(() => new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en-US"), [language]);
-  const isBusy = phase === "analyzing" || phase === "converting";
-  isBusyRef.current = isBusy;
+  const isBusy = phase === "analyzing" || phase === "converting" || phase === "openingArchive";
+  isBusyRef.current = phase === "analyzing" || phase === "converting";
   const inspectorDocked = useMediaQuery("(min-width: 1080px)");
   const inspectorVisible = inspectorDocked || inspectorSheetOpen;
   const elapsedSeconds = useElapsed(phase === "analyzing");
@@ -273,6 +279,13 @@ function App() {
     if (phase === "idle") chooseButtonRef.current?.focus({ preventScroll: true });
     if (phase === "analysisFailed") retryButtonRef.current?.focus({ preventScroll: true });
     if (phase === "complete") resultHeadingRef.current?.focus({ preventScroll: true });
+    if (phase === "archive") {
+      window.requestAnimationFrame(() => {
+        const firstRound = document.querySelector<HTMLInputElement>('.archive-round-table input[type="radio"]:not(:disabled)');
+        const archiveHeading = document.querySelector<HTMLElement>("#archive-workspace-title");
+        (firstRound ?? archiveHeading)?.focus({ preventScroll: true });
+      });
+    }
     if (phase === "selecting") {
       window.requestAnimationFrame(() => {
         const firstRound = document.querySelector<HTMLInputElement>('.round-data-table input[data-round-select="true"]:not(:disabled)');
@@ -386,6 +399,9 @@ function App() {
     setSourcePath(path);
     setAnalysis(null);
     setResult(null);
+    setArchive(null);
+    setArchivePath("");
+    setSelectedArchiveRound(null);
     setOutputRoot("");
     setSelectedRounds(new Set());
     setInspectorSheetOpen(false);
@@ -412,6 +428,40 @@ function App() {
       setPhase("analysisFailed");
     }
   }, [absorbEvent, words.invalidDemo]);
+
+  const runManifest = useCallback(async (path: string) => {
+    if (!path.toLowerCase().endsWith(".json")) {
+      setGlobalError({ code: "invalid_manifest_path", message: words.invalidManifest, path });
+      return;
+    }
+
+    const returnPhase = phase;
+    const token = ++taskTokenRef.current;
+    setGlobalError(null);
+    setArchivePath(path);
+    setInspectorSheetOpen(false);
+    setPhase("openingArchive");
+    try {
+      const next = await invoke<ManifestArchive>("read_manifest", { path });
+      if (token !== taskTokenRef.current) return;
+      const availableRounds = next.rounds.filter((round) => round.available);
+      const firstAvailableRound = availableRounds[0];
+      setArchive(next);
+      setArchivePath(next.manifestPath);
+      setSelectedArchiveRound(firstAvailableRound?.round ?? null);
+      setCommandMode(availableRounds.length > 1 && (firstAvailableRound?.sequenceLength ?? 0) > 0 ? "sequence" : "round");
+      setSourcePath("");
+      setAnalysis(null);
+      setResult(null);
+      setOutputRoot(next.root);
+      setSelectedRounds(new Set());
+      setPhase("archive");
+    } catch (reason) {
+      if (token !== taskTokenRef.current) return;
+      setGlobalError(parseCommandError(reason));
+      setPhase(returnPhase === "openingArchive" ? "idle" : returnPhase);
+    }
+  }, [phase, words.invalidManifest]);
 
   useEffect(() => {
     if (!("__TAURI_INTERNALS__" in window) || !analysis || !outputDir || phase !== "selecting") return;
@@ -445,14 +495,13 @@ function App() {
         return;
       }
       const path = event.payload.paths[0];
-      if (!path.toLowerCase().endsWith(".dem")) {
-        setGlobalError({ code: "invalid_demo_path", message: words.invalidDemo, path });
-        return;
-      }
-      void runAnalysis(path);
+      const lowered = path.toLowerCase();
+      if (lowered.endsWith(".dem")) void runAnalysis(path);
+      else if (lowered.endsWith(".json")) void runManifest(path);
+      else setGlobalError({ code: "invalid_input_path", message: words.invalidInput, path });
     }).then((stop) => { unlisten = stop; });
     return () => unlisten?.();
-  }, [isBusy, runAnalysis, words.invalidDemo, words.singleDemoOnly]);
+  }, [isBusy, runAnalysis, runManifest, words.invalidInput, words.singleDemoOnly]);
 
   useEffect(() => {
     if (!("__TAURI_INTERNALS__" in window)) return;
@@ -478,7 +527,8 @@ function App() {
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== "o") return;
       if (isBusy || overwriteConflict || cosmeticOpen || closeOpen || inspectorSheetOpen) return;
       event.preventDefault();
-      void chooseDemo();
+      if (event.shiftKey) void chooseManifest();
+      else void chooseDemo();
     };
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
@@ -489,6 +539,16 @@ function App() {
     try {
       const path = await invoke<string | null>("choose_demo");
       if (path) await runAnalysis(path);
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
+    }
+  }
+
+  async function chooseManifest() {
+    if (isBusy) return;
+    try {
+      const path = await invoke<string | null>("choose_manifest");
+      if (path) await runManifest(path);
     } catch (reason) {
       setGlobalError(parseCommandError(reason));
     }
@@ -677,6 +737,9 @@ function App() {
     setOutputRoot("");
     setAnalysis(null);
     setResult(null);
+    setArchive(null);
+    setArchivePath("");
+    setSelectedArchiveRound(null);
     setSelectedRounds(new Set());
     setProgress(emptyProgress());
     setAnalysisError("");
@@ -766,7 +829,30 @@ function App() {
           </div>
         ) : null}
 
-        {phase === "idle" ? <DemoPickerView words={words} chooseButtonRef={chooseButtonRef} onChoose={() => void chooseDemo()} /> : null}
+        {phase === "idle" ? <DemoPickerView words={words} chooseButtonRef={chooseButtonRef} onChoose={() => void chooseDemo()} onOpenManifest={() => void chooseManifest()} /> : null}
+        {phase === "openingArchive" ? <OpeningArchiveView words={words} manifestName={fileName(archivePath)} /> : null}
+        {phase === "archive" && archive ? (
+          <ArchiveWorkspace
+            words={words}
+            archive={archive}
+            selectedRound={selectedArchiveRound ?? -1}
+            commandMode={commandMode}
+            playbackPreset={playbackPreset}
+            copiedTarget={copiedTarget}
+            onSelectRound={(round) => {
+              setSelectedArchiveRound(round);
+              if (archive.rounds.find((item) => item.round === round)?.sequenceLength === 0) {
+                setCommandMode("round");
+              }
+            }}
+            onCommandModeChange={setCommandMode}
+            onPlaybackPresetChange={(patch) => setPlaybackPreset((current) => ({ ...current, ...patch }))}
+            onCopy={(value, target) => void copyText(value, target)}
+            onOpenFolder={() => void openPath(archive.root)}
+            onChooseManifest={() => void chooseManifest()}
+            onClose={resetSession}
+          />
+        ) : null}
         {phase === "analyzing" ? <AnalysisProgressView words={words} sourceFileName={sourceFileName} elapsedSeconds={elapsedSeconds} /> : null}
         {phase === "analysisFailed" ? (
           <AnalysisFailedView words={words} error={analysisError} retryButtonRef={retryButtonRef} onRetry={() => void runAnalysis(sourcePath)} onChangeDemo={() => void chooseDemo()} />
@@ -789,6 +875,7 @@ function App() {
             onPlaybackPresetChange={(patch) => setPlaybackPreset((current) => ({ ...current, ...patch }))}
             onCopy={(value, target) => void copyText(value, target)}
             onOpenFolder={() => void openPath(result.root)}
+            onBrowseManifest={() => void runManifest(result.manifestPath)}
             onBack={() => setPhase("selecting")}
             onNewDemo={resetSession}
             formatNumber={(value) => numberFormat.format(value)}
@@ -801,7 +888,7 @@ function App() {
         <div className="drop-overlay" role="status">
           <FolderIcon size={24} />
           <strong>{words.dropDemo}</strong>
-          <span>.dem</span>
+          <span>{words.dropTypes}</span>
         </div>
       ) : null}
 

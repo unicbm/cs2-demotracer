@@ -33,7 +33,8 @@ CS2 服务器里让 bot 执行这些路线。
 
 - `cs2-demotracer-cli-v<version>-windows-x64.zip`：体积最小，适合命令行、wizard、
   批量转换和 pool 工作流。
-- `cs2-demotracer-gui-v<version>-windows-x64.zip`：基于 Tauri 的单 demo 桌面图形转换器。
+- `cs2-demotracer-gui-v<version>-windows-x64.zip`：基于 Tauri 的单 demo 桌面图形
+  转换器，也可浏览本机已有的 `manifest.json` 回放归档。
 - `cs2-demotracer-playback-v<version>-windows-x64.zip`：安装在本地 Windows x64
   CS2 服务器里的 CounterStrikeSharp/Metamod 回放 plugin 和 runtime。
 
@@ -75,6 +76,9 @@ dtr_preset 0x15; dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
 dtr_go round "<manifest.json>" 0
 ```
 
+GUI 也可以直接打开已有的单 demo `manifest.json`，校验其中引用的 `.dtr`，选择
+source round，并在没有原始 `.dem` 的情况下生成连续或单回合播放命令。
+
 ## 环境要求
 
 - **转换：**按需下载 Windows x64 CLI 或 GUI 包，不需要游戏服务器 plugin。
@@ -96,6 +100,11 @@ CounterStrikeSharp 或 RayTrace provider。完整版本、bundle 内容和兼容
 `--export-cosmetics`、`--acknowledge-cosmetic-gslt-risk` 和
 `--accept-cosmetic-export-disclaimer` 时才会导出；sticker/charm 还需要额外
 `--export-stickers` / `--export-charms`。
+
+每件成功导出的武器、刀具和手套饰品还会得到确定性的 `inspect.command`；未超过
+Steam protocol 长度限制时还会写出 `inspect.steam_url`。它们是把 manifest 证据直接
+编码进去的本地 CS2 预览 payload，不表示该物品仍存在于某个 Steam 库存或市场挂单。
+只有显式导出的 sticker/charm 证据才会进入对应预览。
 
 runtime 侧的 cosmetic/agent/sticker/charm alignment 也默认关闭，只消费 manifest 里的
 demo 证据。有 `cosmetics.agent` 证据且开启 agent alignment 时，DemoTracer 会把该安全

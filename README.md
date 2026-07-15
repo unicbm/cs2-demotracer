@@ -87,7 +87,7 @@ Choose only what you need from the
 - `cs2-demotracer-cli-v<version>-windows-x64.zip`: the smallest converter
   download for CLI, wizard, batch, and pool workflows.
 - `cs2-demotracer-gui-v<version>-windows-x64.zip`: the Tauri single-demo desktop
-  converter.
+  converter and local `manifest.json` replay archive browser.
 - `cs2-demotracer-playback-v<version>-windows-x64.zip`: the server-side
   CounterStrikeSharp/Metamod plugins and runtimes for replaying `.dtr` files on
   a local Windows x64 CS2 server.
@@ -128,6 +128,9 @@ dtr_preset 0x15; dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
 The desktop GUI builds this preset from remembered playback switches.
 `seq` starts a sequence from a source round. Use
 `dtr_go round "<manifest.json>" 0` for a single source round.
+The GUI can also open an existing per-demo `manifest.json`, validate its
+referenced `.dtr` files, select a source round, and build either command without
+requiring the original `.dem`.
 
 More commands:
 
@@ -148,6 +151,12 @@ More commands:
 > `--export-stickers`, and charms also require `--export-charms`. Runtime
 > cosmetic, agent, sticker, and charm alignment are also default-off and consume
 > only demo evidence from the manifest.
+> Each exported weapon, knife, or glove cosmetic also receives a deterministic
+> `inspect.command` and, when the Steam protocol length limit permits,
+> `inspect.steam_url`. These are self-contained local CS2 preview payloads; they
+> do not claim that the item is still present in a Steam inventory or market
+> listing. Sticker and charm data appear in the preview only when their matching
+> export flags were enabled.
 > When `cosmetics.agent` evidence exists and agent alignment is enabled,
 > DemoTracer changes that safe replay bot slot to the demo-backed agent model.
 >
@@ -193,7 +202,7 @@ layout is documented in [`docs/FORMAT.md`](docs/FORMAT.md).
 ## Repository Layout
 
 - `converter/`: Rust conversion core, CLI, local Rust API, and pool conversion.
-- `desktop/`: Tauri/React single-demo desktop GUI.
+- `desktop/`: Tauri/React single-demo converter and replay archive GUI.
 - `runtime/BotController/`: CS2 Metamod runtime used by the playback bundle.
 - `runtime/BotHider/`: DemoTracer-maintained BotHider native/CSS runtime and
   versioned presentation-lease API.

@@ -31,11 +31,19 @@ function Normalize-WeaponDef([int] $Def) {
     return $Def
 }
 
-function New-PaintPair([int] $WeaponDefIndex, [uint32] $PaintKit) {
-    [ordered]@{
+function New-PaintPair(
+    [int] $WeaponDefIndex,
+    [uint32] $PaintKit,
+    [Nullable[int]] $Rarity = $null
+) {
+    $pair = [ordered]@{
         weapon_defidx = $WeaponDefIndex
         paint_kit = $PaintKit
     }
+    if ($null -ne $Rarity) {
+        $pair.rarity = [int] $Rarity
+    }
+    $pair
 }
 
 function Get-EconCommit([string] $Root) {
@@ -86,19 +94,35 @@ $keychains = Read-Json (Join-Path $dataRoot "keychains.json")
 $music = Read-Json (Join-Path $dataRoot "music-definitions.json")
 $flair = Read-Json (Join-Path $dataRoot "scoreboard-flair-defidx.compact.json")
 
+$rarityCodes = @{
+    default = 0
+    common = 1
+    uncommon = 2
+    rare = 3
+    mythical = 4
+    legendary = 5
+    ancient = 6
+    immortal = 7
+}
+
 $weaponPairs = @(
     $weaponSkins.items.PSObject.Properties |
         ForEach-Object {
             $item = $_.Value
             if ($null -ne $item.weapon_defidx -and $null -ne $item.paint_kit -and [uint32] $item.paint_kit -gt 0) {
+                $rarityName = [string] $item.rarity
+                if (-not $rarityCodes.ContainsKey($rarityName)) {
+                    throw "unknown weapon skin rarity '$rarityName' for $($_.Name)"
+                }
                 [pscustomobject]@{
                     Def = [int] $item.weapon_defidx
                     Paint = [uint32] $item.paint_kit
+                    Rarity = [int] $rarityCodes[$rarityName]
                 }
             }
         } |
         Sort-Object Def, Paint -Unique |
-        ForEach-Object { New-PaintPair $_.Def $_.Paint }
+        ForEach-Object { New-PaintPair $_.Def $_.Paint $_.Rarity }
 )
 
 $paintKitIds = @(
@@ -193,7 +217,7 @@ $legacyPairs = Get-LegacyBodygroupPaints $LegacySkinsPath $ExistingIndexPath
 $index = [ordered]@{
     name = "demotracer-econ-index"
     schema_version = 1
-    description = "Compact CS2 econ allowlists consumed by CS2 DemoTracer converter and runtime."
+    description = "Compact CS2 econ allowlists and inspect metadata consumed by CS2 DemoTracer converter and runtime."
     source = [ordered]@{
         repository = "https://github.com/unicbm/cs2-econ-id-index"
         commit = Get-EconCommit $econRoot
@@ -229,6 +253,7 @@ $index = [ordered]@{
         keychain_ids = $keychainIds.Count
         music_kit_ids = $musicKitIds.Count
         scoreboard_flair_defidx = $flairDefs.Count
+        weapon_paint_rarities = $weaponPairs.Count
     }
 }
 

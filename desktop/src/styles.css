@@ -658,6 +658,23 @@ input[type="radio"] {
   min-width: 148px;
 }
 
+.picker-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+}
+
+.picker-actions .secondary-button {
+  min-width: 190px;
+}
+
+.compact-button {
+  min-height: 30px;
+  padding: 5px 9px;
+  font-size: var(--type-support);
+}
+
 .picker-notes {
   display: flex;
   flex-direction: column;

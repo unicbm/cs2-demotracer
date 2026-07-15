@@ -19,6 +19,12 @@ installations; install a current WebView2 Runtime if it is absent. Rust is
 required to build the converter core or CLI from source; building the desktop
 GUI also requires Node.js/npm and the Windows Tauri build prerequisites.
 
+The converter's self-contained CS2 inspect-preview encoder is a Rust port of
+the payload layout and checksum behavior documented by
+[`ianlucas/cs2-lib-inspect`](https://github.com/ianlucas/cs2-lib-inspect), used
+under its MIT license. The converter does not ship the npm package or require
+Node.js, a Steam/GC lookup, or a third-party inspect API at runtime.
+
 ## In-Game Playback
 
 Playback needs a local Windows x64 CS2 server with:

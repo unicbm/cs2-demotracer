@@ -3,6 +3,7 @@ pub mod browser_analysis;
 pub mod demo_id;
 pub mod demo_reader;
 pub mod export;
+mod inspect_link;
 pub mod model;
 pub mod pool;
 pub mod quality;

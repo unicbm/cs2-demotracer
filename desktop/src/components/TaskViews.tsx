@@ -19,21 +19,49 @@ interface DemoPickerViewProps {
   words: TextDictionary;
   chooseButtonRef: RefObject<HTMLButtonElement | null>;
   onChoose: () => void;
+  onOpenManifest: () => void;
 }
 
-export function DemoPickerView({ words, chooseButtonRef, onChoose }: DemoPickerViewProps) {
+export function DemoPickerView({ words, chooseButtonRef, onChoose, onOpenManifest }: DemoPickerViewProps) {
   return (
     <section className="demo-picker-view" aria-labelledby="demo-picker-title">
       <TraceMark size={34} />
       <h1 id="demo-picker-title">{words.chooseDemoTitle}</h1>
       <p>{words.chooseDemoBody}</p>
-      <button ref={chooseButtonRef} className="primary-button" type="button" onClick={onChoose}>
-        <FolderIcon size={17} />
-        {words.chooseDemo}
-      </button>
+      <div className="picker-actions">
+        <button ref={chooseButtonRef} className="primary-button" type="button" onClick={onChoose}>
+          <FolderIcon size={17} />
+          {words.chooseDemo}
+        </button>
+        <button className="secondary-button" type="button" onClick={onOpenManifest}>
+          <ReplayIcon size={16} />
+          {words.openManifest}
+        </button>
+      </div>
       <div className="picker-notes">
         <span>{words.localOnly}</span>
         <span>{words.fullParse}</span>
+      </div>
+    </section>
+  );
+}
+
+interface OpeningArchiveViewProps {
+  words: TextDictionary;
+  manifestName: string;
+}
+
+export function OpeningArchiveView({ words, manifestName }: OpeningArchiveViewProps) {
+  return (
+    <section className="task-progress-view archive-opening-view" aria-labelledby="archive-opening-title">
+      <div className="task-progress-copy">
+        <h1 id="archive-opening-title">{words.openingManifestTitle}</h1>
+        <strong>{manifestName}</strong>
+        <p>{words.openingManifestBody}</p>
+      </div>
+      <div className="indeterminate-progress" aria-hidden="true"><span /></div>
+      <div className="task-progress-meta" role="status" aria-live="polite">
+        <span>{words.readingArchive}</span>
       </div>
     </section>
   );
@@ -204,6 +232,7 @@ interface ResultViewProps {
   onPlaybackPresetChange: (patch: Partial<PlaybackPresetOptions>) => void;
   onCopy: (value: string, target: CopyTarget) => void;
   onOpenFolder: () => void;
+  onBrowseManifest: () => void;
   onBack: () => void;
   onNewDemo: () => void;
   formatNumber: (value: number) => string;
@@ -222,6 +251,7 @@ export function ResultView({
   onPlaybackPresetChange,
   onCopy,
   onOpenFolder,
+  onBrowseManifest,
   onBack,
   onNewDemo,
   formatNumber,
@@ -272,7 +302,10 @@ export function ResultView({
         </div>
         <div className="result-path-row">
           <div><span>{words.manifest}</span><code title={result.manifestPath}>{result.manifestPath}</code></div>
-          <button className="icon-button" type="button" onClick={() => onCopy(result.manifestPath, "manifest")} aria-label={words.copyPath} title={words.copyPath}>{copiedTarget === "manifest" ? <CheckIcon size={15} /> : <CopyIcon size={15} />}</button>
+          <div className="path-actions">
+            <button className="secondary-button compact-button" type="button" onClick={onBrowseManifest}><ReplayIcon size={14} />{words.browseArchive}</button>
+            <button className="icon-button" type="button" onClick={() => onCopy(result.manifestPath, "manifest")} aria-label={words.copyPath} title={words.copyPath}>{copiedTarget === "manifest" ? <CheckIcon size={15} /> : <CopyIcon size={15} />}</button>
+          </div>
         </div>
       </div>
 

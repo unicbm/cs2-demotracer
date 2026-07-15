@@ -71,6 +71,11 @@ cs2-demotracer.exe convert --demo <demo.dem> --output <输出目录> --export-co
 seed/highlight/sticker 元数据，再额外传入 `--export-charms`。`convert-pool` 支持同样
 flag；不传时每个 replay manifest 都保持无饰品字段。
 
+每件导出的武器、刀具和手套饰品都会在 manifest 中附带可粘贴到 CS2 控制台的
+`inspect.command`。编码结果未超过 Steam protocol 的 300 字符限制时，还会附带可直接
+启动预览的 `inspect.steam_url`；贴纸/挂件组合过长时只省略 URL，控制台命令仍然保留。
+这种 synthetic preview payload 不依赖 Steam 库存、市场挂单、GC 查询或第三方 API。
+
 GUI 里饰品导出是一个高风险主开关；贴纸和挂坠是饰品详情里的记忆子选项。因为部分导出
 并不会让后续 runtime 饰品对齐变成 GSLT 安全操作，所以它们不会和主开关并列展示。
 

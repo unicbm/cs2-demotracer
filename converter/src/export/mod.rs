@@ -1,5 +1,6 @@
 use crate::analysis::quality::{analyze_demo, AnalysisOptions};
 use crate::demo_id::output_demo_id;
+use crate::inspect_link::{item_inspect, weapon_inspect};
 use crate::model::{
     public_demo_path, ConversionManifest, ConvertedFile, ConvertedRound, EconomyClass,
     HighFidelityMetadata, ManifestAvatarOverride, ParsedAvatarOverride, ParsedDemo, ParsedEconItem,
@@ -1827,7 +1828,24 @@ fn replay_cosmetics_at(
     cosmetics
         .weapons
         .sort_by_key(|weapon| weapon.weapon_def_index);
+    populate_cosmetic_inspect(&mut cosmetics);
     (!cosmetics.is_empty()).then_some(cosmetics)
+}
+
+fn populate_cosmetic_inspect(cosmetics: &mut ReplayCosmetics) {
+    for weapon in &mut cosmetics.weapons {
+        let rarity = weapon_cosmetic_rarity(weapon.weapon_def_index, weapon.paint_kit);
+        let inspect = weapon_inspect(weapon, rarity);
+        weapon.inspect = inspect;
+    }
+    if let Some(knife) = cosmetics.knife.as_mut() {
+        let inspect = item_inspect(knife, Some(6));
+        knife.inspect = inspect;
+    }
+    if let Some(glove) = cosmetics.glove.as_mut() {
+        let inspect = item_inspect(glove, Some(6));
+        glove.inspect = inspect;
+    }
 }
 
 const AGENT_MODEL_FAMILIES: &[&str] = &[
@@ -1947,6 +1965,7 @@ fn glove_econ_cosmetics_by_player(parsed: &ParsedDemo) -> BTreeMap<u64, ReplayIt
                     seed: spec.seed,
                     wear: f32::from_bits(spec.wear_bits),
                     custom_name: None,
+                    inspect: None,
                 },
             ))
         })
@@ -2094,6 +2113,7 @@ fn replay_active_cosmetics(
                 weapon_def_index,
             ),
             charms: Vec::new(),
+            inspect: None,
         });
     }
 
@@ -2105,6 +2125,7 @@ fn replay_active_cosmetics(
                 seed: spec.seed,
                 wear: f32::from_bits(spec.wear_bits),
                 custom_name: stable_knife_custom_name(&knife_custom_names, item_def_index),
+                inspect: None,
             });
         }
     }
@@ -2117,6 +2138,7 @@ fn replay_active_cosmetics(
                 seed: spec.seed,
                 wear: f32::from_bits(spec.wear_bits),
                 custom_name: None,
+                inspect: None,
             });
         }
     }
@@ -2281,6 +2303,7 @@ fn inventory_weapon_cosmetics_for_row(
                 weapon_def_index,
             ),
             charms: stable_weapon_charms(&weapon_charms, &weapon_charms_missing, weapon_def_index),
+            inspect: None,
         });
     }
     weapons.sort_by_key(|weapon| weapon.weapon_def_index);
@@ -2644,6 +2667,13 @@ fn valid_weapon_cosmetic_paint(weapon_def_index: i32, paint_kit: u32) -> bool {
         .contains(&(normalize_weapon_def_index(weapon_def_index), paint_kit))
 }
 
+fn weapon_cosmetic_rarity(weapon_def_index: i32, paint_kit: u32) -> Option<u32> {
+    demotracer_econ_index()
+        .weapon_paint_rarities
+        .get(&(normalize_weapon_def_index(weapon_def_index), paint_kit))
+        .copied()
+}
+
 fn valid_paint_kit(paint_kit: u32) -> bool {
     demotracer_econ_index().paint_kit_ids.contains(&paint_kit)
 }
@@ -2697,11 +2727,13 @@ struct RawDemoTracerEconIndex {
 struct RawPaintPair {
     weapon_defidx: i32,
     paint_kit: u32,
+    rarity: Option<u32>,
 }
 
 #[derive(Debug)]
 struct DemoTracerEconIndex {
     weapon_paints: BTreeSet<(i32, u32)>,
+    weapon_paint_rarities: BTreeMap<(i32, u32), u32>,
     paint_kit_ids: BTreeSet<u32>,
     glove_defidx: BTreeSet<i32>,
     agent_defidx: BTreeSet<u32>,
@@ -2719,18 +2751,24 @@ fn demotracer_econ_index() -> &'static DemoTracerEconIndex {
             "/../shared/econ/demotracer-econ-index.v1.json"
         )))
         .expect("embedded demotracer-econ-index.v1.json must be valid JSON");
+        let mut weapon_paints = BTreeSet::new();
+        let mut weapon_paint_rarities = BTreeMap::new();
+        for pair in raw.weapon_paints {
+            if pair.paint_kit == 0 {
+                continue;
+            }
+            let key = (
+                normalize_weapon_def_index(pair.weapon_defidx),
+                pair.paint_kit,
+            );
+            weapon_paints.insert(key);
+            if let Some(rarity) = pair.rarity.filter(|value| *value <= 7) {
+                weapon_paint_rarities.insert(key, rarity);
+            }
+        }
         DemoTracerEconIndex {
-            weapon_paints: raw
-                .weapon_paints
-                .into_iter()
-                .filter(|pair| pair.paint_kit > 0)
-                .map(|pair| {
-                    (
-                        normalize_weapon_def_index(pair.weapon_defidx),
-                        pair.paint_kit,
-                    )
-                })
-                .collect(),
+            weapon_paints,
+            weapon_paint_rarities,
             paint_kit_ids: raw
                 .paint_kit_ids
                 .into_iter()
@@ -3196,6 +3234,15 @@ mod tests {
             cosmetics.weapons[0].custom_name.as_deref(),
             Some("alpha rifle")
         );
+        let weapon_inspect = cosmetics.weapons[0]
+            .inspect
+            .as_ref()
+            .expect("expected weapon inspect data");
+        assert!(weapon_inspect
+            .command
+            .starts_with("csgo_econ_action_preview "));
+        assert!(weapon_inspect.command.contains("2805"));
+        assert!(weapon_inspect.steam_url.is_some());
         assert_eq!(cosmetics.knife.as_ref().unwrap().item_def_index, Some(508));
         assert_eq!(cosmetics.knife.as_ref().unwrap().paint_kit, 38);
         assert_eq!(cosmetics.knife.as_ref().unwrap().seed, 321);
@@ -3207,6 +3254,15 @@ mod tests {
             cosmetics.knife.as_ref().unwrap().custom_name.as_deref(),
             Some("alpha knife")
         );
+        assert!(cosmetics
+            .knife
+            .as_ref()
+            .unwrap()
+            .inspect
+            .as_ref()
+            .unwrap()
+            .steam_url
+            .is_some());
         assert_eq!(cosmetics.glove.as_ref().unwrap().item_def_index, Some(5030));
         assert_eq!(cosmetics.glove.as_ref().unwrap().paint_kit, 10006);
         assert_eq!(cosmetics.glove.as_ref().unwrap().seed, 4);
@@ -3214,6 +3270,15 @@ mod tests {
             cosmetics.glove.as_ref().unwrap().wear.to_bits(),
             0.2_f32.to_bits()
         );
+        assert!(cosmetics
+            .glove
+            .as_ref()
+            .unwrap()
+            .inspect
+            .as_ref()
+            .unwrap()
+            .steam_url
+            .is_some());
     }
 
     #[test]

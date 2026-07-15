@@ -1,11 +1,13 @@
 use cs2_demotracer::demo_id::output_demo_id;
 use cs2_demotracer::demo_reader::{read_demo_with_options, ReadDemoOptions};
+use cs2_demotracer::dtr::read_rec_file;
 use cs2_demotracer::export::{
     export_demo_with_progress, ConversionArtifactKind, ConversionProgress, ConversionReport,
     ConvertOptions, DEFAULT_FREEZE_PREROLL_SECONDS,
 };
 use cs2_demotracer::model::{
-    ConvertedFile, DemoAnalysis, ParsedDemo, RoundStatus, Side, SubtickMode,
+    public_demo_path, ConvertedFile, DemoAnalysis, ParsedDemo, RoundStatus, Side, SubtickMode,
+    DEMOTRACER_ABI, DTR_FORMAT_VERSION,
 };
 use cs2_demotracer::quality::{analyze_demo as analyze_parsed_demo, AnalysisOptions};
 use cs2_demotracer::validate::validate_dtr_path;
@@ -22,6 +24,9 @@ use tauri::State;
 
 const COSMETIC_CONFIRMATION_PHRASE: &str = "I ACCEPT COSMETIC EXPORT RISK";
 const MAX_FREEZE_PREROLL_SECONDS: f32 = 120.0;
+const MAX_MANIFEST_BYTES: u64 = 32 * 1024 * 1024;
+const MIN_SUPPORTED_MANIFEST_ABI: i32 = 12;
+const MIN_SUPPORTED_DTR_FORMAT_VERSION: u32 = 3;
 
 type CommandResult<T> = Result<T, CommandErrorDto>;
 
@@ -392,6 +397,250 @@ pub struct PreflightOutputDto {
     pub exists: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestArchiveDto {
+    pub root: String,
+    pub manifest_path: String,
+    pub demo_path: String,
+    pub demo_id: String,
+    pub demo_sha256: String,
+    pub map: String,
+    pub tick_rate: f32,
+    pub abi: i32,
+    pub format_version: u32,
+    pub compatibility: String,
+    pub total_files: usize,
+    pub playable_files: usize,
+    pub output_bytes: String,
+    pub players: Vec<PlayerSummaryDto>,
+    pub voice: ManifestArchiveVoiceDto,
+    pub cosmetics: CosmeticSummaryDto,
+    pub rounds: Vec<ManifestArchiveRoundDto>,
+    pub issues: Vec<ManifestIssueDto>,
+    pub playable: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestArchiveVoiceDto {
+    pub sidecars: usize,
+    pub rounds: Vec<u32>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestArchiveRoundDto {
+    pub round: u32,
+    pub files: usize,
+    pub t_files: usize,
+    pub ct_files: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_seconds: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pistol_round: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cut_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub t_economy: Option<ManifestTeamEconomyDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ct_economy: Option<ManifestTeamEconomyDto>,
+    pub sequence_length: usize,
+    pub available: bool,
+    pub commands: CommandSummaryDto,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestTeamEconomyDto {
+    pub side: String,
+    pub players: usize,
+    pub round_start_equipment_value: u32,
+    pub equipment_value_total: u32,
+    pub money_saved_total: u32,
+    pub cash_spent_this_round: u32,
+    pub class: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestIssueDto {
+    pub code: String,
+    pub severity: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub round: Option<u32>,
+}
+
+impl ManifestIssueDto {
+    fn warning(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            severity: "warning".to_string(),
+            message: message.into(),
+            path: None,
+            round: None,
+        }
+    }
+
+    fn error(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            severity: "error".to_string(),
+            message: message.into(),
+            path: None,
+            round: None,
+        }
+    }
+
+    fn at_file(mut self, path: impl Into<String>, round: Option<u32>) -> Self {
+        self.path = Some(path.into());
+        self.round = round;
+        self
+    }
+
+    fn at_round(mut self, round: u32) -> Self {
+        self.round = Some(round);
+        self
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ManifestArchiveWire {
+    #[serde(default)]
+    demo_path: String,
+    #[serde(default)]
+    demo_id: String,
+    #[serde(default)]
+    demo_sha256: String,
+    #[serde(default)]
+    map: String,
+    tick_rate: Option<f32>,
+    abi: Option<i32>,
+    format_version: Option<u32>,
+    dtr_format_version: Option<u32>,
+    avatar_overrides: Option<Vec<ManifestAvatarWire>>,
+    rounds: Option<Vec<ManifestRoundWire>>,
+    files: Option<Vec<ManifestFileWire>>,
+    candidates: Option<Vec<serde_json::Value>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ManifestAvatarWire {
+    steam_id: Option<u64>,
+    path: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ManifestRoundWire {
+    round: Option<u32>,
+    duration_seconds: Option<f32>,
+    pistol_round: Option<bool>,
+    cut_reason: Option<String>,
+    t_economy: Option<ManifestTeamEconomyWire>,
+    ct_economy: Option<ManifestTeamEconomyWire>,
+    files: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ManifestTeamEconomyWire {
+    #[serde(default)]
+    side: String,
+    #[serde(default)]
+    players: usize,
+    #[serde(default)]
+    round_start_equipment_value: u32,
+    #[serde(default)]
+    equipment_value_total: u32,
+    #[serde(default)]
+    money_saved_total: u32,
+    #[serde(default)]
+    cash_spent_this_round: u32,
+    #[serde(default)]
+    class: String,
+}
+
+impl From<ManifestTeamEconomyWire> for ManifestTeamEconomyDto {
+    fn from(value: ManifestTeamEconomyWire) -> Self {
+        Self {
+            side: value.side,
+            players: value.players,
+            round_start_equipment_value: value.round_start_equipment_value,
+            equipment_value_total: value.equipment_value_total,
+            money_saved_total: value.money_saved_total,
+            cash_spent_this_round: value.cash_spent_this_round,
+            class: value.class,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ManifestFileWire {
+    path: Option<String>,
+    round: Option<u32>,
+    side: Option<String>,
+    steam_id: Option<u64>,
+    player_name: Option<String>,
+    cosmetics: Option<ManifestCosmeticsWire>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ManifestCosmeticsWire {
+    #[serde(default)]
+    weapons: Vec<ManifestWeaponCosmeticWire>,
+    knife: Option<serde_json::Value>,
+    glove: Option<serde_json::Value>,
+    agent: Option<serde_json::Value>,
+}
+
+impl ManifestCosmeticsWire {
+    fn is_empty(&self) -> bool {
+        self.weapons.is_empty()
+            && self.knife.is_none()
+            && self.glove.is_none()
+            && self.agent.is_none()
+    }
+
+    fn has_stickers(&self) -> bool {
+        self.weapons
+            .iter()
+            .any(|weapon| !weapon.stickers.is_empty())
+    }
+
+    fn has_charms(&self) -> bool {
+        self.weapons.iter().any(|weapon| !weapon.charms.is_empty())
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ManifestWeaponCosmeticWire {
+    #[serde(default)]
+    stickers: Vec<serde_json::Value>,
+    #[serde(default)]
+    charms: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Default)]
+struct ManifestRoundAccumulator {
+    files: usize,
+    t_files: usize,
+    ct_files: usize,
+    playable_files: usize,
+}
+
+#[derive(Debug)]
+struct PlayableManifestFile {
+    round: u32,
+    side: String,
+    steam_id: u64,
+    player_name: String,
+    has_cosmetics: bool,
+    has_stickers: bool,
+    has_charms: bool,
+}
+
 #[derive(Clone)]
 struct CachedDemo {
     analysis_id: String,
@@ -470,6 +719,19 @@ async fn choose_demo() -> CommandResult<Option<String>> {
         rfd::FileDialog::new()
             .set_title("Choose a CS2 demo")
             .add_filter("CS2 demo", &["dem"])
+            .pick_file()
+            .map(|path| path.display().to_string())
+    })
+    .await
+    .map_err(|error| CommandErrorDto::new("dialog_failed", error.to_string()))
+}
+
+#[tauri::command]
+async fn choose_manifest() -> CommandResult<Option<String>> {
+    tauri::async_runtime::spawn_blocking(|| {
+        rfd::FileDialog::new()
+            .set_title("Choose a DemoTracer manifest")
+            .add_filter("DemoTracer manifest", &["json"])
             .pick_file()
             .map(|path| path.display().to_string())
     })
@@ -578,6 +840,13 @@ async fn preflight_output(
 }
 
 #[tauri::command]
+async fn read_manifest(path: String) -> CommandResult<ManifestArchiveDto> {
+    tauri::async_runtime::spawn_blocking(move || read_manifest_for(&path))
+        .await
+        .map_err(|error| CommandErrorDto::new("manifest_worker_failed", error.to_string()))?
+}
+
+#[tauri::command]
 async fn open_output(request: OpenOutputRequest) -> CommandResult<()> {
     let path = PathBuf::from(request.path.trim());
     if !path.is_dir() {
@@ -609,6 +878,726 @@ fn validate_demo_path(value: &str) -> CommandResult<PathBuf> {
         ));
     }
     Ok(path)
+}
+
+fn read_manifest_for(value: &str) -> CommandResult<ManifestArchiveDto> {
+    let manifest_path = validate_manifest_input_path(value)?;
+    let root = manifest_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
+    let canonical_root = fs::canonicalize(&root).map_err(|error| {
+        CommandErrorDto::at_path("manifest_root_unavailable", error.to_string(), &root)
+    })?;
+    let text = fs::read_to_string(&manifest_path).map_err(|error| {
+        CommandErrorDto::at_path("manifest_read_failed", error.to_string(), &manifest_path)
+    })?;
+    let mut manifest: ManifestArchiveWire = serde_json::from_str(&text).map_err(|error| {
+        CommandErrorDto::at_path("manifest_invalid_json", error.to_string(), &manifest_path)
+    })?;
+
+    if manifest.files.is_none() && manifest.candidates.is_some() {
+        return Err(CommandErrorDto::at_path(
+            "unsupported_manifest_kind",
+            "Choose a per-demo replay manifest, not a pool manifest.",
+            &manifest_path,
+        ));
+    }
+    if manifest.files.is_none() {
+        return Err(CommandErrorDto::at_path(
+            "manifest_schema_invalid",
+            "The selected JSON is not a per-demo replay manifest (files[] is missing).",
+            &manifest_path,
+        ));
+    }
+
+    let declared_rounds = manifest.rounds.take().unwrap_or_default();
+    let declared_files = manifest.files.take().unwrap_or_default();
+    let declared_avatars = manifest.avatar_overrides.take().unwrap_or_default();
+    let total_files = declared_files.len();
+    let abi = manifest.abi.unwrap_or(0);
+    let declared_dtr_format_version = manifest.dtr_format_version.unwrap_or(0);
+    let format_version = if declared_dtr_format_version != 0 {
+        declared_dtr_format_version
+    } else {
+        manifest.format_version.unwrap_or(0)
+    };
+    let abi_supported = abi == 0 || (MIN_SUPPORTED_MANIFEST_ABI..=DEMOTRACER_ABI).contains(&abi);
+    let format_supported = format_version == 0
+        || (MIN_SUPPORTED_DTR_FORMAT_VERSION..=DTR_FORMAT_VERSION).contains(&format_version);
+    let version_supported = abi_supported && format_supported;
+    let compatibility = if !version_supported {
+        "unsupported"
+    } else if abi == 0 || format_version == 0 {
+        "legacy"
+    } else if abi == DEMOTRACER_ABI && format_version == DTR_FORMAT_VERSION {
+        "current"
+    } else {
+        "supported"
+    }
+    .to_string();
+
+    let mut issues = Vec::new();
+    let mut fatal_metadata_issue = false;
+    let mut fatal_manifest_structure = false;
+    if manifest.abi.is_none() || abi == 0 {
+        issues.push(ManifestIssueDto::warning(
+            "manifest_abi_missing",
+            "The manifest has no explicit ABI and is treated as legacy.",
+        ));
+    } else if !abi_supported {
+        fatal_metadata_issue = true;
+        issues.push(ManifestIssueDto::error(
+            "manifest_abi_unsupported",
+            format!(
+                "Manifest ABI {abi} is unsupported; expected {MIN_SUPPORTED_MANIFEST_ABI}..{DEMOTRACER_ABI}."
+            ),
+        ));
+    }
+    if manifest.dtr_format_version.is_none() && manifest.format_version.is_none()
+        || format_version == 0
+    {
+        issues.push(ManifestIssueDto::warning(
+            "manifest_format_missing",
+            "The manifest has no explicit replay format version and is treated as legacy.",
+        ));
+    } else if !format_supported {
+        fatal_metadata_issue = true;
+        issues.push(ManifestIssueDto::error(
+            "manifest_format_unsupported",
+            format!(
+                "Replay format {format_version} is unsupported; expected {MIN_SUPPORTED_DTR_FORMAT_VERSION}..{DTR_FORMAT_VERSION}."
+            ),
+        ));
+    }
+    if manifest.map.trim().is_empty() {
+        fatal_metadata_issue = true;
+        issues.push(ManifestIssueDto::error(
+            "manifest_map_missing",
+            "The manifest map is required for playback.",
+        ));
+    }
+    let tick_rate = manifest.tick_rate.unwrap_or(0.0);
+    if !tick_rate.is_finite() || tick_rate <= 0.0 {
+        issues.push(ManifestIssueDto::warning(
+            "manifest_tick_rate_invalid",
+            "The manifest does not contain a positive tick rate.",
+        ));
+    }
+    if total_files == 0 {
+        fatal_metadata_issue = true;
+        issues.push(ManifestIssueDto::error(
+            "manifest_files_empty",
+            "The manifest does not contain replay files.",
+        ));
+    }
+    let manifest_display = manifest_path.display().to_string();
+    if manifest_display.contains(['\r', '\n']) {
+        fatal_metadata_issue = true;
+        issues.push(ManifestIssueDto::error(
+            "manifest_path_not_console_safe",
+            "The manifest path contains a line break and cannot be used in a server command.",
+        ));
+    }
+
+    let mut metadata_by_round = BTreeMap::new();
+    for metadata in declared_rounds {
+        let Some(round) = metadata.round else {
+            issues.push(ManifestIssueDto::warning(
+                "manifest_round_number_missing",
+                "A round metadata entry has no source round number.",
+            ));
+            continue;
+        };
+        if round > i32::MAX as u32 {
+            fatal_manifest_structure = true;
+            issues.push(ManifestIssueDto::error(
+                "manifest_round_out_of_range",
+                format!("Round {round} exceeds the server-supported integer range."),
+            ));
+            continue;
+        }
+        if metadata_by_round.contains_key(&round) {
+            issues.push(
+                ManifestIssueDto::warning(
+                    "manifest_round_duplicate",
+                    format!("Round {round} has duplicate metadata entries."),
+                )
+                .at_round(round),
+            );
+            continue;
+        }
+        metadata_by_round.insert(round, metadata);
+    }
+
+    let mut rounds_by_id = BTreeMap::<u32, ManifestRoundAccumulator>::new();
+    let mut playable_files = Vec::new();
+    let mut replay_bytes = 0_u64;
+    let mut seen_declared_paths = BTreeSet::new();
+    let mut seen_canonical_paths = BTreeSet::new();
+
+    let mut seen_avatar_steam_ids = BTreeSet::new();
+    for (index, avatar) in declared_avatars.into_iter().enumerate() {
+        let steam_id = avatar.steam_id.unwrap_or(0);
+        let path = avatar.path.unwrap_or_default();
+        if steam_id == 0 {
+            fatal_manifest_structure = true;
+            issues.push(
+                ManifestIssueDto::error(
+                    "manifest_avatar_steam_id_invalid",
+                    format!("Avatar override {index} steam_id must be a non-zero integer."),
+                )
+                .at_file(path.clone(), None),
+            );
+        } else if !seen_avatar_steam_ids.insert(steam_id) {
+            fatal_manifest_structure = true;
+            issues.push(
+                ManifestIssueDto::error(
+                    "manifest_avatar_steam_id_duplicate",
+                    format!("Avatar override steam_id {steam_id} is duplicated."),
+                )
+                .at_file(path.clone(), None),
+            );
+        }
+        if let Err((code, message)) = validate_manifest_child_path(&path) {
+            fatal_manifest_structure = true;
+            issues.push(ManifestIssueDto::error(code, message).at_file(path, None));
+        }
+    }
+
+    for (index, file) in declared_files.into_iter().enumerate() {
+        let Some(round) = file.round else {
+            fatal_manifest_structure = true;
+            issues.push(
+                ManifestIssueDto::error(
+                    "manifest_file_round_missing",
+                    format!("Manifest file {index} has no source round."),
+                )
+                .at_file(format!("files[{index}]"), None),
+            );
+            continue;
+        };
+        if round > i32::MAX as u32 {
+            fatal_manifest_structure = true;
+            issues.push(
+                ManifestIssueDto::error(
+                    "manifest_file_round_out_of_range",
+                    format!("Manifest file {index} round {round} exceeds the server-supported integer range."),
+                )
+                .at_file(file.path.clone().unwrap_or_default(), None),
+            );
+            continue;
+        }
+        let accumulator = rounds_by_id.entry(round).or_default();
+        accumulator.files += 1;
+        let path = file.path.unwrap_or_default();
+        let side = file.side.unwrap_or_default().to_ascii_lowercase();
+        let mut valid = true;
+        if side == "t" {
+            accumulator.t_files += 1;
+        } else if side == "ct" {
+            accumulator.ct_files += 1;
+        } else {
+            valid = false;
+            fatal_manifest_structure = true;
+            issues.push(
+                ManifestIssueDto::error(
+                    "manifest_file_side_invalid",
+                    format!("Replay side must be t or ct, got {side:?}."),
+                )
+                .at_file(path.clone(), Some(round)),
+            );
+        }
+
+        let declared_key = normalized_manifest_path_key(&path);
+        if declared_key.is_empty() || !seen_declared_paths.insert(declared_key) {
+            valid = false;
+            fatal_manifest_structure = true;
+            issues.push(
+                ManifestIssueDto::error(
+                    "manifest_file_path_duplicate",
+                    "Replay file paths must be non-empty and unique.",
+                )
+                .at_file(path.clone(), Some(round)),
+            );
+        }
+
+        let resolved = match resolve_manifest_dtr_path(&root, &canonical_root, &path) {
+            Ok(resolved) => {
+                let canonical_key = normalized_manifest_path_key(&resolved.display().to_string());
+                if !seen_canonical_paths.insert(canonical_key) {
+                    valid = false;
+                    fatal_manifest_structure = true;
+                    issues.push(
+                        ManifestIssueDto::error(
+                            "manifest_file_target_duplicate",
+                            "Multiple manifest entries resolve to the same replay file.",
+                        )
+                        .at_file(path.clone(), Some(round)),
+                    );
+                }
+                Some(resolved)
+            }
+            Err((code, message)) => {
+                valid = false;
+                if !matches!(code, "manifest_file_missing" | "manifest_file_not_regular") {
+                    fatal_manifest_structure = true;
+                }
+                issues.push(
+                    ManifestIssueDto::error(code, message).at_file(path.clone(), Some(round)),
+                );
+                None
+            }
+        };
+
+        let steam_id = file.steam_id.unwrap_or(0);
+        if steam_id == 0 {
+            valid = false;
+            issues.push(
+                ManifestIssueDto::error(
+                    "manifest_file_steam_id_invalid",
+                    "Replay file steam_id must be a non-zero integer.",
+                )
+                .at_file(path.clone(), Some(round)),
+            );
+        }
+        if valid {
+            if let Some(resolved) = resolved.as_ref() {
+                if let Err(message) =
+                    validate_manifest_dtr(resolved, round, &side, steam_id, manifest.map.trim())
+                {
+                    valid = false;
+                    issues.push(
+                        ManifestIssueDto::error("manifest_file_invalid_dtr", message)
+                            .at_file(path.clone(), Some(round)),
+                    );
+                }
+            }
+        }
+        if !valid || resolved.is_none() {
+            continue;
+        }
+
+        accumulator.playable_files += 1;
+        replay_bytes = replay_bytes.saturating_add(
+            resolved
+                .as_ref()
+                .and_then(|path| fs::metadata(path).ok())
+                .map_or(0, |metadata| metadata.len()),
+        );
+        let cosmetics = file.cosmetics.as_ref();
+        playable_files.push(PlayableManifestFile {
+            round,
+            side,
+            steam_id,
+            player_name: file
+                .player_name
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| steam_id.to_string()),
+            has_cosmetics: cosmetics.is_some_and(|value| !value.is_empty()),
+            has_stickers: cosmetics.is_some_and(ManifestCosmeticsWire::has_stickers),
+            has_charms: cosmetics.is_some_and(ManifestCosmeticsWire::has_charms),
+        });
+    }
+
+    for (&round, accumulator) in &rounds_by_id {
+        match metadata_by_round
+            .get(&round)
+            .and_then(|metadata| metadata.files)
+        {
+            Some(files) if files != accumulator.files => issues.push(
+                ManifestIssueDto::warning(
+                    "manifest_round_file_count_mismatch",
+                    format!(
+                        "Round {round} metadata reports {files} files, but files[] contains {}.",
+                        accumulator.files
+                    ),
+                )
+                .at_round(round),
+            ),
+            None => issues.push(
+                ManifestIssueDto::warning(
+                    "manifest_round_metadata_missing",
+                    format!("Round {round} has replay files but incomplete round metadata."),
+                )
+                .at_round(round),
+            ),
+            _ => {}
+        }
+    }
+    for &round in metadata_by_round.keys() {
+        if !rounds_by_id.contains_key(&round) {
+            issues.push(
+                ManifestIssueDto::warning(
+                    "manifest_round_without_files",
+                    format!("Round {round} metadata has no replay files and is not selectable."),
+                )
+                .at_round(round),
+            );
+        }
+    }
+
+    let round_ids = rounds_by_id.keys().copied().collect::<Vec<_>>();
+    let voice_rounds = collect_manifest_voice_rounds(&root, &canonical_root, &round_ids);
+    let cosmetic_files = playable_files
+        .iter()
+        .filter(|file| file.has_cosmetics)
+        .count();
+    let sticker_files = playable_files
+        .iter()
+        .filter(|file| file.has_stickers)
+        .count();
+    let charm_files = playable_files.iter().filter(|file| file.has_charms).count();
+    let cosmetic_preset = if cosmetic_files == 0 {
+        None
+    } else if sticker_files > 0 || charm_files > 0 {
+        Some("full".to_string())
+    } else {
+        Some("basic".to_string())
+    };
+
+    let mut rounds = rounds_by_id
+        .iter()
+        .map(|(&round, accumulator)| {
+            let metadata = metadata_by_round.get(&round);
+            let available = version_supported
+                && !fatal_metadata_issue
+                && !fatal_manifest_structure
+                && accumulator.files > 0
+                && accumulator.playable_files == accumulator.files;
+            ManifestArchiveRoundDto {
+                round,
+                files: accumulator.files,
+                t_files: accumulator.t_files,
+                ct_files: accumulator.ct_files,
+                duration_seconds: metadata.and_then(|value| value.duration_seconds),
+                pistol_round: metadata.and_then(|value| value.pistol_round),
+                cut_reason: metadata.and_then(|value| value.cut_reason.clone()),
+                t_economy: metadata
+                    .and_then(|value| value.t_economy.clone())
+                    .map(Into::into),
+                ct_economy: metadata
+                    .and_then(|value| value.ct_economy.clone())
+                    .map(Into::into),
+                sequence_length: 0,
+                available,
+                commands: build_commands(
+                    &manifest_path,
+                    Some(round),
+                    voice_rounds.len(),
+                    cosmetic_preset.as_deref(),
+                ),
+            }
+        })
+        .collect::<Vec<_>>();
+    let sequence_lengths = (0..rounds.len())
+        .map(|index| {
+            let suffix = &rounds[index..];
+            if suffix.iter().all(|round| round.available) {
+                suffix.len()
+            } else {
+                0
+            }
+        })
+        .collect::<Vec<_>>();
+    for (round, sequence_length) in rounds.iter_mut().zip(sequence_lengths) {
+        round.sequence_length = sequence_length;
+    }
+
+    let demo_path = if manifest.demo_path.trim().is_empty() {
+        issues.push(ManifestIssueDto::warning(
+            "manifest_demo_path_missing",
+            "The manifest does not identify its source demo.",
+        ));
+        String::new()
+    } else {
+        public_demo_path(&manifest.demo_path)
+    };
+    let demo_id = if manifest.demo_id.trim().is_empty() {
+        issues.push(ManifestIssueDto::warning(
+            "manifest_demo_id_missing",
+            "The manifest does not contain a demo ID; the folder name is used for display.",
+        ));
+        root.file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    } else {
+        manifest.demo_id
+    };
+    if manifest.demo_sha256.trim().is_empty() {
+        issues.push(ManifestIssueDto::warning(
+            "manifest_demo_hash_missing",
+            "The manifest does not contain the source demo hash.",
+        ));
+    }
+    let playable = rounds.iter().any(|round| round.available);
+
+    Ok(ManifestArchiveDto {
+        root: root.display().to_string(),
+        manifest_path: manifest_display,
+        demo_path,
+        demo_id,
+        demo_sha256: manifest.demo_sha256,
+        map: manifest.map,
+        tick_rate,
+        abi,
+        format_version,
+        compatibility,
+        total_files,
+        playable_files: playable_files.len(),
+        output_bytes: replay_bytes.to_string(),
+        players: summarize_manifest_players(&playable_files),
+        voice: ManifestArchiveVoiceDto {
+            sidecars: voice_rounds.len(),
+            rounds: voice_rounds,
+        },
+        cosmetics: CosmeticSummaryDto {
+            files: cosmetic_files,
+            sticker_files,
+            charm_files,
+            preset: cosmetic_preset,
+        },
+        rounds,
+        issues,
+        playable,
+    })
+}
+
+fn validate_manifest_input_path(value: &str) -> CommandResult<PathBuf> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(CommandErrorDto::new(
+            "invalid_manifest_path",
+            "Choose a DemoTracer manifest JSON file.",
+        ));
+    }
+    let input = PathBuf::from(value);
+    let path = if input.is_absolute() {
+        normalize_display_path(&input)
+    } else {
+        let current = std::env::current_dir()
+            .map_err(|error| CommandErrorDto::new("manifest_path_failed", error.to_string()))?;
+        normalize_display_path(&current.join(input))
+    };
+    let is_json = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("json"));
+    let metadata = fs::symlink_metadata(&path).map_err(|error| {
+        CommandErrorDto::at_path("manifest_not_found", error.to_string(), &path)
+    })?;
+    if !is_json || !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        return Err(CommandErrorDto::at_path(
+            "invalid_manifest_path",
+            "Choose an existing regular .json manifest file.",
+            &path,
+        ));
+    }
+    if metadata.len() > MAX_MANIFEST_BYTES {
+        return Err(CommandErrorDto::at_path(
+            "manifest_too_large",
+            format!(
+                "Manifest exceeds the {} MiB safety limit.",
+                MAX_MANIFEST_BYTES / 1024 / 1024
+            ),
+            &path,
+        ));
+    }
+    Ok(path)
+}
+
+fn normalize_display_path(path: &Path) -> PathBuf {
+    let mut output = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if matches!(
+                    output.components().next_back(),
+                    Some(std::path::Component::Normal(_))
+                ) {
+                    output.pop();
+                } else {
+                    output.push("..");
+                }
+            }
+            other => output.push(other.as_os_str()),
+        }
+    }
+    output
+}
+
+fn normalized_manifest_path_key(value: &str) -> String {
+    value
+        .trim()
+        .replace('\\', "/")
+        .trim_start_matches("./")
+        .to_ascii_lowercase()
+}
+
+fn validate_manifest_child_path(value: &str) -> Result<PathBuf, (&'static str, String)> {
+    if value.trim().is_empty() {
+        return Err((
+            "manifest_file_path_empty",
+            "Manifest child path is empty.".to_string(),
+        ));
+    }
+    if value.starts_with('/')
+        || value.starts_with('\\')
+        || value.contains(':')
+        || Path::new(value).is_absolute()
+    {
+        return Err((
+            "manifest_file_path_absolute",
+            "Manifest child path must be relative to the manifest folder.".to_string(),
+        ));
+    }
+    let normalized = value.replace('\\', std::path::MAIN_SEPARATOR_STR);
+    let relative = PathBuf::from(normalized);
+    if relative.components().any(|component| {
+        matches!(
+            component,
+            std::path::Component::ParentDir
+                | std::path::Component::RootDir
+                | std::path::Component::Prefix(_)
+        )
+    }) {
+        return Err((
+            "manifest_file_path_escape",
+            "Manifest child path escapes the manifest folder.".to_string(),
+        ));
+    }
+    Ok(relative)
+}
+
+fn resolve_manifest_dtr_path(
+    root: &Path,
+    canonical_root: &Path,
+    value: &str,
+) -> Result<PathBuf, (&'static str, String)> {
+    let relative = validate_manifest_child_path(value)?;
+    if !relative
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("dtr"))
+    {
+        return Err((
+            "manifest_file_extension_invalid",
+            "Replay file path must use the .dtr extension.".to_string(),
+        ));
+    }
+    let candidate = root.join(&relative);
+    let canonical = fs::canonicalize(&candidate).map_err(|error| {
+        (
+            "manifest_file_missing",
+            format!("Replay file is missing or unreadable: {error}"),
+        )
+    })?;
+    if !canonical.starts_with(canonical_root) {
+        return Err((
+            "manifest_file_path_escape",
+            "Replay file resolves outside the manifest folder.".to_string(),
+        ));
+    }
+    if !canonical.is_file() {
+        return Err((
+            "manifest_file_not_regular",
+            "Replay target is not a regular file.".to_string(),
+        ));
+    }
+    Ok(canonical)
+}
+
+fn validate_manifest_dtr(
+    path: &Path,
+    round: u32,
+    side: &str,
+    steam_id: u64,
+    map: &str,
+) -> Result<(), String> {
+    let recording = read_rec_file(path).map_err(|error| error.to_string())?;
+    if recording.ticks.is_empty() {
+        return Err("Replay file contains no ticks.".to_string());
+    }
+    if recording.header.round != round {
+        return Err(format!(
+            "Replay header round {} does not match manifest round {round}.",
+            recording.header.round
+        ));
+    }
+    let expected_side = if side.eq_ignore_ascii_case("t") { 2 } else { 3 };
+    if recording.header.side != expected_side {
+        return Err(format!(
+            "Replay header side {} does not match manifest side {side}.",
+            recording.header.side
+        ));
+    }
+    if recording.header.steam_id != steam_id {
+        return Err(format!(
+            "Replay header SteamID {} does not match manifest SteamID {steam_id}.",
+            recording.header.steam_id
+        ));
+    }
+    if !map.is_empty() && !recording.header.map.eq_ignore_ascii_case(map) {
+        return Err(format!(
+            "Replay header map {:?} does not match manifest map {map:?}.",
+            recording.header.map
+        ));
+    }
+    Ok(())
+}
+
+fn collect_manifest_voice_rounds(root: &Path, canonical_root: &Path, rounds: &[u32]) -> Vec<u32> {
+    rounds
+        .iter()
+        .copied()
+        .filter(|round| {
+            let candidate = root.join("voice").join(format!("round{round:02}.dtv"));
+            fs::canonicalize(candidate)
+                .is_ok_and(|path| path.starts_with(canonical_root) && path.is_file())
+        })
+        .collect()
+}
+
+fn summarize_manifest_players(files: &[PlayableManifestFile]) -> Vec<PlayerSummaryDto> {
+    let mut players: BTreeMap<u64, PlayerAccumulator> = BTreeMap::new();
+    for file in files {
+        let player = players
+            .entry(file.steam_id)
+            .or_insert_with(|| PlayerAccumulator {
+                first_round: file.round,
+                first_side: file.side.clone(),
+                name: file.player_name.clone(),
+                rounds: BTreeSet::new(),
+                files: 0,
+            });
+        if file.round < player.first_round
+            || (file.round == player.first_round
+                && side_rank(&file.side) < side_rank(&player.first_side))
+        {
+            player.first_round = file.round;
+            player.first_side = file.side.clone();
+        }
+        if player.name == file.steam_id.to_string() && !file.player_name.is_empty() {
+            player.name = file.player_name.clone();
+        }
+        player.rounds.insert(file.round);
+        player.files += 1;
+    }
+    let mut summaries = players
+        .into_iter()
+        .map(|(steam_id, player)| PlayerSummaryDto {
+            team: team_index_from_first_side(&player.first_side),
+            steam_id: steam_id.to_string(),
+            name: player.name,
+            rounds: player.rounds.len(),
+            files: player.files,
+        })
+        .collect::<Vec<_>>();
+    summaries.sort_by(|left, right| {
+        (left.team, left.steam_id.as_str()).cmp(&(right.team, right.steam_id.as_str()))
+    });
+    summaries
 }
 
 fn analysis_dto(
@@ -1184,9 +2173,11 @@ pub fn run() {
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             choose_demo,
+            choose_manifest,
             choose_output_dir,
             analyze_demo,
             preflight_output,
+            read_manifest,
             convert_demo,
             open_output
         ])
@@ -1309,6 +2300,126 @@ mod tests {
             chat_messages: Vec::new(),
             files,
         }
+    }
+
+    struct ManifestTestDir {
+        path: PathBuf,
+    }
+
+    impl ManifestTestDir {
+        fn new(label: &str) -> Self {
+            let unique = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "cs2-demotracer-manifest-{label}-{}-{unique}",
+                std::process::id()
+            ));
+            fs::create_dir_all(&path).unwrap();
+            Self { path }
+        }
+
+        fn write_file(&self, relative: &str, bytes: &[u8]) -> PathBuf {
+            let path = self
+                .path
+                .join(relative.replace('/', std::path::MAIN_SEPARATOR_STR));
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, bytes).unwrap();
+            path
+        }
+
+        fn write_dtr(&self, relative: &str, round: u32, side: &str, steam_id: u64) -> PathBuf {
+            let path = self
+                .path
+                .join(relative.replace('/', std::path::MAIN_SEPARATOR_STR));
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let mut recording = cs2_demotracer::dtr::Cs2Rec::default();
+            recording.header.map = "de_mirage".to_string();
+            recording.header.round = round;
+            recording.header.side = if side.eq_ignore_ascii_case("t") { 2 } else { 3 };
+            recording.header.steam_id = steam_id;
+            recording
+                .ticks
+                .push(cs2_demotracer::dtr::ReplayTick::default());
+            cs2_demotracer::dtr::write_rec_file(&path, &recording).unwrap();
+            path
+        }
+
+        fn write_manifest(&self, value: serde_json::Value) -> PathBuf {
+            let path = self.path.join("manifest.json");
+            fs::write(&path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+            path
+        }
+    }
+
+    impl Drop for ManifestTestDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn manifest_file(path: &str, round: u32, side: &str, steam_id: u64) -> serde_json::Value {
+        serde_json::json!({
+            "path": path,
+            "round": round,
+            "side": side,
+            "steam_id": steam_id,
+            "player_name": format!("Player {steam_id}")
+        })
+    }
+
+    fn manifest_json(
+        rounds: Vec<serde_json::Value>,
+        files: Vec<serde_json::Value>,
+    ) -> serde_json::Value {
+        serde_json::json!({
+            "demo_path": "C:\\private\\match.dem",
+            "demo_id": "match-aabbccddeeff",
+            "demo_sha256": "aa".repeat(32),
+            "map": "de_mirage",
+            "tick_rate": 64.0,
+            "abi": DEMOTRACER_ABI,
+            "format_version": DTR_FORMAT_VERSION,
+            "rounds": rounds,
+            "files": files
+        })
+    }
+
+    fn manifest_round(round: u32, files: usize) -> serde_json::Value {
+        serde_json::json!({
+            "round": round,
+            "duration_seconds": 42.5,
+            "pistol_round": round == 0,
+            "cut_reason": null,
+            "t_economy": {
+                "side": "t",
+                "players": 5,
+                "round_start_equipment_value": 12000,
+                "equipment_value_total": 24000,
+                "money_saved_total": 1000,
+                "cash_spent_this_round": 8000,
+                "class": "full"
+            },
+            "ct_economy": {
+                "side": "ct",
+                "players": 5,
+                "round_start_equipment_value": 13000,
+                "equipment_value_total": 25000,
+                "money_saved_total": 1200,
+                "cash_spent_this_round": 9000,
+                "class": "full"
+            },
+            "files": files
+        })
+    }
+
+    fn issue_codes(result: &ManifestArchiveDto) -> BTreeSet<&str> {
+        result
+            .issues
+            .iter()
+            .map(|issue| issue.code.as_str())
+            .collect()
     }
 
     #[test]
@@ -1454,6 +2565,7 @@ mod tests {
                 item_account_id: None,
                 item_id: None,
                 custom_name: None,
+                inspect: None,
                 stickers: vec![ReplayWeaponSticker {
                     slot: 0,
                     sticker_id: 10,
@@ -1480,6 +2592,7 @@ mod tests {
                 seed: 2,
                 wear: 0.1,
                 custom_name: None,
+                inspect: None,
             }),
             glove: None,
             agent: None,
@@ -1512,5 +2625,202 @@ mod tests {
         assert_eq!(summary.cosmetics.preset.as_deref(), Some("full"));
         assert_eq!(summary.first_exported_round, Some(7));
         assert_eq!(summary.players[0].steam_id, "76561198012345678");
+    }
+
+    #[test]
+    fn read_manifest_uses_files_as_round_truth_and_summarizes_safe_artifacts() {
+        let temp = ManifestTestDir::new("valid");
+        temp.write_dtr("round00/t/a.dtr", 0, "t", 76_561_198_012_345_678);
+        temp.write_dtr("round00/ct/b.dtr", 0, "ct", 76_561_198_012_345_679);
+        temp.write_file("voice/round00.dtv", b"voice");
+        let mut first = manifest_file("round00/t/a.dtr", 0, "t", 76_561_198_012_345_678);
+        first["cosmetics"] = serde_json::json!({
+            "weapons": [{ "stickers": [{ "slot": 0, "sticker_id": 10 }] }]
+        });
+        let manifest_path = temp.write_manifest(manifest_json(
+            vec![manifest_round(0, 2), manifest_round(99, 1)],
+            vec![
+                first,
+                manifest_file("round00/ct/b.dtr", 0, "ct", 76_561_198_012_345_679),
+            ],
+        ));
+
+        let result = read_manifest_for(&manifest_path.display().to_string()).unwrap();
+        assert!(result.playable);
+        assert_eq!(result.compatibility, "current");
+        assert_eq!(result.demo_path, "match.dem");
+        assert_eq!(result.total_files, 2);
+        assert_eq!(result.playable_files, 2);
+        assert_eq!(result.players[0].steam_id, "76561198012345678");
+        assert_eq!(result.voice.rounds, vec![0]);
+        assert_eq!(result.cosmetics.preset.as_deref(), Some("full"));
+        assert_eq!(result.rounds.len(), 1);
+        assert_eq!(result.rounds[0].round, 0);
+        assert_eq!(result.rounds[0].t_files, 1);
+        assert_eq!(result.rounds[0].ct_files, 1);
+        assert_eq!(result.rounds[0].sequence_length, 1);
+        assert!(result.rounds[0].available);
+        assert!(result.rounds[0]
+            .commands
+            .go_round
+            .ends_with(&format!("\"{}\" 0", manifest_path.display())));
+        assert!(result.output_bytes.parse::<u64>().unwrap() > 0);
+        assert!(issue_codes(&result).contains("manifest_round_without_files"));
+    }
+
+    #[test]
+    fn read_manifest_marks_round_unavailable_when_any_declared_file_is_missing() {
+        let temp = ManifestTestDir::new("missing");
+        temp.write_dtr("round07/t/a.dtr", 7, "t", 101);
+        let manifest_path = temp.write_manifest(manifest_json(
+            vec![manifest_round(7, 3), manifest_round(8, 1)],
+            vec![
+                manifest_file("round07/t/a.dtr", 7, "t", 101),
+                manifest_file("round07/ct/missing.dtr", 7, "ct", 102),
+            ],
+        ));
+
+        let result = read_manifest_for(&manifest_path.display().to_string()).unwrap();
+        assert!(!result.playable);
+        assert_eq!(result.total_files, 2);
+        assert_eq!(result.playable_files, 1);
+        assert_eq!(result.rounds.len(), 1);
+        assert!(!result.rounds[0].available);
+        assert_eq!(result.rounds[0].sequence_length, 0);
+        assert!(result.rounds[0]
+            .commands
+            .go_sequence
+            .ends_with(&format!("\"{}\" 7", manifest_path.display())));
+        let codes = issue_codes(&result);
+        assert!(codes.contains("manifest_file_missing"));
+        assert!(codes.contains("manifest_round_file_count_mismatch"));
+        assert!(codes.contains("manifest_round_without_files"));
+    }
+
+    #[test]
+    fn read_manifest_disables_sequence_across_an_unavailable_round() {
+        let temp = ManifestTestDir::new("sequence-gap");
+        temp.write_dtr("round01/t/a.dtr", 1, "t", 101);
+        temp.write_dtr("round03/ct/c.dtr", 3, "ct", 103);
+        let manifest_path = temp.write_manifest(manifest_json(
+            vec![
+                manifest_round(1, 1),
+                manifest_round(2, 1),
+                manifest_round(3, 1),
+            ],
+            vec![
+                manifest_file("round01/t/a.dtr", 1, "t", 101),
+                manifest_file("round02/t/missing.dtr", 2, "t", 102),
+                manifest_file("round03/ct/c.dtr", 3, "ct", 103),
+            ],
+        ));
+
+        let result = read_manifest_for(&manifest_path.display().to_string()).unwrap();
+        assert!(result.playable);
+        assert_eq!(result.rounds.len(), 3);
+        assert!(result.rounds[0].available);
+        assert_eq!(result.rounds[0].sequence_length, 0);
+        assert!(!result.rounds[1].available);
+        assert_eq!(result.rounds[1].sequence_length, 0);
+        assert!(result.rounds[2].available);
+        assert_eq!(result.rounds[2].sequence_length, 1);
+    }
+
+    #[test]
+    fn read_manifest_rejects_corrupt_dtr_payloads() {
+        let temp = ManifestTestDir::new("corrupt-dtr");
+        temp.write_file("round04/t/a.dtr", b"not a replay");
+        let manifest_path = temp.write_manifest(manifest_json(
+            vec![manifest_round(4, 1)],
+            vec![manifest_file("round04/t/a.dtr", 4, "t", 401)],
+        ));
+
+        let result = read_manifest_for(&manifest_path.display().to_string()).unwrap();
+        assert!(!result.playable);
+        assert_eq!(result.playable_files, 0);
+        assert_eq!(result.output_bytes, "0");
+        assert!(issue_codes(&result).contains("manifest_file_invalid_dtr"));
+    }
+
+    #[test]
+    fn read_manifest_reports_duplicate_escape_and_invalid_side_paths() {
+        let temp = ManifestTestDir::new("unsafe");
+        temp.write_dtr("round01/t/a.dtr", 1, "t", 201);
+        temp.write_dtr("round01/t/b.dtr", 1, "t", 203);
+        temp.write_dtr("round02/t/c.dtr", 2, "t", 205);
+        let manifest_path = temp.write_manifest(manifest_json(
+            vec![manifest_round(1, 4), manifest_round(2, 1)],
+            vec![
+                manifest_file("round01/t/a.dtr", 1, "t", 201),
+                manifest_file("round01/t/a.dtr", 1, "t", 202),
+                manifest_file("round01/t/b.dtr", 1, "spectator", 203),
+                manifest_file("../escape.dtr", 1, "ct", 204),
+                manifest_file("round02/t/c.dtr", 2, "t", 205),
+            ],
+        ));
+
+        let result = read_manifest_for(&manifest_path.display().to_string()).unwrap();
+        assert!(!result.playable);
+        assert_eq!(result.playable_files, 2);
+        assert!(result.rounds.iter().all(|round| !round.available));
+        let codes = issue_codes(&result);
+        assert!(codes.contains("manifest_file_path_duplicate"));
+        assert!(codes.contains("manifest_file_target_duplicate"));
+        assert!(codes.contains("manifest_file_side_invalid"));
+        assert!(codes.contains("manifest_file_path_escape"));
+    }
+
+    #[test]
+    fn read_manifest_honors_format_alias_and_rejects_newer_abi() {
+        let temp = ManifestTestDir::new("versions");
+        temp.write_dtr("round03/t/a.dtr", 3, "t", 301);
+        let mut value = manifest_json(
+            vec![manifest_round(3, 1)],
+            vec![manifest_file("round03/t/a.dtr", 3, "t", 301)],
+        );
+        value["abi"] = serde_json::json!(15);
+        value["format_version"] = serde_json::json!(999);
+        value["dtr_format_version"] = serde_json::json!(6);
+        let manifest_path = temp.write_manifest(value.clone());
+        let supported = read_manifest_for(&manifest_path.display().to_string()).unwrap();
+        assert_eq!(supported.compatibility, "supported");
+        assert_eq!(supported.format_version, 6);
+        assert!(supported.playable);
+
+        value["dtr_format_version"] = serde_json::json!(0);
+        temp.write_manifest(value.clone());
+        let fallback = read_manifest_for(&manifest_path.display().to_string()).unwrap();
+        assert_eq!(fallback.format_version, 999);
+        assert_eq!(fallback.compatibility, "unsupported");
+        assert!(issue_codes(&fallback).contains("manifest_format_unsupported"));
+
+        value["dtr_format_version"] = serde_json::json!(6);
+        value["abi"] = serde_json::json!(DEMOTRACER_ABI + 1);
+        temp.write_manifest(value);
+        let unsupported = read_manifest_for(&manifest_path.display().to_string()).unwrap();
+        assert_eq!(unsupported.compatibility, "unsupported");
+        assert!(!unsupported.playable);
+        assert!(issue_codes(&unsupported).contains("manifest_abi_unsupported"));
+    }
+
+    #[test]
+    fn read_manifest_rejects_pool_manifests() {
+        let temp = ManifestTestDir::new("pool");
+        let path = temp.write_manifest(serde_json::json!({
+            "format_version": 1,
+            "abi": DEMOTRACER_ABI,
+            "map": "de_mirage",
+            "candidates": []
+        }));
+        let error = read_manifest_for(&path.display().to_string()).unwrap_err();
+        assert_eq!(error.code, "unsupported_manifest_kind");
+    }
+
+    #[test]
+    fn read_manifest_rejects_unrelated_json() {
+        let temp = ManifestTestDir::new("unrelated-json");
+        let path = temp.write_manifest(serde_json::json!({ "name": "not a manifest" }));
+        let error = read_manifest_for(&path.display().to_string()).unwrap_err();
+        assert_eq!(error.code, "manifest_schema_invalid");
     }
 }

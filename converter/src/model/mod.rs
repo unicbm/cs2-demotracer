@@ -1137,6 +1137,8 @@ pub struct ReplayWeaponCosmetic {
     pub stickers: Vec<ReplayWeaponSticker>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub charms: Vec<ReplayWeaponCharm>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inspect: Option<ReplayCosmeticInspect>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -1176,6 +1178,15 @@ pub struct ReplayItemCosmetic {
     pub wear: f32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inspect: Option<ReplayCosmeticInspect>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ReplayCosmeticInspect {
+    pub command: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub steam_url: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

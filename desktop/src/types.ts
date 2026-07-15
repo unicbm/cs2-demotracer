@@ -6,6 +6,8 @@ export type Phase =
   | "idle"
   | "analyzing"
   | "analysisFailed"
+  | "openingArchive"
+  | "archive"
   | "selecting"
   | "converting"
   | "validationFailed"
@@ -98,6 +100,64 @@ export interface ConversionSummary {
     cosmeticRound?: string | null;
     cosmeticSequence?: string | null;
   };
+}
+
+export interface ManifestArchiveIssue {
+  code: string;
+  severity: "warning" | "error";
+  message: string;
+  round?: number | null;
+  path?: string | null;
+}
+
+export interface ManifestTeamEconomy {
+  side: string;
+  players: number;
+  roundStartEquipmentValue: number;
+  equipmentValueTotal: number;
+  moneySavedTotal: number;
+  cashSpentThisRound: number;
+  class: string;
+}
+
+export interface ManifestArchiveRound {
+  round: number;
+  files: number;
+  tFiles: number;
+  ctFiles: number;
+  durationSeconds?: number | null;
+  pistolRound?: boolean | null;
+  cutReason?: string | null;
+  tEconomy?: ManifestTeamEconomy | null;
+  ctEconomy?: ManifestTeamEconomy | null;
+  sequenceLength: number;
+  available: boolean;
+  commands: ConversionSummary["commands"];
+}
+
+export interface ManifestArchive {
+  root: string;
+  manifestPath: string;
+  demoPath: string;
+  demoId: string;
+  demoSha256: string;
+  map: string;
+  tickRate: number;
+  abi: number;
+  formatVersion: number;
+  compatibility: string;
+  totalFiles: number;
+  playableFiles: number;
+  outputBytes: number | string;
+  playable: boolean;
+  players: PlayerSummary[];
+  voice: {
+    sidecars: number;
+    rounds: number[];
+  };
+  cosmetics: ConversionSummary["cosmetics"];
+  rounds: ManifestArchiveRound[];
+  issues: ManifestArchiveIssue[];
 }
 
 export interface ConverterSettings {
