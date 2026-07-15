@@ -2,8 +2,8 @@ use cs2_demotracer::demo_id::output_demo_id;
 use cs2_demotracer::demo_reader::{read_demo_with_options, ReadDemoOptions};
 use cs2_demotracer::dtr::read_rec_file;
 use cs2_demotracer::export::{
-    export_demo_with_progress, ConversionArtifactKind, ConversionProgress, ConversionReport,
-    ConvertOptions, DEFAULT_FREEZE_PREROLL_SECONDS,
+    export_demo_to_root_with_progress, ConversionArtifactKind, ConversionProgress,
+    ConversionReport, ConvertOptions, DEFAULT_FREEZE_PREROLL_SECONDS,
 };
 use cs2_demotracer::model::{
     public_demo_path, ConvertedFile, DemoAnalysis, ParsedDemo, RoundStatus, Side, SubtickMode,
@@ -27,6 +27,10 @@ const MAX_FREEZE_PREROLL_SECONDS: f32 = 120.0;
 const MAX_MANIFEST_BYTES: u64 = 32 * 1024 * 1024;
 const MIN_SUPPORTED_MANIFEST_ABI: i32 = 12;
 const MIN_SUPPORTED_DTR_FORMAT_VERSION: u32 = 3;
+const OUTPUT_COMPLETION_MARKER: &str = ".demotracer-complete";
+const OUTPUT_COMPLETION_MARKER_CONTENT: &[u8] = b"CS2 DemoTracer output completed successfully.\n";
+
+static NEXT_STAGING_NONCE: AtomicU64 = AtomicU64::new(1);
 
 type CommandResult<T> = Result<T, CommandErrorDto>;
 
@@ -813,9 +817,6 @@ async fn convert_demo(
     let cached = state.cached_demo(&request.analysis_id)?;
 
     let prepared = prepare_conversion(&request, &cached)?;
-    if prepared.root.exists() && request.overwrite == OverwriteModeDto::Deny {
-        return Err(output_exists_error(&prepared.root));
-    }
 
     let worker_events = events.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
@@ -1705,9 +1706,20 @@ fn preflight_output_for(
     cached: &CachedDemo,
     output_dir: &str,
 ) -> CommandResult<PreflightOutputDto> {
-    let (_, root) = resolve_output_paths(output_dir, &cached.parsed)?;
+    let (output_dir, root) = resolve_output_paths(output_dir, &cached.parsed)?;
+    let backup_root = output_backup_root(&output_dir, &root)?;
+    let final_exists = path_metadata(&root)
+        .map_err(|error| {
+            CommandErrorDto::at_path("output_inspect_failed", error.to_string(), &root)
+        })?
+        .is_some();
+    let backup_exists = path_metadata(&backup_root)
+        .map_err(|error| {
+            CommandErrorDto::at_path("output_inspect_failed", error.to_string(), &backup_root)
+        })?
+        .is_some();
     Ok(PreflightOutputDto {
-        exists: root.exists(),
+        exists: final_exists || backup_exists,
         root: root.display().to_string(),
     })
 }
@@ -1815,66 +1827,144 @@ fn run_conversion(
     request: ConvertDemoRequest,
     events: Channel<TaskEvent>,
 ) -> CommandResult<ConversionSummaryDto> {
-    if prepared.root.exists() {
-        match request.overwrite {
-            OverwriteModeDto::Deny => return Err(output_exists_error(&prepared.root)),
-            OverwriteModeDto::Replace => {
-                clear_output_root(&prepared.output_dir, &prepared.root)?;
-            }
-        }
-    }
+    let final_root = prepared.root.clone();
+    let output_dir = prepared.output_dir.clone();
+    let mut file_ops = RealOutputFileOps;
+    let transaction = run_output_transaction(
+        &output_dir,
+        &final_root,
+        request.overwrite,
+        &mut file_ops,
+        |staging_root| {
+            emit_phase(&events, TaskPhase::Exporting);
+            let progress_events = events.clone();
+            let progress_final_root = final_root.clone();
+            let report = export_demo_to_root_with_progress(
+                &cached.parsed,
+                &prepared.options,
+                staging_root,
+                move |progress| {
+                    if let Some(progress) =
+                        public_conversion_progress(progress, &progress_final_root)
+                    {
+                        emit(&progress_events, TaskEvent::Progress { progress });
+                    }
+                },
+            )
+            .map_err(|error| CommandErrorDto::from_core("conversion_failed", error))?;
 
-    emit_phase(&events, TaskPhase::Exporting);
-    let progress_events = events.clone();
-    let report = export_demo_with_progress(&cached.parsed, &prepared.options, move |progress| {
-        emit(
-            &progress_events,
-            TaskEvent::Progress {
-                progress: progress.into(),
-            },
-        );
-    })
-    .map_err(|error| CommandErrorDto::from_core("conversion_failed", error))?;
-
-    let mut voice_sidecars = 0;
-    if request.export_voice {
-        emit_phase(&events, TaskPhase::Voice);
-        match export_round_voice_sidecars(&cached.parsed, &report) {
-            Ok(reports) => {
-                voice_sidecars = reports.len();
-                for voice in reports {
+            let mut voice_summaries = Vec::new();
+            if request.export_voice {
+                emit_phase(&events, TaskPhase::Voice);
+                let reports = export_round_voice_sidecars(&cached.parsed, &report)
+                    .map_err(|error| CommandErrorDto::from_core("voice_export_failed", error))?;
+                if reports.is_empty() {
                     emit_log(
                         &events,
-                        LogLevel::Info,
-                        format!(
-                            "Voice sidecar {}: {} frames, {} speakers, {:.2}s",
-                            voice.path.display(),
-                            voice.frame_count,
-                            voice.speaker_count,
-                            voice.duration_seconds
-                        ),
+                        LogLevel::Warning,
+                        "Voice sidecar export skipped: the selected rounds contain no voice frames.",
                     );
+                } else {
+                    for voice in reports {
+                        let public_path =
+                            public_output_path(&voice.path, staging_root, &final_root);
+                        voice_summaries.push(VoiceSidecarSummary {
+                            public_path,
+                            frame_count: voice.frame_count,
+                            speaker_count: voice.speaker_count,
+                            duration_seconds: voice.duration_seconds,
+                        });
+                    }
                 }
             }
-            Err(error) => emit_log(
-                &events,
-                LogLevel::Warning,
-                format!("Voice sidecar export skipped: {error}"),
-            ),
-        }
-    }
 
-    emit_phase(&events, TaskPhase::Validating);
-    let validated_files = validate_dtr_path(&report.root)
-        .map_err(|error| CommandErrorDto::from_core("validation_failed", error))?;
+            emit_phase(&events, TaskPhase::Validating);
+            let validated_files = validate_dtr_path(&report.root)
+                .map_err(|error| CommandErrorDto::from_core("validation_failed", error))?;
+            Ok(StagedConversion {
+                report,
+                validated_files,
+                voice_summaries,
+            })
+        },
+    )?;
+
+    if let Some(warning) = transaction.backup_cleanup_warning {
+        emit_log(&events, LogLevel::Warning, warning);
+    }
+    let mut staged = transaction.value;
+    for voice in &staged.voice_summaries {
+        emit_log(
+            &events,
+            LogLevel::Info,
+            format!(
+                "Voice sidecar {}: {} frames, {} speakers, {:.2}s",
+                voice.public_path.display(),
+                voice.frame_count,
+                voice.speaker_count,
+                voice.duration_seconds
+            ),
+        );
+    }
+    staged.report.root = final_root.clone();
+    staged.report.manifest_path = final_root.join("manifest.json");
+    emit(
+        &events,
+        TaskEvent::Progress {
+            progress: ConversionProgressDto::Finished {
+                root: staged.report.root.display().to_string(),
+                manifest_path: staged.report.manifest_path.display().to_string(),
+                files_written: staged.report.files_written,
+            },
+        },
+    );
     let summary = summarize_conversion(
-        report,
-        validated_files,
+        staged.report,
+        staged.validated_files,
         request.export_voice,
-        voice_sidecars,
+        staged.voice_summaries.len(),
     );
     emit_phase(&events, TaskPhase::Complete);
     Ok(summary)
+}
+
+struct StagedConversion {
+    report: ConversionReport,
+    validated_files: usize,
+    voice_summaries: Vec<VoiceSidecarSummary>,
+}
+
+struct VoiceSidecarSummary {
+    public_path: PathBuf,
+    frame_count: usize,
+    speaker_count: usize,
+    duration_seconds: f32,
+}
+
+fn public_conversion_progress(
+    progress: ConversionProgress,
+    final_root: &Path,
+) -> Option<ConversionProgressDto> {
+    match progress {
+        ConversionProgress::ArtifactsWritingStarted { artifacts, .. } => {
+            Some(ConversionProgressDto::ArtifactsWritingStarted {
+                root: final_root.display().to_string(),
+                artifacts,
+            })
+        }
+        ConversionProgress::Finished { .. } => None,
+        other => Some(other.into()),
+    }
+}
+
+fn public_output_path(path: &Path, staging_root: &Path, final_root: &Path) -> PathBuf {
+    path.strip_prefix(staging_root)
+        .map(|relative| final_root.join(relative))
+        .unwrap_or_else(|_| {
+            final_root
+                .join("voice")
+                .join(path.file_name().unwrap_or_default())
+        })
 }
 
 fn output_exists_error(path: &Path) -> CommandErrorDto {
@@ -1885,26 +1975,346 @@ fn output_exists_error(path: &Path) -> CommandErrorDto {
     )
 }
 
-fn clear_output_root(output_dir: &Path, root: &Path) -> CommandResult<()> {
-    if root.parent() != Some(output_dir) {
+#[derive(Debug)]
+struct OutputTransaction<T> {
+    value: T,
+    backup_cleanup_warning: Option<String>,
+}
+
+trait OutputFileOps {
+    fn metadata(&self, path: &Path) -> std::io::Result<Option<fs::Metadata>>;
+    fn file_contents_equal(&self, path: &Path, expected: &[u8]) -> std::io::Result<bool>;
+    fn create_dir_all(&mut self, path: &Path) -> std::io::Result<()>;
+    fn create_dir(&mut self, path: &Path) -> std::io::Result<()>;
+    fn rename(&mut self, from: &Path, to: &Path) -> std::io::Result<()>;
+    fn remove_dir_all(&mut self, path: &Path) -> std::io::Result<()>;
+    fn write_new_file(&mut self, path: &Path, bytes: &[u8]) -> std::io::Result<()>;
+}
+
+struct RealOutputFileOps;
+
+impl OutputFileOps for RealOutputFileOps {
+    fn metadata(&self, path: &Path) -> std::io::Result<Option<fs::Metadata>> {
+        path_metadata(path)
+    }
+
+    fn file_contents_equal(&self, path: &Path, expected: &[u8]) -> std::io::Result<bool> {
+        file_contents_equal(path, expected)
+    }
+
+    fn create_dir_all(&mut self, path: &Path) -> std::io::Result<()> {
+        fs::create_dir_all(path)
+    }
+
+    fn create_dir(&mut self, path: &Path) -> std::io::Result<()> {
+        fs::create_dir(path)
+    }
+
+    fn rename(&mut self, from: &Path, to: &Path) -> std::io::Result<()> {
+        fs::rename(from, to)
+    }
+
+    fn remove_dir_all(&mut self, path: &Path) -> std::io::Result<()> {
+        fs::remove_dir_all(path)
+    }
+
+    fn write_new_file(&mut self, path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)?;
+        std::io::Write::write_all(&mut file, bytes)
+    }
+}
+
+fn path_metadata(path: &Path) -> std::io::Result<Option<fs::Metadata>> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+fn file_contents_equal(path: &Path, expected: &[u8]) -> std::io::Result<bool> {
+    let Some(metadata) = path_metadata(path)? else {
+        return Ok(false);
+    };
+    if !metadata.file_type().is_file() || metadata.len() != expected.len() as u64 {
+        return Ok(false);
+    }
+    let mut file = fs::File::open(path)?;
+    let mut actual = vec![0_u8; expected.len()];
+    std::io::Read::read_exact(&mut file, &mut actual)?;
+    let mut trailing = [0_u8; 1];
+    if std::io::Read::read(&mut file, &mut trailing)? != 0 {
+        return Ok(false);
+    }
+    Ok(actual == expected)
+}
+
+fn output_backup_root(output_dir: &Path, final_root: &Path) -> CommandResult<PathBuf> {
+    if final_root.parent() != Some(output_dir) {
         return Err(CommandErrorDto::at_path(
             "unsafe_output_root",
-            "Refusing to clear an output path outside the selected folder.",
-            root,
+            "Refusing to use transaction state outside the selected folder.",
+            final_root,
         ));
     }
-    let metadata = fs::symlink_metadata(root).map_err(|error| {
-        CommandErrorDto::at_path("output_clear_failed", error.to_string(), root)
+    let demo_id = output_root_name(final_root)?.to_string_lossy();
+    Ok(output_dir.join(format!(".{demo_id}.backup")))
+}
+
+fn output_root_name(final_root: &Path) -> CommandResult<&std::ffi::OsStr> {
+    final_root
+        .file_name()
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| {
+            CommandErrorDto::at_path(
+                "unsafe_output_root",
+                "Output root must have a demo identifier.",
+                final_root,
+            )
+        })
+}
+
+fn run_output_transaction<T, F, O>(
+    output_dir: &Path,
+    final_root: &Path,
+    overwrite: OverwriteModeDto,
+    file_ops: &mut O,
+    build: F,
+) -> CommandResult<OutputTransaction<T>>
+where
+    F: FnOnce(&Path) -> CommandResult<T>,
+    O: OutputFileOps,
+{
+    let backup_root = output_backup_root(output_dir, final_root)?;
+    let demo_id = output_root_name(final_root)?.to_string_lossy();
+
+    recover_output_state(file_ops, final_root, &backup_root)?;
+    if let Some(metadata) = file_ops.metadata(final_root).map_err(|error| {
+        CommandErrorDto::at_path("output_inspect_failed", error.to_string(), final_root)
+    })? {
+        if overwrite == OverwriteModeDto::Deny {
+            return Err(output_exists_error(final_root));
+        }
+        if !metadata.file_type().is_dir() {
+            return Err(CommandErrorDto::at_path(
+                "output_not_directory",
+                "Existing output is not a normal directory and will not be replaced.",
+                final_root,
+            ));
+        }
+    }
+
+    file_ops.create_dir_all(output_dir).map_err(|error| {
+        CommandErrorDto::at_path("output_stage_failed", error.to_string(), output_dir)
     })?;
-    if !metadata.file_type().is_dir() {
+    let staging_root = create_unique_staging_root(file_ops, output_dir, &demo_id)?;
+    let value = match build(&staging_root) {
+        Ok(value) => value,
+        Err(error) => {
+            cleanup_staging(file_ops, &staging_root);
+            return Err(error);
+        }
+    };
+
+    let marker_path = staging_root.join(OUTPUT_COMPLETION_MARKER);
+    if let Err(error) = file_ops.write_new_file(&marker_path, OUTPUT_COMPLETION_MARKER_CONTENT) {
+        cleanup_staging(file_ops, &staging_root);
         return Err(CommandErrorDto::at_path(
-            "output_not_directory",
-            "Existing output is not a normal directory and will not be replaced.",
-            root,
+            "completion_marker_failed",
+            error.to_string(),
+            marker_path,
         ));
     }
-    fs::remove_dir_all(root)
-        .map_err(|error| CommandErrorDto::at_path("output_clear_failed", error.to_string(), root))
+
+    let backup_cleanup_warning =
+        match promote_staged_output(file_ops, &staging_root, final_root, &backup_root) {
+            Ok(warning) => warning,
+            Err(error) => {
+                cleanup_staging(file_ops, &staging_root);
+                return Err(error);
+            }
+        };
+    Ok(OutputTransaction {
+        value,
+        backup_cleanup_warning,
+    })
+}
+
+fn recover_output_state<O: OutputFileOps>(
+    file_ops: &mut O,
+    final_root: &Path,
+    backup_root: &Path,
+) -> CommandResult<()> {
+    let final_metadata = file_ops.metadata(final_root).map_err(|error| {
+        CommandErrorDto::at_path("output_recovery_failed", error.to_string(), final_root)
+    })?;
+    let backup_metadata = file_ops.metadata(backup_root).map_err(|error| {
+        CommandErrorDto::at_path("output_recovery_failed", error.to_string(), backup_root)
+    })?;
+    match (final_metadata, backup_metadata) {
+        (None, Some(backup_metadata)) => {
+            require_normal_output_directory(&backup_metadata, backup_root)?;
+            file_ops.rename(backup_root, final_root).map_err(|error| {
+                CommandErrorDto::at_path("output_recovery_failed", error.to_string(), backup_root)
+            })
+        }
+        (Some(final_metadata), Some(backup_metadata)) => {
+            require_normal_output_directory(&final_metadata, final_root)?;
+            require_normal_output_directory(&backup_metadata, backup_root)?;
+            let marker_path = final_root.join(OUTPUT_COMPLETION_MARKER);
+            let marker_matches = file_ops
+                .file_contents_equal(&marker_path, OUTPUT_COMPLETION_MARKER_CONTENT)
+                .map_err(|error| {
+                    CommandErrorDto::at_path(
+                        "output_recovery_failed",
+                        error.to_string(),
+                        &marker_path,
+                    )
+                })?;
+            if !marker_matches {
+                return Err(CommandErrorDto::at_path(
+                    "ambiguous_output_state",
+                    "Both the output and its backup exist, but the output has no valid completion marker. Refusing to discard either copy.",
+                    final_root,
+                ));
+            }
+            file_ops.remove_dir_all(backup_root).map_err(|error| {
+                CommandErrorDto::at_path(
+                    "output_backup_cleanup_failed",
+                    error.to_string(),
+                    backup_root,
+                )
+            })
+        }
+        _ => Ok(()),
+    }
+}
+
+fn require_normal_output_directory(metadata: &fs::Metadata, path: &Path) -> CommandResult<()> {
+    if metadata.file_type().is_dir() {
+        Ok(())
+    } else {
+        Err(CommandErrorDto::at_path(
+            "output_not_directory",
+            "Output transaction state contains a non-directory or symbolic link.",
+            path,
+        ))
+    }
+}
+
+fn create_unique_staging_root<O: OutputFileOps>(
+    file_ops: &mut O,
+    output_dir: &Path,
+    demo_id: &str,
+) -> CommandResult<PathBuf> {
+    for _ in 0..32 {
+        let sequence = NEXT_STAGING_NONCE.fetch_add(1, Ordering::Relaxed);
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let nonce = format!("{timestamp:x}{sequence:x}");
+        let staging_root =
+            output_dir.join(format!(".{demo_id}.tmp.{}.{nonce}", std::process::id()));
+        match file_ops.create_dir(&staging_root) {
+            Ok(()) => return Ok(staging_root),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(CommandErrorDto::at_path(
+                    "output_stage_failed",
+                    error.to_string(),
+                    staging_root,
+                ));
+            }
+        }
+    }
+    Err(CommandErrorDto::at_path(
+        "output_stage_failed",
+        "Could not reserve a unique staging directory.",
+        output_dir,
+    ))
+}
+
+fn promote_staged_output<O: OutputFileOps>(
+    file_ops: &mut O,
+    staging_root: &Path,
+    final_root: &Path,
+    backup_root: &Path,
+) -> CommandResult<Option<String>> {
+    let staging_metadata = file_ops.metadata(staging_root).map_err(|error| {
+        CommandErrorDto::at_path("output_promote_failed", error.to_string(), staging_root)
+    })?;
+    let Some(staging_metadata) = staging_metadata else {
+        return Err(CommandErrorDto::at_path(
+            "output_promote_failed",
+            "The staging directory disappeared before promotion.",
+            staging_root,
+        ));
+    };
+    require_normal_output_directory(&staging_metadata, staging_root)?;
+
+    let final_metadata = file_ops.metadata(final_root).map_err(|error| {
+        CommandErrorDto::at_path("output_promote_failed", error.to_string(), final_root)
+    })?;
+    let Some(final_metadata) = final_metadata else {
+        file_ops.rename(staging_root, final_root).map_err(|error| {
+            CommandErrorDto::at_path("output_promote_failed", error.to_string(), staging_root)
+        })?;
+        return Ok(None);
+    };
+    require_normal_output_directory(&final_metadata, final_root)?;
+    if file_ops
+        .metadata(backup_root)
+        .map_err(|error| {
+            CommandErrorDto::at_path("output_promote_failed", error.to_string(), backup_root)
+        })?
+        .is_some()
+    {
+        return Err(CommandErrorDto::at_path(
+            "ambiguous_output_state",
+            "A backup appeared while preparing output promotion. Refusing to overwrite it.",
+            backup_root,
+        ));
+    }
+
+    file_ops.rename(final_root, backup_root).map_err(|error| {
+        CommandErrorDto::at_path("output_promote_failed", error.to_string(), final_root)
+    })?;
+    if let Err(promote_error) = file_ops.rename(staging_root, final_root) {
+        if let Err(rollback_error) = file_ops.rename(backup_root, final_root) {
+            return Err(CommandErrorDto::at_path(
+                "output_rollback_failed",
+                format!(
+                    "Could not promote staged output ({promote_error}); restoring the previous output also failed ({rollback_error})."
+                ),
+                backup_root,
+            ));
+        }
+        return Err(CommandErrorDto::at_path(
+            "output_promote_failed",
+            format!("Could not promote staged output; the previous output was restored: {promote_error}"),
+            staging_root,
+        ));
+    }
+
+    Ok(file_ops.remove_dir_all(backup_root).err().map(|error| {
+        format!(
+            "New output is ready, but the previous-output backup could not be removed ({}): {error}",
+            backup_root.display()
+        )
+    }))
+}
+
+fn cleanup_staging<O: OutputFileOps>(file_ops: &mut O, staging_root: &Path) {
+    if matches!(
+        file_ops.metadata(staging_root),
+        Ok(Some(metadata)) if metadata.file_type().is_dir()
+    ) {
+        let _ = file_ops.remove_dir_all(staging_root);
+    }
 }
 
 fn summarize_conversion(
@@ -2359,6 +2769,84 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct FaultInjectingOutputFileOps {
+        rename_calls: usize,
+        fail_rename_call: Option<usize>,
+        fail_remove_path: Option<PathBuf>,
+    }
+
+    impl OutputFileOps for FaultInjectingOutputFileOps {
+        fn metadata(&self, path: &Path) -> std::io::Result<Option<fs::Metadata>> {
+            path_metadata(path)
+        }
+
+        fn file_contents_equal(&self, path: &Path, expected: &[u8]) -> std::io::Result<bool> {
+            file_contents_equal(path, expected)
+        }
+
+        fn create_dir_all(&mut self, path: &Path) -> std::io::Result<()> {
+            fs::create_dir_all(path)
+        }
+
+        fn create_dir(&mut self, path: &Path) -> std::io::Result<()> {
+            fs::create_dir(path)
+        }
+
+        fn rename(&mut self, from: &Path, to: &Path) -> std::io::Result<()> {
+            self.rename_calls += 1;
+            if self.fail_rename_call == Some(self.rename_calls) {
+                return Err(std::io::Error::other(format!(
+                    "injected rename failure {}",
+                    self.rename_calls
+                )));
+            }
+            fs::rename(from, to)
+        }
+
+        fn remove_dir_all(&mut self, path: &Path) -> std::io::Result<()> {
+            if self.fail_remove_path.as_deref() == Some(path) {
+                return Err(std::io::Error::other("injected remove failure"));
+            }
+            fs::remove_dir_all(path)
+        }
+
+        fn write_new_file(&mut self, path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(path)?;
+            std::io::Write::write_all(&mut file, bytes)
+        }
+    }
+
+    fn output_transaction_paths(temp: &ManifestTestDir) -> (PathBuf, PathBuf, PathBuf) {
+        let output_dir = temp.path.join("output");
+        let final_root = output_dir.join("match-aabbccddeeff");
+        let backup_root = output_dir.join(".match-aabbccddeeff.backup");
+        (output_dir, final_root, backup_root)
+    }
+
+    fn write_transaction_file(root: &Path, name: &str, contents: &[u8]) {
+        fs::create_dir_all(root).unwrap();
+        fs::write(root.join(name), contents).unwrap();
+    }
+
+    fn transaction_file(root: &Path, name: &str) -> Vec<u8> {
+        fs::read(root.join(name)).unwrap()
+    }
+
+    fn assert_no_staging_directories(output_dir: &Path) {
+        let has_staging = fs::read_dir(output_dir).unwrap().any(|entry| {
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains(".tmp.")
+        });
+        assert!(!has_staging, "the current transaction staging root leaked");
+    }
+
     fn manifest_file(path: &str, round: u32, side: &str, steam_id: u64) -> serde_json::Value {
         serde_json::json!({
             "path": path,
@@ -2464,7 +2952,337 @@ mod tests {
         fs::create_dir_all(&expected_root).unwrap();
         let second = preflight_output_for(&cached, &output_dir.display().to_string()).unwrap();
         assert!(second.exists);
+
+        fs::remove_dir_all(&expected_root).unwrap();
+        let backup_root = output_dir.join(".match-aabbccddeeff.backup");
+        fs::create_dir_all(&backup_root).unwrap();
+        let recovered = preflight_output_for(&cached, &output_dir.display().to_string()).unwrap();
+        assert!(recovered.exists);
         fs::remove_dir_all(output_dir).unwrap();
+    }
+
+    #[test]
+    fn build_and_validation_failures_preserve_existing_output() {
+        for code in ["conversion_failed", "validation_failed"] {
+            let temp = ManifestTestDir::new(code);
+            let (output_dir, final_root, backup_root) = output_transaction_paths(&temp);
+            write_transaction_file(&final_root, "sentinel.txt", b"old output");
+            let mut file_ops = FaultInjectingOutputFileOps::default();
+
+            let result: CommandResult<OutputTransaction<()>> = run_output_transaction(
+                &output_dir,
+                &final_root,
+                OverwriteModeDto::Replace,
+                &mut file_ops,
+                |staging_root| {
+                    write_transaction_file(staging_root, "partial.dtr", b"partial");
+                    Err(CommandErrorDto::new(code, "injected failure"))
+                },
+            );
+
+            assert_eq!(result.unwrap_err().code, code);
+            assert_eq!(transaction_file(&final_root, "sentinel.txt"), b"old output");
+            assert!(!backup_root.exists());
+            assert_no_staging_directories(&output_dir);
+        }
+    }
+
+    #[test]
+    fn completion_marker_failure_preserves_existing_output() {
+        let temp = ManifestTestDir::new("marker-failure");
+        let (output_dir, final_root, backup_root) = output_transaction_paths(&temp);
+        write_transaction_file(&final_root, "sentinel.txt", b"old output");
+        let mut file_ops = FaultInjectingOutputFileOps::default();
+
+        let result: CommandResult<OutputTransaction<()>> = run_output_transaction(
+            &output_dir,
+            &final_root,
+            OverwriteModeDto::Replace,
+            &mut file_ops,
+            |staging_root| {
+                write_transaction_file(staging_root, OUTPUT_COMPLETION_MARKER, b"collision");
+                Ok(())
+            },
+        );
+
+        assert_eq!(result.unwrap_err().code, "completion_marker_failed");
+        assert_eq!(transaction_file(&final_root, "sentinel.txt"), b"old output");
+        assert!(!backup_root.exists());
+        assert_no_staging_directories(&output_dir);
+    }
+
+    #[test]
+    fn first_rename_failure_leaves_existing_output_in_place() {
+        let temp = ManifestTestDir::new("rename-one");
+        let (output_dir, final_root, backup_root) = output_transaction_paths(&temp);
+        write_transaction_file(&final_root, "sentinel.txt", b"old output");
+        let mut file_ops = FaultInjectingOutputFileOps {
+            fail_rename_call: Some(1),
+            ..FaultInjectingOutputFileOps::default()
+        };
+
+        let result = run_output_transaction(
+            &output_dir,
+            &final_root,
+            OverwriteModeDto::Replace,
+            &mut file_ops,
+            |staging_root| {
+                write_transaction_file(staging_root, "candidate.txt", b"new output");
+                Ok(())
+            },
+        );
+
+        assert_eq!(result.unwrap_err().code, "output_promote_failed");
+        assert_eq!(transaction_file(&final_root, "sentinel.txt"), b"old output");
+        assert!(!backup_root.exists());
+        assert_no_staging_directories(&output_dir);
+    }
+
+    #[test]
+    fn second_rename_failure_restores_existing_output() {
+        let temp = ManifestTestDir::new("rename-two");
+        let (output_dir, final_root, backup_root) = output_transaction_paths(&temp);
+        write_transaction_file(&final_root, "sentinel.txt", b"old output");
+        let mut file_ops = FaultInjectingOutputFileOps {
+            fail_rename_call: Some(2),
+            ..FaultInjectingOutputFileOps::default()
+        };
+
+        let result = run_output_transaction(
+            &output_dir,
+            &final_root,
+            OverwriteModeDto::Replace,
+            &mut file_ops,
+            |staging_root| {
+                write_transaction_file(staging_root, "candidate.txt", b"new output");
+                Ok(())
+            },
+        );
+
+        assert_eq!(result.unwrap_err().code, "output_promote_failed");
+        assert_eq!(file_ops.rename_calls, 3);
+        assert_eq!(transaction_file(&final_root, "sentinel.txt"), b"old output");
+        assert!(!backup_root.exists());
+        assert_no_staging_directories(&output_dir);
+    }
+
+    #[test]
+    fn backup_cleanup_failure_keeps_valid_new_output_and_reports_warning() {
+        let temp = ManifestTestDir::new("backup-cleanup");
+        let (output_dir, final_root, backup_root) = output_transaction_paths(&temp);
+        write_transaction_file(&final_root, "sentinel.txt", b"old output");
+        let mut file_ops = FaultInjectingOutputFileOps {
+            fail_remove_path: Some(backup_root.clone()),
+            ..FaultInjectingOutputFileOps::default()
+        };
+
+        let result = run_output_transaction(
+            &output_dir,
+            &final_root,
+            OverwriteModeDto::Replace,
+            &mut file_ops,
+            |staging_root| {
+                write_transaction_file(staging_root, "candidate.txt", b"new output");
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert!(result.backup_cleanup_warning.is_some());
+        assert_eq!(
+            transaction_file(&final_root, "candidate.txt"),
+            b"new output"
+        );
+        assert!(final_root.join(OUTPUT_COMPLETION_MARKER).is_file());
+        assert_eq!(
+            transaction_file(&backup_root, "sentinel.txt"),
+            b"old output"
+        );
+        assert_no_staging_directories(&output_dir);
+    }
+
+    #[test]
+    fn startup_recovery_restores_backup_before_deny_check() {
+        let temp = ManifestTestDir::new("startup-recovery");
+        let (output_dir, final_root, backup_root) = output_transaction_paths(&temp);
+        write_transaction_file(&backup_root, "sentinel.txt", b"old output");
+        let mut file_ops = FaultInjectingOutputFileOps::default();
+        let build_called = std::cell::Cell::new(false);
+
+        let result: CommandResult<OutputTransaction<()>> = run_output_transaction(
+            &output_dir,
+            &final_root,
+            OverwriteModeDto::Deny,
+            &mut file_ops,
+            |_| {
+                build_called.set(true);
+                Ok(())
+            },
+        );
+
+        assert_eq!(result.unwrap_err().code, "output_exists");
+        assert!(!build_called.get());
+        assert_eq!(transaction_file(&final_root, "sentinel.txt"), b"old output");
+        assert!(!backup_root.exists());
+    }
+
+    #[test]
+    fn ambiguous_output_and_backup_without_marker_fail_closed() {
+        let temp = ManifestTestDir::new("ambiguous-recovery");
+        let (output_dir, final_root, backup_root) = output_transaction_paths(&temp);
+        write_transaction_file(&final_root, "sentinel.txt", b"new-unknown");
+        write_transaction_file(&backup_root, "sentinel.txt", b"old output");
+        let mut file_ops = FaultInjectingOutputFileOps::default();
+
+        let result: CommandResult<OutputTransaction<()>> = run_output_transaction(
+            &output_dir,
+            &final_root,
+            OverwriteModeDto::Replace,
+            &mut file_ops,
+            |_| unreachable!("ambiguous state must fail before staging"),
+        );
+
+        assert_eq!(result.unwrap_err().code, "ambiguous_output_state");
+        assert_eq!(
+            transaction_file(&final_root, "sentinel.txt"),
+            b"new-unknown"
+        );
+        assert_eq!(
+            transaction_file(&backup_root, "sentinel.txt"),
+            b"old output"
+        );
+    }
+
+    #[test]
+    fn incomplete_or_wrong_completion_markers_fail_closed() {
+        let cases = vec![
+            ("empty", Vec::new()),
+            (
+                "truncated",
+                OUTPUT_COMPLETION_MARKER_CONTENT[..OUTPUT_COMPLETION_MARKER_CONTENT.len() - 1]
+                    .to_vec(),
+            ),
+            ("wrong", vec![b'X'; OUTPUT_COMPLETION_MARKER_CONTENT.len()]),
+        ];
+        for (label, marker) in cases {
+            let temp = ManifestTestDir::new(label);
+            let (output_dir, final_root, backup_root) = output_transaction_paths(&temp);
+            write_transaction_file(&final_root, "candidate.txt", b"new-unknown");
+            fs::write(final_root.join(OUTPUT_COMPLETION_MARKER), marker).unwrap();
+            write_transaction_file(&backup_root, "sentinel.txt", b"old output");
+            let mut file_ops = FaultInjectingOutputFileOps::default();
+
+            let result: CommandResult<OutputTransaction<()>> = run_output_transaction(
+                &output_dir,
+                &final_root,
+                OverwriteModeDto::Replace,
+                &mut file_ops,
+                |_| unreachable!("invalid marker must fail before staging"),
+            );
+
+            assert_eq!(result.unwrap_err().code, "ambiguous_output_state");
+            assert_eq!(
+                transaction_file(&final_root, "candidate.txt"),
+                b"new-unknown"
+            );
+            assert_eq!(
+                transaction_file(&backup_root, "sentinel.txt"),
+                b"old output"
+            );
+        }
+    }
+
+    #[test]
+    fn completed_output_allows_stale_backup_cleanup_before_deny() {
+        let temp = ManifestTestDir::new("completed-recovery");
+        let (output_dir, final_root, backup_root) = output_transaction_paths(&temp);
+        write_transaction_file(&final_root, "candidate.txt", b"new output");
+        fs::write(
+            final_root.join(OUTPUT_COMPLETION_MARKER),
+            OUTPUT_COMPLETION_MARKER_CONTENT,
+        )
+        .unwrap();
+        write_transaction_file(&backup_root, "sentinel.txt", b"old output");
+        let mut file_ops = FaultInjectingOutputFileOps::default();
+
+        let result: CommandResult<OutputTransaction<()>> = run_output_transaction(
+            &output_dir,
+            &final_root,
+            OverwriteModeDto::Deny,
+            &mut file_ops,
+            |_| unreachable!("deny must stop before staging"),
+        );
+
+        assert_eq!(result.unwrap_err().code, "output_exists");
+        assert_eq!(
+            transaction_file(&final_root, "candidate.txt"),
+            b"new output"
+        );
+        assert!(!backup_root.exists());
+    }
+
+    #[test]
+    fn stale_backup_cleanup_failure_aborts_without_touching_completed_output() {
+        let temp = ManifestTestDir::new("stale-cleanup-failure");
+        let (output_dir, final_root, backup_root) = output_transaction_paths(&temp);
+        write_transaction_file(&final_root, "candidate.txt", b"new output");
+        fs::write(
+            final_root.join(OUTPUT_COMPLETION_MARKER),
+            OUTPUT_COMPLETION_MARKER_CONTENT,
+        )
+        .unwrap();
+        write_transaction_file(&backup_root, "sentinel.txt", b"old output");
+        let mut file_ops = FaultInjectingOutputFileOps {
+            fail_remove_path: Some(backup_root.clone()),
+            ..FaultInjectingOutputFileOps::default()
+        };
+
+        let result: CommandResult<OutputTransaction<()>> = run_output_transaction(
+            &output_dir,
+            &final_root,
+            OverwriteModeDto::Replace,
+            &mut file_ops,
+            |_| unreachable!("recovery failure must stop before staging"),
+        );
+
+        assert_eq!(result.unwrap_err().code, "output_backup_cleanup_failed");
+        assert_eq!(
+            transaction_file(&final_root, "candidate.txt"),
+            b"new output"
+        );
+        assert_eq!(
+            transaction_file(&backup_root, "sentinel.txt"),
+            b"old output"
+        );
+    }
+
+    #[test]
+    fn staged_progress_never_exposes_temporary_paths_or_finishes_early() {
+        let final_root = Path::new("output/match-aabbccddeeff");
+        let progress = public_conversion_progress(
+            ConversionProgress::ArtifactsWritingStarted {
+                root: "output/.match-aabbccddeeff.tmp.1.nonce".to_string(),
+                artifacts: 4,
+            },
+            final_root,
+        )
+        .unwrap();
+        assert_eq!(
+            progress,
+            ConversionProgressDto::ArtifactsWritingStarted {
+                root: final_root.display().to_string(),
+                artifacts: 4,
+            }
+        );
+        assert!(public_conversion_progress(
+            ConversionProgress::Finished {
+                root: "output/.match-aabbccddeeff.tmp.1.nonce".to_string(),
+                manifest_path: "output/.match-aabbccddeeff.tmp.1.nonce/manifest.json".to_string(),
+                files_written: 3,
+            },
+            final_root,
+        )
+        .is_none());
     }
 
     #[test]

@@ -724,6 +724,7 @@ pub fn export_round_voice_sidecars(
                 duration_seconds,
             }
         })
+        .filter(|window| voice_window_contains_frames(&parsed_demo.voice_frames, window, tick_rate))
         .collect::<Vec<_>>();
     if windows.is_empty() {
         return Ok(Vec::new());
@@ -741,6 +742,21 @@ pub fn export_round_voice_sidecars(
     )
 }
 
+fn voice_window_contains_frames(
+    frames: &[ParsedVoiceFrame],
+    window: &VoiceClipWindowExport,
+    tick_rate: f32,
+) -> bool {
+    let Some(start_tick) = window.start_tick else {
+        return !frames.is_empty();
+    };
+    let duration_ticks = (window.duration_seconds * tick_rate).round().max(1.0) as i32;
+    let end_tick = start_tick.saturating_add(duration_ticks);
+    frames
+        .iter()
+        .any(|frame| frame.tick >= start_tick && frame.tick <= end_tick)
+}
+
 fn round_voice_window(
     recording_start_tick: i32,
     live_start_tick: i32,
@@ -754,7 +770,9 @@ fn round_voice_window(
 
 #[cfg(test)]
 mod tests {
-    use super::round_voice_window;
+    use super::{round_voice_window, voice_window_contains_frames, VoiceClipWindowExport};
+    use crate::model::ParsedVoiceFrame;
+    use std::path::PathBuf;
 
     #[test]
     fn round_voice_window_includes_bounded_freeze_preroll() {
@@ -770,5 +788,32 @@ mod tests {
 
         assert_eq!(start_tick, 1_000);
         assert_eq!(duration_seconds, 10.0);
+    }
+
+    #[test]
+    fn round_voice_window_presence_is_limited_to_the_selected_ticks() {
+        let frames = vec![
+            ParsedVoiceFrame {
+                tick: 100,
+                ..ParsedVoiceFrame::default()
+            },
+            ParsedVoiceFrame {
+                tick: 200,
+                ..ParsedVoiceFrame::default()
+            },
+        ];
+        let selected = VoiceClipWindowExport {
+            output: PathBuf::from("voice/round01.dtv"),
+            start_tick: Some(150),
+            duration_seconds: 1.0,
+        };
+        let absent = VoiceClipWindowExport {
+            output: PathBuf::from("voice/round02.dtv"),
+            start_tick: Some(300),
+            duration_seconds: 1.0,
+        };
+
+        assert!(voice_window_contains_frames(&frames, &selected, 64.0));
+        assert!(!voice_window_contains_frames(&frames, &absent, 64.0));
     }
 }

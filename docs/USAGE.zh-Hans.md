@@ -58,6 +58,10 @@ GUI 里 `导出语音(若有)` 默认开启。GUI 会在解析阶段收集 voice
 demo 里确实有语音，就写出 `.dtv` sidecar；如果导出了语音，复制出来的控制台指令会自动
 带 `dtr_voice_auto on`。
 
+GUI 替换已有输出时，会先在同一输出文件夹的 staging 目录中写完并校验新的 DTR、头像、
+语音和 manifest。只有完整 pack 才会提升为正式目录；转换、语音、校验或提升失败都会保留
+旧输出，中途打断的目录交换会在下次转换时恢复。
+
 饰品/econ 元数据默认绝不导出，所以普通 manifest 不包含 `cosmetics` block。若明确要导出
 demo 观测到的武器 paint、刀具、手套、探员模型元数据，以及稳定的武器/刀具 custom name，
 必须同时传入三个 flag：

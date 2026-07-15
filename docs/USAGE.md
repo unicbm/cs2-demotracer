@@ -63,6 +63,11 @@ voice metadata during Analyze, writes `.dtv` sidecars during Convert when voice
 is present, and adds `dtr_voice_auto on` to copied console commands when voice
 sidecars were exported.
 
+When replacing an existing GUI output, the new DTR, avatar, voice, and manifest
+files are written and validated in a sibling staging directory first. Only a
+complete pack is promoted; conversion, voice, validation, or promotion failures
+keep the previous output, and an interrupted swap is recovered on the next run.
+
 Cosmetic/econ metadata is not exported by default, so normal manifests contain
 no `cosmetics` blocks. To intentionally export demo-observed weapon paint,
 knife, glove, agent model metadata, and stable weapon/knife custom names, you

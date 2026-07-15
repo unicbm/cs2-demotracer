@@ -609,6 +609,24 @@ pub fn export_demo(parsed: &ParsedDemo, options: &ConvertOptions) -> Result<Conv
 pub fn export_demo_with_progress<F>(
     parsed: &ParsedDemo,
     options: &ConvertOptions,
+    progress: F,
+) -> Result<ConversionReport>
+where
+    F: FnMut(ConversionProgress),
+{
+    let demo_id = output_demo_id(
+        &parsed.stem,
+        &parsed.demo_sha256,
+        options.output_stem.as_deref(),
+    )?;
+    let root = options.output_dir.join(demo_id);
+    export_demo_to_root_with_progress(parsed, options, &root, progress)
+}
+
+pub fn export_demo_to_root_with_progress<F>(
+    parsed: &ParsedDemo,
+    options: &ConvertOptions,
+    root: &Path,
     mut progress: F,
 ) -> Result<ConversionReport>
 where
@@ -617,8 +635,7 @@ where
     let mut progress_ref = Some(&mut progress as &mut dyn FnMut(ConversionProgress));
     let memory =
         export_demo_to_memory_inner(parsed, &ConvertMemoryOptions::from(options), progress_ref)?;
-    let root = options.output_dir.join(&memory.demo_id);
-    fs::create_dir_all(&root).map_err(|e| io_error(&root, e))?;
+    fs::create_dir_all(root).map_err(|e| io_error(root, e))?;
     progress_ref = Some(&mut progress as &mut dyn FnMut(ConversionProgress));
     emit_conversion_progress(
         &mut progress_ref,
@@ -644,7 +661,7 @@ where
     }
 
     let report = ConversionReport {
-        root: root.clone(),
+        root: root.to_path_buf(),
         manifest_path: root.join("manifest.json"),
         files_written: memory.files_written,
         manifest: memory.manifest,
@@ -4531,6 +4548,76 @@ mod tests {
         assert_eq!(disk_dtr, dtr.bytes);
         assert!(filesystem.manifest_path.exists());
         assert!(filesystem.root.join("conversion.log").exists());
+    }
+
+    #[test]
+    fn filesystem_export_can_write_to_an_explicit_demo_root() {
+        let parsed = sample_demo();
+        let temp = tempfile::tempdir().unwrap();
+        let default_root = temp.path().join("default-output");
+        let explicit_root = temp.path().join(".sample-demo.tmp.test");
+        let options = ConvertOptions {
+            output_dir: default_root.clone(),
+            output_stem: Some("sample-demo".to_string()),
+            side: Side::Both,
+            selected_rounds: Some(BTreeSet::from([1])),
+            include_suspicious: true,
+            cut_before_bomb_plant: true,
+            subtick_mode: SubtickMode::Auto,
+            freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
+            export_cosmetics: false,
+            export_stickers: false,
+            export_charms: false,
+            analysis: AnalysisOptions::default(),
+        };
+
+        let report =
+            export_demo_to_root_with_progress(&parsed, &options, &explicit_root, |_| {}).unwrap();
+
+        assert_eq!(report.root, explicit_root);
+        assert_eq!(report.manifest_path, report.root.join("manifest.json"));
+        assert!(report.manifest_path.exists());
+        assert!(report.root.join("conversion.log").exists());
+        assert!(!default_root.exists());
+    }
+
+    #[test]
+    fn explicit_root_export_reports_every_artifact_write_failure() {
+        let parsed = sample_demo();
+        let options = ConvertOptions {
+            output_dir: PathBuf::from("unused-default-output"),
+            output_stem: Some("sample-demo".to_string()),
+            side: Side::Both,
+            selected_rounds: Some(BTreeSet::from([1])),
+            include_suspicious: true,
+            cut_before_bomb_plant: true,
+            subtick_mode: SubtickMode::Auto,
+            freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
+            export_cosmetics: false,
+            export_stickers: false,
+            export_charms: false,
+            analysis: AnalysisOptions::default(),
+        };
+        let memory = export_demo_to_memory(&parsed, &ConvertMemoryOptions::from(&options)).unwrap();
+        assert!(memory
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.path == "manifest.json"));
+
+        for artifact in &memory.artifacts {
+            let temp = tempfile::tempdir().unwrap();
+            let staging_root = temp.path().join(".sample-demo.tmp.test");
+            fs::create_dir_all(staging_root.join(&artifact.path)).unwrap();
+
+            let result =
+                export_demo_to_root_with_progress(&parsed, &options, &staging_root, |_| {});
+
+            assert!(
+                result.is_err(),
+                "expected write failure for artifact {}",
+                artifact.path
+            );
+        }
     }
 
     #[test]
