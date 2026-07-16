@@ -231,6 +231,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _slotCosmeticEvidenceKeys.Remove(playerSlot);
         _appliedGloveCosmetics.Remove(playerSlot);
         _gloveCosmeticTokens.Remove(playerSlot);
+        _appliedKnifeCosmeticBirths.Remove(playerSlot);
+        _pendingKnifeEntityRefreshes.Remove(playerSlot);
+        _knifeEntityRefreshUnavailableWarnings.Remove(playerSlot);
 
         if (!HasReplayLifecycleState(includeNative: true))
             return;
@@ -244,6 +247,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private bool IsDisconnectingReplaySlot(int slot)
     {
         if (_loadedSlots.Contains(slot) ||
+            _warmReplayBufferSlots.Contains(slot) ||
             _demoTracerOwnedSlots.Contains(slot) ||
             _loadedReplays.ContainsKey(slot) ||
             _lastPlayingSlots.Contains(slot) ||
@@ -252,13 +256,17 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             return true;
         }
 
-        return BotControllerNative.IsCompatible &&
-               BotControllerNative.GetReplayState(slot).Playing;
+        if (!BotControllerNative.IsCompatible)
+            return false;
+
+        var state = BotControllerNative.GetReplayState(slot);
+        return state.Playing || state.Total > 0;
     }
 
     private void ClearDisconnectedReplaySlot(int slot, string reason)
     {
         BotControllerNative.UnloadReplay(slot);
+        _warmReplayBufferSlots.Remove(slot);
         ReleaseReplaySlot(slot, reason);
         _loadedSlots.Remove(slot);
         ForgetLoadedReplayMetadata(slot);
@@ -2779,6 +2787,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private void OnEntityDeleted(CEntityInstance entity)
     {
+        ForgetKnifeCosmeticBirthForEntity(entity);
+
         if (!_mapActive || _lifecycleResetInProgress)
             return;
 
@@ -4553,7 +4563,11 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     {
         foreach (var slot in NativeReplaySlots())
         {
-            if (trackedSlots.Contains(slot) || !BotControllerNative.GetReplayState(slot).Playing)
+            if (trackedSlots.Contains(slot) || _warmReplayBufferSlots.Contains(slot))
+                continue;
+
+            var state = BotControllerNative.GetReplayState(slot);
+            if (!state.Playing && state.Total <= 0)
                 continue;
 
             BotControllerNative.UnloadReplay(slot);
@@ -4655,7 +4669,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
         foreach (var slot in NativeReplaySlots())
         {
-            if (BotControllerNative.GetReplayState(slot).Playing)
+            var state = BotControllerNative.GetReplayState(slot);
+            if (state.Playing || state.Total > 0)
                 return true;
         }
         return false;
@@ -4780,6 +4795,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _activeWeaponCosmetics.Remove(slot);
         _appliedGloveCosmetics.Remove(slot);
         _gloveCosmeticTokens.Remove(slot);
+        _pendingKnifeEntityRefreshes.Remove(slot);
         _slotCosmeticEvidenceKeys.Remove(slot);
         _scoreboardSyncedSlots.Remove(slot);
         KillTrackedReplayDropsForSlot(slot, "forget_replay");
@@ -4849,6 +4865,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             metadata.TickRate,
             metadata.PlayStartTickIndex,
             metadata.RoundStartOrigin);
+        _pendingKnifeEntityRefreshes.Remove(slot);
         RememberReplayCosmeticEvidence(slot, _loadedReplays[slot]);
         BeginReplayIdentityGeneration(slot);
         _lastEnsuredWeaponDef.Remove(slot);

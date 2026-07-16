@@ -128,10 +128,31 @@ struct BotPawnRef
     uint32_t Handle = 0xFFFFFFFF;
 };
 
+struct ManagedControllerFlagSnapshot
+{
+    void *Client = nullptr;
+    void *Controller = nullptr;
+    uint32_t Handle = 0xFFFFFFFF;
+    uint16_t UserId = 0;
+    bool Modified = false;
+};
+
+struct PendingControllerRemoval
+{
+    void *Controller = nullptr;
+    uint32_t Handle = 0xFFFFFFFF;
+    int Slot = -1;
+    uint16_t UserId = 0;
+    unsigned int ReferencedFrames = 0;
+};
+
+static std::vector<PendingControllerRemoval> g_PendingControllerRemovals;
+
 #if defined(_WIN32)
 struct ManagedControllerTrace
 {
     int Slot = -1;
+    uint32_t Handle = 0xFFFFFFFF;
     uint32_t Flags = 0;
     unsigned int CurrentTeam = 0;
     bool Managed = false;
@@ -145,7 +166,7 @@ namespace cs2bh
     void RestoreBotFlagOverride(const std::vector<BotPawnRef> &pawns);
 #if defined(_WIN32)
     ManagedControllerTrace TraceManagedController(void *controller);
-    bool SetJoinTeamFakeClientFlag(void *controller, bool enabled);
+    bool SetJoinTeamFakeClientFlag(void *controller, uint32_t handle, bool enabled);
 #endif
 }
 
@@ -188,16 +209,17 @@ class ScopedJoinTeamFakeClientFlag
 {
 public:
     // Temporarily restores only the controller bot bit needed by team validation.
-    ScopedJoinTeamFakeClientFlag(void *controller, bool enable)
+    ScopedJoinTeamFakeClientFlag(void *controller, uint32_t handle, bool enable)
         : m_Controller(controller),
-          m_Applied(enable && cs2bh::SetJoinTeamFakeClientFlag(controller, true))
+          m_Handle(handle),
+          m_Applied(enable && cs2bh::SetJoinTeamFakeClientFlag(controller, handle, true))
     {
     }
 
     // Clear only the bit this scope added; do not publish a transient state change.
     ~ScopedJoinTeamFakeClientFlag()
     {
-        if (m_Applied && !cs2bh::SetJoinTeamFakeClientFlag(m_Controller, false))
+        if (m_Applied && !cs2bh::SetJoinTeamFakeClientFlag(m_Controller, m_Handle, false))
             META_CONPRINTF("[BOTHIDER] warning: failed to restore JoinTeam fake-client scope\n");
     }
 
@@ -205,6 +227,7 @@ public:
 
 private:
     void *m_Controller = nullptr;
+    uint32_t m_Handle = 0xFFFFFFFF;
     bool m_Applied = false;
 };
 #endif
@@ -364,7 +387,9 @@ static bool RemoveFunchooks()
 namespace cs2bh
 {
     // Flip managed bots' controller fakeclient bit around the engine quota pass.
-    int FlipManagedController904(bool restore, std::array<bool, 64> *saved);
+    int FlipManagedController904(
+        bool restore,
+        std::array<ManagedControllerFlagSnapshot, 64> *saved);
 }
 
 // Detour
@@ -374,7 +399,7 @@ static int64_t __fastcall Detour_MaintainBotQuota(void *mgr)
 static int64_t Detour_MaintainBotQuota(void *mgr)
 #endif
 {
-    std::array<bool, 64> flipped;
+    std::array<ManagedControllerFlagSnapshot, 64> flipped{};
     cs2bh::FlipManagedController904(false, &flipped);
     int64_t r = g_pfnQuotaTramp ? g_pfnQuotaTramp(mgr) : 0;
     cs2bh::FlipManagedController904(true, &flipped);
@@ -390,7 +415,8 @@ static int64_t __fastcall Detour_HandleCommandJoinTeam(void *controller,
     ManagedControllerTrace trace = cs2bh::TraceManagedController(controller);
     const bool needsFakeClientScope = trace.Managed && !trace.Hltv &&
                                       (trace.Flags & 0x100u) == 0;
-    ScopedJoinTeamFakeClientFlag fakeClientScope(controller, needsFakeClientScope);
+    ScopedJoinTeamFakeClientFlag fakeClientScope(
+        controller, trace.Handle, needsFakeClientScope);
     if (fakeClientScope.Applied())
     {
         META_CONPRINTF(
@@ -817,6 +843,8 @@ namespace cs2bh
         return instance;
     }
 
+    static bool IsEntityBeingDeleted(void *instance);
+
 #if defined(_WIN32)
     // Collect the managed-slot identity for the controller passed to JoinTeam.
     ManagedControllerTrace TraceManagedController(void *controller)
@@ -853,10 +881,13 @@ namespace cs2bh
                 reinterpret_cast<unsigned char *>(client) + ssc::OFFSET_m_nEntityIndex);
             char className[64];
             void *resolved = ResolveEntityInstance(entityIndex, className, sizeof(className));
-            if (resolved != controller || std::strcmp(className, "cs_player_controller") != 0)
+            if (resolved != controller || std::strcmp(className, "cs_player_controller") != 0 ||
+                IsEntityBeingDeleted(resolved))
                 continue;
 
             trace.Slot = idx;
+            trace.Handle = static_cast<uint32_t>(
+                reinterpret_cast<CEntityInstance *>(resolved)->GetRefEHandle().ToInt());
             trace.Managed = true;
             trace.Hltv = ssc::IsHltv(client);
             break;
@@ -865,14 +896,27 @@ namespace cs2bh
     }
 
     // Toggle only the transient controller bit; never mark it for replication.
-    bool SetJoinTeamFakeClientFlag(void *controller, bool enabled)
+    bool SetJoinTeamFakeClientFlag(void *controller, uint32_t handle, bool enabled)
     {
-        if (!controller || targets::kController_FakeClientFlagsOffset < 0)
+        if (!controller || handle == 0xFFFFFFFF ||
+            targets::kController_FakeClientFlagsOffset < 0)
             return false;
+
+        const int entityIndex = static_cast<int>(handle & 0x7FFF);
+        char className[64];
+        void *current = ResolveEntityInstance(entityIndex, className, sizeof(className));
+        if (current != controller || std::strcmp(className, "cs_player_controller") != 0 ||
+            IsEntityBeingDeleted(current) ||
+            static_cast<uint32_t>(
+                reinterpret_cast<CEntityInstance *>(current)->GetRefEHandle().ToInt()) != handle)
+        {
+            return false;
+        }
+
         __try
         {
             auto *flags = reinterpret_cast<uint32_t *>(
-                reinterpret_cast<unsigned char *>(controller) +
+                reinterpret_cast<unsigned char *>(current) +
                 targets::kController_FakeClientFlagsOffset);
             if (enabled)
             {
@@ -1016,15 +1060,16 @@ namespace cs2bh
         }
     }
 
-    // * Destroy the CCSPlayerController a kicked bot leaves behind
-    // Returns true if the destroy was dispatched
-    static bool DestroyControllerForClient(void *pClient)
+    // Queue a kicked controller for identity-checked removal after the disconnect
+    // callback has unwound. The engine may delete or reuse the slot during that
+    // callback, so UTIL_Remove must never run against the raw pre-hook pointer.
+    static bool QueueControllerRemovalForClient(void *pClient, int slot)
     {
         if (!pClient)
             return false;
         if (!g_pfnUtilRemove)
         {
-            META_CONPRINTF("[BOTHIDER] destroy ABORT: UTIL_Remove unresolved (signature scan failed at Load)\n");
+            META_CONPRINTF("[BOTHIDER] deferred destroy unavailable: UTIL_Remove unresolved\n");
             return false;
         }
         int entIdx = *reinterpret_cast<int *>(
@@ -1033,8 +1078,7 @@ namespace cs2bh
         void *inst = ResolveEntityInstance(entIdx, cls, sizeof(cls));
         if (!inst)
         {
-            // Resolution chain returned null
-            META_CONPRINTF("[BOTHIDER] destroy ABORT: entity resolve failed "
+            META_CONPRINTF("[BOTHIDER] deferred destroy skipped: entity resolve failed "
                            "entIdx=%d cls='%s' grs=%p (check kEntSys_* offsets)\n",
                            entIdx, cls, g_pGameResourceService);
             return false;
@@ -1042,31 +1086,126 @@ namespace cs2bh
         // Only ever destroy a player controller — never collateral entities
         if (std::strcmp(cls, "cs_player_controller") != 0)
         {
-            META_CONPRINTF("[BOTHIDER] destroy skipped entIdx=%d cls='%s' (not a controller)\n",
+            META_CONPRINTF("[BOTHIDER] deferred destroy skipped entIdx=%d cls='%s' (not a controller)\n",
                            entIdx, cls);
             return false;
         }
+        if (IsEntityBeingDeleted(inst))
+            return false;
 
-        // ? One-time cross-check: prove our GameResourceService+0x58 chain resolves
-        static bool s_crossChecked = false;
-        if (!s_crossChecked && g_ppEntSysGlobal)
+        const uint32_t handle = static_cast<uint32_t>(
+            reinterpret_cast<CEntityInstance *>(inst)->GetRefEHandle().ToInt());
+        auto duplicate = std::find_if(
+            g_PendingControllerRemovals.begin(),
+            g_PendingControllerRemovals.end(),
+            [handle](const PendingControllerRemoval &pending)
+            {
+                return pending.Handle == handle;
+            });
+        if (duplicate != g_PendingControllerRemovals.end())
+            return true;
+
+        const uint16_t userId = *reinterpret_cast<uint16_t *>(
+            reinterpret_cast<unsigned char *>(pClient) + ssc::OFFSET_m_UserID);
+        g_PendingControllerRemovals.push_back({inst, handle, slot, userId, 0});
+        META_CONPRINTF(
+            "[BOTHIDER] deferred destroy queued slot=%d entIdx=%d handle=0x%08x\n",
+            slot, entIdx, handle);
+        return true;
+    }
+
+    static bool IsControllerReferencedByClient(void *controller, uint16_t *userIdOut)
+    {
+        for (int slot = 0; slot < PersonaPool::kMaxSlots; ++slot)
         {
-            void *entSysFromChain = nullptr;
-            SehReadPtr(reinterpret_cast<unsigned char *>(g_pGameResourceService) +
-                           targets::kEntSys_OffsetInGameResSvc,
-                       &entSysFromChain);
-            void *entSysFromRemove = nullptr;
-            SehReadPtr(g_ppEntSysGlobal, &entSysFromRemove);
-            META_CONPRINTF("[BOTHIDER] entSys cross-check: chain=%p remove=%p %s\n",
-                           entSysFromChain, entSysFromRemove,
-                           (entSysFromChain == entSysFromRemove) ? "MATCH" : "MISMATCH");
-            s_crossChecked = true;
+            void *client = ResolveClientBySlot(slot);
+            if (!client)
+                continue;
+            int entityIndex = *reinterpret_cast<int *>(
+                reinterpret_cast<unsigned char *>(client) + ssc::OFFSET_m_nEntityIndex);
+            char className[64];
+            void *current = ResolveEntityInstance(entityIndex, className, sizeof(className));
+            if (current == controller && std::strcmp(className, "cs_player_controller") == 0)
+            {
+                if (userIdOut)
+                {
+                    *userIdOut = *reinterpret_cast<uint16_t *>(
+                        reinterpret_cast<unsigned char *>(client) + ssc::OFFSET_m_UserID);
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static void DrainPendingControllerRemovals()
+    {
+        if (!g_pfnUtilRemove)
+        {
+            g_PendingControllerRemovals.clear();
+            return;
         }
 
-        g_pfnUtilRemove(inst);
-        META_CONPRINTF("[BOTHIDER] destroy dispatched entIdx=%d inst=%p cls='%s'\n",
-                       entIdx, inst, cls);
-        return true;
+        for (auto it = g_PendingControllerRemovals.begin();
+             it != g_PendingControllerRemovals.end();)
+        {
+            const int entityIndex = static_cast<int>(it->Handle & 0x7FFF);
+            char className[64];
+            void *current = ResolveEntityInstance(entityIndex, className, sizeof(className));
+            if (current != it->Controller ||
+                std::strcmp(className, "cs_player_controller") != 0 ||
+                IsEntityBeingDeleted(current) ||
+                static_cast<uint32_t>(
+                    reinterpret_cast<CEntityInstance *>(current)->GetRefEHandle().ToInt()) != it->Handle)
+            {
+                it = g_PendingControllerRemovals.erase(it);
+                continue;
+            }
+
+            uint16_t currentUserId = 0;
+            if (IsControllerReferencedByClient(current, &currentUserId))
+            {
+                if (currentUserId != it->UserId)
+                {
+                    META_CONPRINTF(
+                        "[BOTHIDER] deferred destroy abandoned slot=%d handle=0x%08x: controller was rebound to userid=%u\n",
+                        it->Slot, it->Handle, static_cast<unsigned int>(currentUserId));
+                    it = g_PendingControllerRemovals.erase(it);
+                    continue;
+                }
+
+                // Give normal disconnect teardown one complete GameFrame. If the
+                // same userid still owns the exact same handle afterwards, this
+                // is the orphaned-controller case the workaround targets.
+                if (it->ReferencedFrames++ == 0)
+                {
+                    ++it;
+                    continue;
+                }
+            }
+
+            // One-time cross-check: prove our GameResourceService+0x58 chain resolves.
+            static bool s_crossChecked = false;
+            if (!s_crossChecked && g_ppEntSysGlobal)
+            {
+                void *entSysFromChain = nullptr;
+                SehReadPtr(reinterpret_cast<unsigned char *>(g_pGameResourceService) +
+                               targets::kEntSys_OffsetInGameResSvc,
+                           &entSysFromChain);
+                void *entSysFromRemove = nullptr;
+                SehReadPtr(g_ppEntSysGlobal, &entSysFromRemove);
+                META_CONPRINTF("[BOTHIDER] entSys cross-check: chain=%p remove=%p %s\n",
+                               entSysFromChain, entSysFromRemove,
+                               (entSysFromChain == entSysFromRemove) ? "MATCH" : "MISMATCH");
+                s_crossChecked = true;
+            }
+
+            g_pfnUtilRemove(current);
+            META_CONPRINTF(
+                "[BOTHIDER] deferred destroy dispatched slot=%d entIdx=%d handle=0x%08x\n",
+                it->Slot, entityIndex, it->Handle);
+            it = g_PendingControllerRemovals.erase(it);
+        }
     }
 
     // Keep the controller identity in sync with CServerSideClient
@@ -1100,7 +1239,9 @@ namespace cs2bh
     }
 
     // Flip managed bots' controller fakeclient bit around the quota pass.
-    int FlipManagedController904(bool restore, std::array<bool, 64> *saved)
+    int FlipManagedController904(
+        bool restore,
+        std::array<ManagedControllerFlagSnapshot, 64> *saved)
     {
         if (!saved)
             return 0;
@@ -1110,10 +1251,11 @@ namespace cs2bh
         for (int idx = 0; idx < PersonaPool::kMaxSlots; ++idx)
         {
             if (!restore)
-                (*saved)[idx] = false;
+                (*saved)[idx] = ManagedControllerFlagSnapshot{};
             if (!restore && !Manager().IsManaged(idx))
                 continue;
-            if (restore && !(*saved)[idx])
+            ManagedControllerFlagSnapshot &snapshot = (*saved)[idx];
+            if (restore && !snapshot.Modified)
                 continue;
 
             void *pClient = ResolveClientBySlot(idx);
@@ -1123,8 +1265,12 @@ namespace cs2bh
                 reinterpret_cast<unsigned char *>(pClient) + ssc::OFFSET_m_nEntityIndex);
             char cls[64];
             void *ctrl = ResolveEntityInstance(entIdx, cls, sizeof(cls));
-            if (!ctrl || std::strcmp(cls, "cs_player_controller") != 0)
+            if (!ctrl || std::strcmp(cls, "cs_player_controller") != 0 ||
+                IsEntityBeingDeleted(ctrl))
                 continue;
+
+            auto *entity = reinterpret_cast<CEntityInstance *>(ctrl);
+            const uint32_t handle = static_cast<uint32_t>(entity->GetRefEHandle().ToInt());
 
             auto *p = reinterpret_cast<uint32_t *>(
                 reinterpret_cast<unsigned char *>(ctrl) + kCtrlOff);
@@ -1132,15 +1278,28 @@ namespace cs2bh
             {
                 if ((*p & kBit) == 0) // only flip slots that read as human
                 {
+                    snapshot.Client = pClient;
+                    snapshot.Controller = ctrl;
+                    snapshot.Handle = handle;
+                    snapshot.UserId = *reinterpret_cast<uint16_t *>(
+                        reinterpret_cast<unsigned char *>(pClient) + ssc::OFFSET_m_UserID);
+                    snapshot.Modified = true;
                     *p |= kBit;
-                    (*saved)[idx] = true;
                     ++touched;
                 }
             }
             else
             {
+                const uint16_t userId = *reinterpret_cast<uint16_t *>(
+                    reinterpret_cast<unsigned char *>(pClient) + ssc::OFFSET_m_UserID);
+                if (pClient != snapshot.Client || ctrl != snapshot.Controller ||
+                    handle != snapshot.Handle || userId != snapshot.UserId)
+                {
+                    snapshot = ManagedControllerFlagSnapshot{};
+                    continue;
+                }
                 *p &= ~kBit;
-                (*saved)[idx] = false;
+                snapshot = ManagedControllerFlagSnapshot{};
                 ++touched;
             }
         }
@@ -1519,7 +1678,7 @@ namespace cs2bh
             // Targeted removals can leave a controller behind
             // Map and server teardown already own controller destruction
             if (IsTargetedClientRemovalReason(reason))
-                DestroyControllerForClient(pClient);
+                QueueControllerRemovalForClient(pClient, idx);
         }
 
         // Free the bot_info assignment bound to this slot
@@ -2129,6 +2288,7 @@ namespace cs2bh
 #if !defined(_WIN32)
         ClearFakeClientCallStack();
 #endif
+        g_PendingControllerRemovals.clear();
         Manager().ReleaseAll();
         BotInfo().ResetAssignments();
         META_CONPRINTF("[BOTHIDER] StartChangeLevel PRE — map='%s' landmark='%s'\n",
@@ -2141,6 +2301,8 @@ namespace cs2bh
     {
         if (m_bSelfDisabled || !simulating)
             RETURN_META(MRES_IGNORED);
+
+        DrainPendingControllerRemovals();
 
         for (int idx = 0; idx < PersonaPool::kMaxSlots; ++idx)
         {
@@ -2235,6 +2397,7 @@ namespace cs2bh
     void HiderPlugin::OnLevelInit(char const *pMapName, char const *, char const *,
                                   char const *, bool, bool)
     {
+        g_PendingControllerRemovals.clear();
         auto *gameServer = g_pNetworkServerService
                                ? g_pNetworkServerService->GetIGameServer()
                                : nullptr;
@@ -2267,6 +2430,7 @@ namespace cs2bh
 #if !defined(_WIN32)
         ClearFakeClientCallStack();
 #endif
+        g_PendingControllerRemovals.clear();
         Manager().ReleaseAll();
         BotInfo().ResetAssignments();
         META_CONPRINTF("[BOTHIDER] OnLevelShutdown — state drained\n");
@@ -2486,6 +2650,7 @@ namespace cs2bh
             m_StartChangeLevelHookId = 0;
         }
         m_pHookedGameServer = nullptr;
+        g_PendingControllerRemovals.clear();
         Manager().ReleaseAll();
         Publisher().Shutdown();
         return true;

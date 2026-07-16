@@ -14,6 +14,9 @@ public sealed partial class DemoTracerPlugin
 {
     private const int CosmeticHeartbeatAttempts = 12;
     private const float CosmeticHeartbeatIntervalSeconds = 0.10f;
+    private const int KnifeEntityRefreshFreezeWaitFrames = 8;
+    private const int KnifeEntityRestoreAttempts = 3;
+    private const float KnifeEntityRefreshMinFreezeSeconds = 0.25f;
     private const string AttributeSetterWindowsSignature = "40 53 55 41 56 48 81 EC 90 00 00 00";
     private const string AttributeSetterLinuxSignature = "55 48 89 E5 41 57 41 56 49 89 FE 41 55 41 54 53 48 89 F3 48 83 EC ? F3 0F 11 85";
     private static readonly (int WeaponDefIndex, int PaintKit)[] BuiltInLegacyCosmeticPaints =
@@ -32,9 +35,13 @@ public sealed partial class DemoTracerPlugin
     private readonly Dictionary<int, int> _cosmeticHeartbeatTokens = new();
     private readonly Dictionary<int, AppliedGloveCosmetic> _appliedGloveCosmetics = new();
     private readonly Dictionary<int, int> _gloveCosmeticTokens = new();
+    private readonly Dictionary<int, AppliedKnifeCosmeticBirth> _appliedKnifeCosmeticBirths = new();
+    private readonly Dictionary<int, PendingKnifeEntityRefresh> _pendingKnifeEntityRefreshes = new();
+    private readonly HashSet<int> _knifeEntityRefreshUnavailableWarnings = new();
     private bool _cosmeticGiveNamedItemHooked;
     private int _nextCosmeticHeartbeatToken;
     private int _nextGloveCosmeticToken;
+    private int _nextKnifeEntityRefreshToken;
 
     private void HookCosmeticGiveNamedItem()
     {
@@ -366,6 +373,9 @@ public sealed partial class DemoTracerPlugin
         _activeWeaponCosmetics.Clear();
         _appliedGloveCosmetics.Clear();
         _gloveCosmeticTokens.Clear();
+        _appliedKnifeCosmeticBirths.Clear();
+        _pendingKnifeEntityRefreshes.Clear();
+        _knifeEntityRefreshUnavailableWarnings.Clear();
         if (resetCounters)
         {
             _cosmeticAppliedCount = 0;
@@ -377,6 +387,9 @@ public sealed partial class DemoTracerPlugin
     {
         _slotCosmeticEvidenceKeys.Clear();
         _cosmeticEvidenceByKey.Clear();
+        _appliedKnifeCosmeticBirths.Clear();
+        _pendingKnifeEntityRefreshes.Clear();
+        _knifeEntityRefreshUnavailableWarnings.Clear();
     }
 
     private void ResetStickerAlignState(bool resetCounters = false)
@@ -544,6 +557,7 @@ public sealed partial class DemoTracerPlugin
                 ScheduleReplayKnifeCosmeticRetry(slot, knifeCosmetic, framesRemaining: appliedKnife ? 2 : 4);
             else
                 ScheduleCachedKnifeCosmeticRetry(slot, knifeCosmetic, knifeSteamId, framesRemaining: appliedKnife ? 2 : 4);
+            ScheduleReplayKnifeEntityRefresh(slot, knifeCosmetic);
         }
         else if (shouldResetMissingKnife && TryFindReplayKnife(pawn, out var knife))
         {
@@ -714,6 +728,374 @@ public sealed partial class DemoTracerPlugin
             ScheduleReplayKnifeCosmeticRetry(slot, cosmetic, framesRemaining - 1);
         });
     }
+
+    private void ScheduleReplayKnifeEntityRefresh(int slot, ReplayItemCosmetic cosmetic)
+    {
+        // On the first physical round the default knife can predate replay
+        // evidence. Late econ writes fix HUD/animations but not the initialized
+        // model/material, so rebuild that one stale entity during freeze only.
+        if (!_cosmeticGiveNamedItemHooked)
+        {
+            if (_knifeEntityRefreshUnavailableWarnings.Add(slot))
+            {
+                Server.PrintToConsole(
+                    $"dtr: knife entity refresh unavailable slot={slot}: GiveNamedItem hook is not installed");
+            }
+            return;
+        }
+
+        var fingerprint = KnifeCosmeticFingerprint.From(cosmetic);
+        var replayGeneration = CurrentReplayIdentityGeneration(slot);
+        var player = Utilities.GetPlayerFromSlot(slot);
+        var pawn = player?.PlayerPawn.Value;
+        if (player is { IsValid: true, PawnIsAlive: true } &&
+            pawn is { IsValid: true } &&
+            TryFindReplayKnife(pawn, out var knife) &&
+            IsKnifeCosmeticBirthCurrent(slot, knife, fingerprint))
+        {
+            _pendingKnifeEntityRefreshes.Remove(slot);
+            return;
+        }
+
+        if (_pendingKnifeEntityRefreshes.TryGetValue(slot, out var existing) &&
+            existing.Fingerprint == fingerprint &&
+            existing.ReplayGeneration == replayGeneration)
+        {
+            return;
+        }
+
+        var pending = new PendingKnifeEntityRefresh(
+            ++_nextKnifeEntityRefreshToken,
+            fingerprint,
+            replayGeneration);
+        _pendingKnifeEntityRefreshes[slot] = pending;
+        Server.NextFrame(
+            () => TryBeginReplayKnifeEntityRefresh(
+                slot,
+                pending,
+                KnifeEntityRefreshFreezeWaitFrames));
+    }
+
+    private void TryBeginReplayKnifeEntityRefresh(
+        int slot,
+        PendingKnifeEntityRefresh pending,
+        int freezeWaitFramesRemaining)
+    {
+        if (!IsKnifeEntityRefreshPending(slot, pending))
+            return;
+
+        if (!_cosmeticGiveNamedItemHooked ||
+            !_weaponAlignEnabled ||
+            !_cosmeticKnivesEnabled ||
+            !_loadedReplays.ContainsKey(slot) ||
+            !IsReplayIdentityGenerationCurrent(slot, pending.ReplayGeneration) ||
+            IsReplaySlotPlaying(slot) ||
+            !IsReplaySlotStillSafe(slot))
+        {
+            CancelKnifeEntityRefresh(slot, pending);
+            return;
+        }
+
+        var player = Utilities.GetPlayerFromSlot(slot);
+        var pawn = player?.PlayerPawn.Value;
+        if (player is not { IsValid: true, PawnIsAlive: true } ||
+            pawn is not { IsValid: true } ||
+            !TryGetKnifeCosmeticForSlot(slot, player, out var currentCosmetic, out _) ||
+            KnifeCosmeticFingerprint.From(currentCosmetic) != pending.Fingerprint)
+        {
+            CancelKnifeEntityRefresh(slot, pending);
+            return;
+        }
+
+        if (!TryFindReplayKnife(pawn, out var knife))
+        {
+            RetryKnifeEntityRefreshDuringFreeze(
+                slot,
+                pending,
+                freezeWaitFramesRemaining,
+                "knife entity was not found");
+            return;
+        }
+
+        if (IsKnifeCosmeticBirthCurrent(slot, knife, pending.Fingerprint))
+        {
+            CancelKnifeEntityRefresh(slot, pending);
+            return;
+        }
+
+        if (!TryReadFreezePhaseRemaining(out var freezeRemaining, out var freezeReason) ||
+            freezeRemaining < KnifeEntityRefreshMinFreezeSeconds)
+        {
+            var reason = string.IsNullOrWhiteSpace(freezeReason)
+                ? $"freeze period has only {freezeRemaining:0.000}s remaining"
+                : freezeReason;
+            RetryKnifeEntityRefreshDuringFreeze(
+                slot,
+                pending,
+                freezeWaitFramesRemaining,
+                reason);
+            return;
+        }
+
+        var controllerEntityHandle = player.EntityHandle.Raw;
+        var pawnEntityHandle = pawn.EntityHandle.Raw;
+        var oldKnifeEntityHandle = knife.EntityHandle.Raw;
+        if (!DropAndKillReplayWeapon(player, pawn, knife, "cosmetic_birth_refresh"))
+        {
+            CancelKnifeEntityRefresh(slot, pending);
+            Server.PrintToConsole($"dtr: knife entity refresh failed slot={slot}: could not drop the stale knife");
+            return;
+        }
+
+        Server.PrintToConsole(
+            $"dtr: refreshing stale knife entity during freeze slot={slot} handle=0x{oldKnifeEntityHandle:X}");
+        ScheduleReplayKnifeEntityRestore(
+            slot,
+            pending,
+            controllerEntityHandle,
+            pawnEntityHandle,
+            oldKnifeEntityHandle);
+    }
+
+    private void RetryKnifeEntityRefreshDuringFreeze(
+        int slot,
+        PendingKnifeEntityRefresh pending,
+        int framesRemaining,
+        string reason)
+    {
+        if (framesRemaining > 0)
+        {
+            Server.NextFrame(
+                () => TryBeginReplayKnifeEntityRefresh(slot, pending, framesRemaining - 1));
+            return;
+        }
+
+        CancelKnifeEntityRefresh(slot, pending);
+        Server.PrintToConsole($"dtr: knife entity refresh skipped slot={slot}: {reason}");
+    }
+
+    private void ScheduleReplayKnifeEntityRestore(
+        int slot,
+        PendingKnifeEntityRefresh pending,
+        uint controllerEntityHandle,
+        uint pawnEntityHandle,
+        uint oldKnifeEntityHandle)
+    {
+        // Drop cleanup runs two frames later. Give the replacement only after
+        // the old full entity handle has had a frame to leave the inventory.
+        Server.NextFrame(() => Server.NextFrame(() => Server.NextFrame(() =>
+            RestoreReplayKnifeEntity(
+                slot,
+                pending,
+                controllerEntityHandle,
+                pawnEntityHandle,
+                oldKnifeEntityHandle,
+                KnifeEntityRestoreAttempts,
+                replacementIssued: false))));
+    }
+
+    private void RestoreReplayKnifeEntity(
+        int slot,
+        PendingKnifeEntityRefresh pending,
+        uint controllerEntityHandle,
+        uint pawnEntityHandle,
+        uint oldKnifeEntityHandle,
+        int attemptsRemaining,
+        bool replacementIssued)
+    {
+        // Once the stale knife is dropped, restoring a default knife is recovery
+        // debt even if replay ownership changes. Exact controller and pawn handles
+        // prevent a recycled slot from receiving it; the GiveNamedItem hook alone
+        // decides whether current replay evidence may be applied.
+        var player = Utilities.GetPlayerFromSlot(slot);
+        var pawn = player?.PlayerPawn.Value;
+        if (player is not { IsValid: true, PawnIsAlive: true } ||
+            player.EntityHandle.Raw != controllerEntityHandle ||
+            pawn is not { IsValid: true } ||
+            pawn.EntityHandle.Raw != pawnEntityHandle)
+        {
+            CancelKnifeEntityRefresh(slot, pending);
+            return;
+        }
+
+        if (TryFindReplayKnife(pawn, out var knife))
+        {
+            if (knife.EntityHandle.Raw == oldKnifeEntityHandle)
+            {
+                RetryReplayKnifeEntityRestore(
+                    slot,
+                    pending,
+                    controllerEntityHandle,
+                    pawnEntityHandle,
+                    oldKnifeEntityHandle,
+                    attemptsRemaining,
+                    replacementIssued,
+                    "stale knife handle is still present");
+                return;
+            }
+
+            CancelKnifeEntityRefresh(slot, pending);
+            if (IsReplaySlotStillSafe(slot) &&
+                !IsReplaySlotPlaying(slot) &&
+                _replayIdentityGenerationBySlot.TryGetValue(slot, out var currentGeneration))
+            {
+                Server.NextFrame(
+                    () => RestoreReplayStartWeaponAfterKnifeRefresh(
+                        slot,
+                        currentGeneration));
+            }
+            return;
+        }
+
+        if (attemptsRemaining <= 0)
+        {
+            CancelKnifeEntityRefresh(slot, pending);
+            Server.PrintToConsole($"dtr: knife entity restore failed slot={slot}: replacement did not appear");
+            return;
+        }
+
+        if (replacementIssued)
+        {
+            Server.NextFrame(() => RestoreReplayKnifeEntity(
+                slot,
+                pending,
+                controllerEntityHandle,
+                pawnEntityHandle,
+                oldKnifeEntityHandle,
+                attemptsRemaining - 1,
+                replacementIssued: true));
+            return;
+        }
+
+        var defaultKnife = DefaultKnifeClassNameForPlayer(player);
+        if (TryGiveNamedItem(player, defaultKnife))
+        {
+            Server.NextFrame(() => RestoreReplayKnifeEntity(
+                slot,
+                pending,
+                controllerEntityHandle,
+                pawnEntityHandle,
+                oldKnifeEntityHandle,
+                attemptsRemaining,
+                replacementIssued: true));
+            return;
+        }
+
+        RetryReplayKnifeEntityRestore(
+            slot,
+            pending,
+            controllerEntityHandle,
+            pawnEntityHandle,
+            oldKnifeEntityHandle,
+            attemptsRemaining,
+            replacementIssued: false,
+            $"GiveNamedItem({defaultKnife}) failed");
+    }
+
+    private void RetryReplayKnifeEntityRestore(
+        int slot,
+        PendingKnifeEntityRefresh pending,
+        uint controllerEntityHandle,
+        uint pawnEntityHandle,
+        uint oldKnifeEntityHandle,
+        int attemptsRemaining,
+        bool replacementIssued,
+        string reason)
+    {
+        if (attemptsRemaining > 1)
+        {
+            Server.NextFrame(() => RestoreReplayKnifeEntity(
+                slot,
+                pending,
+                controllerEntityHandle,
+                pawnEntityHandle,
+                oldKnifeEntityHandle,
+                attemptsRemaining - 1,
+                replacementIssued));
+            return;
+        }
+
+        CancelKnifeEntityRefresh(slot, pending);
+        Server.PrintToConsole($"dtr: knife entity restore failed slot={slot}: {reason}");
+    }
+
+    private void RestoreReplayStartWeaponAfterKnifeRefresh(int slot, long replayGeneration)
+    {
+        if (!_weaponAlignEnabled ||
+            !IsReplayIdentityGenerationCurrent(slot, replayGeneration) ||
+            !_loadedReplays.TryGetValue(slot, out var replay) ||
+            !IsReplaySlotStillSafe(slot) ||
+            IsReplaySlotPlaying(slot))
+        {
+            return;
+        }
+
+        ApplyReplayWeaponPreset(
+            slot,
+            ChooseStartWeaponDef(replay),
+            allowSlotReplacement: true,
+            force: true);
+    }
+
+    private bool IsKnifeEntityRefreshPending(int slot, PendingKnifeEntityRefresh pending)
+        => _pendingKnifeEntityRefreshes.TryGetValue(slot, out var current) && current == pending;
+
+    private void CancelKnifeEntityRefresh(int slot, PendingKnifeEntityRefresh pending)
+    {
+        if (IsKnifeEntityRefreshPending(slot, pending))
+            _pendingKnifeEntityRefreshes.Remove(slot);
+    }
+
+    private bool IsKnifeCosmeticBirthCurrent(
+        int slot,
+        CBasePlayerWeapon knife,
+        KnifeCosmeticFingerprint fingerprint)
+        => _appliedKnifeCosmeticBirths.TryGetValue(slot, out var applied) &&
+           applied.WeaponEntityHandle == knife.EntityHandle.Raw &&
+           applied.Fingerprint == fingerprint;
+
+    private void RememberKnifeCosmeticBirth(
+        int slot,
+        CBasePlayerWeapon knife,
+        ReplayItemCosmetic cosmetic)
+    {
+        var fingerprint = KnifeCosmeticFingerprint.From(cosmetic);
+        _appliedKnifeCosmeticBirths[slot] = new AppliedKnifeCosmeticBirth(
+            knife.EntityHandle.Raw,
+            fingerprint);
+        if (_pendingKnifeEntityRefreshes.TryGetValue(slot, out var pending) &&
+            pending.Fingerprint == fingerprint &&
+            IsReplayIdentityGenerationCurrent(slot, pending.ReplayGeneration))
+        {
+            _pendingKnifeEntityRefreshes.Remove(slot);
+        }
+    }
+
+    private void ForgetKnifeCosmeticBirthForEntity(CEntityInstance entity)
+    {
+        uint entityHandle;
+        try
+        {
+            entityHandle = entity.EntityHandle.Raw;
+        }
+        catch
+        {
+            return;
+        }
+        if (entityHandle == uint.MaxValue)
+            return;
+
+        foreach (var slot in _appliedKnifeCosmeticBirths
+                     .Where(entry => entry.Value.WeaponEntityHandle == entityHandle)
+                     .Select(entry => entry.Key)
+                     .ToArray())
+        {
+            _appliedKnifeCosmeticBirths.Remove(slot);
+        }
+    }
+
+    private static string DefaultKnifeClassNameForPlayer(CCSPlayerController player)
+        => player.Team == CsTeam.Terrorist ? "weapon_knife_t" : "weapon_knife";
 
     private void ScheduleCachedKnifeCosmeticRetry(
         int slot,
@@ -1069,7 +1451,12 @@ public sealed partial class DemoTracerPlugin
             if (!TryFindReplayPlayerByItemServices(itemServices, out var slot, out var player))
                 return HookResult.Continue;
 
-            TryApplyGivenWeaponCosmetic(slot, player, weapon, countResult: true);
+            TryApplyGivenWeaponCosmetic(
+                slot,
+                player,
+                weapon,
+                countResult: true,
+                recordKnifeBirth: true);
             var handle = weapon.Handle;
             Server.NextFrame(() =>
             {
@@ -1144,7 +1531,8 @@ public sealed partial class DemoTracerPlugin
         int slot,
         CCSPlayerController player,
         CBasePlayerWeapon weapon,
-        bool countResult)
+        bool countResult,
+        bool recordKnifeBirth = false)
     {
         if (!IsReplaySlotStillSafe(slot))
         {
@@ -1168,6 +1556,8 @@ public sealed partial class DemoTracerPlugin
                 allowSubclassChange: true,
                 applyPaint: true,
                 applyCustomName: _cosmeticNamesEnabled);
+            if (knifeOk && recordKnifeBirth)
+                RememberKnifeCosmeticBirth(slot, weapon, knifeCosmetic);
             if (!knifeOk)
                 ScheduleCachedKnifeCosmeticRetry(slot, knifeCosmetic, knifeSteamId, framesRemaining: 8);
             else
@@ -2358,6 +2748,29 @@ public sealed partial class DemoTracerPlugin
                 cosmetic.Seed,
                 BitConverter.SingleToInt32Bits(cosmetic.Wear));
     }
+
+    private readonly record struct KnifeCosmeticFingerprint(
+        int ItemDefinitionIndex,
+        uint PaintKit,
+        uint Seed,
+        int WearBits)
+    {
+        public static KnifeCosmeticFingerprint From(ReplayItemCosmetic cosmetic)
+            => new(
+                cosmetic.ItemDefIndex ?? -1,
+                cosmetic.PaintKit,
+                cosmetic.Seed,
+                BitConverter.SingleToInt32Bits(cosmetic.Wear));
+    }
+
+    private readonly record struct AppliedKnifeCosmeticBirth(
+        uint WeaponEntityHandle,
+        KnifeCosmeticFingerprint Fingerprint);
+
+    private readonly record struct PendingKnifeEntityRefresh(
+        int Token,
+        KnifeCosmeticFingerprint Fingerprint,
+        long ReplayGeneration);
 
     private readonly record struct AppliedGloveCosmetic(
         nint PawnHandle,
