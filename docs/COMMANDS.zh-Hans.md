@@ -86,7 +86,7 @@ DemoTracer 会从 `DemoTracer.dll` 同目录读取可选的 `demotracer.config.j
 | `dtr_partial` | `1` | bot 数量不足时允许部分 replay。 |
 | `dtr_playoff` | `off` | manifest sequence 耗尽后，继续从该 manifest 调度按 SteamID 匹配的长枪局开局。 |
 | `dtr_chat_auto` | `on` | 按 manifest 元数据和同一回合时间线 replay demo 文字聊天。 |
-| `round_banner` | `on` | 本服务器回合至少成功加载一个安全 replay bot 时，在 freeze time 内向在线真人显示固定 DTR banner 5 秒。 |
+| `round_banner` | `on` | `round_start` 成功准备至少一个安全 replay bot 后，向在线真人显示固定 DTR banner 5 秒。 |
 | `dtr_replay_identity` | `steam` | 通过 bundle 内置 BotHider 的 presentation lease 向受管 replay bot slot 发布 demo 名字和 SteamID64。队伍/赛事 PNG 头像需要显式 `avatar`；`full` 是 `avatar` 的兼容别名。 |
 | `dtr_util_trace` | `0` | 默认不写 utility CSV trace。 |
 | `bc_replay_pov` | `spectated` | 只给正在被第一人称观察的 replay bot 发布昂贵的 native POV 更新。 |

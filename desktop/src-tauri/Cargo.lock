@@ -672,7 +672,7 @@ dependencies = [
 
 [[package]]
 name = "cs2-demotracer"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "ahash",
  "brotli",
@@ -686,7 +686,7 @@ dependencies = [
 
 [[package]]
 name = "cs2-demotracer-gui"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "cs2-demotracer",
  "rfd",

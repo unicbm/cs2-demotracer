@@ -96,7 +96,7 @@ matching legacy fields.
 | `dtr_partial` | `1` | Allow replay with fewer bots than manifest players. |
 | `dtr_playoff` | `off` | After a manifest sequence is exhausted, keep scheduling SteamID-matched full-buy openings from that manifest. |
 | `dtr_chat_auto` | `on` | Replay demo chat messages from manifest metadata on the same round timeline. |
-| `round_banner` | `on` | Show the pinned DTR banner to live human clients for five seconds during freeze time when at least one safe replay bot was loaded for that server round. |
+| `round_banner` | `on` | Show the pinned DTR banner to live human clients for five seconds after `round_start` successfully prepares at least one safe replay bot. |
 | `dtr_replay_identity` | `steam` | Lease demo name and SteamID64 through bundled BotHider-managed replay bot slots. Team/event avatar PNGs require explicit `avatar`; `full` is a compatibility alias for `avatar`. |
 | `dtr_util_trace` | `0` | Utility CSV trace disabled. |
 | `bc_replay_pov` | `spectated` | Publish expensive native first-person POV updates only for replay bots watched in-eye. |
