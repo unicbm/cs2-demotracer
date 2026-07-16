@@ -351,6 +351,7 @@ public sealed partial class DemoTracerPlugin
         PreloadLoadedReplays();
         _sequencePrepared = true;
         _sequencePreparedRound = round;
+        TryStartDtrRoundBanner($"sequence_r{round}");
         Server.PrintToConsole($"dtr: prepared sequence round {round} on {reason}: {load.Message}");
         return true;
     }
@@ -391,6 +392,7 @@ public sealed partial class DemoTracerPlugin
         _armedLoop = loop;
         _armedLabel = label;
         PreloadLoadedReplays();
+        TryStartDtrRoundBanner($"single_r{sourceRound}");
         Server.PrintToConsole($"[DTR OK] round_start: loaded SINGLE source_round={sourceRound} on {reason}: {load.Message}");
         return true;
     }
@@ -767,6 +769,7 @@ public sealed partial class DemoTracerPlugin
         _playoffPreparedTRound = tRound;
         _playoffPreparedCtRound = ctRound;
         _playoffPreparedLabel = $"{reason}; {load.Message}";
+        TryStartDtrRoundBanner($"playoff_t{tRound}_ct{ctRound}");
         Server.PrintToConsole(
             $"dtr: prepared playoff extra round {_playoffRoundIndex + 1} on {prepareReason} -> {_playoffPreparedLabel}");
         if (scheduleFreezePreroll &&
@@ -1009,6 +1012,7 @@ public sealed partial class DemoTracerPlugin
         _poolPreparedRoundIndex = roundIndex;
         _poolPreparedLabel =
             $"{candidate.DemoStem} r{candidate.SourceRound} ({reason}); {load.Message}";
+        TryStartDtrRoundBanner($"pool_r{candidate.SourceRound}");
 
         Server.PrintToConsole(
             $"dtr: prepared pool round {roundIndex} on {prepareReason} -> {_poolPreparedLabel}");

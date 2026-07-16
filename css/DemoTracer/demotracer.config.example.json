@@ -3,6 +3,7 @@
   "allow_partial": true,
   "playoff": false,
   "chat_auto": true,
+  "round_banner": true,
   "handoff": {
     "mode": "death_contact_c4",
     "scope": "slot",

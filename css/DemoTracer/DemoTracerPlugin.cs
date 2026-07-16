@@ -1485,6 +1485,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     [GameEventHandler]
     public HookResult OnRoundStart(EventRoundStart @event, GameEventInfo info)
     {
+        ResetDtrRoundBannerForRound();
         BeginBotHiderPresentationTransition();
         try
         {
@@ -1748,6 +1749,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private void ProcessReplayTick()
     {
+        ProcessDtrRoundBanner();
         ProcessVoiceTestPlayback();
         ProcessChatPlayback();
         ProcessPendingProjectileAlign();
@@ -4294,6 +4296,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private void StopAndUnloadLoaded(bool clearArmedPlan, bool releaseBuffers)
     {
+        CancelDtrRoundBanner(resetRound: false);
         InvalidateInitialSpawnAssignment();
         var trackedSlots = _loadedSlots.ToHashSet();
         StopVoiceTestPlayback("unload_all", printSummary: false);
@@ -4378,6 +4381,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                                  _lastPlayingSlots.Count > 0 ||
                                  _retainedReplayViewmodelSlots.Count > 0 ||
                                  _pendingProjectileAlign.Count > 0 ||
+                                 _roundBannerPlayback != null ||
                                  _voiceTestPlayback != null ||
                                  _chatPlayback != null ||
                                  _armed ||
@@ -4386,6 +4390,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                                  _poolActive;
 
             StopVoiceTestPlayback(reason, printSummary: false);
+            CancelDtrRoundBanner(resetRound: true);
             InvalidateFreezePreroll();
 
             if (BotControllerNative.IsCompatible)
@@ -4487,6 +4492,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private void StopLoadedReplaySlots(string reason)
     {
+        CancelDtrRoundBanner(resetRound: false);
         StopVoiceTestPlayback(reason, printSummary: false);
         StopChatPlayback(reason);
         foreach (var slot in _loadedSlots.ToArray())
