@@ -10,6 +10,7 @@ import { ExportInspector } from "./components/ExportInspector";
 import { LibraryWorkspace, type LibrarySort } from "./components/LibraryWorkspace";
 import type { PlaybackPresetOptions } from "./components/PlaybackCommandBuilder";
 import { RoundWorkspace } from "./components/RoundWorkspace";
+import { SettingsWorkspace } from "./components/SettingsWorkspace";
 import {
   AnalysisFailedView,
   AnalysisProgressView,
@@ -35,14 +36,17 @@ import {
 } from "./library";
 import type {
   AnalysisResult,
+  Cs2InstallCandidate,
   CommandErrorDto,
   ConversionProgressEvent,
   ConversionSummary,
   ConverterSettings,
   DemoLibraryEntry,
   DemoLibraryScan,
+  EnvironmentDiagnosticReport,
   ImportArchivesResult,
   Language,
+  LocalEnvironmentSettings,
   ManifestArchive,
   OutputPreflight,
   Phase,
@@ -55,12 +59,15 @@ import type {
   TaskEvent,
   TaskPhase,
   Theme,
+  WorkspaceSection,
 } from "./types";
 
 const DEFAULT_SETTINGS: ConverterSettings = {
   side: "both",
   fullRound: false,
   freezePrerollSeconds: 10,
+  subtickMode: "auto",
+  maxRoundSeconds: 240,
   exportVoice: true,
   exportCosmetics: false,
   exportStickers: false,
@@ -69,6 +76,11 @@ const DEFAULT_SETTINGS: ConverterSettings = {
 };
 
 const INITIAL_LIBRARY_PREFERENCES = storedLibraryPreferences();
+
+const DEFAULT_LOCAL_ENVIRONMENT: LocalEnvironmentSettings = {
+  cs2Path: "",
+  demoRoots: [],
+};
 
 const DEFAULT_PLAYBACK_PRESET: PlaybackPresetOptions = {
   weapons: true,
@@ -108,9 +120,32 @@ function storedTheme(): Theme {
 function storedSettings(): ConverterSettings {
   try {
     const saved = JSON.parse(localStorage.getItem("demotracer.settings") ?? "null") as Partial<ConverterSettings> | null;
-    return saved
-      ? { ...DEFAULT_SETTINGS, ...saved, exportCosmetics: false, includeSuspicious: false }
-      : { ...DEFAULT_SETTINGS };
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return { ...DEFAULT_SETTINGS };
+    return {
+      ...DEFAULT_SETTINGS,
+      side: saved.side === "both" || saved.side === "t" || saved.side === "ct" ? saved.side : DEFAULT_SETTINGS.side,
+      fullRound: typeof saved.fullRound === "boolean" ? saved.fullRound : DEFAULT_SETTINGS.fullRound,
+      freezePrerollSeconds: typeof saved.freezePrerollSeconds === "number"
+        && Number.isFinite(saved.freezePrerollSeconds)
+        && saved.freezePrerollSeconds >= 0
+        && saved.freezePrerollSeconds <= 120
+        ? saved.freezePrerollSeconds
+        : DEFAULT_SETTINGS.freezePrerollSeconds,
+      subtickMode: saved.subtickMode === "auto" || saved.subtickMode === "off"
+        ? saved.subtickMode
+        : DEFAULT_SETTINGS.subtickMode,
+      maxRoundSeconds: typeof saved.maxRoundSeconds === "number"
+        && Number.isFinite(saved.maxRoundSeconds)
+        && saved.maxRoundSeconds >= 30
+        && saved.maxRoundSeconds <= 1800
+        ? saved.maxRoundSeconds
+        : DEFAULT_SETTINGS.maxRoundSeconds,
+      exportVoice: typeof saved.exportVoice === "boolean" ? saved.exportVoice : DEFAULT_SETTINGS.exportVoice,
+      exportCosmetics: false,
+      exportStickers: typeof saved.exportStickers === "boolean" ? saved.exportStickers : DEFAULT_SETTINGS.exportStickers,
+      exportCharms: typeof saved.exportCharms === "boolean" ? saved.exportCharms : DEFAULT_SETTINGS.exportCharms,
+      includeSuspicious: false,
+    };
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
@@ -134,6 +169,90 @@ function storedPlaybackPreset(): PlaybackPresetOptions {
     };
   } catch {
     return { ...DEFAULT_PLAYBACK_PRESET };
+  }
+}
+
+function storedLocalEnvironment(): LocalEnvironmentSettings {
+  try {
+    const saved = JSON.parse(localStorage.getItem("demotracer.local-environment.v1") ?? "null") as Partial<LocalEnvironmentSettings> | null;
+    if (!saved || typeof saved !== "object") return { ...DEFAULT_LOCAL_ENVIRONMENT };
+    return {
+      cs2Path: typeof saved.cs2Path === "string" ? saved.cs2Path : "",
+      demoRoots: Array.isArray(saved.demoRoots)
+        ? uniqueLibraryRoots(saved.demoRoots.filter((root): root is string => typeof root === "string"))
+        : [],
+    };
+  } catch {
+    return { ...DEFAULT_LOCAL_ENVIRONMENT };
+  }
+}
+
+const ENVIRONMENT_REPORT_STORAGE_KEY = "demotracer.environment-report.v1";
+
+interface StoredEnvironmentReport {
+  cs2Path: string;
+  report: EnvironmentDiagnosticReport;
+}
+
+function normalizedDiagnosticPath(path: string): string {
+  return path.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLocaleLowerCase();
+}
+
+function isEnvironmentDiagnosticReport(value: unknown): value is EnvironmentDiagnosticReport {
+  if (!value || typeof value !== "object") return false;
+  const report = value as Partial<EnvironmentDiagnosticReport>;
+  return Number.isFinite(report.checkedAtMs)
+    && typeof report.requestedPath === "string"
+    && typeof report.cs2Root === "string"
+    && typeof report.gameCsgoPath === "string"
+    && ["pass", "warning", "error", "unverified"].includes(String(report.overall))
+    && Array.isArray(report.checks)
+    && Array.isArray(report.plugins)
+    && Array.isArray(report.conflicts)
+    && Boolean(report.receipt && typeof report.receipt === "object");
+}
+
+function cachedEnvironmentReport(report: EnvironmentDiagnosticReport): EnvironmentDiagnosticReport {
+  const runtimeConflictRules = new Set(["known_cosmetic_writer", "cs2_bot_improver_bot_randomizer"]);
+  const checks = report.checks
+    .filter((check) => check.group !== "runtime")
+    .map((check) => check.id === "counterStrikeSharp.runtime" && check.status === "pass"
+      ? {
+          ...check,
+          status: "unverified" as const,
+          summary: "CounterStrikeSharp was installed at the last inspection; its loaded host version requires a fresh inspection.",
+          actual: "cached; runtime version unknown",
+        }
+      : check);
+  const conflicts = report.conflicts.map((conflict) => runtimeConflictRules.has(conflict.ruleId)
+    ? {
+        ...conflict,
+        confidence: "medium" as const,
+        summary: `${conflict.title} was present at the last inspection. Inspect again to verify whether it is currently loaded or overlaps DemoTracer runtime behavior.`,
+      }
+    : conflict);
+
+  return {
+    ...report,
+    cached: true,
+    overall: "unverified",
+    runtimeVerification: "unknown",
+    checks,
+    plugins: report.plugins.map((plugin) => ({ ...plugin, runtimeState: "unknown" })),
+    conflicts,
+  };
+}
+
+function storedEnvironmentReport(expectedCs2Path: string): EnvironmentDiagnosticReport | null {
+  const expectedPath = normalizedDiagnosticPath(expectedCs2Path);
+  if (!expectedPath) return null;
+  try {
+    const saved = JSON.parse(localStorage.getItem(ENVIRONMENT_REPORT_STORAGE_KEY) ?? "null") as Partial<StoredEnvironmentReport> | null;
+    if (!saved || typeof saved !== "object" || typeof saved.cs2Path !== "string") return null;
+    if (normalizedDiagnosticPath(saved.cs2Path) !== expectedPath || !isEnvironmentDiagnosticReport(saved.report)) return null;
+    return cachedEnvironmentReport(saved.report);
+  } catch {
+    return null;
   }
 }
 
@@ -214,6 +333,7 @@ function App() {
   const [language, setLanguage] = useState<Language>(storedLanguage);
   const [theme, setTheme] = useState<Theme>(storedTheme);
   const [phase, setPhase] = useState<Phase>("idle");
+  const [activeSection, setActiveSection] = useState<WorkspaceSection>("library");
   const [sourcePath, setSourcePath] = useState("");
   const [outputDir, setOutputDir] = useState(INITIAL_LIBRARY_PREFERENCES.exportRoot);
   const [libraryPreferences, setLibraryPreferences] = useState(INITIAL_LIBRARY_PREFERENCES);
@@ -232,6 +352,14 @@ function App() {
   const [selectedRounds, setSelectedRounds] = useState<Set<number>>(new Set());
   const [settings, setSettings] = useState<ConverterSettings>(storedSettings);
   const [playbackPreset, setPlaybackPreset] = useState<PlaybackPresetOptions>(storedPlaybackPreset);
+  const [localEnvironment, setLocalEnvironment] = useState<LocalEnvironmentSettings>(storedLocalEnvironment);
+  const [installCandidates, setInstallCandidates] = useState<Cs2InstallCandidate[]>([]);
+  const [installDetectionCompleted, setInstallDetectionCompleted] = useState(false);
+  const [environmentReport, setEnvironmentReport] = useState<EnvironmentDiagnosticReport | null>(
+    () => storedEnvironmentReport(storedLocalEnvironment().cs2Path),
+  );
+  const [detectingInstallations, setDetectingInstallations] = useState(false);
+  const [inspectingEnvironment, setInspectingEnvironment] = useState(false);
   const [progress, setProgress] = useState<ProgressState>(emptyProgress);
   const [result, setResult] = useState<ConversionSummary | null>(null);
   const [archive, setArchive] = useState<ManifestArchive | null>(null);
@@ -255,6 +383,8 @@ function App() {
   const libraryScanTokenRef = useRef(0);
   const taskWarningsRef = useRef<string[]>([]);
   const isBusyRef = useRef(false);
+  const analyzedMaxRoundSecondsRef = useRef(DEFAULT_SETTINGS.maxRoundSeconds);
+  const environmentInspectionTokenRef = useRef(0);
   const retryButtonRef = useRef<HTMLButtonElement | null>(null);
   const resultHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const settingsTriggerRef = useRef<HTMLElement | null>(null);
@@ -298,6 +428,23 @@ function App() {
   useEffect(() => {
     localStorage.setItem("demotracer.playback-preset.v1", JSON.stringify(playbackPreset));
   }, [playbackPreset]);
+
+  useEffect(() => {
+    localStorage.setItem("demotracer.local-environment.v1", JSON.stringify(localEnvironment));
+  }, [localEnvironment]);
+
+  useEffect(() => {
+    if (environmentReport?.cached) return;
+    if (!environmentReport) {
+      localStorage.removeItem(ENVIRONMENT_REPORT_STORAGE_KEY);
+      return;
+    }
+    const saved: StoredEnvironmentReport = {
+      cs2Path: environmentReport.cs2Root,
+      report: environmentReport,
+    };
+    localStorage.setItem(ENVIRONMENT_REPORT_STORAGE_KEY, JSON.stringify(saved));
+  }, [environmentReport]);
 
   useEffect(() => {
     persistLibraryPreferences(libraryPreferences);
@@ -439,6 +586,8 @@ function App() {
     }
 
     const token = ++taskTokenRef.current;
+    const maxRoundSeconds = settings.maxRoundSeconds;
+    analyzedMaxRoundSecondsRef.current = maxRoundSeconds;
     setGlobalError(null);
     setAnalysisError("");
     setValidationError("");
@@ -454,6 +603,7 @@ function App() {
     setCosmeticPhrase("");
     setSettings((current) => ({ ...current, exportCosmetics: false, includeSuspicious: false }));
     setProgress({ ...emptyProgress(), phase: "parsing" });
+    setActiveSection("convert");
     setPhase("analyzing");
     taskWarningsRef.current = [];
 
@@ -461,7 +611,11 @@ function App() {
     events.onmessage = (event) => absorbEvent(event, token);
     try {
       const next = await invoke<AnalysisResult>("analyze_demo", {
-        request: { path, expectedDemoSha256: expectedDemoSha256 || null },
+        request: {
+          path,
+          expectedDemoSha256: expectedDemoSha256 || null,
+          maxRoundSeconds,
+        },
         events,
       });
       if (token !== taskTokenRef.current) return;
@@ -477,7 +631,7 @@ function App() {
       setAnalysisError(error.message);
       setPhase("analysisFailed");
     }
-  }, [absorbEvent, libraryRoot, words.invalidDemo]);
+  }, [absorbEvent, libraryRoot, settings.maxRoundSeconds, words.invalidDemo]);
 
   const runManifest = useCallback(async (path: string) => {
     if (isBusyRef.current) return;
@@ -487,10 +641,12 @@ function App() {
     }
 
     const returnPhase = phase;
+    const returnSection = activeSection;
     const token = ++taskTokenRef.current;
     setGlobalError(null);
     setArchivePath(path);
     setInspectorSheetOpen(false);
+    setActiveSection("library");
     setPhase("openingArchive");
     try {
       const next = await invoke<ManifestArchive>("read_manifest", { path });
@@ -511,8 +667,9 @@ function App() {
       if (token !== taskTokenRef.current) return;
       setGlobalError(parseCommandError(reason));
       setPhase(returnPhase === "openingArchive" ? "idle" : returnPhase);
+      setActiveSection(returnSection);
     }
-  }, [phase, words.invalidManifest]);
+  }, [activeSection, phase, words.invalidManifest]);
 
   const scanLibrary = useCallback(async (roots: string[]) => {
     const paths = uniqueLibraryRoots(roots);
@@ -889,47 +1046,67 @@ function App() {
           automaticRetry.set(root, failedRootResult(root, reason, firstPass.get(root)));
         }
       }
-      const unresolvedRoots = roots.filter((root) => (
+      let unresolvedRoots = roots.filter((root) => (
         automaticRetry.get(root)?.sourceUnmatched
         ?? firstPass.get(root)?.sourceUnmatched
         ?? 0
       ) > 0);
-      const directoryPass = new Map<string, RefreshLibraryMetadataResult>();
+      const directoryPasses = new Map<string, RefreshLibraryMetadataResult[]>();
+      const searchDemoRoot = async (demoRoot: string) => {
+        for (const root of unresolvedRoots) {
+          const previous = directoryPasses.get(root)?.at(-1)
+            ?? automaticRetry.get(root)
+            ?? firstPass.get(root);
+          try {
+            const result = await invoke<RefreshLibraryMetadataResult>("refresh_library_metadata", {
+              request: { libraryRoot: root, demoRoot, sourcePaths: workingSourceIndex },
+            });
+            directoryPasses.set(root, [...(directoryPasses.get(root) ?? []), result]);
+            absorbVerifiedSources(result);
+          } catch (reason) {
+            directoryPasses.set(root, [
+              ...(directoryPasses.get(root) ?? []),
+              failedRootResult(root, reason, previous),
+            ]);
+          }
+        }
+        unresolvedRoots = roots.filter((root) => (
+          directoryPasses.get(root)?.at(-1)?.sourceUnmatched
+          ?? automaticRetry.get(root)?.sourceUnmatched
+          ?? firstPass.get(root)?.sourceUnmatched
+          ?? 0
+        ) > 0);
+      };
+      for (const demoRoot of uniqueLibraryRoots(localEnvironment.demoRoots)) {
+        if (unresolvedRoots.length === 0) break;
+        await searchDemoRoot(demoRoot);
+      }
       if (unresolvedRoots.length > 0) {
         const initialPath = libraryScan?.entries.find((entry) => entry.sourcePath)?.sourcePath
           || Object.values(workingSourceIndex).at(-1)
+          || localEnvironment.demoRoots.at(-1)
           || null;
         const demoRoot = await invoke<string | null>("choose_demo_source_dir", { initialPath });
         if (demoRoot) {
-          for (const root of unresolvedRoots) {
-            try {
-              const result = await invoke<RefreshLibraryMetadataResult>("refresh_library_metadata", {
-                request: { libraryRoot: root, demoRoot, sourcePaths: workingSourceIndex },
-              });
-              directoryPass.set(root, result);
-              absorbVerifiedSources(result);
-            } catch (reason) {
-              directoryPass.set(root, failedRootResult(
-                root,
-                reason,
-                automaticRetry.get(root) ?? firstPass.get(root),
-              ));
-            }
-          }
+          await searchDemoRoot(demoRoot);
         }
       }
       const result = roots.reduce<RefreshLibraryMetadataResult>((total, root) => {
         const first = firstPass.get(root)!;
         const retry = automaticRetry.get(root);
-        const searched = directoryPass.get(root);
+        const searchResults = directoryPasses.get(root) ?? [];
+        const searched = searchResults.at(-1);
         const latest = searched ?? retry ?? first;
         return {
           demosScanned: total.demosScanned + first.demosScanned
-            + (retry?.demosScanned ?? 0) + (searched?.demosScanned ?? 0),
+            + (retry?.demosScanned ?? 0)
+            + searchResults.reduce((sum, item) => sum + item.demosScanned, 0),
           demosMatched: total.demosMatched + first.demosMatched
-            + (retry?.demosMatched ?? 0) + (searched?.demosMatched ?? 0),
+            + (retry?.demosMatched ?? 0)
+            + searchResults.reduce((sum, item) => sum + item.demosMatched, 0),
           archivesUpdated: total.archivesUpdated + first.archivesUpdated
-            + (retry?.archivesUpdated ?? 0) + (searched?.archivesUpdated ?? 0),
+            + (retry?.archivesUpdated ?? 0)
+            + searchResults.reduce((sum, item) => sum + item.archivesUpdated, 0),
           archivesCurrent: total.archivesCurrent + latest.archivesCurrent,
           archivesUnmatched: total.archivesUnmatched + latest.archivesUnmatched,
           sourceUnmatched: total.sourceUnmatched + latest.sourceUnmatched,
@@ -937,13 +1114,13 @@ function App() {
             ...total.sourcePaths,
             ...first.sourcePaths,
             ...(retry?.sourcePaths ?? {}),
-            ...(searched?.sourcePaths ?? {}),
+            ...Object.assign({}, ...searchResults.map((item) => item.sourcePaths)),
           },
           failures: [
             ...total.failures,
             ...first.failures,
             ...(retry?.failures ?? []),
-            ...(searched?.failures ?? []),
+            ...searchResults.flatMap((item) => item.failures),
           ],
         };
       }, {
@@ -1016,6 +1193,93 @@ function App() {
       setGlobalError(parseCommandError(reason));
       return null;
     }
+  }
+
+  async function runEnvironmentInspection(path = localEnvironment.cs2Path) {
+    const candidate = path.trim();
+    if (!candidate || inspectingEnvironment) return;
+    const token = ++environmentInspectionTokenRef.current;
+    setGlobalError(null);
+    setInspectingEnvironment(true);
+    try {
+      const report = await invoke<EnvironmentDiagnosticReport>("inspect_cs2_install", { path: candidate });
+      if (token !== environmentInspectionTokenRef.current) return;
+      setLocalEnvironment((current) => ({ ...current, cs2Path: report.cs2Root || candidate }));
+      setEnvironmentReport(report);
+    } catch (reason) {
+      if (token !== environmentInspectionTokenRef.current) return;
+      setGlobalError(parseCommandError(reason));
+    } finally {
+      if (token === environmentInspectionTokenRef.current) setInspectingEnvironment(false);
+    }
+  }
+
+  async function chooseCs2Directory() {
+    if (detectingInstallations || inspectingEnvironment) return;
+    try {
+      const path = await invoke<string | null>("choose_cs2_dir", {
+        initialPath: localEnvironment.cs2Path.trim() || null,
+      });
+      if (!path) return;
+      setLocalEnvironment((current) => ({ ...current, cs2Path: path }));
+      setEnvironmentReport(null);
+      await runEnvironmentInspection(path);
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
+    }
+  }
+
+  async function detectCs2Installations() {
+    if (detectingInstallations || inspectingEnvironment) return;
+    setGlobalError(null);
+    setInstallCandidates([]);
+    setInstallDetectionCompleted(false);
+    setDetectingInstallations(true);
+    try {
+      const candidates = await invoke<Cs2InstallCandidate[]>("detect_cs2_installations");
+      setInstallCandidates(candidates);
+      setInstallDetectionCompleted(true);
+      if (candidates.length === 1) {
+        const [candidate] = candidates;
+        setLocalEnvironment((current) => ({ ...current, cs2Path: candidate.path }));
+        setEnvironmentReport(null);
+        await runEnvironmentInspection(candidate.path);
+      }
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
+    } finally {
+      setDetectingInstallations(false);
+    }
+  }
+
+  function useCs2Candidate(candidate: Cs2InstallCandidate) {
+    setLocalEnvironment((current) => ({ ...current, cs2Path: candidate.path }));
+    setEnvironmentReport(null);
+    void runEnvironmentInspection(candidate.path);
+  }
+
+  async function addDemoRoot() {
+    if (isBusy) return;
+    try {
+      const initialPath = localEnvironment.demoRoots.at(-1) ?? "";
+      const path = await invoke<string | null>("choose_demo_source_dir", {
+        initialPath: initialPath || null,
+      });
+      if (!path) return;
+      setLocalEnvironment((current) => ({
+        ...current,
+        demoRoots: uniqueLibraryRoots([...current.demoRoots, path]),
+      }));
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
+    }
+  }
+
+  function removeDemoRoot(root: string) {
+    setLocalEnvironment((current) => ({
+      ...current,
+      demoRoots: current.demoRoots.filter((candidate) => candidate.toLocaleLowerCase() !== root.toLocaleLowerCase()),
+    }));
   }
 
   async function preflightOutput(destination: string): Promise<OutputPreflight | null> {
@@ -1111,7 +1375,9 @@ function App() {
           includeSuspicious: settings.includeSuspicious,
           fullRound: settings.fullRound,
           side: settings.side,
+          subtickMode: settings.subtickMode,
           freezePrerollSeconds: settings.freezePrerollSeconds,
+          maxRoundSeconds: analyzedMaxRoundSecondsRef.current,
           exportVoice: settings.exportVoice,
           exportCosmetics: settings.exportCosmetics,
           exportStickers: settings.exportCosmetics && settings.exportStickers,
@@ -1188,6 +1454,7 @@ function App() {
 
   function resetSession() {
     ++taskTokenRef.current;
+    setActiveSection("library");
     setPhase("idle");
     setSourcePath("");
     setOutputRoot("");
@@ -1279,10 +1546,17 @@ function App() {
       <div className="app-body">
         <AppSidebar
           words={words}
-          phase={phase}
+          activeSection={activeSection}
           busy={isBusy}
           onLibrary={resetSession}
-          onConvert={() => void chooseDemo()}
+          onConvert={() => {
+            if (phase === "analyzing" || phase === "analysisFailed" || phase === "selecting" || phase === "converting" || phase === "validationFailed" || phase === "complete") {
+              setActiveSection("convert");
+            } else {
+              void chooseDemo();
+            }
+          }}
+          onSettings={() => setActiveSection("settings")}
         />
         <main className="app-workspace">
         {globalError ? (
@@ -1293,6 +1567,38 @@ function App() {
           </div>
         ) : null}
 
+        {activeSection === "settings" ? (
+          <SettingsWorkspace
+            words={words}
+            language={language}
+            environment={localEnvironment}
+            exportRoot={libraryRoot}
+            archiveRoots={libraryRoots}
+            converter={settings}
+            playback={playbackPreset}
+            candidates={installCandidates}
+            report={environmentReport}
+            detecting={detectingInstallations}
+            detectionCompleted={installDetectionCompleted}
+            inspecting={inspectingEnvironment}
+            onCs2PathChange={(cs2Path) => {
+              setLocalEnvironment((current) => ({ ...current, cs2Path }));
+              setEnvironmentReport(null);
+            }}
+            onBrowseCs2={() => void chooseCs2Directory()}
+            onDetectCs2={() => void detectCs2Installations()}
+            onUseCandidate={useCs2Candidate}
+            onInspectEnvironment={() => void runEnvironmentInspection()}
+            onChooseExportRoot={() => void chooseLibraryRoot()}
+            onAddArchiveRoot={() => void addLibraryRoot()}
+            onRemoveArchiveRoot={removeLibraryRoot}
+            onAddDemoRoot={() => void addDemoRoot()}
+            onRemoveDemoRoot={removeDemoRoot}
+            onConverterChange={updateSettings}
+            onPlaybackChange={(patch) => setPlaybackPreset((current) => ({ ...current, ...patch }))}
+          />
+        ) : (
+          <>
         {phase === "idle" ? (
           <LibraryWorkspace
             words={words}
@@ -1372,6 +1678,8 @@ function App() {
             formatBytes={formatBytes}
           />
         ) : null}
+          </>
+        )}
         </main>
       </div>
 

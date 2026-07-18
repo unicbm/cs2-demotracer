@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "product": "CS2 DemoTracer Playback Bundle",
+  "platform": "windows-x64",
+  "manifest_abi": 17,
+  "dtr_writer": 7,
+  "dtr_reader": {
+    "min": 3,
+    "max": 7
+  },
+  "bot_controller": {
+    "abi_major": 16,
+    "min_abi_minor": 31,
+    "required_capabilities_hex": "0x1ff"
+  },
+  "bot_hider": {
+    "api": 1
+  },
+  "demotracer": {
+    "companion_api": 6
+  },
+  "counterstrikesharp": {
+    "minimum_version": "1.0.371",
+    "target_framework": "net10.0"
+  }
+}

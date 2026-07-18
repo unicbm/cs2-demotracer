@@ -97,6 +97,13 @@ Manifest 及其 ABI 不包含这个路径。列表只轻量索引这些
 会严格校验散落的回放目录，按完整 SHA-256 去重后复制进按地图
 归类的主库，原目录始终保留不动。
 
+GUI 还提供独立的“设置”工作区，用来管理输出、归档、原始 Demo 库、导出和播放默认项。
+环境页既允许手动填写 CS2 路径，也提供由玩家主动触发的 Steam 定位；随后只读检查
+Metamod、CounterStrikeSharp、DemoTracer bundle 收据、本地 CSS 插件和已知的
+BotController/BotHider vendor 冲突。它不会执行扫描到的 DLL，也不会自动改写游戏安装。
+如果存在新鲜且不含玩家隐私的 DemoTracer heartbeat，同一页面还会核对已加载的 runtime
+契约和 CSS 插件目录名；过期证据不会显示为仍在生效。
+
 ## 环境要求
 
 - **转换：**按需下载 Windows x64 CLI 或 GUI 包，不需要游戏服务器 plugin。

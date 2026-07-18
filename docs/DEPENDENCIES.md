@@ -44,6 +44,8 @@ The playback bundle includes:
 - `DemoTracerBotHiderApi.dll`: versioned presentation-lease contract
 - `demotracer-econ-index.v1.json`
 - `demotracer.config.example.json`
+- `demotracer-install.v1.json`: bundle contract and per-file hashes used by the
+  desktop environment inspection
 
 All bundled CounterStrikeSharp projects target .NET 10 and compile against
 CounterStrikeSharp.API 1.0.371. The playback bundle does not include
@@ -114,8 +116,39 @@ Current release compatibility:
 - `.dtr` writer: v7
 - `.dtr` reader: v3 through v7
 - Manifest ABI: 17
-- BotController native ABI: 16
+- BotController native ABI: 16, minor 31 or newer
+- DemoTracer BotHider API: 1
 - DemoTracer companion API: 6
+
+The desktop GUI validates these contracts from the installed
+`addons/demotracer-install.v1.json` receipt. A receipt-less older installation
+is reported as unverified rather than inferred from filenames. The receipt is
+intended to catch accidental replacement or mixed packages; it is not a
+security signature against a malicious local administrator.
+
+While the server is running, DemoTracer atomically refreshes
+`demotracer-runtime.v1.json` next to `DemoTracer.dll`. It contains only the
+runtime contract, loaded CounterStrikeSharp host version, alignment switches, timestamp, and loaded CSS plugin
+directory names—no player, map, server, or absolute-path data. The GUI accepts
+it as live evidence only while it is fresh; a stopped or stale heartbeat never
+claims that a plugin is active.
+
+### CS2-Bot-Improver package overlap
+
+Some full CS2-Bot-Improver packages install files at the same BotController and
+BotHider paths used by DemoTracer. Those files are not interchangeable merely
+because their directory names and Metamod VDF targets match. For example, the
+known CS2-Bot-Improver v1.4.2 BotController uses ABI 14, while DemoTracer
+requires ABI 16 with minor 31 or newer. Its legacy `BotControllerImpl` also
+expects ABI 14, and its `BotHiderImpl` is a second unsupported presentation
+writer.
+
+For post-handoff bot behavior, keep the complete DemoTracer native/runtime set
+and install only a behavior-only integration that explicitly supports that
+contract. Do not merge another package's BotController, BotHider,
+`BotControllerImpl`, or `BotHiderImpl` over it. The GUI environment inspection
+uses the DemoTracer receipt plus known exact fingerprints to distinguish a
+clean behavior-only layout from a replaced, mixed, or unverified vendor set.
 
 Companion API 6 is intentionally narrow: bot ownership/busy-state queries,
 demo-backed cosmetic state, and server-published bot crosshair override control. It does not

@@ -1,23 +1,26 @@
-import { LibraryIcon, PlusIcon } from "../icons";
+import { LibraryIcon, PlusIcon, SlidersIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
-import type { Phase } from "../types";
+import type { WorkspaceSection } from "../types";
 import "./app-sidebar.css";
 
 export function AppSidebar({
   words,
-  phase,
+  activeSection,
   busy,
   onLibrary,
   onConvert,
+  onSettings,
 }: {
   words: TextDictionary;
-  phase: Phase;
+  activeSection: WorkspaceSection;
   busy: boolean;
   onLibrary: () => void;
   onConvert: () => void;
+  onSettings: () => void;
 }) {
-  const libraryActive = phase === "idle" || phase === "openingArchive" || phase === "archive";
-  const conversionActive = !libraryActive;
+  const libraryActive = activeSection === "library";
+  const conversionActive = activeSection === "convert";
+  const settingsActive = activeSection === "settings";
   return (
     <aside className="app-sidebar" aria-label={words.mainNavigation}>
       <nav>
@@ -42,6 +45,17 @@ export function AppSidebar({
         >
           <PlusIcon size={19} />
           <span>{words.navConvert}</span>
+        </button>
+        <button
+          className={settingsActive ? "is-active" : ""}
+          type="button"
+          onClick={onSettings}
+          disabled={busy}
+          aria-current={settingsActive ? "page" : undefined}
+          title={words.navSettings}
+        >
+          <SlidersIcon size={19} />
+          <span>{words.navSettings}</span>
         </button>
       </nav>
       <div className="app-sidebar-status">

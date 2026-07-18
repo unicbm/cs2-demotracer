@@ -36,6 +36,7 @@
 *.exe
 
 # Local conversion data
+/.codex-tmp/
 /output/
 /tmp/
 /converter/output/

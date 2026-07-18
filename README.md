@@ -160,6 +160,15 @@ scratch. **Organize old
 archives** validates scattered replay folders, copies each unique demo into the
 map-grouped main library, and leaves every source folder untouched.
 
+The GUI also has a Settings workspace for output, archive, raw-demo, export,
+and playback defaults. Its environment page accepts a manual CS2 path or an
+explicit user-triggered Steam discovery, then performs a read-only check of
+Metamod, CounterStrikeSharp, the DemoTracer bundle receipt, local CSS plugins,
+and known BotController/BotHider vendor conflicts. It does not execute scanned
+DLLs or automatically rewrite the game installation. A fresh, privacy-bounded
+DemoTracer heartbeat can additionally prove loaded runtime contracts and CSS
+plugin directory names; stale evidence is never shown as active.
+
 More commands:
 
 - Converter usage: [`docs/USAGE.md`](docs/USAGE.md)
@@ -206,7 +215,8 @@ loader and BotController runtime. Detailed binary layout is documented in
 - Current writer format: `.dtr` v7
 - Runtime reader support: v3 through v7
 - Current manifest ABI: 17
-- Current BotController native ABI: 16
+- Current BotController native ABI: 16, minor 31 or newer
+- Current DemoTracer BotHider API: 1
 - Current DemoTracer companion API: 6
 - Endianness: little-endian
 - Current v7 layout: section container with required movement snapshot, tick

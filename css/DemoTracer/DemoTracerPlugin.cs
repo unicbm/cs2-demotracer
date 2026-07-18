@@ -194,6 +194,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         Capabilities.RegisterPluginCapability(ApiCapability, () => (IDemoTracerApi)_apiFacade);
         ConfigureNativeSafetyOffsets();
         ConfigureNativeProjectileBirthAlignOffsets();
+        StartRuntimeHealthHeartbeat();
         Server.PrintToConsole("dtr: CSS control plugin loaded");
     }
 
@@ -202,10 +203,12 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _botHiderBridge.Refresh();
         _ = _botHiderBridge.ReleaseOwner(DemoTracerBotHiderContract.DemoTracerOwner);
         _ = SyncBotHiderPresentationLease(announce: _loadedSlots.Count > 0);
+        RefreshRuntimeHealthHeartbeat();
     }
 
     public override void Unload(bool hotReload)
     {
+        StopRuntimeHealthHeartbeat();
         UnhookCosmeticGiveNamedItem();
         ClearReplayStateForLifecycle(hotReload ? "plugin_reload" : "plugin_unload");
         StopUtilityTrace();
@@ -1740,6 +1743,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
 
     private void OnTick()
     {
+        TickRuntimeHealthHeartbeat();
+
         if (!_mapActive || _lifecycleResetInProgress)
             return;
 

@@ -94,6 +94,20 @@ present in the demo. **Organize old archives** strictly validates scattered
 archive folders, skips duplicate full demo hashes, and copies accepted archives
 into the map-grouped main library without moving or deleting their sources.
 
+The GUI Settings workspace keeps output/archive roots separate from raw `.dem`
+library roots, remembers safe export and playback defaults, and provides a
+local environment inspection. CS2 discovery runs only after the user clicks
+the detection action; a manually entered CS2 or `game/csgo` path is always
+supported. Inspection is read-only: it inventories Metamod,
+CounterStrikeSharp, DemoTracer, local CSS plugins, the installed bundle receipt,
+and known vendor conflicts without loading scanned DLLs or rewriting the game
+directory. Saved raw-demo roots are searched during library metadata repair
+before the GUI asks for another directory. When a local server is running, a
+short-lived `demotracer-runtime.v1.json` heartbeat lets the same page verify the
+loaded BotController ABI/capabilities, BotHider provider, cosmetic alignment
+switches, loaded CounterStrikeSharp host version, and CSS plugin directory names. Stale evidence is shown as not
+running, never as active.
+
 Cosmetic/econ metadata is not exported by default, so normal manifests contain
 no `cosmetics` blocks. To intentionally export demo-observed weapon paint,
 knife, glove, agent model metadata, and stable weapon/knife custom names, you

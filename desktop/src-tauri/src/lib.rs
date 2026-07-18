@@ -1,5 +1,6 @@
 mod archive_info;
 mod catalog;
+mod diagnostics;
 
 use cs2_demotracer::browser_analysis::{
     analyze_browser_demo, BrowserDemoAnalysis, BrowserDemoSource, BrowserPlayerSummary,
@@ -19,6 +20,7 @@ use cs2_demotracer::model::{
 use cs2_demotracer::quality::AnalysisOptions;
 use cs2_demotracer::validate::validate_dtr_path;
 use cs2_demotracer::voice_export::export_round_voice_sidecars;
+use diagnostics::{choose_cs2_dir, detect_cs2_installations, inspect_cs2_install};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -31,6 +33,8 @@ use tauri::{AppHandle, Manager, State};
 
 const COSMETIC_CONFIRMATION_PHRASE: &str = "I ACCEPT COSMETIC EXPORT RISK";
 const MAX_FREEZE_PREROLL_SECONDS: f32 = 120.0;
+const MIN_MAX_ROUND_SECONDS: f32 = 30.0;
+const MAX_MAX_ROUND_SECONDS: f32 = 1800.0;
 const MAX_MANIFEST_BYTES: u64 = 32 * 1024 * 1024;
 const MIN_SUPPORTED_MANIFEST_ABI: i32 = 12;
 const MIN_SUPPORTED_DTR_FORMAT_VERSION: u32 = 3;
@@ -39,7 +43,7 @@ const OUTPUT_COMPLETION_MARKER_CONTENT: &[u8] = b"CS2 DemoTracer output complete
 
 static NEXT_STAGING_NONCE: AtomicU64 = AtomicU64::new(1);
 
-type CommandResult<T> = Result<T, CommandErrorDto>;
+pub(crate) type CommandResult<T> = Result<T, CommandErrorDto>;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -51,7 +55,7 @@ pub struct CommandErrorDto {
 }
 
 impl CommandErrorDto {
-    fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
+    pub(crate) fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             code: code.into(),
             message: message.into(),
@@ -59,7 +63,7 @@ impl CommandErrorDto {
         }
     }
 
-    fn at_path(
+    pub(crate) fn at_path(
         code: impl Into<String>,
         message: impl Into<String>,
         path: impl AsRef<Path>,
@@ -248,6 +252,8 @@ pub struct AnalyzeDemoRequest {
     pub path: String,
     #[serde(default)]
     pub expected_demo_sha256: Option<String>,
+    #[serde(default = "default_max_round_seconds")]
+    pub max_round_seconds: f32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -302,6 +308,10 @@ pub struct ConvertDemoRequest {
     pub full_round: bool,
     #[serde(default)]
     pub side: Side,
+    #[serde(default)]
+    pub subtick_mode: SubtickMode,
+    #[serde(default = "default_max_round_seconds")]
+    pub max_round_seconds: f32,
     #[serde(default = "default_freeze_preroll_seconds")]
     pub freeze_preroll_seconds: f32,
     #[serde(default = "default_true")]
@@ -320,6 +330,10 @@ pub struct ConvertDemoRequest {
 
 fn default_freeze_preroll_seconds() -> f32 {
     DEFAULT_FREEZE_PREROLL_SECONDS
+}
+
+fn default_max_round_seconds() -> f32 {
+    AnalysisOptions::default().max_round_seconds
 }
 
 fn default_true() -> bool {
@@ -1029,6 +1043,7 @@ async fn analyze_demo(
     events: Channel<TaskEvent>,
     state: State<'_, AppState>,
 ) -> CommandResult<AnalysisDto> {
+    validate_max_round_seconds(request.max_round_seconds)?;
     let _busy = state.acquire_busy()?;
     let source_path = validate_demo_path(&request.path)?;
     let source_metadata = fs::metadata(&source_path).ok();
@@ -1052,7 +1067,13 @@ async fn analyze_demo(
             },
         )?;
         emit_phase(&worker_events, TaskPhase::Analyzing);
-        let analysis = analyze_browser_demo(&parsed, AnalysisOptions::default());
+        let analysis = analyze_browser_demo(
+            &parsed,
+            AnalysisOptions {
+                max_round_seconds: request.max_round_seconds,
+                ..AnalysisOptions::default()
+            },
+        );
         Ok::<_, cs2_demotracer::Error>((Arc::new(parsed), analysis))
     })
     .await
@@ -3098,6 +3119,7 @@ fn prepare_conversion(
     request: &ConvertDemoRequest,
     cached: &CachedDemo,
 ) -> CommandResult<PreparedConversion> {
+    validate_max_round_seconds(request.max_round_seconds)?;
     if !request.freeze_preroll_seconds.is_finite()
         || !(0.0..=MAX_FREEZE_PREROLL_SECONDS).contains(&request.freeze_preroll_seconds)
     {
@@ -3127,18 +3149,32 @@ fn prepare_conversion(
         selected_rounds: Some(selected_rounds),
         include_suspicious: request.include_suspicious,
         cut_before_bomb_plant: !request.full_round,
-        subtick_mode: SubtickMode::Auto,
+        subtick_mode: request.subtick_mode,
         freeze_preroll_seconds: request.freeze_preroll_seconds,
         export_cosmetics: cosmetics.cosmetics,
         export_stickers: cosmetics.stickers,
         export_charms: cosmetics.charms,
-        analysis: AnalysisOptions::default(),
+        analysis: AnalysisOptions {
+            max_round_seconds: request.max_round_seconds,
+            ..AnalysisOptions::default()
+        },
     };
     Ok(PreparedConversion {
         output_dir: resolved.output_dir,
         root: resolved.root,
         options,
     })
+}
+
+fn validate_max_round_seconds(value: f32) -> CommandResult<()> {
+    if value.is_finite() && (MIN_MAX_ROUND_SECONDS..=MAX_MAX_ROUND_SECONDS).contains(&value) {
+        Ok(())
+    } else {
+        Err(CommandErrorDto::new(
+            "invalid_max_round_seconds",
+            "Maximum round duration must be between 30 and 1800 seconds.",
+        ))
+    }
 }
 
 fn preflight_output_for(
@@ -4329,6 +4365,9 @@ pub fn run() {
             default_library_dir,
             choose_library_dir,
             choose_demo_source_dir,
+            choose_cs2_dir,
+            detect_cs2_installations,
+            inspect_cs2_install,
             analyze_demo,
             preflight_output,
             read_manifest,
@@ -4393,6 +4432,8 @@ mod tests {
             include_suspicious: false,
             full_round: false,
             side: Side::Both,
+            subtick_mode: SubtickMode::Auto,
+            max_round_seconds: default_max_round_seconds(),
             freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
             export_voice: true,
             export_cosmetics: false,

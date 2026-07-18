@@ -1,6 +1,8 @@
 export type Language = "zh" | "en";
 export type Theme = "system" | "light" | "dark";
 export type SideChoice = "both" | "t" | "ct";
+export type WorkspaceSection = "library" | "convert" | "settings";
+export type SubtickMode = "auto" | "off";
 
 export type Phase =
   | "idle"
@@ -331,11 +333,94 @@ export interface ConverterSettings {
   side: SideChoice;
   fullRound: boolean;
   freezePrerollSeconds: number;
+  subtickMode: SubtickMode;
+  maxRoundSeconds: number;
   exportVoice: boolean;
   exportCosmetics: boolean;
   exportStickers: boolean;
   exportCharms: boolean;
   includeSuspicious: boolean;
+}
+
+export interface LocalEnvironmentSettings {
+  cs2Path: string;
+  demoRoots: string[];
+}
+
+export interface Cs2InstallCandidate {
+  path: string;
+  gameCsgoPath: string;
+  source: string;
+  label: string;
+}
+
+export type EnvironmentOverallStatus = "pass" | "warning" | "error" | "unverified";
+export type EnvironmentCheckStatus = EnvironmentOverallStatus | "notApplicable";
+export type RuntimeVerificationStatus = "verified" | "notRunning" | "unavailable" | "unknown";
+
+export interface EnvironmentDiagnosticCheck {
+  id: string;
+  group: string;
+  status: EnvironmentCheckStatus;
+  title: string;
+  summary: string;
+  expected?: string | null;
+  actual?: string | null;
+  evidencePath?: string | null;
+  action?: string | null;
+}
+
+export type EnvironmentPluginClassification =
+  | "demotracer"
+  | "dependency"
+  | "potentialConflict"
+  | "unknown";
+
+export interface EnvironmentPluginInfo {
+  name: string;
+  directory: string;
+  assemblyFiles: string[];
+  classification: EnvironmentPluginClassification;
+  runtimeState: "loaded" | "notLoaded" | "unknown";
+}
+
+export interface EnvironmentConflict {
+  ruleId: string;
+  severity: "warning" | "error";
+  confidence: "certain" | "high" | "medium" | "low";
+  title: string;
+  summary: string;
+  evidencePath: string;
+  affectedFeatures: string[];
+}
+
+export interface EnvironmentInstallReceipt {
+  found: boolean;
+  path?: string | null;
+  bundleVersion?: string | null;
+  manifestAbi?: number | null;
+  botControllerAbi?: number | null;
+  botControllerMinor?: number | null;
+  botHiderApi?: number | null;
+  demoTracerApi?: number | null;
+  verified?: boolean | null;
+  filesChecked: number;
+  filesMismatched: number;
+}
+
+export interface EnvironmentDiagnosticReport {
+  /** Frontend-only marker for a report restored from local storage. */
+  cached?: boolean;
+  checkedAtMs: number;
+  requestedPath: string;
+  cs2Root: string;
+  gameCsgoPath: string;
+  overall: EnvironmentOverallStatus;
+  runtimeVerification: RuntimeVerificationStatus;
+  checks: EnvironmentDiagnosticCheck[];
+  plugins: EnvironmentPluginInfo[];
+  conflicts: EnvironmentConflict[];
+  receipt: EnvironmentInstallReceipt;
 }
 
 export type LogLevel = "info" | "warning" | "error";

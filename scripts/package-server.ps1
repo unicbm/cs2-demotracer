@@ -34,10 +34,77 @@ $cssOut = Join-Path $repoRoot "css\DemoTracer\bin\$Configuration\net10.0"
 $apiOut = Join-Path $repoRoot "css\DemoTracerApi\bin\$Configuration\net10.0"
 $botHiderCssOut = Join-Path $repoRoot "runtime\BotHider\csharp\BotHiderImpl\bin\$Configuration\net10.0"
 $botHiderApiOut = Join-Path $repoRoot "runtime\BotHider\csharp\BotHiderApi\bin\$Configuration\net10.0"
+$playbackContractPath = Join-Path $repoRoot "compatibility\playback-contract.v1.json"
 
 function Require-Path([string]$Path, [string]$Label) {
     if (-not (Test-Path -LiteralPath $Path)) {
         throw "$Label not found: $Path"
+    }
+}
+
+function Test-SameFullPath([string]$Left, [string]$Right) {
+    $leftPath = [System.IO.Path]::GetFullPath($Left).TrimEnd('\', '/')
+    $rightPath = [System.IO.Path]::GetFullPath($Right).TrimEnd('\', '/')
+    return [System.StringComparer]::OrdinalIgnoreCase.Equals($leftPath, $rightPath)
+}
+
+function Assert-ExternalRuntimeReceipt(
+    [string]$Root,
+    [string[]]$RequiredPaths,
+    [string]$Component,
+    [string]$Label,
+    [object]$ExpectedContract
+) {
+    $receiptPath = Join-Path $Root "addons\demotracer-install.v1.json"
+    Require-Path $receiptPath "$Label source receipt"
+    $receipt = Get-Content -LiteralPath $receiptPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($receipt.schema_version -ne 1 -or
+        $receipt.product -ne $ExpectedContract.product -or
+        $receipt.platform -ne $ExpectedContract.platform -or
+        $receipt.compatibility.bot_controller.abi_major -ne $ExpectedContract.bot_controller.abi_major -or
+        $receipt.compatibility.bot_controller.min_abi_minor -lt $ExpectedContract.bot_controller.min_abi_minor -or
+        $receipt.compatibility.bot_controller.required_capabilities_hex -ne $ExpectedContract.bot_controller.required_capabilities_hex -or
+        $receipt.compatibility.bot_hider.api -ne $ExpectedContract.bot_hider.api -or
+        $receipt.compatibility.demotracer.companion_api -ne $ExpectedContract.demotracer.companion_api) {
+        throw "$Label source receipt does not match the current DemoTracer playback contract: $receiptPath"
+    }
+
+    $entries = @($receipt.files | Where-Object { $_.component -eq $Component })
+    if ($entries.Count -eq 0) {
+        throw "$Label source receipt does not contain component $Component"
+    }
+    foreach ($requiredPath in $RequiredPaths) {
+        $receiptRequiredPath = $requiredPath.Replace('\', '/')
+        if (-not ($entries | Where-Object {
+            [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$_.path, $receiptRequiredPath)
+        } | Select-Object -First 1)) {
+            throw "$Label source receipt does not contain required file $receiptRequiredPath"
+        }
+    }
+
+    $seenPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($entry in $entries) {
+        $relativePath = ([string]$entry.path).Replace('\', '/')
+        $segments = @($relativePath.Split('/'))
+        $unsafeSegment = $segments | Where-Object {
+            [string]::IsNullOrWhiteSpace($_) -or $_ -eq '.' -or $_ -eq '..' -or $_.Contains(':')
+        } | Select-Object -First 1
+        if ($segments.Count -lt 2 -or
+            $segments[0] -ne 'addons' -or
+            $null -ne $unsafeSegment) {
+            throw "$Label source receipt contains an unsafe path: $relativePath"
+        }
+        if (-not $seenPaths.Add($relativePath)) {
+            throw "$Label source receipt contains a duplicate path: $relativePath"
+        }
+        $filePath = Join-Path $Root $relativePath.Replace('/', '\')
+        Require-Path $filePath "$Label receipt file"
+        $actual = Get-Item -LiteralPath $filePath
+        $actualHash = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash
+        if ($actual.Length -ne [long]$entry.size -or
+            -not [System.StringComparer]::OrdinalIgnoreCase.Equals($actualHash, [string]$entry.sha256)) {
+            throw "$Label source component no longer matches its DemoTracer receipt: $filePath"
+        }
     }
 }
 
@@ -121,8 +188,42 @@ if (-not $SkipCssBuild) {
     Invoke-Checked $resolvedDotnetPath @("build", (Join-Path $repoRoot "runtime\BotHider\csharp\BotHiderImpl\BotHiderImpl.csproj"), "-c", $Configuration, "-m:1")
 }
 
+Require-Path $playbackContractPath "playback compatibility contract"
+$playbackContract = Get-Content -LiteralPath $playbackContractPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$defaultRuntimeRoot = Join-Path $repoRoot "runtime\BotController\build\package"
+$defaultBotHiderRuntimeRoot = Join-Path $repoRoot "runtime\BotHider\build\package"
+if (-not (Test-SameFullPath $runtimeRoot $defaultRuntimeRoot)) {
+    Assert-ExternalRuntimeReceipt `
+        -Root $runtimeRoot `
+        -RequiredPaths @(
+            "addons\BotController\bin\win64\BotController.dll",
+            "addons\BotController\gamedata.json",
+            "addons\metamod\BotController.vdf"
+        ) `
+        -Component "bot_controller" `
+        -Label "BotController" `
+        -ExpectedContract $playbackContract
+}
+if (-not (Test-SameFullPath $botHiderRuntimeRoot $defaultBotHiderRuntimeRoot)) {
+    Assert-ExternalRuntimeReceipt `
+        -Root $botHiderRuntimeRoot `
+        -RequiredPaths @(
+            "addons\BotHider\bin\win64\BotHider.dll",
+            "addons\BotHider\gamedata.json",
+            "addons\BotHider\map_whitelist.json",
+            "addons\BotHider\bot_info.example.json",
+            "addons\metamod\BotHider.vdf"
+        ) `
+        -Component "bot_hider_native" `
+        -Label "BotHider" `
+        -ExpectedContract $playbackContract
+}
+
 $runtimeDll = Join-Path $runtimeRoot "addons\BotController\bin\win64\BotController.dll"
 Require-Path $runtimeDll "BotController runtime DLL"
+Assert-BinaryContainsExport $runtimeDll "BotController_GetAbiInfo"
+Assert-BinaryContainsExport $runtimeDll "BotController_GetCapabilities"
+Assert-BinaryContainsExport $runtimeDll "BotController_GetBuildId"
 Assert-BinaryContainsExport $runtimeDll "BotController_ReleaseReplayBuffer"
 Require-Path (Join-Path $runtimeRoot "addons\BotController\gamedata.json") "BotController gamedata"
 Require-Path (Join-Path $runtimeRoot "addons\metamod\BotController.vdf") "BotController Metamod VDF"
@@ -141,12 +242,22 @@ New-Item -ItemType Directory -Force -Path $stageRoot | Out-Null
 
 $addonsOut = Join-Path $stageRoot "addons"
 New-Item -ItemType Directory -Force -Path $addonsOut | Out-Null
-Copy-Item -LiteralPath (Join-Path $runtimeRoot "addons\BotController") `
-    -Destination (Join-Path $addonsOut "BotController") -Recurse -Force
-Copy-Item -LiteralPath (Join-Path $runtimeRoot "addons\metamod") `
-    -Destination (Join-Path $addonsOut "metamod") -Recurse -Force
-Copy-Item -LiteralPath (Join-Path $botHiderRuntimeRoot "addons\BotHider") `
-    -Destination (Join-Path $addonsOut "BotHider") -Recurse -Force
+$botControllerOut = Join-Path $addonsOut "BotController"
+Copy-RequiredFile (Join-Path $runtimeRoot "addons\BotController\bin\win64\BotController.dll") `
+    (Join-Path $botControllerOut "bin\win64\BotController.dll")
+Copy-RequiredFile (Join-Path $runtimeRoot "addons\BotController\gamedata.json") `
+    (Join-Path $botControllerOut "gamedata.json")
+Copy-RequiredFile (Join-Path $runtimeRoot "addons\metamod\BotController.vdf") `
+    (Join-Path $addonsOut "metamod\BotController.vdf")
+$botHiderOut = Join-Path $addonsOut "BotHider"
+Copy-RequiredFile (Join-Path $botHiderRuntimeRoot "addons\BotHider\bin\win64\BotHider.dll") `
+    (Join-Path $botHiderOut "bin\win64\BotHider.dll")
+Copy-RequiredFile (Join-Path $botHiderRuntimeRoot "addons\BotHider\gamedata.json") `
+    (Join-Path $botHiderOut "gamedata.json")
+Copy-RequiredFile (Join-Path $botHiderRuntimeRoot "addons\BotHider\map_whitelist.json") `
+    (Join-Path $botHiderOut "map_whitelist.json")
+Copy-RequiredFile (Join-Path $botHiderRuntimeRoot "addons\BotHider\bot_info.example.json") `
+    (Join-Path $botHiderOut "bot_info.example.json")
 Copy-RequiredFile (Join-Path $botHiderRuntimeRoot "addons\metamod\BotHider.vdf") `
     (Join-Path $addonsOut "metamod\BotHider.vdf")
 
@@ -186,6 +297,43 @@ try {
 } catch {
 }
 
+$receiptFiles = @(
+    Get-ChildItem -LiteralPath $addonsOut -Recurse -File |
+        Sort-Object FullName |
+        ForEach-Object {
+            $relativePath = [System.IO.Path]::GetRelativePath($stageRoot, $_.FullName).Replace('\', '/')
+            $component = if ($relativePath -like "addons/BotController/*" -or $relativePath -eq "addons/metamod/BotController.vdf") {
+                "bot_controller"
+            } elseif ($relativePath -like "addons/BotHider/*" -or $relativePath -eq "addons/metamod/BotHider.vdf") {
+                "bot_hider_native"
+            } elseif ($relativePath -like "addons/counterstrikesharp/plugins/DemoTracerBotHider/*" -or
+                      $relativePath -like "addons/counterstrikesharp/shared/DemoTracerBotHiderApi/*") {
+                "bot_hider_managed"
+            } elseif ($relativePath -like "addons/counterstrikesharp/plugins/DemoTracer/*") {
+                "demotracer"
+            } else {
+                "shared_dependency"
+            }
+            [ordered]@{
+                path = $relativePath
+                component = $component
+                size = $_.Length
+                sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+        }
+)
+$installReceipt = [ordered]@{
+    schema_version = 1
+    product = "CS2 DemoTracer Playback Bundle"
+    bundle_version = $Version
+    git_commit = $gitCommit
+    platform = "windows-x64"
+    compatibility = $playbackContract
+    files = $receiptFiles
+}
+$installReceiptPath = Join-Path $addonsOut "demotracer-install.v1.json"
+$installReceipt | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $installReceiptPath -Encoding UTF8
+
 $versionText = @"
 CS2 DemoTracer Playback Bundle
 version: v$Version
@@ -221,10 +369,14 @@ plugins as one matching runtime set.
 3. Remove separately installed public `BotHiderImpl` CounterStrikeSharp plugin
    directories. The bundled `DemoTracerBotHider` is the only supported
    presentation writer and must not run beside another BotHider CSS plugin.
-4. Copy this package's `addons` directory into the server `game/csgo` directory
+4. Do not merge BotController, BotHider, `BotControllerImpl`, or `BotHiderImpl`
+   from a full CS2-Bot-Improver package. Those builds use overlapping paths but
+   are not the same vendor contract. For post-handoff AI, keep this bundle's
+   native set and add only a compatible behavior-only integration.
+5. Copy this package's `addons` directory into the server `game/csgo` directory
    so it merges with the existing `addons` directory.
-5. Start the server.
-6. In the server console, run:
+6. Start the server.
+7. In the server console, run:
 
 ```text
 dtr_runtime
@@ -278,11 +430,14 @@ through CS2's native `say` / `say_team` path when `dtr_chat_auto on` is enabled
 - `addons/BotHider/gamedata.json`
 - `addons/BotHider/bot_info.example.json` (does not overwrite local `bot_info.json`)
 - `addons/metamod/BotHider.vdf`
+- `addons/demotracer-install.v1.json` (component contract and file hashes for desktop diagnostics)
 - `addons/counterstrikesharp/plugins/DemoTracerBotHider/`
 - `addons/counterstrikesharp/shared/DemoTracerBotHiderApi/`
 - `addons/counterstrikesharp/plugins/DemoTracer/`
   - `demotracer.config.example.json` sanitized local runtime defaults
   - `demotracer-econ-index.v1.json` compact econ validation index
+  - `demotracer-runtime.v1.json` is created at runtime as a short-lived local
+    health heartbeat; it is not prepackaged
 - `docs/COMMANDS.md`
 - `docs/COMMANDS.zh-Hans.md`
 - `docs/VOICE.md`
@@ -321,6 +476,12 @@ Included in this bundle:
 Do not install a second public CS2-Bot-Hider CSS plugin beside the bundled
 `DemoTracerBotHider`. Identity and crosshair presentation use exclusive,
 versioned leases and require one publisher.
+
+Do not infer BotController/BotHider compatibility from directory names or VDF
+targets. Known CS2-Bot-Improver v1.4.2 native packages use BotController ABI 14;
+DemoTracer requires ABI 16/minor 31. The desktop environment inspection reads
+`addons/demotracer-install.v1.json` and exact component hashes to detect a mixed
+or replaced vendor set.
 
 Optional:
 

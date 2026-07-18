@@ -163,6 +163,19 @@ public sealed partial class DemoTracerPlugin
             }
         }
 
+        public BotHiderProviderInfo? ProbeProviderInfo()
+        {
+            try
+            {
+                var api = _api ?? Capability.Get();
+                return api?.GetProviderInfo();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         public BotHiderDiagnostics? GetDiagnostics()
         {
             if (!TryGetApi(out var api))
