@@ -48,6 +48,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private const int ProjectileAlignDefaultTotalWrites = 1;
     private const int ProjectileAlignUntilDelete = -1;
     private const int ProjectileAlignMaxTotalWrites = 512;
+    private const float ReplayMusicKitRepairIntervalSeconds = 0.25f;
+    private const int ReplayMusicKitRepairAttempts = 20;
     private const int ProjectileAlignLogMaxEntries = 128;
     private const float FireProjectileAlignMaxInitialPositionDistance = 128.0f;
     private const int MolotovPointAlignDefaultLeadTicks = 1;
@@ -91,7 +93,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private readonly Dictionary<int, PendingBulletDamage> _pendingBulletDamages = new();
     private readonly Dictionary<int, PendingThreat360> _pendingThreat360 = new();
     private readonly Dictionary<uint, UtilityProjectileTrace> _utilityTraceProjectiles = new();
-    private readonly HashSet<int> _musicKitSyncedSlots = new();
+    private readonly Dictionary<int, ReplayMusicKitBaseline> _replayMusicKitBaselines = new();
+    private readonly Dictionary<int, long> _replayMusicKitRepairTokens = new();
+    private long _nextReplayMusicKitRepairToken;
     private readonly HashSet<int> _cosmeticSyncedSlots = new();
     private readonly Dictionary<int, AppliedActiveWeaponCosmetic> _activeWeaponCosmetics = new();
     private readonly HashSet<int> _scoreboardSyncedSlots = new();
@@ -1520,6 +1524,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                     ScheduleFreezePrerollStart($"pool round {_poolPreparedRoundIndex}");
             }
 
+            Server.NextFrame(ScheduleLoadedReplayMusicKitRepairs);
+
             return HookResult.Continue;
         }
         finally
@@ -1592,6 +1598,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             ScheduleCachedCosmeticRepairForSlot(player.Slot);
             if (_loadedSlots.Count > 0)
             {
+                ScheduleReplayMusicKitRepairForSlot(player.Slot);
                 ScheduleInitialRoundSpawnAssignment();
                 Server.NextFrame(() => SyncBotHiderPresentationLease(announce: false));
                 AddTimer(
@@ -3472,6 +3479,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         // scheduling can leave partial-roster bots at native spawn points.
         ScheduleInitialRoundSpawnAssignment();
         ApplyLoadedReplayMusicKits();
+        ScheduleLoadedReplayMusicKitRepairs();
 
         if (_weaponAlignEnabled)
         {
@@ -3509,40 +3517,237 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         {
             if (!IsReplaySlotStillSafe(slot) ||
                 !_loadedReplays.TryGetValue(slot, out var replay) ||
-                replay.MusicKitId <= 0 ||
-                _musicKitSyncedSlots.Contains(slot))
+                replay.MusicKitId <= 0)
             {
                 continue;
             }
 
-            ApplyReplayMusicKitForSlot(slot, replay.MusicKitId);
+            _ = ApplyReplayMusicKitForSlot(slot, replay.MusicKitId);
         }
     }
 
-    private void ApplyReplayMusicKitForSlot(int slot, int musicKitId)
+    private bool ApplyReplayMusicKitForSlot(int slot, int musicKitId)
     {
+        if (!IsReplaySlotStillSafe(slot))
+            return false;
+
         var player = Utilities.GetPlayerFromSlot(slot);
         if (player is not { IsValid: true })
-            return;
+            return false;
 
         try
         {
-            ApplyReplayMusicKit(player, musicKitId);
-            _musicKitSyncedSlots.Add(slot);
+            if (ReplayMusicKitStateMatches(player, musicKitId))
+                return true;
+            return ApplyReplayMusicKit(player, musicKitId, musicKitMvps: 0);
         }
         catch (Exception ex)
         {
             Server.PrintToConsole($"dtr: music kit apply failed slot={slot} kit={musicKitId}: {ex.Message}");
+            return false;
         }
     }
 
-    private static void ApplyReplayMusicKit(CCSPlayerController player, int musicKitId)
+    private void ScheduleLoadedReplayMusicKitRepairs()
     {
-        if (musicKitId <= 0)
+        foreach (var slot in _loadedSlots.ToArray())
+            ScheduleReplayMusicKitRepairForSlot(slot);
+    }
+
+    private void ScheduleReplayMusicKitRepairForSlot(int slot)
+    {
+        if (!_loadedReplays.TryGetValue(slot, out var replay) || replay.MusicKitId <= 0)
             return;
-        if (player.MusicKitID != musicKitId)
-            player.MusicKitID = musicKitId;
+
+        var generation = CurrentReplayIdentityGeneration(slot);
+        var expectedMusicKitId = replay.MusicKitId;
+        var repairToken = ++_nextReplayMusicKitRepairToken;
+        _replayMusicKitRepairTokens[slot] = repairToken;
+        var attemptsRemaining = ReplayMusicKitRepairAttempts;
+
+        bool RepairWhileCurrent()
+        {
+            if (!_replayMusicKitRepairTokens.TryGetValue(slot, out var currentToken) ||
+                currentToken != repairToken ||
+                !IsReplayIdentityGenerationCurrent(slot, generation) ||
+                !_loadedReplays.TryGetValue(slot, out var current) ||
+                current.MusicKitId != expectedMusicKitId)
+            {
+                return false;
+            }
+
+            // Keep checking for the full bounded window even after a successful
+            // write. Other spawn-time plugins may publish their controller state
+            // a frame or a few tenths later and otherwise overwrite this value.
+            _ = ApplyReplayMusicKitForSlot(slot, expectedMusicKitId);
+            return true;
+        }
+
+        Server.NextFrame(() => _ = RepairWhileCurrent());
+        CounterStrikeSharp.API.Modules.Timers.Timer? repairTimer = null;
+        repairTimer = AddTimer(
+            ReplayMusicKitRepairIntervalSeconds,
+            () =>
+            {
+                attemptsRemaining--;
+                if (RepairWhileCurrent() && attemptsRemaining > 0)
+                    return;
+
+                if (_replayMusicKitRepairTokens.TryGetValue(slot, out var currentToken) &&
+                    currentToken == repairToken)
+                {
+                    _replayMusicKitRepairTokens.Remove(slot);
+                }
+                repairTimer?.Kill();
+            },
+            TimerFlags.REPEAT | TimerFlags.STOP_ON_MAPCHANGE);
+    }
+
+    private bool ApplyReplayMusicKit(
+        CCSPlayerController player,
+        int musicKitId,
+        int musicKitMvps)
+    {
+        if (musicKitId is <= 0 or > ushort.MaxValue)
+            return false;
+
+        var inventory = player.InventoryServices;
+        if (inventory is null || !CaptureReplayMusicKitBaseline(player, inventory))
+            return false;
+
+        inventory.MusicID = (ushort)musicKitId;
+        TrySetReplayMusicKitStateChanged(
+            player,
+            "CCSPlayerController_InventoryServices",
+            "m_unMusicID");
+        Utilities.SetStateChanged(player, "CCSPlayerController", "m_pInventoryServices");
+
+        player.MusicKitID = musicKitId;
         Utilities.SetStateChanged(player, "CCSPlayerController", "m_iMusicKitID");
+        player.MusicKitMVPs = musicKitMvps;
+        Utilities.SetStateChanged(player, "CCSPlayerController", "m_iMusicKitMVPs");
+        player.MvpNoMusic = false;
+        Utilities.SetStateChanged(player, "CCSPlayerController", "m_bMvpNoMusic");
+
+        return ReplayMusicKitStateMatches(player, musicKitId);
+    }
+
+    private bool CaptureReplayMusicKitBaseline(
+        CCSPlayerController player,
+        CCSPlayerController_InventoryServices inventory)
+    {
+        var slot = player.Slot;
+        if (!_replayIdentityGenerationBySlot.TryGetValue(slot, out var generation))
+            return false;
+
+        if (_replayMusicKitBaselines.TryGetValue(slot, out var existing))
+            return existing.Generation == generation;
+
+        _replayMusicKitBaselines[slot] = new ReplayMusicKitBaseline(
+            generation,
+            inventory.MusicID,
+            player.MusicKitID,
+            player.MusicKitMVPs,
+            player.MvpNoMusic);
+        return true;
+    }
+
+    private void RestoreReplayMusicKitForSlot(int slot, string reason)
+    {
+        InvalidateReplayMusicKitRepair(slot);
+        if (!_replayMusicKitBaselines.TryGetValue(slot, out var baseline))
+            return;
+
+        if (!IsReplayIdentityGenerationCurrent(slot, baseline.Generation) ||
+            !IsReplaySlotStillSafe(slot))
+        {
+            _replayMusicKitBaselines.Remove(slot);
+            return;
+        }
+
+        var player = Utilities.GetPlayerFromSlot(slot);
+        var inventory = player?.InventoryServices;
+        if (player is not { IsValid: true } || inventory is null)
+        {
+            _replayMusicKitBaselines.Remove(slot);
+            return;
+        }
+
+        try
+        {
+            inventory.MusicID = baseline.InventoryMusicKitId;
+            TrySetReplayMusicKitStateChanged(
+                player,
+                "CCSPlayerController_InventoryServices",
+                "m_unMusicID");
+            Utilities.SetStateChanged(player, "CCSPlayerController", "m_pInventoryServices");
+
+            player.MusicKitID = baseline.ControllerMusicKitId;
+            Utilities.SetStateChanged(player, "CCSPlayerController", "m_iMusicKitID");
+            player.MusicKitMVPs = baseline.ControllerMusicKitMvps;
+            Utilities.SetStateChanged(player, "CCSPlayerController", "m_iMusicKitMVPs");
+            player.MvpNoMusic = baseline.MvpNoMusic;
+            Utilities.SetStateChanged(player, "CCSPlayerController", "m_bMvpNoMusic");
+        }
+        catch (Exception ex)
+        {
+            Server.PrintToConsole(
+                $"dtr: music kit restore failed slot={slot} reason={reason}: {ex.Message}");
+        }
+        finally
+        {
+            _replayMusicKitBaselines.Remove(slot);
+        }
+    }
+
+    private void RestoreAllReplayMusicKits(string reason)
+    {
+        foreach (var slot in _replayMusicKitBaselines.Keys.ToArray())
+            RestoreReplayMusicKitForSlot(slot, reason);
+        _replayMusicKitBaselines.Clear();
+        _replayMusicKitRepairTokens.Clear();
+    }
+
+    private void InvalidateReplayMusicKitRepair(int slot)
+        => _replayMusicKitRepairTokens.Remove(slot);
+
+    private static bool ReplayMusicKitStateMatches(CCSPlayerController player, int expectedMusicKitId)
+    {
+        var inventory = player.InventoryServices;
+        return ReplayMusicKitStateMatches(
+            expectedMusicKitId,
+            inventory is null ? null : inventory.MusicID,
+            player.MusicKitID,
+            player.MusicKitMVPs,
+            player.MvpNoMusic);
+    }
+
+    internal static bool ReplayMusicKitStateMatches(
+        int expectedMusicKitId,
+        int? inventoryMusicKitId,
+        int controllerMusicKitId,
+        int controllerMusicKitMvps,
+        bool mvpNoMusic)
+        => expectedMusicKitId is > 0 and <= ushort.MaxValue &&
+           inventoryMusicKitId == (ushort)expectedMusicKitId &&
+           controllerMusicKitId == expectedMusicKitId &&
+           controllerMusicKitMvps == 0 &&
+           !mvpNoMusic;
+
+    private static void TrySetReplayMusicKitStateChanged(
+        CBaseEntity entity,
+        string className,
+        string fieldName)
+    {
+        try
+        {
+            Utilities.SetStateChanged(entity, className, fieldName);
+        }
+        catch
+        {
+            // The parent InventoryServices field is also dirtied below. Keep that
+            // compatible fallback for game/CSS builds without the nested offset.
+        }
     }
 
     private int NormalizeMusicKitId(uint? musicKitId)
@@ -4302,6 +4507,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         StopVoiceTestPlayback("unload_all", printSummary: false);
         ClearLoadedAutoVoiceClip();
         ClearLoadedAutoChat();
+        RestoreAllReplayMusicKits("unload_all");
         foreach (var slot in _loadedSlots.ToArray())
         {
             if (releaseBuffers)
@@ -4392,6 +4598,15 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             StopVoiceTestPlayback(reason, printSummary: false);
             CancelDtrRoundBanner(resetRound: true);
             InvalidateFreezePreroll();
+            if (reason.StartsWith("map_start:", StringComparison.OrdinalIgnoreCase))
+            {
+                _replayMusicKitBaselines.Clear();
+                _replayMusicKitRepairTokens.Clear();
+            }
+            else
+            {
+                RestoreAllReplayMusicKits(reason);
+            }
 
             if (BotControllerNative.IsCompatible)
             {
@@ -4787,6 +5002,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private void ForgetLoadedReplayMetadata(int slot)
     {
         InvalidateInitialSpawnAssignment();
+        RestoreReplayMusicKitForSlot(slot, "forget_replay");
         InvalidateReplayIdentityGeneration(slot);
         _loadedReplays.Remove(slot);
         _lastEnsuredWeaponDef.Remove(slot);
@@ -4795,7 +5011,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _pendingWeaponAlign.Remove(slot);
         _replayHifiEventNextBySlot.Remove(slot);
         _rebuiltInventorySlots.Remove(slot);
-        _musicKitSyncedSlots.Remove(slot);
+        InvalidateReplayMusicKitRepair(slot);
         _cosmeticSyncedSlots.Remove(slot);
         _cosmeticHeartbeatTokens.Remove(slot);
         _activeWeaponCosmetics.Remove(slot);
@@ -4826,6 +5042,9 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     {
         InvalidateInitialSpawnAssignment();
         RestoreReplayBotViewmodel(slot);
+        var hadPreviousGeneration = _replayIdentityGenerationBySlot.TryGetValue(
+            slot,
+            out var previousGeneration);
         var metadata = replayMetadata ?? ReadReplayMetadataOrEmpty(path);
         TryBuildWeaponPlan(metadata.WeaponDefIndices ?? [], out var scannedFirstDef, out var scannedPreloadDefs);
         var firstDef = NormalizeWeaponDefIndex(manifestFirstWeaponDefIndex);
@@ -4850,6 +5069,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         var normalizedCosmetics = NormalizeReplayCosmetics(cosmetics);
         var normalizedView = NormalizeReplayView(view);
         var normalizedScoreboard = NormalizeReplayScoreboard(scoreboard);
+        var normalizedMusicKitId = NormalizeMusicKitId(musicKitId);
         _loadedReplays[slot] = new LoadedReplay(
             path,
             playerName,
@@ -4859,7 +5079,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             preloadDefs,
             hasLoadout,
             normalizedLoadout,
-            NormalizeMusicKitId(musicKitId),
+            normalizedMusicKitId,
             NormalizeReplayScoreboardFlair(scoreboardFlair),
             normalizedCosmetics,
             normalizedView,
@@ -4873,7 +5093,15 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             metadata.RoundStartOrigin);
         _pendingKnifeEntityRefreshes.Remove(slot);
         RememberReplayCosmeticEvidence(slot, _loadedReplays[slot]);
-        BeginReplayIdentityGeneration(slot);
+        InvalidateReplayMusicKitRepair(slot);
+        var generation = BeginReplayIdentityGeneration(slot);
+        if (_replayMusicKitBaselines.TryGetValue(slot, out var musicKitBaseline))
+        {
+            if (hadPreviousGeneration && musicKitBaseline.Generation == previousGeneration)
+                _replayMusicKitBaselines[slot] = musicKitBaseline with { Generation = generation };
+            else
+                _replayMusicKitBaselines.Remove(slot);
+        }
         _lastEnsuredWeaponDef.Remove(slot);
         _lastReplayWeaponDef.Remove(slot);
         _lastLockedWeaponTarget.Remove(slot);
@@ -4882,11 +5110,12 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _replayHifiEventNextBySlot[slot] = 0;
         _rebuiltInventorySlots.Remove(slot);
         _loadoutSyncedSlots.Remove(slot);
-        _musicKitSyncedSlots.Remove(slot);
         _cosmeticSyncedSlots.Remove(slot);
         _cosmeticHeartbeatTokens.Remove(slot);
         _scoreboardSyncedSlots.Remove(slot);
         _safeC4Aligned = false;
+        if (normalizedMusicKitId <= 0)
+            RestoreReplayMusicKitForSlot(slot, "manifest_without_music_kit");
     }
 
     private static ReplayFileMetadata ReadReplayMetadataOrEmpty(string path)
@@ -5543,6 +5772,13 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         float TickRate,
         uint PlayStartTickIndex,
         ReplayVector3? RoundStartOrigin);
+
+    private readonly record struct ReplayMusicKitBaseline(
+        long Generation,
+        ushort InventoryMusicKitId,
+        int ControllerMusicKitId,
+        int ControllerMusicKitMvps,
+        bool MvpNoMusic);
 
     private readonly record struct ReplayAssignment(ManifestFile File, CCSPlayerController Bot);
 
