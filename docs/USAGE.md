@@ -68,6 +68,32 @@ files are written and validated in a sibling staging directory first. Only a
 complete pack is promoted; conversion, voice, validation, or promotion failures
 keep the previous output, and an interrupted swap is recovered on the next run.
 
+The GUI home screen uses one main replay library and can index additional
+archive folders at the same time. Its Windows first-run default is
+`Documents\CS2 DemoTracer\Library`; changing the main export library is explicit
+and an existing selection is never moved automatically. New GUI output uses
+`<library>\<map>\<readable-name>--<hash12>\`. CLI `--output` behavior is
+unchanged. Scanning reads compact metadata from `demo-info.json` when available
+and falls back conservatively to `manifest.json`; it does not parse the source
+demo again or decompress every `.dtr`. Opening one entry then uses the strict
+manifest reader and validates its referenced replay files. Newly converted
+demos write the desktop sidecar from the same parsed `ParsedDemo`, including
+round-end-derived score, stable team identities across
+side swaps, K/D/A, header/server platform evidence, and full `CDemoFileInfo`
+playback duration. It also stores the original absolute `.dem` path for local
+reuse in `demo-info.json` and a small independent `demo-source.json`; the
+portable manifest remains sanitized. A score without an explicit match-end panel is labeled as
+complete only through the last observed round. Legacy manifest scoreboard
+snapshots are not shown as final scores. Metadata repair first verifies and
+reuses remembered source paths. Only unresolved archives ask for a relocated
+demo or a search folder; successful matches update only the local metadata
+sidecars. **Choose rounds again** resolves the same source pointer
+before returning to conversion. Replay payloads are never rewritten. The source file mtime is shown only as an
+approximate demo-file time because a reliable absolute match timestamp is not
+present in the demo. **Organize old archives** strictly validates scattered
+archive folders, skips duplicate full demo hashes, and copies accepted archives
+into the map-grouped main library without moving or deleting their sources.
+
 Cosmetic/econ metadata is not exported by default, so normal manifests contain
 no `cosmetics` blocks. To intentionally export demo-observed weapon paint,
 knife, glove, agent model metadata, and stable weapon/knife custom names, you

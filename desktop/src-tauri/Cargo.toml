@@ -23,3 +23,13 @@ rfd = "=0.15.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "=2.11.5", features = [] }
+
+# The desktop ships as a standalone Windows executable. Optimize the actual
+# binary rather than relying on archive compression around an oversized build.
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+incremental = false

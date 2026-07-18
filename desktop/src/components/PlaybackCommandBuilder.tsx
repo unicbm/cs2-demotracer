@@ -1,4 +1,4 @@
-import { CheckIcon, CopyIcon } from "../icons";
+import { CheckIcon, ChevronIcon, CopyIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
 import type { ConversionSummary } from "../types";
 
@@ -75,6 +75,22 @@ function formatPreset(mask: number): string {
   return `0x${mask.toString(16).toUpperCase().padStart(2, "0")}`;
 }
 
+function capabilityCopy(
+  available: boolean,
+  requested: boolean | null | undefined,
+  included: boolean,
+  availableIncluded: string,
+  availableExcluded: string,
+  requestedEmpty: string,
+  notRequested: string,
+  unknown: string,
+): string {
+  if (available) return included ? availableIncluded : availableExcluded;
+  if (requested === true) return requestedEmpty;
+  if (requested === false) return notRequested;
+  return unknown;
+}
+
 export function PlaybackCommandBuilder({
   words,
   result,
@@ -91,7 +107,7 @@ export function PlaybackCommandBuilder({
   const effectiveCommandMode: CommandMode = sequenceDisabled ? "round" : commandMode;
   const sequenceMode = effectiveCommandMode === "sequence";
 
-  // Dependencies are normalized here as well as in the handlers so stale or
+  // Normalize dependencies here as well as in the handlers so stale or
   // manually edited localStorage can never produce an invalid preset.
   const cosmetics = cosmeticsAvailable && options.cosmetics;
   const weapons = options.weapons || cosmetics;
@@ -112,11 +128,42 @@ export function PlaybackCommandBuilder({
     ? result.commands.goRound
     : result.commands.goSequence;
   const command = `dtr_preset ${formatPreset(mask)}; ${goCommand}`;
+  const activeOptions = [
+    weapons ? words.syncWeaponsShort : null,
+    steamIdentity ? words.syncIdentityShort : null,
+    voice ? words.syncVoiceShort : null,
+    cosmetics ? words.syncCosmeticsShort : null,
+    avatar ? words.syncAvatarShort : null,
+    playoff ? words.playoffShort : null,
+  ].filter((value): value is string => Boolean(value));
+  const voiceStatus = capabilityCopy(
+    voiceAvailable,
+    result.voice.requested,
+    voice,
+    words.voiceAvailableIncluded,
+    words.voiceAvailableExcluded,
+    words.voiceRequestedEmpty,
+    words.voiceNotRequested,
+    words.voiceUnknown,
+  );
+  const cosmeticStatus = capabilityCopy(
+    cosmeticsAvailable,
+    result.cosmetics.requested,
+    cosmetics,
+    words.cosmeticsAvailableIncluded,
+    words.cosmeticsAvailableExcluded,
+    words.cosmeticsRequestedEmpty,
+    words.cosmeticsNotRequested,
+    words.cosmeticsUnknown,
+  );
 
   return (
     <section className="playback-command-builder" aria-labelledby="playback-command-title">
       <div className="section-heading-row playback-command-heading">
-        <h2 id="playback-command-title">{words.playDemoCommand}</h2>
+        <div>
+          <span className="playback-step-label">{words.playbackStep}</span>
+          <h2 id="playback-command-title">{words.playDemoCommand}</h2>
+        </div>
         {result.rounds.length > 1 ? (
           <div className="segmented-control compact" role="group" aria-label={words.playDemoMode}>
             <button
@@ -140,65 +187,88 @@ export function PlaybackCommandBuilder({
           </div>
         ) : null}
       </div>
-      <p className="playback-command-help">{words.playDemoCommandHelp}</p>
 
-      <div className="playback-option-grid" role="group" aria-label={words.playbackOptions}>
-        <PlaybackOption
-          checked={weapons}
-          label={words.syncWeapons}
-          description={words.syncWeaponsHelp}
-          onChange={(checked) => onOptionsChange(checked
-            ? { weapons: true }
-            : { weapons: false, cosmetics: false })}
-        />
-        <PlaybackOption
-          checked={cosmetics}
-          disabled={!cosmeticsAvailable}
-          label={words.syncCosmetics}
-          description={cosmeticsAvailable ? words.syncCosmeticsHelp : words.cosmeticsUnavailable}
-          onChange={(checked) => onOptionsChange(checked
-            ? { cosmetics: true, weapons: true }
-            : { cosmetics: false })}
-        />
-        <PlaybackOption
-          checked={steamIdentity}
-          label={words.syncSteamIdentity}
-          description={words.syncSteamIdentityHelp}
-          onChange={(checked) => onOptionsChange(checked
-            ? { steamIdentity: true }
-            : { steamIdentity: false, avatar: false })}
-        />
-        <PlaybackOption
-          checked={avatar}
-          label={words.syncAvatar}
-          description={words.syncAvatarHelp}
-          onChange={(checked) => onOptionsChange(checked
-            ? { avatar: true, steamIdentity: true }
-            : { avatar: false })}
-        />
-        <PlaybackOption
-          checked={voice}
-          disabled={!voiceAvailable}
-          label={words.syncVoice}
-          description={voiceAvailable ? words.syncVoiceHelp : words.voiceUnavailableTitle}
-          onChange={(checked) => onOptionsChange({ voice: checked })}
-        />
-        <PlaybackOption
-          checked={playoff}
-          disabled={!sequenceMode}
-          label={words.playoffBeta}
-          description={sequenceMode ? words.playoffHelp : words.sequenceOnly}
-          onChange={(checked) => onOptionsChange({ playoff: checked })}
-        />
+      <div className="playback-capabilities" aria-label={words.archiveCapabilities}>
+        <div className={`playback-capability${voiceAvailable ? " is-available" : ""}`}>
+          <span>{words.voiceCapability}</span>
+          <strong>{voiceStatus}</strong>
+        </div>
+        <div className={`playback-capability${cosmeticsAvailable ? " is-available" : ""}${cosmetics ? " is-risk" : ""}`}>
+          <span>{words.cosmeticsCapability}</span>
+          <strong>{cosmeticStatus}</strong>
+        </div>
       </div>
+
+      <details className="playback-advanced">
+        <summary>
+          <span>
+            <strong>{words.standardPlayback}</strong>
+            <small>{activeOptions.length > 0 ? activeOptions.join(" · ") : words.noSyncOptions}</small>
+          </span>
+          <b>{words.advancedPlaybackSettings}</b>
+          <ChevronIcon size={15} />
+        </summary>
+        <div className="playback-option-grid" role="group" aria-label={words.playbackOptions}>
+          <PlaybackOption
+            checked={weapons}
+            label={words.syncWeapons}
+            description={words.syncWeaponsHelp}
+            onChange={(checked) => onOptionsChange(checked
+              ? { weapons: true }
+              : { weapons: false, cosmetics: false })}
+          />
+          <PlaybackOption
+            checked={steamIdentity}
+            label={words.syncSteamIdentity}
+            description={words.syncSteamIdentityHelp}
+            onChange={(checked) => onOptionsChange(checked
+              ? { steamIdentity: true }
+              : { steamIdentity: false, avatar: false })}
+          />
+          {voiceAvailable ? (
+            <PlaybackOption
+              checked={voice}
+              label={words.syncVoice}
+              description={voice ? words.syncVoiceIncludedHelp : words.syncVoiceExcludedHelp}
+              onChange={(checked) => onOptionsChange({ voice: checked })}
+            />
+          ) : null}
+          {cosmeticsAvailable ? (
+            <PlaybackOption
+              checked={cosmetics}
+              label={words.syncCosmetics}
+              description={cosmetics ? words.syncCosmeticsIncludedHelp : words.syncCosmeticsExcludedHelp}
+              onChange={(checked) => onOptionsChange(checked
+                ? { cosmetics: true, weapons: true }
+                : { cosmetics: false })}
+            />
+          ) : null}
+          <PlaybackOption
+            checked={avatar}
+            label={words.syncAvatar}
+            description={words.syncAvatarHelp}
+            onChange={(checked) => onOptionsChange(checked
+              ? { avatar: true, steamIdentity: true }
+              : { avatar: false })}
+          />
+          <PlaybackOption
+            checked={playoff}
+            disabled={!sequenceMode}
+            label={words.playoffBeta}
+            description={sequenceMode ? words.playoffHelp : words.sequenceOnly}
+            onChange={(checked) => onOptionsChange({ playoff: checked })}
+          />
+        </div>
+      </details>
 
       <div className="command-box playback-command-output">
         <code title={command}>{command}</code>
         <button className="primary-button" type="button" onClick={() => onCopy(command)}>
           {copied ? <CheckIcon size={16} /> : <CopyIcon size={16} />}
-          {copied ? words.copied : words.copyCommand}
+          {copied ? words.copied : words.copyPlaybackCommand}
         </button>
       </div>
+      <p className="playback-command-help">{words.playDemoCommandHelp}</p>
     </section>
   );
 }

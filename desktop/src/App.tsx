@@ -3,9 +3,11 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppChrome } from "./components/AppChrome";
+import { AppSidebar } from "./components/AppSidebar";
 import { ArchiveWorkspace } from "./components/ArchiveWorkspace";
 import { DialogPrimitive } from "./components/Dialog";
 import { ExportInspector } from "./components/ExportInspector";
+import { LibraryWorkspace, type LibrarySort } from "./components/LibraryWorkspace";
 import type { PlaybackPresetOptions } from "./components/PlaybackCommandBuilder";
 import { RoundWorkspace } from "./components/RoundWorkspace";
 import {
@@ -14,25 +16,41 @@ import {
   type CommandMode,
   ConversionProgressView,
   type CopyTarget,
-  DemoPickerView,
   OpeningArchiveView,
   ResultView,
   ValidationFailedView,
 } from "./components/TaskViews";
 import { AlertIcon, ArrowIcon, CheckIcon, CloseIcon, CopyIcon, FolderIcon } from "./icons";
 import { COSMETIC_PHRASE, TEXT } from "./i18n";
+import {
+  mergeLibraryScans,
+  normalizeLibraryRoot,
+  persistDemoSourceIndex,
+  persistLibraryPreferences,
+  rememberDemoSource,
+  storedDemoSourceIndex,
+  storedLibraryPreferences,
+  uniqueLibraryRoots,
+  withExportRoot,
+} from "./library";
 import type {
   AnalysisResult,
   CommandErrorDto,
   ConversionProgressEvent,
   ConversionSummary,
   ConverterSettings,
+  DemoLibraryEntry,
+  DemoLibraryScan,
+  ImportArchivesResult,
   Language,
   ManifestArchive,
   OutputPreflight,
   Phase,
   ProgressPhase,
   ProgressState,
+  RefreshArchiveMetadataResult,
+  RefreshLibraryMetadataResult,
+  ResolveArchiveSourceResult,
   RoundInfo,
   TaskEvent,
   TaskPhase,
@@ -49,6 +67,8 @@ const DEFAULT_SETTINGS: ConverterSettings = {
   exportCharms: false,
   includeSuspicious: false,
 };
+
+const INITIAL_LIBRARY_PREFERENCES = storedLibraryPreferences();
 
 const DEFAULT_PLAYBACK_PRESET: PlaybackPresetOptions = {
   weapons: true,
@@ -82,7 +102,7 @@ function storedLanguage(): Language {
 
 function storedTheme(): Theme {
   const saved = localStorage.getItem("demotracer.theme");
-  return saved === "light" || saved === "dark" || saved === "system" ? saved : "light";
+  return saved === "light" || saved === "dark" || saved === "system" ? saved : "system";
 }
 
 function storedSettings(): ConverterSettings {
@@ -119,13 +139,6 @@ function storedPlaybackPreset(): PlaybackPresetOptions {
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
-}
-
-function suggestOutput(path: string): string {
-  const index = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
-  if (index < 0) return "output";
-  const separator = path.includes("\\") ? "\\" : "/";
-  return `${path.slice(0, index)}${separator}output`;
 }
 
 function formatBytes(value: number | string): string {
@@ -202,7 +215,18 @@ function App() {
   const [theme, setTheme] = useState<Theme>(storedTheme);
   const [phase, setPhase] = useState<Phase>("idle");
   const [sourcePath, setSourcePath] = useState("");
-  const [outputDir, setOutputDir] = useState(() => localStorage.getItem("demotracer.output") ?? "");
+  const [outputDir, setOutputDir] = useState(INITIAL_LIBRARY_PREFERENCES.exportRoot);
+  const [libraryPreferences, setLibraryPreferences] = useState(INITIAL_LIBRARY_PREFERENCES);
+  const [demoSourceIndex, setDemoSourceIndex] = useState(storedDemoSourceIndex);
+  const [libraryScan, setLibraryScan] = useState<DemoLibraryScan | null>(null);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [repairingManifest, setRepairingManifest] = useState("");
+  const [repairingLibrary, setRepairingLibrary] = useState(false);
+  const [importingArchives, setImportingArchives] = useState(false);
+  const [libraryNotice, setLibraryNotice] = useState("");
+  const [libraryQuery, setLibraryQuery] = useState("");
+  const [libraryMap, setLibraryMap] = useState("");
+  const [librarySort, setLibrarySort] = useState<LibrarySort>("recent");
   const [outputRoot, setOutputRoot] = useState("");
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [selectedRounds, setSelectedRounds] = useState<Set<number>>(new Set());
@@ -228,9 +252,9 @@ function App() {
   const [liveMessage, setLiveMessage] = useState("");
 
   const taskTokenRef = useRef(0);
+  const libraryScanTokenRef = useRef(0);
   const taskWarningsRef = useRef<string[]>([]);
   const isBusyRef = useRef(false);
-  const chooseButtonRef = useRef<HTMLButtonElement | null>(null);
   const retryButtonRef = useRef<HTMLButtonElement | null>(null);
   const resultHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const settingsTriggerRef = useRef<HTMLElement | null>(null);
@@ -239,9 +263,13 @@ function App() {
   const keepWorkingRef = useRef<HTMLButtonElement | null>(null);
 
   const words = TEXT[language];
+  const libraryRoot = libraryPreferences.exportRoot;
+  const libraryRoots = libraryPreferences.roots;
   const numberFormat = useMemo(() => new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en-US"), [language]);
-  const isBusy = phase === "analyzing" || phase === "converting" || phase === "openingArchive";
-  isBusyRef.current = phase === "analyzing" || phase === "converting";
+  const isRepairing = repairingLibrary || Boolean(repairingManifest);
+  const isMaintainingLibrary = isRepairing || importingArchives;
+  const isBusy = phase === "analyzing" || phase === "converting" || phase === "openingArchive" || isMaintainingLibrary;
+  isBusyRef.current = phase === "analyzing" || phase === "converting" || isMaintainingLibrary;
   const inspectorDocked = useMediaQuery("(min-width: 1080px)");
   const inspectorVisible = inspectorDocked || inspectorSheetOpen;
   const elapsedSeconds = useElapsed(phase === "analyzing");
@@ -272,16 +300,34 @@ function App() {
   }, [playbackPreset]);
 
   useEffect(() => {
-    if (outputDir) localStorage.setItem("demotracer.output", outputDir);
-  }, [outputDir]);
+    persistLibraryPreferences(libraryPreferences);
+  }, [libraryPreferences]);
 
   useEffect(() => {
-    if (phase === "idle") chooseButtonRef.current?.focus({ preventScroll: true });
+    persistDemoSourceIndex(demoSourceIndex);
+  }, [demoSourceIndex]);
+
+  useEffect(() => {
+    if (libraryRoot || !("__TAURI_INTERNALS__" in window)) return;
+    let disposed = false;
+    void invoke<string>("default_library_dir").then((path) => {
+      if (disposed || !path) return;
+      const root = normalizeLibraryRoot(path);
+      setLibraryScan(null);
+      setLibraryPreferences({ exportRoot: root, roots: [root] });
+      setOutputDir(root);
+    }).catch((reason) => {
+      if (!disposed) setGlobalError(parseCommandError(reason));
+    });
+    return () => { disposed = true; };
+  }, [libraryRoot]);
+
+  useEffect(() => {
     if (phase === "analysisFailed") retryButtonRef.current?.focus({ preventScroll: true });
     if (phase === "complete") resultHeadingRef.current?.focus({ preventScroll: true });
     if (phase === "archive") {
       window.requestAnimationFrame(() => {
-        const firstRound = document.querySelector<HTMLInputElement>('.archive-round-table input[type="radio"]:not(:disabled)');
+        const firstRound = document.querySelector<HTMLButtonElement>('.archive-round-option[aria-pressed="true"]:not(:disabled)');
         const archiveHeading = document.querySelector<HTMLElement>("#archive-workspace-title");
         (firstRound ?? archiveHeading)?.focus({ preventScroll: true });
       });
@@ -386,7 +432,7 @@ function App() {
     });
   }, [words]);
 
-  const runAnalysis = useCallback(async (path: string) => {
+  const runAnalysis = useCallback(async (path: string, expectedDemoSha256?: string) => {
     if (!path.toLowerCase().endsWith(".dem")) {
       setGlobalError({ code: "invalid_demo_path", message: words.invalidDemo, path });
       return;
@@ -414,12 +460,16 @@ function App() {
     const events = new Channel<TaskEvent>();
     events.onmessage = (event) => absorbEvent(event, token);
     try {
-      const next = await invoke<AnalysisResult>("analyze_demo", { request: { path }, events });
+      const next = await invoke<AnalysisResult>("analyze_demo", {
+        request: { path, expectedDemoSha256: expectedDemoSha256 || null },
+        events,
+      });
       if (token !== taskTokenRef.current) return;
       setSourcePath(next.sourcePath);
+      setDemoSourceIndex((current) => rememberDemoSource(current, next.demoSha256, next.sourcePath));
       setAnalysis(next);
       setSelectedRounds(new Set(next.rounds.filter((round) => round.selectedByDefault).map((round) => round.round)));
-      setOutputDir((current) => current || suggestOutput(next.sourcePath));
+      setOutputDir((current) => current || libraryRoot);
       setPhase("selecting");
     } catch (reason) {
       if (token !== taskTokenRef.current) return;
@@ -427,9 +477,10 @@ function App() {
       setAnalysisError(error.message);
       setPhase("analysisFailed");
     }
-  }, [absorbEvent, words.invalidDemo]);
+  }, [absorbEvent, libraryRoot, words.invalidDemo]);
 
   const runManifest = useCallback(async (path: string) => {
+    if (isBusyRef.current) return;
     if (!path.toLowerCase().endsWith(".json")) {
       setGlobalError({ code: "invalid_manifest_path", message: words.invalidManifest, path });
       return;
@@ -448,9 +499,9 @@ function App() {
       const firstAvailableRound = availableRounds[0];
       setArchive(next);
       setArchivePath(next.manifestPath);
+      setSourcePath(next.sourcePath ?? "");
       setSelectedArchiveRound(firstAvailableRound?.round ?? null);
       setCommandMode(availableRounds.length > 1 && (firstAvailableRound?.sequenceLength ?? 0) > 0 ? "sequence" : "round");
-      setSourcePath("");
       setAnalysis(null);
       setResult(null);
       setOutputRoot(next.root);
@@ -462,6 +513,46 @@ function App() {
       setPhase(returnPhase === "openingArchive" ? "idle" : returnPhase);
     }
   }, [phase, words.invalidManifest]);
+
+  const scanLibrary = useCallback(async (roots: string[]) => {
+    const paths = uniqueLibraryRoots(roots);
+    if (paths.length === 0 || !("__TAURI_INTERNALS__" in window)) return;
+    const token = ++libraryScanTokenRef.current;
+    setGlobalError(null);
+    setLibraryLoading(true);
+    try {
+      const scans = await Promise.all(paths.map(async (root): Promise<DemoLibraryScan> => {
+        try {
+          return await invoke<DemoLibraryScan>("scan_demo_library", { root });
+        } catch (reason) {
+          const error = parseCommandError(reason);
+          return {
+            root,
+            entries: [],
+            skipped: [{ path: error.path ?? root, message: error.message }],
+          };
+        }
+      }));
+      if (token !== libraryScanTokenRef.current) return;
+      const merged = mergeLibraryScans(scans, paths[0]);
+      setLibraryScan(merged);
+    } catch (reason) {
+      if (token !== libraryScanTokenRef.current) return;
+      const error = parseCommandError(reason);
+      setGlobalError(error);
+      setLibraryScan((current) => current ?? {
+        root: paths[0],
+        entries: [],
+        skipped: [{ path: error.path ?? paths[0], message: error.message }],
+      });
+    } finally {
+      if (token === libraryScanTokenRef.current) setLibraryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (libraryRoots.length > 0) void scanLibrary(libraryRoots);
+  }, [libraryRoots, scanLibrary]);
 
   useEffect(() => {
     if (!("__TAURI_INTERNALS__" in window) || !analysis || !outputDir || phase !== "selecting") return;
@@ -534,10 +625,10 @@ function App() {
     return () => window.removeEventListener("keydown", handleShortcut);
   });
 
-  async function chooseDemo() {
+  async function chooseDemo(initialPath = "") {
     if (isBusy) return;
     try {
-      const path = await invoke<string | null>("choose_demo");
+      const path = await invoke<string | null>("choose_demo", { initialPath: initialPath || null });
       if (path) await runAnalysis(path);
     } catch (reason) {
       setGlobalError(parseCommandError(reason));
@@ -554,12 +645,371 @@ function App() {
     }
   }
 
+  async function addLibraryRoot() {
+    if (isBusy) return;
+    try {
+      const path = await invoke<string | null>("choose_library_dir");
+      if (!path) return;
+      setLibraryNotice("");
+      setLibraryScan(null);
+      setLibraryPreferences((current) => ({
+        ...current,
+        roots: withExportRoot([...current.roots, path], current.exportRoot),
+      }));
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
+    }
+  }
+
+  function removeLibraryRoot(root: string) {
+    if (isBusy || root.toLocaleLowerCase() === libraryRoot.toLocaleLowerCase()) return;
+    setLibraryNotice("");
+    setLibraryScan(null);
+    setLibraryPreferences((current) => ({
+      ...current,
+      roots: current.roots.filter((item) => item.toLocaleLowerCase() !== root.toLocaleLowerCase()),
+    }));
+  }
+
+  async function chooseLibraryRoot(): Promise<string | null> {
+    if (isBusy) return null;
+    try {
+      const path = await invoke<string | null>("choose_library_dir");
+      if (!path) return null;
+      const root = normalizeLibraryRoot(path);
+      setLibraryNotice("");
+      setLibraryScan(null);
+      setLibraryPreferences((current) => ({
+        exportRoot: root,
+        roots: withExportRoot(current.roots, root),
+      }));
+      setOutputDir(root);
+      setOutputRoot("");
+      return root;
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
+      return null;
+    }
+  }
+
+  async function repairArchiveMetadata(entry: DemoLibraryEntry) {
+    if (isBusy) return;
+    const needsMetadata = entry.metadataStatus !== "current";
+    if (!needsMetadata) {
+      try {
+        setGlobalError(null);
+        setLibraryNotice("");
+        setRepairingManifest(entry.manifestPath);
+        const resolvedSource = await resolveManifestDemoSource(entry);
+        if (!resolvedSource) return;
+        const name = entry.displayName || fileName(entry.demoPath) || entry.demoId;
+        const notice = words.linkSourceResult.replace("{name}", name);
+        setLibraryNotice(notice);
+        setLiveMessage(notice);
+        await scanLibrary(libraryRoots);
+      } catch (reason) {
+        setGlobalError(parseCommandError(reason));
+      } finally {
+        setRepairingManifest("");
+      }
+      return;
+    }
+    const recordedSource = entry.sourcePath?.trim() || "";
+    const indexedSource = demoSourceIndex[entry.demoSha256.trim().toLocaleLowerCase()] || "";
+    const recoverableSourceErrors = new Set([
+      "source_demo_unavailable",
+      "invalid_demo_path",
+      "metadata_demo_read_failed",
+      "metadata_demo_hash_mismatch",
+    ]);
+    try {
+      setGlobalError(null);
+      setLibraryNotice("");
+      setRepairingManifest(entry.manifestPath);
+      let result: RefreshArchiveMetadataResult | null = null;
+      let sourceError: CommandErrorDto | null = null;
+      const automaticCandidates: Array<string | null> = [null];
+      if (indexedSource && indexedSource.toLocaleLowerCase() !== recordedSource.toLocaleLowerCase()) {
+        automaticCandidates.push(indexedSource);
+      }
+      for (const demoPath of automaticCandidates) {
+        try {
+          result = await invoke<RefreshArchiveMetadataResult>("refresh_archive_metadata", {
+            request: { manifestPath: entry.manifestPath, demoPath },
+          });
+          break;
+        } catch (reason) {
+          sourceError = parseCommandError(reason);
+          if (!recoverableSourceErrors.has(sourceError.code)) throw reason;
+        }
+      }
+      if (!result) {
+        const demoPath = await invoke<string | null>("choose_demo", {
+          initialPath: sourceError?.path || recordedSource || indexedSource || entry.demoPath || null,
+        });
+        if (!demoPath) return;
+        result = await invoke<RefreshArchiveMetadataResult>("refresh_archive_metadata", {
+          request: { manifestPath: entry.manifestPath, demoPath },
+        });
+      }
+      setDemoSourceIndex((current) => rememberDemoSource(current, entry.demoSha256, result.sourcePath));
+      const notice = words.repairArchiveResult.replace("{name}", result.displayName);
+      setLibraryNotice(notice);
+      setLiveMessage(notice);
+      await scanLibrary(libraryRoots);
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
+    } finally {
+      setRepairingManifest("");
+    }
+  }
+
+  async function resolveManifestDemoSource(source: {
+    manifestPath: string;
+    demoSha256: string;
+    demoPath: string;
+    sourcePath?: string | null;
+  }): Promise<string | null> {
+    const recordedSource = source.sourcePath?.trim() || "";
+    const indexedSource = demoSourceIndex[source.demoSha256.trim().toLocaleLowerCase()] || "";
+    const recoverableSourceErrors = new Set([
+      "source_demo_unavailable",
+      "invalid_demo_path",
+      "metadata_demo_read_failed",
+      "metadata_demo_hash_mismatch",
+    ]);
+    let sourceError: CommandErrorDto | null = null;
+    const automaticCandidates: Array<string | null> = [null];
+    if (indexedSource && indexedSource.toLocaleLowerCase() !== recordedSource.toLocaleLowerCase()) {
+      automaticCandidates.push(indexedSource);
+    }
+    let result: ResolveArchiveSourceResult | null = null;
+    for (const demoPath of automaticCandidates) {
+      try {
+        result = await invoke<ResolveArchiveSourceResult>("resolve_archive_source", {
+          request: { manifestPath: source.manifestPath, demoPath },
+        });
+        break;
+      } catch (reason) {
+        sourceError = parseCommandError(reason);
+        if (!recoverableSourceErrors.has(sourceError.code)) throw reason;
+      }
+    }
+    if (!result) {
+      const demoPath = await invoke<string | null>("choose_demo", {
+        initialPath: sourceError?.path || recordedSource || indexedSource || source.demoPath || null,
+      });
+      if (!demoPath) return null;
+      result = await invoke<ResolveArchiveSourceResult>("resolve_archive_source", {
+        request: { manifestPath: source.manifestPath, demoPath },
+      });
+    }
+    setDemoSourceIndex((current) => rememberDemoSource(
+      current,
+      source.demoSha256,
+      result.sourcePath,
+    ));
+    return result.sourcePath;
+  }
+
+  async function reconvertArchive(selectedArchive: ManifestArchive) {
+    if (isBusy) return;
+    try {
+      setGlobalError(null);
+      setRepairingManifest(selectedArchive.manifestPath);
+      const resolvedSource = await resolveManifestDemoSource(selectedArchive);
+      if (!resolvedSource) return;
+      setArchive((current) => current?.manifestPath === selectedArchive.manifestPath
+        ? { ...current, sourcePath: resolvedSource }
+        : current);
+      setSourcePath(resolvedSource);
+      setRepairingManifest("");
+      await runAnalysis(resolvedSource, selectedArchive.demoSha256);
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
+    } finally {
+      setRepairingManifest("");
+    }
+  }
+
+  async function repairLibraryMetadata() {
+    const roots = uniqueLibraryRoots(libraryRoots);
+    if (isBusy || roots.length === 0) return;
+    let shouldRescan = false;
+    try {
+      setGlobalError(null);
+      setLibraryNotice("");
+      setRepairingLibrary(true);
+      shouldRescan = true;
+      let workingSourceIndex = { ...demoSourceIndex };
+      const absorbVerifiedSources = (result: RefreshLibraryMetadataResult) => {
+        workingSourceIndex = Object.entries(result.sourcePaths).reduce(
+          (index, [hash, path]) => rememberDemoSource(index, hash, path),
+          workingSourceIndex,
+        );
+      };
+      const failedRootResult = (
+        root: string,
+        reason: unknown,
+        fallback?: RefreshLibraryMetadataResult,
+      ): RefreshLibraryMetadataResult => {
+        const error = parseCommandError(reason);
+        return {
+          demosScanned: 0,
+          demosMatched: 0,
+          archivesUpdated: 0,
+          archivesCurrent: fallback?.archivesCurrent ?? 0,
+          archivesUnmatched: fallback?.archivesUnmatched ?? 0,
+          sourceUnmatched: fallback?.sourceUnmatched ?? 0,
+          sourcePaths: {},
+          failures: [`${root}: ${error.message}`],
+        };
+      };
+      const firstPass = new Map<string, RefreshLibraryMetadataResult>();
+      for (const root of roots) {
+        try {
+          const result = await invoke<RefreshLibraryMetadataResult>("refresh_library_metadata", {
+            request: { libraryRoot: root, demoRoot: null, sourcePaths: workingSourceIndex },
+          });
+          firstPass.set(root, result);
+          absorbVerifiedSources(result);
+        } catch (reason) {
+          firstPass.set(root, failedRootResult(root, reason));
+        }
+      }
+      const automaticRetry = new Map<string, RefreshLibraryMetadataResult>();
+      for (const root of roots.filter((candidate) => (firstPass.get(candidate)?.sourceUnmatched ?? 0) > 0)) {
+        try {
+          const result = await invoke<RefreshLibraryMetadataResult>("refresh_library_metadata", {
+            request: { libraryRoot: root, demoRoot: null, sourcePaths: workingSourceIndex },
+          });
+          automaticRetry.set(root, result);
+          absorbVerifiedSources(result);
+        } catch (reason) {
+          automaticRetry.set(root, failedRootResult(root, reason, firstPass.get(root)));
+        }
+      }
+      const unresolvedRoots = roots.filter((root) => (
+        automaticRetry.get(root)?.sourceUnmatched
+        ?? firstPass.get(root)?.sourceUnmatched
+        ?? 0
+      ) > 0);
+      const directoryPass = new Map<string, RefreshLibraryMetadataResult>();
+      if (unresolvedRoots.length > 0) {
+        const initialPath = libraryScan?.entries.find((entry) => entry.sourcePath)?.sourcePath
+          || Object.values(workingSourceIndex).at(-1)
+          || null;
+        const demoRoot = await invoke<string | null>("choose_demo_source_dir", { initialPath });
+        if (demoRoot) {
+          for (const root of unresolvedRoots) {
+            try {
+              const result = await invoke<RefreshLibraryMetadataResult>("refresh_library_metadata", {
+                request: { libraryRoot: root, demoRoot, sourcePaths: workingSourceIndex },
+              });
+              directoryPass.set(root, result);
+              absorbVerifiedSources(result);
+            } catch (reason) {
+              directoryPass.set(root, failedRootResult(
+                root,
+                reason,
+                automaticRetry.get(root) ?? firstPass.get(root),
+              ));
+            }
+          }
+        }
+      }
+      const result = roots.reduce<RefreshLibraryMetadataResult>((total, root) => {
+        const first = firstPass.get(root)!;
+        const retry = automaticRetry.get(root);
+        const searched = directoryPass.get(root);
+        const latest = searched ?? retry ?? first;
+        return {
+          demosScanned: total.demosScanned + first.demosScanned
+            + (retry?.demosScanned ?? 0) + (searched?.demosScanned ?? 0),
+          demosMatched: total.demosMatched + first.demosMatched
+            + (retry?.demosMatched ?? 0) + (searched?.demosMatched ?? 0),
+          archivesUpdated: total.archivesUpdated + first.archivesUpdated
+            + (retry?.archivesUpdated ?? 0) + (searched?.archivesUpdated ?? 0),
+          archivesCurrent: total.archivesCurrent + latest.archivesCurrent,
+          archivesUnmatched: total.archivesUnmatched + latest.archivesUnmatched,
+          sourceUnmatched: total.sourceUnmatched + latest.sourceUnmatched,
+          sourcePaths: {
+            ...total.sourcePaths,
+            ...first.sourcePaths,
+            ...(retry?.sourcePaths ?? {}),
+            ...(searched?.sourcePaths ?? {}),
+          },
+          failures: [
+            ...total.failures,
+            ...first.failures,
+            ...(retry?.failures ?? []),
+            ...(searched?.failures ?? []),
+          ],
+        };
+      }, {
+        demosScanned: 0,
+        demosMatched: 0,
+        archivesUpdated: 0,
+        archivesCurrent: 0,
+        archivesUnmatched: 0,
+        sourceUnmatched: 0,
+        sourcePaths: {},
+        failures: [],
+      });
+      setDemoSourceIndex(workingSourceIndex);
+      const notice = words.repairLibraryResult
+        .replace("{updated}", String(result.archivesUpdated))
+        .replace("{unmatched}", String(result.sourceUnmatched))
+        .replace("{failed}", String(result.failures.length));
+      setLibraryNotice(notice);
+      setLiveMessage(notice);
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
+    } finally {
+      if (shouldRescan) await scanLibrary(libraryRoots);
+      setRepairingLibrary(false);
+    }
+  }
+
+  async function importArchives() {
+    if (isBusy || !libraryRoot) return;
+    try {
+      const sourceRoot = await invoke<string | null>("choose_library_dir");
+      if (!sourceRoot) return;
+      setGlobalError(null);
+      setLibraryNotice("");
+      setImportingArchives(true);
+      const result = await invoke<ImportArchivesResult>("import_archives", {
+        request: { libraryRoot, sourceRoot },
+      });
+      const notice = words.importArchivesResult
+        .replace("{imported}", String(result.archivesImported))
+        .replace("{duplicates}", String(result.duplicatesSkipped))
+        .replace("{rejected}", String(result.archivesRejected));
+      setLibraryNotice(notice);
+      setLiveMessage(notice);
+      await scanLibrary(libraryRoots);
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
+    } finally {
+      setImportingArchives(false);
+    }
+  }
+
   async function chooseOutput(): Promise<string | null> {
     try {
       const path = await invoke<string | null>("choose_output_dir");
       if (path) {
-        setOutputDir(path);
+        const root = normalizeLibraryRoot(path);
+        setLibraryNotice("");
+        setLibraryScan(null);
+        setLibraryPreferences((current) => ({
+          exportRoot: root,
+          roots: withExportRoot(current.roots, root),
+        }));
+        setOutputDir(root);
         setOutputRoot("");
+        return root;
       }
       return path;
     } catch (reason) {
@@ -677,6 +1127,12 @@ function App() {
       setConversionWarnings(taskWarningsRef.current);
       setCommandMode(summary.rounds.length > 1 ? "sequence" : "round");
       setProgress((current) => ({ ...current, phase: "complete" }));
+      setLibraryPreferences((current) => ({
+        exportRoot: destination,
+        roots: withExportRoot(current.roots, destination),
+      }));
+      setOutputDir(destination);
+      void scanLibrary(withExportRoot(libraryRoots, destination));
       setPhase("complete");
     } catch (reason) {
       if (token !== taskTokenRef.current) return;
@@ -816,11 +1272,19 @@ function App() {
         busy={isBusy}
         onToggleLanguage={() => setLanguage((current) => current === "zh" ? "en" : "zh")}
         onCycleTheme={cycleTheme}
-        onChangeDemo={() => void chooseDemo()}
+        onChangeDemo={() => void chooseDemo(sourcePath)}
         onRequestClose={() => void requestWindowClose()}
       />
 
-      <main className="app-workspace">
+      <div className="app-body">
+        <AppSidebar
+          words={words}
+          phase={phase}
+          busy={isBusy}
+          onLibrary={resetSession}
+          onConvert={() => void chooseDemo()}
+        />
+        <main className="app-workspace">
         {globalError ? (
           <div className="error-strip" role="alert">
             <AlertIcon size={17} />
@@ -829,12 +1293,41 @@ function App() {
           </div>
         ) : null}
 
-        {phase === "idle" ? <DemoPickerView words={words} chooseButtonRef={chooseButtonRef} onChoose={() => void chooseDemo()} onOpenManifest={() => void chooseManifest()} /> : null}
+        {phase === "idle" ? (
+          <LibraryWorkspace
+            words={words}
+            language={language}
+            exportRoot={libraryRoot}
+            roots={libraryRoots}
+            scan={libraryScan}
+            loading={libraryLoading}
+            repairingManifest={repairingManifest}
+            repairingLibrary={repairingLibrary}
+            importingArchives={importingArchives}
+            notice={libraryNotice}
+            query={libraryQuery}
+            mapFilter={libraryMap}
+            sort={librarySort}
+            onQueryChange={setLibraryQuery}
+            onMapFilterChange={setLibraryMap}
+            onSortChange={setLibrarySort}
+            onAddRoot={() => void addLibraryRoot()}
+            onRemoveRoot={removeLibraryRoot}
+            onChooseExportRoot={() => void chooseLibraryRoot()}
+            onRefresh={() => void scanLibrary(libraryRoots)}
+            onImportArchives={() => void importArchives()}
+            onRepairLibrary={() => void repairLibraryMetadata()}
+            onConvert={() => void chooseDemo()}
+            onOpenEntry={(entry: DemoLibraryEntry) => void runManifest(entry.manifestPath)}
+            onRepairEntry={(entry: DemoLibraryEntry) => void repairArchiveMetadata(entry)}
+          />
+        ) : null}
         {phase === "openingArchive" ? <OpeningArchiveView words={words} manifestName={fileName(archivePath)} /> : null}
         {phase === "archive" && archive ? (
           <ArchiveWorkspace
             words={words}
             archive={archive}
+            busy={Boolean(repairingManifest)}
             selectedRound={selectedArchiveRound ?? -1}
             commandMode={commandMode}
             playbackPreset={playbackPreset}
@@ -849,13 +1342,14 @@ function App() {
             onPlaybackPresetChange={(patch) => setPlaybackPreset((current) => ({ ...current, ...patch }))}
             onCopy={(value, target) => void copyText(value, target)}
             onOpenFolder={() => void openPath(archive.root)}
+            onReconvert={() => void reconvertArchive(archive)}
             onChooseManifest={() => void chooseManifest()}
             onClose={resetSession}
           />
         ) : null}
         {phase === "analyzing" ? <AnalysisProgressView words={words} sourceFileName={sourceFileName} elapsedSeconds={elapsedSeconds} /> : null}
         {phase === "analysisFailed" ? (
-          <AnalysisFailedView words={words} error={analysisError} retryButtonRef={retryButtonRef} onRetry={() => void runAnalysis(sourcePath)} onChangeDemo={() => void chooseDemo()} />
+          <AnalysisFailedView words={words} error={analysisError} retryButtonRef={retryButtonRef} onRetry={() => void runAnalysis(sourcePath)} onChangeDemo={() => void chooseDemo(sourcePath)} />
         ) : null}
         {selectingView}
         {phase === "converting" ? <ConversionProgressView words={words} progress={progress} outputRoot={outputRoot} /> : null}
@@ -868,11 +1362,7 @@ function App() {
             result={result}
             warnings={conversionWarnings}
             copiedTarget={copiedTarget}
-            commandMode={commandMode}
-            playbackPreset={playbackPreset}
             resultHeadingRef={resultHeadingRef}
-            onCommandModeChange={setCommandMode}
-            onPlaybackPresetChange={(patch) => setPlaybackPreset((current) => ({ ...current, ...patch }))}
             onCopy={(value, target) => void copyText(value, target)}
             onOpenFolder={() => void openPath(result.root)}
             onBrowseManifest={() => void runManifest(result.manifestPath)}
@@ -882,7 +1372,8 @@ function App() {
             formatBytes={formatBytes}
           />
         ) : null}
-      </main>
+        </main>
+      </div>
 
       {dragActive ? (
         <div className="drop-overlay" role="status">

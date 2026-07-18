@@ -18,6 +18,7 @@ use csgoproto::csvc_msg_game_event_list::DescriptorT;
 use csgoproto::message_type::NetMessageType::{self, *};
 use csgoproto::CDemoClassInfo;
 use csgoproto::CDemoFileHeader;
+use csgoproto::CDemoFileInfo;
 use csgoproto::CDemoFullPacket;
 use csgoproto::CDemoPacket;
 use csgoproto::CDemoSendTables;
@@ -127,7 +128,14 @@ impl<'a> FirstPassParser<'a> {
                 EDemoCommands::DemStringTables => self.parse_demo_string_tables(bytes)?,
                 EDemoCommands::DemSignonPacket => self.parse_packet(bytes)?,
                 EDemoCommands::DemFullPacket => self.parse_full_packet(bytes, &frame)?,
-                EDemoCommands::DemStop => break,
+                EDemoCommands::DemFileInfo => self.parse_file_info(bytes)?,
+                EDemoCommands::DemStop => {
+                    // Source 2 writes CDemoFileInfo after DEM_Stop in normal demos.
+                    // Read that optional footer best-effort without letting malformed
+                    // trailing metadata invalidate an otherwise parseable match.
+                    self.parse_file_info_tail(demo_bytes, &mut reuseable_buffer);
+                    break;
+                }
                 _ => {}
             };
         }
@@ -165,7 +173,7 @@ impl<'a> FirstPassParser<'a> {
         demo_cmd == EDemoCommands::DemPacket || demo_cmd == EDemoCommands::DemAnimationData
     }
     fn slice_packet_bytes(&mut self, demo_bytes: &'a [u8], frame_size: usize) -> Result<&'a [u8], DemoParserError> {
-        if self.ptr + frame_size as usize >= demo_bytes.len() {
+        if self.ptr + frame_size as usize > demo_bytes.len() {
             return Err(DemoParserError::MalformedMessage);
         }
         Ok(&demo_bytes[self.ptr..self.ptr + frame_size])
@@ -355,6 +363,46 @@ impl<'a> FirstPassParser<'a> {
         self.header.insert("demo_version_name".to_string(), header.demo_version_name().to_string());
         self.header.insert("addons".to_string(), header.addons().to_string());
         Ok(())
+    }
+
+    fn parse_file_info(&mut self, bytes: &[u8]) -> Result<(), DemoParserError> {
+        let info = CDemoFileInfo::decode(bytes).map_err(|_| DemoParserError::MalformedMessage)?;
+        if let Some(value) = info.playback_time.filter(|value| value.is_finite() && *value >= 0.0) {
+            self.header.insert("playback_time".to_string(), value.to_string());
+        }
+        if let Some(value) = info.playback_ticks.filter(|value| *value >= 0) {
+            self.header.insert("playback_ticks".to_string(), value.to_string());
+        }
+        if let Some(value) = info.playback_frames.filter(|value| *value >= 0) {
+            self.header.insert("playback_frames".to_string(), value.to_string());
+        }
+        Ok(())
+    }
+
+    fn parse_file_info_tail(&mut self, demo_bytes: &'a [u8], buffer: &mut Vec<u8>) {
+        loop {
+            if self.ptr + 3 > demo_bytes.len() {
+                return;
+            }
+            let frame = match self.read_frame(demo_bytes) {
+                Ok(frame) => frame,
+                Err(_) => return,
+            };
+            let bytes = match self.slice_packet_bytes(demo_bytes, frame.size) {
+                Ok(bytes) => bytes,
+                Err(_) => return,
+            };
+            self.ptr += frame.size;
+            if frame.demo_cmd != EDemoCommands::DemFileInfo {
+                continue;
+            }
+            let bytes = match self.decompress_if_needed(buffer, bytes, &frame) {
+                Ok(bytes) => bytes,
+                Err(_) => return,
+            };
+            let _ = self.parse_file_info(bytes);
+            return;
+        }
     }
     fn handle_short_header(&mut self, file_len: usize, bytes: &[u8]) -> Result<(), DemoParserError> {
         if bytes.len() < 16 {

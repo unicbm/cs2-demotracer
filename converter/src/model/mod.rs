@@ -459,6 +459,14 @@ pub struct ParsedDemo {
     pub stem: String,
     pub demo_sha256: String,
     pub map: String,
+    #[serde(default)]
+    pub demo_patch_version: Option<i32>,
+    #[serde(default)]
+    pub demo_version_name: Option<String>,
+    #[serde(default)]
+    pub server_name: Option<String>,
+    #[serde(default)]
+    pub playback_time_seconds: Option<f32>,
     pub tick_rate: f32,
     pub round_freeze_end_ticks: Vec<i32>,
     pub bomb_beginplant_ticks: Vec<i32>,
@@ -557,6 +565,9 @@ pub struct ParsedGameEvent {
     pub entity_id: Option<i32>,
     pub damage: Option<i32>,
     pub health: Option<i32>,
+    /// Winning engine side for `round_end` (`2` = T, `3` = CT).
+    /// This is deliberately kept as a side, not a persistent team identity.
+    pub winner_side: Option<u8>,
     pub chat_text: Option<String>,
     pub chat_scope: Option<String>,
     pub chat_message_name: Option<String>,

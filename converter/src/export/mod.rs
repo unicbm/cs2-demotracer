@@ -244,7 +244,11 @@ fn export_demo_to_memory_inner(
     );
     log.push(format!(
         "demo={} id={} sha256={} map={} tick_rate={:.3}",
-        parsed.path, output_stem, parsed.demo_sha256, parsed.map, parsed.tick_rate
+        public_demo_path(&parsed.path),
+        output_stem,
+        parsed.demo_sha256,
+        parsed.map,
+        parsed.tick_rate
     ));
     let econ_gloves = if options.export_cosmetics {
         glove_econ_cosmetics_by_player(parsed)
@@ -5264,6 +5268,10 @@ mod tests {
             stem: "demo".to_string(),
             demo_sha256: "00".repeat(32),
             map: "de_mirage".to_string(),
+            demo_patch_version: None,
+            demo_version_name: None,
+            server_name: None,
+            playback_time_seconds: None,
             tick_rate: 64.0,
             round_freeze_end_ticks: Vec::new(),
             bomb_beginplant_ticks: Vec::new(),

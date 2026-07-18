@@ -42,10 +42,139 @@ export interface AnalysisResult {
   sourcePath: string;
   fileName: string;
   outputDemoId: string;
+  demoSha256: string;
   map: string;
   tickRate: number;
   rowCount: number;
+  sourceModifiedAtMs?: number | null;
+  sourceSizeBytes?: number | string | null;
+  durationSeconds: number;
+  demoPatchVersion?: number | string | null;
+  demoVersionName?: string | null;
+  serverName?: string | null;
+  demoSource?: DemoSource | null;
+  converterVersion: string;
+  players: AnalysisPlayerSummary[];
+  score?: MatchScoreSummary | null;
   rounds: RoundInfo[];
+}
+
+export interface MatchTeamScore {
+  score: number;
+  name?: string | null;
+}
+
+export interface MatchScoreSummary {
+  teamA: MatchTeamScore;
+  teamB: MatchTeamScore;
+  status?: "final" | "completed" | "snapshot" | string;
+}
+
+export interface DemoSource {
+  name: string;
+  evidence: "serverName" | "fileName" | string;
+}
+
+export interface AnalysisPlayerSummary {
+  name: string;
+  steamId: string;
+  side: string;
+  team: "a" | "b" | "unknown" | string;
+  teamName?: string | null;
+  rounds: number;
+  rows: number;
+  score?: number | null;
+  kills?: number | null;
+  deaths?: number | null;
+  assists?: number | null;
+  mvps?: number | null;
+}
+
+export interface LibraryPlayerSummary {
+  name: string;
+  steamId: string;
+  side: string;
+  team: "a" | "b" | "unknown" | string;
+  rounds: number;
+  files: number;
+  teamName?: string | null;
+  score?: number | null;
+  kills?: number | null;
+  deaths?: number | null;
+  assists?: number | null;
+  mvps?: number | null;
+}
+
+export interface DemoLibraryEntry {
+  root: string;
+  manifestPath: string;
+  demoPath: string;
+  demoId: string;
+  demoSha256: string;
+  displayName?: string | null;
+  map: string;
+  tickRate: number;
+  abi: number;
+  formatVersion: number;
+  compatibility: "current" | "supported" | "legacy" | "unsupported" | string;
+  modifiedAtMs: number;
+  rounds: number;
+  files: number;
+  players: LibraryPlayerSummary[];
+  score?: MatchScoreSummary | null;
+  scoreIsSnapshot?: boolean;
+  metadataStatus?: "current" | "missing" | "stale" | "invalid" | string;
+  sourcePath?: string | null;
+  sourceAvailable?: boolean;
+  sourceModifiedAtMs?: number | null;
+  sourceSizeBytes?: number | string | null;
+  durationSeconds?: number | null;
+  demoPatchVersion?: number | string | null;
+  demoVersionName?: string | null;
+  serverName?: string | null;
+  demoSource?: DemoSource | null;
+  converterVersion?: string | null;
+}
+
+export interface RefreshArchiveMetadataResult {
+  manifestPath: string;
+  infoPath: string;
+  displayName: string;
+  sourcePath: string;
+}
+
+export interface ResolveArchiveSourceResult {
+  sourcePath: string;
+}
+
+export interface RefreshLibraryMetadataResult {
+  demosScanned: number;
+  demosMatched: number;
+  archivesUpdated: number;
+  archivesCurrent: number;
+  archivesUnmatched: number;
+  sourceUnmatched: number;
+  sourcePaths: Record<string, string>;
+  failures: string[];
+}
+
+export interface ImportArchivesResult {
+  archivesFound: number;
+  archivesImported: number;
+  duplicatesSkipped: number;
+  archivesRejected: number;
+  failures: string[];
+}
+
+export interface DemoLibrarySkipped {
+  path: string;
+  message: string;
+}
+
+export interface DemoLibraryScan {
+  root: string;
+  entries: DemoLibraryEntry[];
+  skipped: DemoLibrarySkipped[];
 }
 
 export interface OutputPreflight {
@@ -65,11 +194,29 @@ export interface PlayerSummary {
   steamId: string;
   rounds: number;
   files: number;
+  side?: string | null;
+  matchTeam?: string | null;
+  teamName?: string | null;
+  score?: number | null;
+  kills?: number | null;
+  deaths?: number | null;
+  assists?: number | null;
+  mvps?: number | null;
 }
 
 export interface RoundOutputSummary {
   round: number;
   files: number;
+}
+
+export interface CosmeticSummary {
+  requested: boolean | null;
+  stickerRequested: boolean | null;
+  charmRequested: boolean | null;
+  files: number;
+  stickerFiles: number;
+  charmFiles: number;
+  preset?: "basic" | "full" | null;
 }
 
 export interface ConversionSummary {
@@ -83,15 +230,10 @@ export interface ConversionSummary {
   rounds: RoundOutputSummary[];
   players: PlayerSummary[];
   voice: {
-    requested: boolean;
+    requested: boolean | null;
     sidecars: number;
   };
-  cosmetics: {
-    files: number;
-    stickerFiles: number;
-    charmFiles: number;
-    preset?: "basic" | "full" | null;
-  };
+  cosmetics: CosmeticSummary;
   commands: {
     goRound: string;
     goSequence: string;
@@ -125,11 +267,25 @@ export interface ManifestArchiveRound {
   files: number;
   tFiles: number;
   ctFiles: number;
+  cosmeticFiles: number;
+  stickerFiles: number;
+  charmFiles: number;
   durationSeconds?: number | null;
   pistolRound?: boolean | null;
   cutReason?: string | null;
   tEconomy?: ManifestTeamEconomy | null;
   ctEconomy?: ManifestTeamEconomy | null;
+  scoreboard?: {
+    tScore: number;
+    ctScore: number;
+    tTeamName?: string | null;
+    ctTeamName?: string | null;
+  } | null;
+  bombPlantedSeconds?: number | null;
+  ticks: number;
+  subticks: number;
+  hifiEvents: number;
+  inventorySnapshots: number;
   sequenceLength: number;
   available: boolean;
   commands: ConversionSummary["commands"];
@@ -152,12 +308,23 @@ export interface ManifestArchive {
   playable: boolean;
   players: PlayerSummary[];
   voice: {
+    requested: boolean | null;
     sidecars: number;
     rounds: number[];
   };
-  cosmetics: ConversionSummary["cosmetics"];
+  cosmetics: CosmeticSummary;
   rounds: ManifestArchiveRound[];
   issues: ManifestArchiveIssue[];
+  displayName: string;
+  metadataStatus: string;
+  sourcePath?: string | null;
+  sourceModifiedAtMs?: number | null;
+  durationSeconds?: number | null;
+  demoPatchVersion?: number | null;
+  demoVersionName?: string | null;
+  demoSource?: DemoSource | null;
+  score?: MatchScoreSummary | null;
+  converterVersion?: string | null;
 }
 
 export interface ConverterSettings {

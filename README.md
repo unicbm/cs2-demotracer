@@ -132,6 +132,34 @@ The GUI can also open an existing per-demo `manifest.json`, validate its
 referenced `.dtr` files, select a source round, and build either command without
 requiring the original `.dem`.
 
+The GUI starts in a local replay library. On Windows its first-run default is
+`Documents\CS2 DemoTracer\Library`; an existing user-selected library is kept,
+and additional archive folders can be indexed alongside the main export folder.
+New GUI conversions are grouped as
+`<library>\<map>\<readable-name>--<hash12>\`, while the complete demo SHA-256
+remains the identity. Each archive includes a pretty-printed desktop
+`demo-info.json` catalog summary next to the unchanged, portable ABI 17
+`manifest.json`, plus a small `demo-source.json` local provenance pointer. Both
+desktop sidecars can contain the original local `.dem` path; that pointer is
+never part of the playback manifest or its ABI.
+The library lightly indexes these files; `.dtr` payloads are read only after a
+replay is opened for full validation. Library cards show the map,
+score evidence, teams, players, K/D/A, full demo duration, inferred platform,
+approximate source-file time when known, archive time, and ABI/format, CS2
+patch, and converter versions. Platform inference prefers the header server
+name and labels filename-only matches as possible sources. CS2 demos do not
+expose a reliable absolute match time, so the GUI labels file time as
+approximate rather than presenting it as the match date. Old archives without a
+current sidecar do not present their round-start scoreboard snapshot as a final
+score. Metadata repair first reuses each remembered source path and verifies its
+full SHA-256. It asks for a relocated file or search folder only when that local
+pointer no longer works, then updates the local sidecars without rewriting
+`.dtr` files. **Choose rounds again** uses the same verified pointer, so an
+archive can return directly to conversion without asking for its source from
+scratch. **Organize old
+archives** validates scattered replay folders, copies each unique demo into the
+map-grouped main library, and leaves every source folder untouched.
+
 More commands:
 
 - Converter usage: [`docs/USAGE.md`](docs/USAGE.md)

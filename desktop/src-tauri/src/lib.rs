@@ -1,4 +1,11 @@
-use cs2_demotracer::demo_id::output_demo_id;
+mod archive_info;
+mod catalog;
+
+use cs2_demotracer::browser_analysis::{
+    analyze_browser_demo, BrowserDemoAnalysis, BrowserDemoSource, BrowserPlayerSummary,
+    BrowserScoreSummary,
+};
+use cs2_demotracer::demo_id::sha256_hex;
 use cs2_demotracer::demo_reader::{read_demo_with_options, ReadDemoOptions};
 use cs2_demotracer::dtr::read_rec_file;
 use cs2_demotracer::export::{
@@ -9,7 +16,7 @@ use cs2_demotracer::model::{
     public_demo_path, ConvertedFile, DemoAnalysis, ParsedDemo, RoundStatus, Side, SubtickMode,
     DEMOTRACER_ABI, DTR_FORMAT_VERSION,
 };
-use cs2_demotracer::quality::{analyze_demo as analyze_parsed_demo, AnalysisOptions};
+use cs2_demotracer::quality::AnalysisOptions;
 use cs2_demotracer::validate::validate_dtr_path;
 use cs2_demotracer::voice_export::export_round_voice_sidecars;
 use serde::{Deserialize, Serialize};
@@ -20,7 +27,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 const COSMETIC_CONFIRMATION_PHRASE: &str = "I ACCEPT COSMETIC EXPORT RISK";
 const MAX_FREEZE_PREROLL_SECONDS: f32 = 120.0;
@@ -239,6 +246,8 @@ fn artifact_kind_label(kind: &ConversionArtifactKind) -> &'static str {
 #[serde(rename_all = "camelCase")]
 pub struct AnalyzeDemoRequest {
     pub path: String,
+    #[serde(default)]
+    pub expected_demo_sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -248,9 +257,20 @@ pub struct AnalysisDto {
     pub source_path: String,
     pub file_name: String,
     pub output_demo_id: String,
+    pub demo_sha256: String,
     pub map: String,
     pub tick_rate: f32,
     pub row_count: usize,
+    pub source_modified_at_ms: Option<u64>,
+    pub source_size_bytes: Option<String>,
+    pub duration_seconds: f32,
+    pub demo_patch_version: Option<i32>,
+    pub demo_version_name: Option<String>,
+    pub server_name: Option<String>,
+    pub demo_source: Option<BrowserDemoSource>,
+    pub converter_version: String,
+    pub players: Vec<BrowserPlayerSummary>,
+    pub score: Option<BrowserScoreSummary>,
     pub rounds: Vec<RoundDto>,
 }
 
@@ -352,6 +372,22 @@ pub struct PlayerSummaryDto {
     pub name: String,
     pub rounds: usize,
     pub files: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub side: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub match_team: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub score: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kills: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deaths: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assists: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mvps: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -364,6 +400,9 @@ pub struct VoiceSummaryDto {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CosmeticSummaryDto {
+    pub requested: Option<bool>,
+    pub sticker_requested: Option<bool>,
+    pub charm_requested: Option<bool>,
     pub files: usize,
     pub sticker_files: usize,
     pub charm_files: usize,
@@ -401,6 +440,77 @@ pub struct PreflightOutputDto {
     pub exists: bool,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefreshArchiveMetadataRequest {
+    pub manifest_path: String,
+    #[serde(default)]
+    pub demo_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefreshArchiveMetadataDto {
+    pub manifest_path: String,
+    pub info_path: String,
+    pub display_name: String,
+    pub source_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolveArchiveSourceRequest {
+    pub manifest_path: String,
+    #[serde(default)]
+    pub demo_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolveArchiveSourceDto {
+    pub source_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefreshLibraryMetadataRequest {
+    pub library_root: String,
+    #[serde(default)]
+    pub demo_root: Option<String>,
+    #[serde(default)]
+    pub source_paths: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefreshLibraryMetadataDto {
+    pub demos_scanned: usize,
+    pub demos_matched: usize,
+    pub archives_updated: usize,
+    pub archives_current: usize,
+    pub archives_unmatched: usize,
+    pub source_unmatched: usize,
+    pub source_paths: BTreeMap<String, String>,
+    pub failures: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportArchivesRequest {
+    pub library_root: String,
+    pub source_root: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportArchivesDto {
+    pub archives_found: usize,
+    pub archives_imported: usize,
+    pub duplicates_skipped: usize,
+    pub archives_rejected: usize,
+    pub failures: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManifestArchiveDto {
@@ -423,11 +533,30 @@ pub struct ManifestArchiveDto {
     pub rounds: Vec<ManifestArchiveRoundDto>,
     pub issues: Vec<ManifestIssueDto>,
     pub playable: bool,
+    pub display_name: String,
+    pub metadata_status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_modified_at_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_seconds: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub demo_patch_version: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub demo_version_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub demo_source: Option<BrowserDemoSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub score: Option<BrowserScoreSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub converter_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManifestArchiveVoiceDto {
+    pub requested: Option<bool>,
     pub sidecars: usize,
     pub rounds: Vec<u32>,
 }
@@ -439,6 +568,9 @@ pub struct ManifestArchiveRoundDto {
     pub files: usize,
     pub t_files: usize,
     pub ct_files: usize,
+    pub cosmetic_files: usize,
+    pub sticker_files: usize,
+    pub charm_files: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration_seconds: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -449,9 +581,28 @@ pub struct ManifestArchiveRoundDto {
     pub t_economy: Option<ManifestTeamEconomyDto>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ct_economy: Option<ManifestTeamEconomyDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scoreboard: Option<ManifestRoundScoreboardDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bomb_planted_seconds: Option<f32>,
+    pub ticks: usize,
+    pub subticks: usize,
+    pub hifi_events: usize,
+    pub inventory_snapshots: usize,
     pub sequence_length: usize,
     pub available: bool,
     pub commands: CommandSummaryDto,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestRoundScoreboardDto {
+    pub t_score: u32,
+    pub ct_score: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub t_team_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ct_team_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -540,12 +691,35 @@ struct ManifestAvatarWire {
 #[derive(Debug, Clone, Deserialize)]
 struct ManifestRoundWire {
     round: Option<u32>,
+    bomb_planted_seconds_after_live: Option<f32>,
     duration_seconds: Option<f32>,
     pistol_round: Option<bool>,
     cut_reason: Option<String>,
     t_economy: Option<ManifestTeamEconomyWire>,
     ct_economy: Option<ManifestTeamEconomyWire>,
+    scoreboard: Option<ManifestRoundScoreboardWire>,
     files: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ManifestRoundScoreboardWire {
+    #[serde(default)]
+    t_score: u32,
+    #[serde(default)]
+    ct_score: u32,
+    t_team_name: Option<String>,
+    ct_team_name: Option<String>,
+}
+
+impl From<ManifestRoundScoreboardWire> for ManifestRoundScoreboardDto {
+    fn from(value: ManifestRoundScoreboardWire) -> Self {
+        Self {
+            t_score: value.t_score,
+            ct_score: value.ct_score,
+            t_team_name: value.t_team_name,
+            ct_team_name: value.ct_team_name,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -587,7 +761,25 @@ struct ManifestFileWire {
     side: Option<String>,
     steam_id: Option<u64>,
     player_name: Option<String>,
+    #[serde(default)]
+    ticks: usize,
+    #[serde(default)]
+    subticks: usize,
+    #[serde(default)]
+    hifi_event_count: usize,
+    #[serde(default)]
+    inventory_snapshot_count: usize,
+    scoreboard: Option<ManifestPlayerScoreboardWire>,
     cosmetics: Option<ManifestCosmeticsWire>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct ManifestPlayerScoreboardWire {
+    score: Option<i32>,
+    kills: Option<u32>,
+    deaths: Option<u32>,
+    assists: Option<u32>,
+    mvps: Option<u32>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -632,6 +824,13 @@ struct ManifestRoundAccumulator {
     t_files: usize,
     ct_files: usize,
     playable_files: usize,
+    cosmetic_files: usize,
+    sticker_files: usize,
+    charm_files: usize,
+    ticks: usize,
+    subticks: usize,
+    hifi_events: usize,
+    inventory_snapshots: usize,
 }
 
 #[derive(Debug)]
@@ -640,6 +839,7 @@ struct PlayableManifestFile {
     side: String,
     steam_id: u64,
     player_name: String,
+    scoreboard: Option<ManifestPlayerScoreboardWire>,
     has_cosmetics: bool,
     has_stickers: bool,
     has_charms: bool,
@@ -650,6 +850,10 @@ struct CachedDemo {
     analysis_id: String,
     parsed: Arc<ParsedDemo>,
     analysis: DemoAnalysis,
+    browser: BrowserDemoAnalysis,
+    archive_id: String,
+    source_modified_at_ms: Option<u64>,
+    source_size_bytes: Option<u64>,
 }
 
 struct AppState {
@@ -718,13 +922,29 @@ impl Drop for BusyGuard<'_> {
 }
 
 #[tauri::command]
-async fn choose_demo() -> CommandResult<Option<String>> {
-    tauri::async_runtime::spawn_blocking(|| {
-        rfd::FileDialog::new()
+async fn choose_demo(initial_path: Option<String>) -> CommandResult<Option<String>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = rfd::FileDialog::new()
             .set_title("Choose a CS2 demo")
-            .add_filter("CS2 demo", &["dem"])
-            .pick_file()
-            .map(|path| path.display().to_string())
+            .add_filter("CS2 demo", &["dem"]);
+        if let Some(value) = initial_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            let hint = Path::new(value);
+            if hint.is_dir() {
+                dialog = dialog.set_directory(hint);
+            } else {
+                if let Some(parent) = hint.parent().filter(|parent| parent.is_dir()) {
+                    dialog = dialog.set_directory(parent);
+                }
+                if let Some(name) = hint.file_name().and_then(|name| name.to_str()) {
+                    dialog = dialog.set_file_name(name);
+                }
+            }
+        }
+        dialog.pick_file().map(|path| path.display().to_string())
     })
     .await
     .map_err(|error| CommandErrorDto::new("dialog_failed", error.to_string()))
@@ -756,6 +976,54 @@ async fn choose_output_dir() -> CommandResult<Option<String>> {
 }
 
 #[tauri::command]
+fn default_library_dir(app: AppHandle) -> CommandResult<String> {
+    let documents = app
+        .path()
+        .document_dir()
+        .map_err(|error| CommandErrorDto::new("documents_dir_unavailable", error.to_string()))?;
+    let root = documents.join("CS2 DemoTracer").join("Library");
+    fs::create_dir_all(&root).map_err(|error| {
+        CommandErrorDto::at_path("default_library_create_failed", error.to_string(), &root)
+    })?;
+    Ok(root.display().to_string())
+}
+
+#[tauri::command]
+async fn choose_library_dir() -> CommandResult<Option<String>> {
+    tauri::async_runtime::spawn_blocking(|| {
+        rfd::FileDialog::new()
+            .set_title("Choose a DemoTracer archive folder")
+            .pick_folder()
+            .map(|path| path.display().to_string())
+    })
+    .await
+    .map_err(|error| CommandErrorDto::new("dialog_failed", error.to_string()))
+}
+
+#[tauri::command]
+async fn choose_demo_source_dir(initial_path: Option<String>) -> CommandResult<Option<String>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog =
+            rfd::FileDialog::new().set_title("Choose a folder containing original CS2 demos");
+        if let Some(value) = initial_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            let hint = Path::new(value);
+            if hint.is_dir() {
+                dialog = dialog.set_directory(hint);
+            } else if let Some(parent) = hint.parent().filter(|parent| parent.is_dir()) {
+                dialog = dialog.set_directory(parent);
+            }
+        }
+        dialog.pick_folder().map(|path| path.display().to_string())
+    })
+    .await
+    .map_err(|error| CommandErrorDto::new("dialog_failed", error.to_string()))
+}
+
+#[tauri::command]
 async fn analyze_demo(
     request: AnalyzeDemoRequest,
     events: Channel<TaskEvent>,
@@ -763,6 +1031,7 @@ async fn analyze_demo(
 ) -> CommandResult<AnalysisDto> {
     let _busy = state.acquire_busy()?;
     let source_path = validate_demo_path(&request.path)?;
+    let source_metadata = fs::metadata(&source_path).ok();
     *state.cache()? = None;
 
     emit_phase(&events, TaskPhase::Parsing);
@@ -783,25 +1052,50 @@ async fn analyze_demo(
             },
         )?;
         emit_phase(&worker_events, TaskPhase::Analyzing);
-        let analysis = analyze_parsed_demo(&parsed, AnalysisOptions::default());
+        let analysis = analyze_browser_demo(&parsed, AnalysisOptions::default());
         Ok::<_, cs2_demotracer::Error>((Arc::new(parsed), analysis))
     })
     .await
     .map_err(|error| CommandErrorDto::new("analysis_worker_failed", error.to_string()))?;
 
-    let (parsed, analysis) = parsed_result.map_err(|error| {
+    let (parsed, browser_analysis) = parsed_result.map_err(|error| {
         emit_log(&events, LogLevel::Error, error.to_string());
         CommandErrorDto::from_core("analysis_failed", error)
     })?;
+    if request
+        .expected_demo_sha256
+        .as_deref()
+        .map(str::trim)
+        .filter(|expected| !expected.is_empty())
+        .is_some_and(|expected| !parsed.demo_sha256.eq_ignore_ascii_case(expected))
+    {
+        return Err(CommandErrorDto::at_path(
+            "analysis_demo_hash_mismatch",
+            "This demo is not the original source for the selected archive.",
+            &source_path,
+        ));
+    }
     let analysis_id = state.session_id(&parsed);
-    let output_demo_id = output_demo_id(&parsed.stem, &parsed.demo_sha256, None)
-        .map_err(|error| CommandErrorDto::from_core("invalid_demo_id", error))?;
-    let dto = analysis_dto(&analysis_id, &source_path, &output_demo_id, &analysis);
+    let output_demo_id = archive_info::archive_directory_name(&parsed, &browser_analysis);
+    let source_modified_at_ms = source_metadata.as_ref().and_then(metadata_modified_at_ms);
+    let source_size_bytes = source_metadata.as_ref().map(fs::Metadata::len);
+    let dto = browser_analysis_dto(
+        &analysis_id,
+        &source_path,
+        &output_demo_id,
+        &parsed,
+        &browser_analysis,
+        source_metadata.as_ref(),
+    );
 
     *state.cache()? = Some(CachedDemo {
         analysis_id,
         parsed,
-        analysis,
+        analysis: browser_analysis.analysis.clone(),
+        browser: browser_analysis,
+        archive_id: output_demo_id,
+        source_modified_at_ms,
+        source_size_bytes,
     });
     emit_phase(&events, TaskPhase::Complete);
     Ok(dto)
@@ -848,6 +1142,65 @@ async fn read_manifest(path: String) -> CommandResult<ManifestArchiveDto> {
 }
 
 #[tauri::command]
+async fn scan_demo_library(root: String) -> CommandResult<catalog::LibraryScanDto> {
+    tauri::async_runtime::spawn_blocking(move || catalog::scan_demo_library_for(&root))
+        .await
+        .map_err(|error| CommandErrorDto::new("library_scan_worker_failed", error.to_string()))?
+}
+
+#[tauri::command]
+async fn refresh_archive_metadata(
+    request: RefreshArchiveMetadataRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<RefreshArchiveMetadataDto> {
+    let _busy = state.acquire_busy()?;
+    let manifest_path = validate_manifest_input_path(&request.manifest_path)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        refresh_archive_metadata_for(&manifest_path, request.demo_path.as_deref())
+    })
+    .await
+    .map_err(|error| CommandErrorDto::new("metadata_refresh_worker_failed", error.to_string()))?
+}
+
+#[tauri::command]
+async fn resolve_archive_source(
+    request: ResolveArchiveSourceRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<ResolveArchiveSourceDto> {
+    let _busy = state.acquire_busy()?;
+    let manifest_path = validate_manifest_input_path(&request.manifest_path)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        resolve_archive_source_for(&manifest_path, request.demo_path.as_deref())
+    })
+    .await
+    .map_err(|error| CommandErrorDto::new("source_resolve_worker_failed", error.to_string()))?
+}
+
+#[tauri::command]
+async fn refresh_library_metadata(
+    request: RefreshLibraryMetadataRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<RefreshLibraryMetadataDto> {
+    let _busy = state.acquire_busy()?;
+    tauri::async_runtime::spawn_blocking(move || refresh_library_metadata_for(&request))
+        .await
+        .map_err(|error| {
+            CommandErrorDto::new("metadata_refresh_worker_failed", error.to_string())
+        })?
+}
+
+#[tauri::command]
+async fn import_archives(
+    request: ImportArchivesRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<ImportArchivesDto> {
+    let _busy = state.acquire_busy()?;
+    tauri::async_runtime::spawn_blocking(move || import_archives_for(&request))
+        .await
+        .map_err(|error| CommandErrorDto::new("archive_import_worker_failed", error.to_string()))?
+}
+
+#[tauri::command]
 async fn open_output(request: OpenOutputRequest) -> CommandResult<()> {
     let path = PathBuf::from(request.path.trim());
     if !path.is_dir() {
@@ -862,6 +1215,825 @@ async fn open_output(request: OpenOutputRequest) -> CommandResult<()> {
         .await
         .map_err(|error| CommandErrorDto::new("open_output_worker_failed", error.to_string()))?
         .map_err(|error| CommandErrorDto::at_path("open_output_failed", error.to_string(), &path))
+}
+
+fn refresh_archive_metadata_for(
+    manifest_path: &Path,
+    requested_demo_path: Option<&str>,
+) -> CommandResult<RefreshArchiveMetadataDto> {
+    let entry = catalog::summarize_manifest(manifest_path).map_err(|message| {
+        CommandErrorDto::at_path("archive_summary_failed", message, manifest_path)
+    })?;
+    if entry.demo_sha256.trim().is_empty() {
+        return Err(CommandErrorDto::at_path(
+            "archive_demo_hash_missing",
+            "This legacy manifest does not contain a demo SHA-256 and cannot be matched safely.",
+            manifest_path,
+        ));
+    }
+    let archive_root = manifest_path.parent().unwrap_or_else(|| Path::new("."));
+    let requested_demo_path = requested_demo_path
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let demo_path = resolve_source_demo_path(
+        entry.demo_sha256.trim(),
+        entry.source_path.as_deref(),
+        &entry.demo_path,
+        requested_demo_path,
+    )?;
+    let source_metadata = fs::metadata(&demo_path).ok();
+    let parsed = read_demo_with_options(
+        &demo_path,
+        ReadDemoOptions {
+            collect_voice: false,
+            collect_cosmetics: false,
+        },
+    )
+    .map_err(|error| CommandErrorDto::from_core("metadata_demo_parse_failed", error))?;
+    if !parsed
+        .demo_sha256
+        .eq_ignore_ascii_case(entry.demo_sha256.trim())
+    {
+        return Err(CommandErrorDto::at_path(
+            "metadata_demo_hash_mismatch",
+            "The original demo changed while it was being read. Locate the matching demo and try again.",
+            &demo_path,
+        ));
+    }
+    let browser = analyze_browser_demo(&parsed, AnalysisOptions::default());
+    let previous_conversion =
+        preserved_conversion_for_manifest(archive_root, entry.demo_sha256.trim(), manifest_path);
+    let mut info = archive_info::DemoArchiveInfo::from_analysis(
+        entry.demo_id,
+        &parsed,
+        &browser,
+        source_metadata.as_ref().and_then(metadata_modified_at_ms),
+        source_metadata.as_ref().map(fs::Metadata::len),
+        entry.abi,
+        entry.format_version,
+        "metadataRefresh",
+    );
+    info.conversion = previous_conversion;
+    archive_info::write_demo_source_pointer(archive_root, entry.demo_sha256.trim(), &demo_path)
+        .map_err(|error| {
+            CommandErrorDto::at_path(
+                "demo_source_write_failed",
+                error.to_string(),
+                archive_info::demo_source_path(archive_root),
+            )
+        })?;
+    let info_path = archive_info::write_demo_info(archive_root, &info).map_err(|error| {
+        CommandErrorDto::at_path(
+            "demo_info_write_failed",
+            error.to_string(),
+            archive_info::demo_info_path(archive_root),
+        )
+    })?;
+    Ok(RefreshArchiveMetadataDto {
+        manifest_path: manifest_path.display().to_string(),
+        info_path: info_path.display().to_string(),
+        display_name: info.display_name,
+        source_path: info
+            .source_file_path
+            .unwrap_or_else(|| demo_path.display().to_string()),
+    })
+}
+
+fn resolve_archive_source_for(
+    manifest_path: &Path,
+    requested_demo_path: Option<&str>,
+) -> CommandResult<ResolveArchiveSourceDto> {
+    let entry = catalog::summarize_manifest(manifest_path).map_err(|message| {
+        CommandErrorDto::at_path("archive_summary_failed", message, manifest_path)
+    })?;
+    if entry.demo_sha256.trim().is_empty() {
+        return Err(CommandErrorDto::at_path(
+            "archive_demo_hash_missing",
+            "This legacy manifest does not contain a demo SHA-256 and cannot be matched safely.",
+            manifest_path,
+        ));
+    }
+    let archive_root = manifest_path.parent().unwrap_or_else(|| Path::new("."));
+    let requested_demo_path = requested_demo_path
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let source_path = resolve_source_demo_path(
+        entry.demo_sha256.trim(),
+        entry.source_path.as_deref(),
+        &entry.demo_path,
+        requested_demo_path,
+    )?;
+
+    // Relocation should be remembered immediately. This updates only the
+    // desktop-local sidecar; manifest.json remains portable and sanitized.
+    archive_info::write_demo_source_pointer(archive_root, entry.demo_sha256.trim(), &source_path)
+        .map_err(|error| {
+        CommandErrorDto::at_path(
+            "demo_source_write_failed",
+            error.to_string(),
+            archive_info::demo_source_path(archive_root),
+        )
+    })?;
+    if let Some(mut info) =
+        archive_info::read_matching_demo_info(archive_root, entry.demo_sha256.trim())
+    {
+        let source_metadata = fs::metadata(&source_path).ok();
+        info.source_file_path = Some(source_path.display().to_string());
+        info.source_file_name = source_path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or(info.source_file_name);
+        info.source_file_modified_at_ms =
+            source_metadata.as_ref().and_then(metadata_modified_at_ms);
+        info.source_file_size_bytes = source_metadata.as_ref().map(fs::Metadata::len);
+        archive_info::write_demo_info(archive_root, &info).map_err(|error| {
+            CommandErrorDto::at_path(
+                "demo_info_write_failed",
+                error.to_string(),
+                archive_info::demo_info_path(archive_root),
+            )
+        })?;
+    }
+
+    Ok(ResolveArchiveSourceDto {
+        source_path: source_path.display().to_string(),
+    })
+}
+
+fn resolve_source_demo_path(
+    expected_sha256: &str,
+    recorded_path: Option<&str>,
+    fallback_name: &str,
+    requested_path: Option<&str>,
+) -> CommandResult<PathBuf> {
+    let demo_path_hint = requested_path.or(recorded_path);
+    let Some(demo_path_hint) = demo_path_hint else {
+        return Err(CommandErrorDto::at_path(
+            "source_demo_unavailable",
+            "The original demo location is not recorded. Locate it once and DemoTracer will remember it.",
+            Path::new(fallback_name),
+        ));
+    };
+    let demo_path = match validate_demo_path(demo_path_hint) {
+        Ok(path) => path,
+        Err(_) if requested_path.is_none() => {
+            return Err(CommandErrorDto::at_path(
+                "source_demo_unavailable",
+                "The original demo was moved or removed. Locate it once to update this archive.",
+                Path::new(demo_path_hint),
+            ));
+        }
+        Err(error) => return Err(error),
+    };
+    let source_bytes = fs::read(&demo_path).map_err(|error| {
+        CommandErrorDto::at_path("metadata_demo_read_failed", error.to_string(), &demo_path)
+    })?;
+    let source_hash = sha256_hex(&source_bytes);
+    if !source_hash.eq_ignore_ascii_case(expected_sha256) {
+        return Err(CommandErrorDto::at_path(
+            "metadata_demo_hash_mismatch",
+            "The selected original demo does not match this archive's full SHA-256.",
+            &demo_path,
+        ));
+    }
+    Ok(demo_path)
+}
+
+fn preserved_conversion_for_manifest(
+    archive_root: &Path,
+    demo_sha256: &str,
+    manifest_path: &Path,
+) -> Option<archive_info::DemoInfoConversion> {
+    let manifest_bytes = fs::read(manifest_path).ok()?;
+    let current_manifest_sha256 = sha256_hex(&manifest_bytes);
+    let conversion = archive_info::read_matching_demo_info(archive_root, demo_sha256)
+        .and_then(|previous| previous.conversion)?;
+    match conversion.manifest_sha256.as_deref() {
+        Some(expected) if expected.eq_ignore_ascii_case(&current_manifest_sha256) => {
+            Some(conversion)
+        }
+        Some(_) => None,
+        // Preserve old intent as unbound evidence, but never attach a new hash
+        // that the old sidecar did not actually observe. Readers expose its
+        // flags only when a manifest hash is present and matches.
+        None => Some(conversion),
+    }
+}
+
+fn refresh_library_metadata_for(
+    request: &RefreshLibraryMetadataRequest,
+) -> CommandResult<RefreshLibraryMetadataDto> {
+    let scan = catalog::scan_demo_library_for(&request.library_root)?;
+    let mut archives_current = 0_usize;
+    let mut targets = BTreeMap::<String, Vec<catalog::LibraryEntryDto>>::new();
+    let mut failures = Vec::new();
+    let mut demos_scanned = 0_usize;
+    let mut matched_source_paths = BTreeMap::<String, String>::new();
+    for entry in scan.entries {
+        let hash = entry.demo_sha256.trim().to_ascii_lowercase();
+        if hash.is_empty() {
+            failures.push(format!(
+                "{}: manifest has no demo SHA-256",
+                entry.manifest_path
+            ));
+            continue;
+        }
+        if entry.metadata_status == "current" && entry.source_available {
+            let source_matches = entry.source_path.as_deref().is_some_and(|source_path| {
+                match local_demo_hash(Path::new(source_path)) {
+                    Ok(Some(source_hash)) => {
+                        demos_scanned += 1;
+                        source_hash.eq_ignore_ascii_case(&hash)
+                    }
+                    Ok(None) => false,
+                    Err(error) => {
+                        failures.push(format!("{source_path}: {error}"));
+                        false
+                    }
+                }
+            });
+            if source_matches {
+                if let Some(source_path) = entry.source_path.as_ref() {
+                    matched_source_paths.insert(hash.clone(), source_path.clone());
+                }
+                archives_current += 1;
+                continue;
+            }
+        }
+        targets.entry(hash).or_default().push(entry);
+    }
+    let target_count = targets.values().map(Vec::len).sum::<usize>();
+    let mut demos_matched = 0_usize;
+    let mut archives_updated = 0_usize;
+
+    // Resolve recorded archive pointers and the machine-local hash index
+    // before asking the user for a directory or scanning one.
+    for hash in targets.keys().cloned().collect::<Vec<_>>() {
+        let mut candidates = BTreeSet::<String>::new();
+        if let Some(path) = request.source_paths.get(&hash) {
+            candidates.insert(path.clone());
+        }
+        if let Some(entries) = targets.get(&hash) {
+            candidates.extend(entries.iter().filter_map(|entry| entry.source_path.clone()));
+        }
+        for candidate in candidates {
+            let demo_path = PathBuf::from(candidate);
+            let candidate_hash = match local_demo_hash(&demo_path) {
+                Ok(Some(candidate_hash)) => {
+                    demos_scanned += 1;
+                    candidate_hash
+                }
+                Ok(None) | Err(_) => continue,
+            };
+            if !candidate_hash.eq_ignore_ascii_case(&hash) {
+                continue;
+            }
+            let entries = targets.get(&hash).cloned().unwrap_or_default();
+            match refresh_metadata_entries_from_demo(&demo_path, &entries, &mut failures) {
+                Ok(updated) => {
+                    archives_updated += updated;
+                    demos_matched += 1;
+                    if updated > 0 {
+                        matched_source_paths.insert(hash.clone(), demo_path.display().to_string());
+                    }
+                    targets.remove(&hash);
+                }
+                Err(error) => failures.push(format!("{}: {error}", demo_path.display())),
+            }
+            // The source demo was located and hash-matched. A parse or write
+            // failure is not a missing-source condition and must not trigger a
+            // redundant directory picker in the UI.
+            targets.remove(&hash);
+            break;
+        }
+    }
+
+    if let Some(demo_root) = request
+        .demo_root
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        for demo_path in collect_demo_files(Path::new(demo_root))? {
+            if targets.is_empty() {
+                break;
+            }
+            let hash = match local_demo_hash(&demo_path) {
+                Ok(Some(hash)) => {
+                    demos_scanned += 1;
+                    hash
+                }
+                Ok(None) => continue,
+                Err(error) => {
+                    failures.push(format!("{}: {error}", demo_path.display()));
+                    continue;
+                }
+            };
+            let Some(entries) = targets.get(&hash).cloned() else {
+                continue;
+            };
+            match refresh_metadata_entries_from_demo(&demo_path, &entries, &mut failures) {
+                Ok(updated) => {
+                    archives_updated += updated;
+                    demos_matched += 1;
+                    if updated > 0 {
+                        matched_source_paths.insert(hash.clone(), demo_path.display().to_string());
+                    }
+                    targets.remove(&hash);
+                }
+                Err(error) => failures.push(format!("{}: {error}", demo_path.display())),
+            }
+            targets.remove(&hash);
+        }
+    }
+
+    let source_unmatched = targets.values().map(Vec::len).sum::<usize>();
+    failures.truncate(32);
+    Ok(RefreshLibraryMetadataDto {
+        demos_scanned,
+        demos_matched,
+        archives_updated,
+        archives_current,
+        archives_unmatched: target_count.saturating_sub(archives_updated),
+        source_unmatched,
+        source_paths: matched_source_paths,
+        failures,
+    })
+}
+
+fn local_demo_hash(path: &Path) -> Result<Option<String>, String> {
+    if !path.is_file()
+        || !path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("dem"))
+    {
+        return Ok(None);
+    }
+    fs::read(path)
+        .map(|bytes| Some(sha256_hex(&bytes)))
+        .map_err(|error| error.to_string())
+}
+
+fn refresh_metadata_entries_from_demo(
+    demo_path: &Path,
+    entries: &[catalog::LibraryEntryDto],
+    failures: &mut Vec<String>,
+) -> Result<usize, String> {
+    let parsed = read_demo_with_options(
+        demo_path,
+        ReadDemoOptions {
+            collect_voice: false,
+            collect_cosmetics: false,
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    let expected_hash = entries
+        .first()
+        .map(|entry| entry.demo_sha256.trim())
+        .unwrap_or_default();
+    if expected_hash.is_empty() || !parsed.demo_sha256.eq_ignore_ascii_case(expected_hash) {
+        return Err(format!(
+            "source demo changed while it was being read (expected {expected_hash}, got {})",
+            parsed.demo_sha256
+        ));
+    }
+    let browser = analyze_browser_demo(&parsed, AnalysisOptions::default());
+    let source_metadata = fs::metadata(demo_path).ok();
+    let mut updated = 0_usize;
+    for entry in entries {
+        let archive_root = Path::new(&entry.root);
+        let mut info = archive_info::DemoArchiveInfo::from_analysis(
+            entry.demo_id.clone(),
+            &parsed,
+            &browser,
+            source_metadata.as_ref().and_then(metadata_modified_at_ms),
+            source_metadata.as_ref().map(fs::Metadata::len),
+            entry.abi,
+            entry.format_version,
+            "metadataRefresh",
+        );
+        info.conversion = preserved_conversion_for_manifest(
+            archive_root,
+            entry.demo_sha256.trim(),
+            Path::new(&entry.manifest_path),
+        );
+        if let Err(error) = archive_info::write_demo_source_pointer(
+            archive_root,
+            entry.demo_sha256.trim(),
+            demo_path,
+        ) {
+            failures.push(format!("{}: {error}", entry.manifest_path));
+            continue;
+        }
+        match archive_info::write_demo_info(archive_root, &info) {
+            Ok(_) => updated += 1,
+            Err(error) => failures.push(format!("{}: {error}", entry.manifest_path)),
+        }
+    }
+    Ok(updated)
+}
+
+fn import_archives_for(request: &ImportArchivesRequest) -> CommandResult<ImportArchivesDto> {
+    let source_root = request.source_root.trim();
+    let library_root = PathBuf::from(request.library_root.trim());
+    if source_root.is_empty() {
+        return Err(CommandErrorDto::new(
+            "archive_import_source_invalid",
+            "Choose a folder containing existing DemoTracer archives.",
+        ));
+    }
+    if library_root.as_os_str().is_empty() {
+        return Err(CommandErrorDto::new(
+            "library_root_invalid",
+            "Choose the main DemoTracer library before importing archives.",
+        ));
+    }
+
+    let source_scan = catalog::scan_demo_library_for(source_root)?;
+    fs::create_dir_all(&library_root).map_err(|error| {
+        CommandErrorDto::at_path(
+            "library_root_create_failed",
+            error.to_string(),
+            &library_root,
+        )
+    })?;
+    let library_metadata = fs::symlink_metadata(&library_root).map_err(|error| {
+        CommandErrorDto::at_path(
+            "library_root_inspect_failed",
+            error.to_string(),
+            &library_root,
+        )
+    })?;
+    if !library_metadata.is_dir() || catalog::is_symlink_or_reparse(&library_metadata) {
+        return Err(CommandErrorDto::at_path(
+            "library_root_invalid",
+            "The main library must be a normal local folder.",
+            &library_root,
+        ));
+    }
+    let canonical_library = canonicalize_public_path(&library_root).map_err(|error| {
+        CommandErrorDto::at_path(
+            "library_root_inspect_failed",
+            error.to_string(),
+            &library_root,
+        )
+    })?;
+    let target_scan = catalog::scan_demo_library_for(&library_root.display().to_string())?;
+    let mut known_hashes = target_scan
+        .entries
+        .iter()
+        .map(|entry| entry.demo_sha256.trim().to_ascii_lowercase())
+        .filter(|hash| !hash.is_empty())
+        .collect::<BTreeSet<_>>();
+
+    let archives_found = source_scan.entries.len() + source_scan.skipped.len();
+    let mut archives_imported = 0_usize;
+    let mut duplicates_skipped = 0_usize;
+    let mut archives_rejected = source_scan.skipped.len();
+    let mut failures = source_scan
+        .skipped
+        .into_iter()
+        .map(|item| format!("{}: {}", item.path, item.message))
+        .collect::<Vec<_>>();
+
+    for entry in source_scan.entries {
+        let source_archive_root = PathBuf::from(&entry.root);
+        let canonical_source = match canonicalize_public_path(&source_archive_root) {
+            Ok(path) => path,
+            Err(error) => {
+                archives_rejected += 1;
+                failures.push(format!("{}: {error}", source_archive_root.display()));
+                continue;
+            }
+        };
+        if canonical_source.starts_with(&canonical_library) {
+            duplicates_skipped += 1;
+            continue;
+        }
+
+        let demo_hash = entry.demo_sha256.trim().to_ascii_lowercase();
+        if demo_hash.len() != 64 || !demo_hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            archives_rejected += 1;
+            failures.push(format!(
+                "{}: manifest has no valid full demo SHA-256",
+                entry.manifest_path
+            ));
+            continue;
+        }
+        if known_hashes.contains(&demo_hash) {
+            duplicates_skipped += 1;
+            continue;
+        }
+
+        let strict_source = match read_manifest_for(&entry.manifest_path) {
+            Ok(archive) if archive.playable => archive,
+            Ok(_) => {
+                archives_rejected += 1;
+                failures.push(format!(
+                    "{}: archive has no fully playable round",
+                    entry.manifest_path
+                ));
+                continue;
+            }
+            Err(error) => {
+                archives_rejected += 1;
+                failures.push(format!("{}: {}", entry.manifest_path, error.message));
+                continue;
+            }
+        };
+        if !strict_source.demo_sha256.eq_ignore_ascii_case(&demo_hash) {
+            archives_rejected += 1;
+            failures.push(format!(
+                "{}: strict manifest hash disagrees with the library index",
+                entry.manifest_path
+            ));
+            continue;
+        }
+
+        let display_name = entry
+            .display_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .or_else(|| {
+                Path::new(&entry.demo_path)
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .map(str::to_string)
+            })
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| entry.demo_id.clone());
+        let Some((map_dir, final_root)) = choose_import_destination(
+            &canonical_library,
+            &strict_source.map,
+            &display_name,
+            &demo_hash,
+        )?
+        else {
+            duplicates_skipped += 1;
+            known_hashes.insert(demo_hash);
+            continue;
+        };
+
+        let mut file_ops = RealOutputFileOps;
+        let imported = run_output_transaction(
+            &map_dir,
+            &final_root,
+            OverwriteModeDto::Deny,
+            &mut file_ops,
+            |staging_root| {
+                copy_archive_tree(&source_archive_root, staging_root)?;
+                let copied_manifest = staging_root.join("manifest.json");
+                let copied = read_manifest_for(&copied_manifest.display().to_string())?;
+                if !copied.playable || !copied.demo_sha256.eq_ignore_ascii_case(&demo_hash) {
+                    return Err(CommandErrorDto::at_path(
+                        "archive_import_validation_failed",
+                        "The copied archive failed strict playback or identity validation.",
+                        copied_manifest,
+                    ));
+                }
+                Ok(())
+            },
+        );
+        match imported {
+            Ok(transaction) => {
+                archives_imported += 1;
+                known_hashes.insert(demo_hash);
+                if let Some(warning) = transaction.backup_cleanup_warning {
+                    failures.push(warning);
+                }
+            }
+            Err(error) => {
+                archives_rejected += 1;
+                failures.push(format!("{}: {}", entry.manifest_path, error.message));
+            }
+        }
+    }
+
+    failures.truncate(32);
+    Ok(ImportArchivesDto {
+        archives_found,
+        archives_imported,
+        duplicates_skipped,
+        archives_rejected,
+        failures,
+    })
+}
+
+fn choose_import_destination(
+    library_root: &Path,
+    map: &str,
+    display_name: &str,
+    demo_hash: &str,
+) -> CommandResult<Option<(PathBuf, PathBuf)>> {
+    let map_dir = checked_library_map_directory(library_root, map)?;
+    for hash_len in [12_usize, 16, 24, 64] {
+        let directory_name =
+            archive_info::archive_directory_name_from_parts(display_name, demo_hash, hash_len);
+        let final_root = map_dir.join(directory_name);
+        let backup_root = output_backup_root(&map_dir, &final_root)?;
+        let final_metadata = path_metadata(&final_root).map_err(|error| {
+            CommandErrorDto::at_path("archive_import_path_failed", error.to_string(), &final_root)
+        })?;
+        let backup_metadata = path_metadata(&backup_root).map_err(|error| {
+            CommandErrorDto::at_path(
+                "archive_import_path_failed",
+                error.to_string(),
+                &backup_root,
+            )
+        })?;
+        if final_metadata.is_none() && backup_metadata.is_none() {
+            return Ok(Some((map_dir, final_root)));
+        }
+        if let Ok(existing) = catalog::summarize_manifest(&final_root.join("manifest.json")) {
+            if existing.demo_sha256.eq_ignore_ascii_case(demo_hash) {
+                return Ok(None);
+            }
+        }
+    }
+    Err(CommandErrorDto::at_path(
+        "archive_import_path_collision",
+        "Every safe hash-based destination is occupied by different content.",
+        map_dir,
+    ))
+}
+
+fn copy_archive_tree(source_root: &Path, destination_root: &Path) -> CommandResult<()> {
+    const MAX_ARCHIVE_COPY_DEPTH: usize = 16;
+    const MAX_ARCHIVE_COPY_FILES: usize = 32_768;
+    const MAX_ARCHIVE_COPY_BYTES: u64 = 128 * 1024 * 1024 * 1024;
+
+    let canonical_source = fs::canonicalize(source_root).map_err(|error| {
+        CommandErrorDto::at_path(
+            "archive_import_source_failed",
+            error.to_string(),
+            source_root,
+        )
+    })?;
+    let canonical_destination = fs::canonicalize(destination_root).map_err(|error| {
+        CommandErrorDto::at_path(
+            "archive_import_destination_failed",
+            error.to_string(),
+            destination_root,
+        )
+    })?;
+    if canonical_destination.starts_with(&canonical_source) {
+        return Err(CommandErrorDto::at_path(
+            "archive_import_recursive_destination",
+            "The main library cannot be placed inside an archive being imported.",
+            destination_root,
+        ));
+    }
+
+    let mut pending = vec![(canonical_source, canonical_destination, 0_usize)];
+    let mut file_count = 0_usize;
+    let mut total_bytes = 0_u64;
+    while let Some((source_dir, destination_dir, depth)) = pending.pop() {
+        let mut entries = fs::read_dir(&source_dir)
+            .map_err(|error| {
+                CommandErrorDto::at_path(
+                    "archive_import_read_failed",
+                    error.to_string(),
+                    &source_dir,
+                )
+            })?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| {
+                CommandErrorDto::at_path(
+                    "archive_import_read_failed",
+                    error.to_string(),
+                    &source_dir,
+                )
+            })?;
+        entries.sort_by_key(fs::DirEntry::file_name);
+        for entry in entries {
+            let name = entry.file_name();
+            let name_text = name.to_string_lossy();
+            if name_text.eq_ignore_ascii_case(OUTPUT_COMPLETION_MARKER)
+                || (name_text.starts_with('.')
+                    && (name_text.contains(".tmp.") || name_text.contains(".backup")))
+            {
+                continue;
+            }
+            let source_path = entry.path();
+            let destination_path = destination_dir.join(&name);
+            let metadata = fs::symlink_metadata(&source_path).map_err(|error| {
+                CommandErrorDto::at_path(
+                    "archive_import_inspect_failed",
+                    error.to_string(),
+                    &source_path,
+                )
+            })?;
+            if catalog::is_symlink_or_reparse(&metadata) {
+                return Err(CommandErrorDto::at_path(
+                    "archive_import_reparse_point",
+                    "Archive import refuses symbolic links, junctions, and reparse points.",
+                    source_path,
+                ));
+            }
+            if metadata.is_dir() {
+                if depth >= MAX_ARCHIVE_COPY_DEPTH {
+                    return Err(CommandErrorDto::at_path(
+                        "archive_import_depth_limit",
+                        "Archive directory nesting exceeds the safety limit.",
+                        source_path,
+                    ));
+                }
+                fs::create_dir(&destination_path).map_err(|error| {
+                    CommandErrorDto::at_path(
+                        "archive_import_copy_failed",
+                        error.to_string(),
+                        &destination_path,
+                    )
+                })?;
+                pending.push((source_path, destination_path, depth + 1));
+            } else if metadata.is_file() {
+                file_count += 1;
+                total_bytes = total_bytes.saturating_add(metadata.len());
+                if file_count > MAX_ARCHIVE_COPY_FILES || total_bytes > MAX_ARCHIVE_COPY_BYTES {
+                    return Err(CommandErrorDto::at_path(
+                        "archive_import_size_limit",
+                        "Archive exceeds the safe copy size or file-count limit.",
+                        source_path,
+                    ));
+                }
+                let copied = fs::copy(&source_path, &destination_path).map_err(|error| {
+                    CommandErrorDto::at_path(
+                        "archive_import_copy_failed",
+                        error.to_string(),
+                        &source_path,
+                    )
+                })?;
+                if copied != metadata.len() {
+                    return Err(CommandErrorDto::at_path(
+                        "archive_import_copy_changed",
+                        "A source file changed while the archive was being copied.",
+                        source_path,
+                    ));
+                }
+            } else {
+                return Err(CommandErrorDto::at_path(
+                    "archive_import_special_file",
+                    "Archive import only accepts normal files and folders.",
+                    source_path,
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn collect_demo_files(root: &Path) -> CommandResult<Vec<PathBuf>> {
+    const MAX_DEMO_SCAN_DEPTH: usize = 8;
+    const MAX_DEMO_FILES: usize = 4096;
+    let metadata = fs::symlink_metadata(root).map_err(|error| {
+        CommandErrorDto::at_path("demo_source_root_invalid", error.to_string(), root)
+    })?;
+    if !metadata.is_dir() || catalog::is_symlink_or_reparse(&metadata) {
+        return Err(CommandErrorDto::at_path(
+            "demo_source_root_invalid",
+            "Choose a normal folder containing original .dem files.",
+            root,
+        ));
+    }
+
+    let mut pending = vec![(root.to_path_buf(), 0_usize)];
+    let mut demos = Vec::new();
+    while let Some((directory, depth)) = pending.pop() {
+        let mut paths = fs::read_dir(&directory)
+            .map_err(|error| {
+                CommandErrorDto::at_path("demo_source_scan_failed", error.to_string(), &directory)
+            })?
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .collect::<Vec<_>>();
+        paths.sort();
+        for path in paths {
+            let Ok(metadata) = fs::symlink_metadata(&path) else {
+                continue;
+            };
+            if catalog::is_symlink_or_reparse(&metadata) {
+                continue;
+            }
+            if metadata.is_dir() && depth < MAX_DEMO_SCAN_DEPTH {
+                pending.push((path, depth + 1));
+            } else if metadata.is_file()
+                && path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("dem"))
+            {
+                demos.push(path);
+                if demos.len() >= MAX_DEMO_FILES {
+                    return Ok(demos);
+                }
+            }
+        }
+    }
+    demos.sort();
+    Ok(demos)
 }
 
 fn validate_demo_path(value: &str) -> CommandResult<PathBuf> {
@@ -1180,6 +2352,14 @@ fn read_manifest_for(value: &str) -> CommandResult<ManifestArchiveDto> {
         }
 
         accumulator.playable_files += 1;
+        accumulator.ticks = accumulator.ticks.saturating_add(file.ticks);
+        accumulator.subticks = accumulator.subticks.saturating_add(file.subticks);
+        accumulator.hifi_events = accumulator
+            .hifi_events
+            .saturating_add(file.hifi_event_count);
+        accumulator.inventory_snapshots = accumulator
+            .inventory_snapshots
+            .saturating_add(file.inventory_snapshot_count);
         replay_bytes = replay_bytes.saturating_add(
             resolved
                 .as_ref()
@@ -1187,6 +2367,12 @@ fn read_manifest_for(value: &str) -> CommandResult<ManifestArchiveDto> {
                 .map_or(0, |metadata| metadata.len()),
         );
         let cosmetics = file.cosmetics.as_ref();
+        let has_cosmetics = cosmetics.is_some_and(|value| !value.is_empty());
+        let has_stickers = cosmetics.is_some_and(ManifestCosmeticsWire::has_stickers);
+        let has_charms = cosmetics.is_some_and(ManifestCosmeticsWire::has_charms);
+        accumulator.cosmetic_files += usize::from(has_cosmetics);
+        accumulator.sticker_files += usize::from(has_stickers);
+        accumulator.charm_files += usize::from(has_charms);
         playable_files.push(PlayableManifestFile {
             round,
             side,
@@ -1195,9 +2381,10 @@ fn read_manifest_for(value: &str) -> CommandResult<ManifestArchiveDto> {
                 .player_name
                 .filter(|name| !name.is_empty())
                 .unwrap_or_else(|| steam_id.to_string()),
-            has_cosmetics: cosmetics.is_some_and(|value| !value.is_empty()),
-            has_stickers: cosmetics.is_some_and(ManifestCosmeticsWire::has_stickers),
-            has_charms: cosmetics.is_some_and(ManifestCosmeticsWire::has_charms),
+            scoreboard: file.scoreboard.clone(),
+            has_cosmetics,
+            has_stickers,
+            has_charms,
         });
     }
 
@@ -1271,6 +2458,9 @@ fn read_manifest_for(value: &str) -> CommandResult<ManifestArchiveDto> {
                 files: accumulator.files,
                 t_files: accumulator.t_files,
                 ct_files: accumulator.ct_files,
+                cosmetic_files: accumulator.cosmetic_files,
+                sticker_files: accumulator.sticker_files,
+                charm_files: accumulator.charm_files,
                 duration_seconds: metadata.and_then(|value| value.duration_seconds),
                 pistol_round: metadata.and_then(|value| value.pistol_round),
                 cut_reason: metadata.and_then(|value| value.cut_reason.clone()),
@@ -1280,6 +2470,15 @@ fn read_manifest_for(value: &str) -> CommandResult<ManifestArchiveDto> {
                 ct_economy: metadata
                     .and_then(|value| value.ct_economy.clone())
                     .map(Into::into),
+                scoreboard: metadata
+                    .and_then(|value| value.scoreboard.clone())
+                    .map(Into::into),
+                bomb_planted_seconds: metadata
+                    .and_then(|value| value.bomb_planted_seconds_after_live),
+                ticks: accumulator.ticks,
+                subticks: accumulator.subticks,
+                hifi_events: accumulator.hifi_events,
+                inventory_snapshots: accumulator.inventory_snapshots,
                 sequence_length: 0,
                 available,
                 commands: build_commands(
@@ -1332,6 +2531,78 @@ fn read_manifest_for(value: &str) -> CommandResult<ManifestArchiveDto> {
         ));
     }
     let playable = rounds.iter().any(|round| round.available);
+    let mut display_name = Path::new(&demo_path)
+        .file_stem()
+        .map(|value| value.to_string_lossy().into_owned())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| demo_id.clone());
+    let mut metadata_status = "missing".to_string();
+    let mut source_path = archive_info::read_demo_source_path(&root, &manifest.demo_sha256)
+        .or_else(|| {
+            archive_info::read_matching_demo_info(&root, &manifest.demo_sha256)
+                .and_then(|info| info.source_file_path.clone())
+        });
+    let mut source_modified_at_ms = None;
+    let mut duration_seconds = None;
+    let mut demo_patch_version = None;
+    let mut demo_version_name = None;
+    let mut demo_source = None;
+    let mut score = None;
+    let mut converter_version = None;
+    let mut voice_requested = None;
+    let mut cosmetic_requested = None;
+    let mut sticker_requested = None;
+    let mut charm_requested = None;
+    let mut players = summarize_manifest_players(&playable_files);
+    match archive_info::read_demo_info(&root, &manifest.demo_sha256) {
+        archive_info::DemoInfoRead::Current(info) => {
+            let current_manifest_sha256 = sha256_hex(text.as_bytes());
+            let manifest_hash_matches = info
+                .conversion
+                .as_ref()
+                .and_then(|conversion| conversion.manifest_sha256.as_deref())
+                .is_none_or(|expected| expected.eq_ignore_ascii_case(&current_manifest_sha256));
+            let metadata_matches = info.map.eq_ignore_ascii_case(&manifest.map)
+                && info.manifest_abi == abi
+                && info.dtr_format_version == format_version
+                && manifest_hash_matches;
+            if metadata_matches {
+                metadata_status = "current".to_string();
+                display_name = info.display_name.clone();
+                if source_path.is_none() && info.source_file_path.is_some() {
+                    source_path = info.source_file_path.clone();
+                }
+                source_modified_at_ms = info.source_file_modified_at_ms;
+                duration_seconds = Some(info.duration_seconds);
+                demo_patch_version = info.demo_patch_version;
+                demo_version_name = info.demo_version_name.clone();
+                demo_source = info.demo_source.clone();
+                score = info.score.clone();
+                let bound_conversion = info.conversion.as_ref().filter(|conversion| {
+                    conversion
+                        .manifest_sha256
+                        .as_deref()
+                        .is_some_and(|expected| {
+                            expected.eq_ignore_ascii_case(&current_manifest_sha256)
+                        })
+                });
+                if let Some(conversion) = bound_conversion {
+                    voice_requested = Some(conversion.voice);
+                    cosmetic_requested = Some(conversion.cosmetics);
+                    sticker_requested = Some(conversion.stickers);
+                    charm_requested = Some(conversion.charms);
+                }
+                converter_version =
+                    bound_conversion.map(|conversion| conversion.converter_version.clone());
+                players = overlay_archive_players(players, &info.players);
+            } else {
+                metadata_status = "stale".to_string();
+            }
+        }
+        archive_info::DemoInfoRead::Missing => {}
+        archive_info::DemoInfoRead::Stale => metadata_status = "stale".to_string(),
+        archive_info::DemoInfoRead::Invalid => metadata_status = "invalid".to_string(),
+    }
 
     Ok(ManifestArchiveDto {
         root: root.display().to_string(),
@@ -1347,12 +2618,16 @@ fn read_manifest_for(value: &str) -> CommandResult<ManifestArchiveDto> {
         total_files,
         playable_files: playable_files.len(),
         output_bytes: replay_bytes.to_string(),
-        players: summarize_manifest_players(&playable_files),
+        players,
         voice: ManifestArchiveVoiceDto {
+            requested: voice_requested,
             sidecars: voice_rounds.len(),
             rounds: voice_rounds,
         },
         cosmetics: CosmeticSummaryDto {
+            requested: cosmetic_requested,
+            sticker_requested,
+            charm_requested,
             files: cosmetic_files,
             sticker_files,
             charm_files,
@@ -1361,6 +2636,16 @@ fn read_manifest_for(value: &str) -> CommandResult<ManifestArchiveDto> {
         rounds,
         issues,
         playable,
+        display_name,
+        metadata_status,
+        source_path,
+        source_modified_at_ms,
+        duration_seconds,
+        demo_patch_version,
+        demo_version_name,
+        demo_source,
+        score,
+        converter_version,
     })
 }
 
@@ -1426,6 +2711,30 @@ fn normalize_display_path(path: &Path) -> PathBuf {
         }
     }
     output
+}
+
+fn canonicalize_public_path(path: &Path) -> std::io::Result<PathBuf> {
+    let canonical = fs::canonicalize(path)?;
+    #[cfg(windows)]
+    {
+        use std::ffi::OsString;
+        use std::os::windows::ffi::{OsStrExt, OsStringExt};
+
+        const VERBATIM_PREFIX: &[u16] = &[92, 92, 63, 92];
+        const VERBATIM_UNC_PREFIX: &[u16] = &[92, 92, 63, 92, 85, 78, 67, 92];
+        let wide = canonical.as_os_str().encode_wide().collect::<Vec<_>>();
+        if wide.starts_with(VERBATIM_UNC_PREFIX) {
+            let mut normal = vec![92, 92];
+            normal.extend_from_slice(&wide[VERBATIM_UNC_PREFIX.len()..]);
+            return Ok(PathBuf::from(OsString::from_wide(&normal)));
+        }
+        if wide.starts_with(VERBATIM_PREFIX) {
+            return Ok(PathBuf::from(OsString::from_wide(
+                &wide[VERBATIM_PREFIX.len()..],
+            )));
+        }
+    }
+    Ok(canonical)
 }
 
 fn normalized_manifest_path_key(value: &str) -> String {
@@ -1571,6 +2880,8 @@ fn summarize_manifest_players(files: &[PlayableManifestFile]) -> Vec<PlayerSumma
                 name: file.player_name.clone(),
                 rounds: BTreeSet::new(),
                 files: 0,
+                scoreboard_round: file.round,
+                scoreboard: file.scoreboard.clone(),
             });
         if file.round < player.first_round
             || (file.round == player.first_round
@@ -1584,6 +2895,10 @@ fn summarize_manifest_players(files: &[PlayableManifestFile]) -> Vec<PlayerSumma
         }
         player.rounds.insert(file.round);
         player.files += 1;
+        if file.scoreboard.is_some() && file.round >= player.scoreboard_round {
+            player.scoreboard_round = file.round;
+            player.scoreboard = file.scoreboard.clone();
+        }
     }
     let mut summaries = players
         .into_iter()
@@ -1593,10 +2908,93 @@ fn summarize_manifest_players(files: &[PlayableManifestFile]) -> Vec<PlayerSumma
             name: player.name,
             rounds: player.rounds.len(),
             files: player.files,
+            side: Some(player.first_side),
+            match_team: None,
+            team_name: None,
+            score: player.scoreboard.as_ref().and_then(|value| value.score),
+            kills: player.scoreboard.as_ref().and_then(|value| value.kills),
+            deaths: player.scoreboard.as_ref().and_then(|value| value.deaths),
+            assists: player.scoreboard.as_ref().and_then(|value| value.assists),
+            mvps: player.scoreboard.as_ref().and_then(|value| value.mvps),
         })
         .collect::<Vec<_>>();
     summaries.sort_by(|left, right| {
         (left.team, left.steam_id.as_str()).cmp(&(right.team, right.steam_id.as_str()))
+    });
+    summaries
+}
+
+fn overlay_archive_players(
+    mut summaries: Vec<PlayerSummaryDto>,
+    analyzed: &[BrowserPlayerSummary],
+) -> Vec<PlayerSummaryDto> {
+    for player in analyzed {
+        if let Some(summary) = summaries
+            .iter_mut()
+            .find(|summary| summary.steam_id == player.steam_id)
+        {
+            if !player.name.trim().is_empty() {
+                summary.name = player.name.clone();
+            }
+            summary.team = match player.team.as_str() {
+                "a" => 1,
+                "b" => 2,
+                _ => summary.team,
+            };
+            summary.side = Some(player.side.clone());
+            summary.match_team = Some(player.team.clone());
+            if player.team_name.is_some() {
+                summary.team_name = player.team_name.clone();
+            }
+            if player.score.is_some() {
+                summary.score = player.score;
+            }
+            if player.kills.is_some() {
+                summary.kills = player.kills;
+            }
+            if player.deaths.is_some() {
+                summary.deaths = player.deaths;
+            }
+            if player.assists.is_some() {
+                summary.assists = player.assists;
+            }
+            if player.mvps.is_some() {
+                summary.mvps = player.mvps;
+            }
+            summary.rounds = summary.rounds.max(player.rounds);
+        } else {
+            summaries.push(PlayerSummaryDto {
+                team: match player.team.as_str() {
+                    "a" => 1,
+                    "b" => 2,
+                    _ => team_index_from_first_side(&player.side),
+                },
+                steam_id: player.steam_id.clone(),
+                name: player.name.clone(),
+                rounds: player.rounds,
+                files: 0,
+                side: Some(player.side.clone()),
+                match_team: Some(player.team.clone()),
+                team_name: player.team_name.clone(),
+                score: player.score,
+                kills: player.kills,
+                deaths: player.deaths,
+                assists: player.assists,
+                mvps: player.mvps,
+            });
+        }
+    }
+    summaries.sort_by(|left, right| {
+        (
+            left.team,
+            left.name.to_ascii_lowercase(),
+            left.steam_id.as_str(),
+        )
+            .cmp(&(
+                right.team,
+                right.name.to_ascii_lowercase(),
+                right.steam_id.as_str(),
+            ))
     });
     summaries
 }
@@ -1615,9 +3013,20 @@ fn analysis_dto(
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| analysis.demo_stem.clone()),
         output_demo_id: output_demo_id.to_string(),
+        demo_sha256: String::new(),
         map: analysis.map.clone(),
         tick_rate: analysis.tick_rate,
         row_count: analysis.row_count,
+        source_modified_at_ms: None,
+        source_size_bytes: None,
+        duration_seconds: 0.0,
+        demo_patch_version: None,
+        demo_version_name: None,
+        server_name: None,
+        demo_source: None,
+        converter_version: env!("CARGO_PKG_VERSION").to_string(),
+        players: Vec::new(),
+        score: None,
         rounds: analysis
             .rounds
             .iter()
@@ -1640,6 +3049,36 @@ fn analysis_dto(
             })
             .collect(),
     }
+}
+
+fn browser_analysis_dto(
+    analysis_id: &str,
+    source_path: &Path,
+    output_demo_id: &str,
+    parsed: &ParsedDemo,
+    browser: &BrowserDemoAnalysis,
+    source_metadata: Option<&fs::Metadata>,
+) -> AnalysisDto {
+    let mut dto = analysis_dto(analysis_id, source_path, output_demo_id, &browser.analysis);
+    dto.demo_sha256 = parsed.demo_sha256.clone();
+    dto.source_modified_at_ms = source_metadata.and_then(metadata_modified_at_ms);
+    dto.source_size_bytes = source_metadata.map(|metadata| metadata.len().to_string());
+    dto.duration_seconds = browser.duration_seconds;
+    dto.demo_patch_version = browser.demo_patch_version;
+    dto.demo_version_name = browser.demo_version_name.clone();
+    dto.server_name = browser.server_name.clone();
+    dto.demo_source = browser.demo_source.clone();
+    dto.players = browser.players.clone();
+    dto.score = browser.score.clone();
+    dto
+}
+
+fn metadata_modified_at_ms(metadata: &fs::Metadata) -> Option<u64> {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
 }
 
 struct PreparedConversion {
@@ -1680,10 +3119,10 @@ fn prepare_conversion(
     )?;
     let cosmetics = validate_cosmetic_request(request)?;
 
-    let (output_dir, root) = resolve_output_paths(&request.output_dir, &cached.parsed)?;
+    let resolved = resolve_output_paths(&request.output_dir, cached)?;
     let options = ConvertOptions {
-        output_dir: output_dir.clone(),
-        output_stem: None,
+        output_dir: resolved.output_dir.clone(),
+        output_stem: Some(resolved.demo_id),
         side: request.side,
         selected_rounds: Some(selected_rounds),
         include_suspicious: request.include_suspicious,
@@ -1696,8 +3135,8 @@ fn prepare_conversion(
         analysis: AnalysisOptions::default(),
     };
     Ok(PreparedConversion {
-        output_dir,
-        root,
+        output_dir: resolved.output_dir,
+        root: resolved.root,
         options,
     })
 }
@@ -1706,11 +3145,11 @@ fn preflight_output_for(
     cached: &CachedDemo,
     output_dir: &str,
 ) -> CommandResult<PreflightOutputDto> {
-    let (output_dir, root) = resolve_output_paths(output_dir, &cached.parsed)?;
-    let backup_root = output_backup_root(&output_dir, &root)?;
-    let final_exists = path_metadata(&root)
+    let resolved = resolve_output_paths(output_dir, cached)?;
+    let backup_root = output_backup_root(&resolved.output_dir, &resolved.root)?;
+    let final_exists = path_metadata(&resolved.root)
         .map_err(|error| {
-            CommandErrorDto::at_path("output_inspect_failed", error.to_string(), &root)
+            CommandErrorDto::at_path("output_inspect_failed", error.to_string(), &resolved.root)
         })?
         .is_some();
     let backup_exists = path_metadata(&backup_root)
@@ -1720,25 +3159,213 @@ fn preflight_output_for(
         .is_some();
     Ok(PreflightOutputDto {
         exists: final_exists || backup_exists,
-        root: root.display().to_string(),
+        root: resolved.root.display().to_string(),
     })
+}
+
+struct ResolvedOutputPaths {
+    output_dir: PathBuf,
+    root: PathBuf,
+    demo_id: String,
 }
 
 fn resolve_output_paths(
     output_dir: &str,
-    parsed: &ParsedDemo,
-) -> CommandResult<(PathBuf, PathBuf)> {
-    let output_dir = PathBuf::from(output_dir.trim());
-    if output_dir.as_os_str().is_empty() {
+    cached: &CachedDemo,
+) -> CommandResult<ResolvedOutputPaths> {
+    let requested_library_root = PathBuf::from(output_dir.trim());
+    if requested_library_root.as_os_str().is_empty() {
         return Err(CommandErrorDto::new(
             "invalid_output_dir",
             "Choose an output folder before converting.",
         ));
     }
-    let demo_id = output_demo_id(&parsed.stem, &parsed.demo_sha256, None)
-        .map_err(|error| CommandErrorDto::from_core("invalid_demo_id", error))?;
-    let root = output_dir.join(demo_id);
-    Ok((output_dir, root))
+    let library_root = canonical_normal_library_root(&requested_library_root)?;
+
+    let map_dir = checked_library_map_directory(&library_root, &cached.parsed.map)?;
+    let desired_root = map_dir.join(&cached.archive_id);
+    let scan = catalog::scan_demo_library_for(&library_root.display().to_string())?;
+    let mut matching = scan
+        .entries
+        .into_iter()
+        .filter(|entry| {
+            !entry.demo_sha256.is_empty()
+                && entry
+                    .demo_sha256
+                    .eq_ignore_ascii_case(&cached.parsed.demo_sha256)
+        })
+        .collect::<Vec<_>>();
+    if matching.len() > 1 {
+        if let Some(index) = matching
+            .iter()
+            .position(|entry| Path::new(&entry.root) == desired_root)
+        {
+            let selected = matching.swap_remove(index);
+            matching.clear();
+            matching.push(selected);
+        } else {
+            return Err(CommandErrorDto::at_path(
+                "duplicate_demo_archives",
+                "This library contains multiple archives for the same demo hash. Open the library and resolve the duplicates before replacing one.",
+                &library_root,
+            ));
+        }
+    }
+    if let Some(existing) = matching.pop() {
+        let root = checked_existing_archive_root(&library_root, Path::new(&existing.root))?;
+        let output_dir = root.parent().map(Path::to_path_buf).ok_or_else(|| {
+            CommandErrorDto::at_path(
+                "unsafe_output_root",
+                "Existing archive has no parent directory.",
+                &root,
+            )
+        })?;
+        let demo_id = if existing.demo_id.trim().is_empty() {
+            root.file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| cached.archive_id.clone())
+        } else {
+            existing.demo_id
+        };
+        return Ok(ResolvedOutputPaths {
+            output_dir,
+            root,
+            demo_id,
+        });
+    }
+
+    for hash_len in [12_usize, 16, 24, 64] {
+        let demo_id = archive_info::archive_directory_name_with_hash_len(
+            &cached.parsed,
+            &cached.browser,
+            hash_len,
+        );
+        let root = map_dir.join(&demo_id);
+        match fs::symlink_metadata(&root) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(ResolvedOutputPaths {
+                    output_dir: map_dir,
+                    root,
+                    demo_id,
+                });
+            }
+            Ok(metadata) if metadata.is_dir() && !catalog::is_symlink_or_reparse(&metadata) => {
+                let root = checked_existing_archive_root(&library_root, &root)?;
+                if let Ok(existing) = catalog::summarize_manifest(&root.join("manifest.json")) {
+                    if existing
+                        .demo_sha256
+                        .eq_ignore_ascii_case(&cached.parsed.demo_sha256)
+                    {
+                        return Ok(ResolvedOutputPaths {
+                            output_dir: root.parent().unwrap_or(&map_dir).to_path_buf(),
+                            root,
+                            demo_id: existing.demo_id,
+                        });
+                    }
+                }
+            }
+            Ok(_) | Err(_) => {}
+        }
+    }
+
+    Err(CommandErrorDto::at_path(
+        "archive_path_collision",
+        "Every safe hash-based archive path is already occupied by different content.",
+        &desired_root,
+    ))
+}
+
+fn canonical_normal_library_root(path: &Path) -> CommandResult<PathBuf> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| {
+        CommandErrorDto::at_path("library_root_inspect_failed", error.to_string(), path)
+    })?;
+    if !metadata.is_dir() || catalog::is_symlink_or_reparse(&metadata) {
+        return Err(CommandErrorDto::at_path(
+            "library_root_invalid",
+            "The main library must be an existing normal local folder.",
+            path,
+        ));
+    }
+    canonicalize_public_path(path).map_err(|error| {
+        CommandErrorDto::at_path("library_root_inspect_failed", error.to_string(), path)
+    })
+}
+
+fn checked_library_map_directory(library_root: &Path, map: &str) -> CommandResult<PathBuf> {
+    let map_dir = library_root.join(archive_info::map_directory_name(map));
+    match fs::symlink_metadata(&map_dir) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(map_dir),
+        Err(error) => Err(CommandErrorDto::at_path(
+            "map_directory_inspect_failed",
+            error.to_string(),
+            &map_dir,
+        )),
+        Ok(metadata) => {
+            if !metadata.is_dir() || catalog::is_symlink_or_reparse(&metadata) {
+                return Err(CommandErrorDto::at_path(
+                    "map_directory_invalid",
+                    "The map archive path must be a normal folder, not a link or junction.",
+                    &map_dir,
+                ));
+            }
+            let canonical = canonicalize_public_path(&map_dir).map_err(|error| {
+                CommandErrorDto::at_path(
+                    "map_directory_inspect_failed",
+                    error.to_string(),
+                    &map_dir,
+                )
+            })?;
+            if !canonical.starts_with(library_root) {
+                return Err(CommandErrorDto::at_path(
+                    "map_directory_escape",
+                    "The map archive path resolves outside the main library.",
+                    &map_dir,
+                ));
+            }
+            Ok(canonical)
+        }
+    }
+}
+
+fn checked_existing_archive_root(library_root: &Path, root: &Path) -> CommandResult<PathBuf> {
+    let metadata = fs::symlink_metadata(root).map_err(|error| {
+        CommandErrorDto::at_path("archive_root_inspect_failed", error.to_string(), root)
+    })?;
+    if !metadata.is_dir() || catalog::is_symlink_or_reparse(&metadata) {
+        return Err(CommandErrorDto::at_path(
+            "archive_root_invalid",
+            "An existing archive must be a normal folder, not a link or junction.",
+            root,
+        ));
+    }
+    let canonical = canonicalize_public_path(root).map_err(|error| {
+        CommandErrorDto::at_path("archive_root_inspect_failed", error.to_string(), root)
+    })?;
+    if !canonical.starts_with(library_root) || canonical == library_root {
+        return Err(CommandErrorDto::at_path(
+            "archive_root_escape",
+            "The archive resolves outside the main library.",
+            root,
+        ));
+    }
+    let parent = canonical.parent().ok_or_else(|| {
+        CommandErrorDto::at_path(
+            "archive_root_invalid",
+            "The archive has no parent folder.",
+            root,
+        )
+    })?;
+    let parent_metadata = fs::symlink_metadata(parent).map_err(|error| {
+        CommandErrorDto::at_path("archive_root_inspect_failed", error.to_string(), parent)
+    })?;
+    if !parent_metadata.is_dir() || catalog::is_symlink_or_reparse(&parent_metadata) {
+        return Err(CommandErrorDto::at_path(
+            "archive_parent_invalid",
+            "The archive parent must be a normal folder, not a link or junction.",
+            parent,
+        ));
+    }
+    Ok(canonical)
 }
 
 fn validate_round_selection(
@@ -1829,6 +3456,39 @@ fn run_conversion(
 ) -> CommandResult<ConversionSummaryDto> {
     let final_root = prepared.root.clone();
     let output_dir = prepared.output_dir.clone();
+    let mut demo_info = archive_info::DemoArchiveInfo::from_analysis(
+        prepared
+            .options
+            .output_stem
+            .clone()
+            .unwrap_or_else(|| cached.archive_id.clone()),
+        &cached.parsed,
+        &cached.browser,
+        cached.source_modified_at_ms,
+        cached.source_size_bytes,
+        DEMOTRACER_ABI,
+        DTR_FORMAT_VERSION,
+        "conversion",
+    );
+    let mut selected_rounds = request.selected_rounds.clone();
+    selected_rounds.sort_unstable();
+    selected_rounds.dedup();
+    demo_info.conversion = Some(archive_info::DemoInfoConversion {
+        converter_version: env!("CARGO_PKG_VERSION").to_string(),
+        selected_rounds,
+        side: request.side.to_string(),
+        full_round: request.full_round,
+        include_suspicious: request.include_suspicious,
+        freeze_preroll_seconds: request.freeze_preroll_seconds,
+        voice: request.export_voice,
+        cosmetics: request.export_cosmetics,
+        stickers: request.export_stickers,
+        charms: request.export_charms,
+        manifest_sha256: None,
+        manifest_bytes: None,
+        round_count: None,
+        file_count: None,
+    });
     let mut file_ops = RealOutputFileOps;
     let transaction = run_output_transaction(
         &output_dir,
@@ -1881,6 +3541,38 @@ fn run_conversion(
             emit_phase(&events, TaskPhase::Validating);
             let validated_files = validate_dtr_path(&report.root)
                 .map_err(|error| CommandErrorDto::from_core("validation_failed", error))?;
+            let manifest_bytes = fs::read(&report.manifest_path).map_err(|error| {
+                CommandErrorDto::at_path(
+                    "manifest_read_failed",
+                    error.to_string(),
+                    &report.manifest_path,
+                )
+            })?;
+            if let Some(conversion) = demo_info.conversion.as_mut() {
+                conversion.manifest_sha256 = Some(sha256_hex(&manifest_bytes));
+                conversion.manifest_bytes = Some(manifest_bytes.len() as u64);
+                conversion.round_count = Some(report.manifest.rounds.len());
+                conversion.file_count = Some(report.manifest.files.len());
+            }
+            archive_info::write_demo_info(staging_root, &demo_info).map_err(|error| {
+                CommandErrorDto::at_path(
+                    "demo_info_write_failed",
+                    error.to_string(),
+                    archive_info::demo_info_path(staging_root),
+                )
+            })?;
+            archive_info::write_demo_source_pointer(
+                staging_root,
+                &cached.parsed.demo_sha256,
+                Path::new(&cached.parsed.path),
+            )
+            .map_err(|error| {
+                CommandErrorDto::at_path(
+                    "demo_source_write_failed",
+                    error.to_string(),
+                    archive_info::demo_source_path(staging_root),
+                )
+            })?;
             Ok(StagedConversion {
                 report,
                 validated_files,
@@ -1923,6 +3615,9 @@ fn run_conversion(
         staged.validated_files,
         request.export_voice,
         staged.voice_summaries.len(),
+        request.export_cosmetics,
+        request.export_stickers,
+        request.export_charms,
     );
     emit_phase(&events, TaskPhase::Complete);
     Ok(summary)
@@ -2095,21 +3790,28 @@ where
     if let Some(metadata) = file_ops.metadata(final_root).map_err(|error| {
         CommandErrorDto::at_path("output_inspect_failed", error.to_string(), final_root)
     })? {
+        require_normal_output_directory(&metadata, final_root)?;
         if overwrite == OverwriteModeDto::Deny {
             return Err(output_exists_error(final_root));
-        }
-        if !metadata.file_type().is_dir() {
-            return Err(CommandErrorDto::at_path(
-                "output_not_directory",
-                "Existing output is not a normal directory and will not be replaced.",
-                final_root,
-            ));
         }
     }
 
     file_ops.create_dir_all(output_dir).map_err(|error| {
         CommandErrorDto::at_path("output_stage_failed", error.to_string(), output_dir)
     })?;
+    let output_dir_metadata = file_ops
+        .metadata(output_dir)
+        .map_err(|error| {
+            CommandErrorDto::at_path("output_stage_failed", error.to_string(), output_dir)
+        })?
+        .ok_or_else(|| {
+            CommandErrorDto::at_path(
+                "output_stage_failed",
+                "The output parent disappeared before staging.",
+                output_dir,
+            )
+        })?;
+    require_normal_output_directory(&output_dir_metadata, output_dir)?;
     let staging_root = create_unique_staging_root(file_ops, output_dir, &demo_id)?;
     let value = match build(&staging_root) {
         Ok(value) => value,
@@ -2194,7 +3896,7 @@ fn recover_output_state<O: OutputFileOps>(
 }
 
 fn require_normal_output_directory(metadata: &fs::Metadata, path: &Path) -> CommandResult<()> {
-    if metadata.file_type().is_dir() {
+    if metadata.file_type().is_dir() && !catalog::is_symlink_or_reparse(metadata) {
         Ok(())
     } else {
         Err(CommandErrorDto::at_path(
@@ -2322,6 +4024,9 @@ fn summarize_conversion(
     validated_files: usize,
     voice_requested: bool,
     voice_sidecars: usize,
+    cosmetic_requested: bool,
+    sticker_requested: bool,
+    charm_requested: bool,
 ) -> ConversionSummaryDto {
     let output_bytes = directory_size_bytes(&report.root).unwrap_or(0);
     let rounds = report
@@ -2400,6 +4105,9 @@ fn summarize_conversion(
             sidecars: voice_sidecars,
         },
         cosmetics: CosmeticSummaryDto {
+            requested: Some(cosmetic_requested),
+            sticker_requested: Some(sticker_requested),
+            charm_requested: Some(charm_requested),
             files: cosmetic_files,
             sticker_files,
             charm_files,
@@ -2415,6 +4123,8 @@ struct PlayerAccumulator {
     name: String,
     rounds: BTreeSet<u32>,
     files: usize,
+    scoreboard_round: u32,
+    scoreboard: Option<ManifestPlayerScoreboardWire>,
 }
 
 fn summarize_exported_players(files: &[ConvertedFile]) -> Vec<PlayerSummaryDto> {
@@ -2432,6 +4142,16 @@ fn summarize_exported_players(files: &[ConvertedFile]) -> Vec<PlayerSummaryDto> 
                 },
                 rounds: BTreeSet::new(),
                 files: 0,
+                scoreboard_round: file.round,
+                scoreboard: file.scoreboard.as_ref().map(|scoreboard| {
+                    ManifestPlayerScoreboardWire {
+                        score: scoreboard.score,
+                        kills: scoreboard.kills,
+                        deaths: scoreboard.deaths,
+                        assists: scoreboard.assists,
+                        mvps: scoreboard.mvps,
+                    }
+                }),
             });
         if file.round < player.first_round
             || (file.round == player.first_round
@@ -2445,6 +4165,19 @@ fn summarize_exported_players(files: &[ConvertedFile]) -> Vec<PlayerSummaryDto> 
         }
         player.rounds.insert(file.round);
         player.files += 1;
+        if file.scoreboard.is_some() && file.round >= player.scoreboard_round {
+            player.scoreboard_round = file.round;
+            player.scoreboard =
+                file.scoreboard
+                    .as_ref()
+                    .map(|scoreboard| ManifestPlayerScoreboardWire {
+                        score: scoreboard.score,
+                        kills: scoreboard.kills,
+                        deaths: scoreboard.deaths,
+                        assists: scoreboard.assists,
+                        mvps: scoreboard.mvps,
+                    });
+        }
     }
 
     let mut summaries = players
@@ -2455,6 +4188,14 @@ fn summarize_exported_players(files: &[ConvertedFile]) -> Vec<PlayerSummaryDto> 
             name: player.name,
             rounds: player.rounds.len(),
             files: player.files,
+            side: Some(player.first_side),
+            match_team: None,
+            team_name: None,
+            score: player.scoreboard.as_ref().and_then(|value| value.score),
+            kills: player.scoreboard.as_ref().and_then(|value| value.kills),
+            deaths: player.scoreboard.as_ref().and_then(|value| value.deaths),
+            assists: player.scoreboard.as_ref().and_then(|value| value.assists),
+            mvps: player.scoreboard.as_ref().and_then(|value| value.mvps),
         })
         .collect::<Vec<_>>();
     summaries.sort_by(|left, right| {
@@ -2585,9 +4326,17 @@ pub fn run() {
             choose_demo,
             choose_manifest,
             choose_output_dir,
+            default_library_dir,
+            choose_library_dir,
+            choose_demo_source_dir,
             analyze_demo,
             preflight_output,
             read_manifest,
+            scan_demo_library,
+            refresh_archive_metadata,
+            resolve_archive_source,
+            refresh_library_metadata,
+            import_archives,
             convert_demo,
             open_output
         ])
@@ -2933,32 +4682,186 @@ mod tests {
             "cs2-demotracer-preflight-{}-{unique}",
             std::process::id()
         ));
+        let parsed = Arc::new(ParsedDemo {
+            stem: "match".to_string(),
+            demo_sha256: "aabbccddeeff".repeat(6),
+            map: "de_mirage".to_string(),
+            ..ParsedDemo::default()
+        });
+        let browser = analyze_browser_demo(&parsed, AnalysisOptions::default());
+        let archive_id = archive_info::archive_directory_name(&parsed, &browser);
         let cached = CachedDemo {
             analysis_id: "analysis-1".to_string(),
-            parsed: Arc::new(ParsedDemo {
-                stem: "match".to_string(),
-                demo_sha256: "aabbccddeeff".repeat(6),
-                ..ParsedDemo::default()
-            }),
+            parsed,
             analysis: analysis(),
+            browser,
+            archive_id: archive_id.clone(),
+            source_modified_at_ms: None,
+            source_size_bytes: None,
         };
+        fs::create_dir_all(&output_dir).unwrap();
 
         let first = preflight_output_for(&cached, &output_dir.display().to_string()).unwrap();
-        let expected_root = output_dir.join("match-aabbccddeeff");
+        let expected_parent = output_dir.join("de_mirage");
+        let expected_root = expected_parent.join(&archive_id);
         assert_eq!(PathBuf::from(&first.root), expected_root);
         assert!(!first.exists);
-        assert!(!output_dir.exists());
+        assert!(output_dir.is_dir());
 
         fs::create_dir_all(&expected_root).unwrap();
+        fs::write(
+            expected_root.join("manifest.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "demo_path": "match.dem",
+                "demo_id": archive_id,
+                "demo_sha256": cached.parsed.demo_sha256,
+                "map": "de_mirage",
+                "tick_rate": 64.0,
+                "abi": DEMOTRACER_ABI,
+                "format_version": DTR_FORMAT_VERSION,
+                "rounds": [],
+                "files": [{
+                    "round": 1,
+                    "side": "t",
+                    "steam_id": 1,
+                    "player_name": "Player"
+                }]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
         let second = preflight_output_for(&cached, &output_dir.display().to_string()).unwrap();
         assert!(second.exists);
 
         fs::remove_dir_all(&expected_root).unwrap();
-        let backup_root = output_dir.join(".match-aabbccddeeff.backup");
+        let backup_root = expected_parent.join(format!(".{archive_id}.backup"));
         fs::create_dir_all(&backup_root).unwrap();
         let recovered = preflight_output_for(&cached, &output_dir.display().to_string()).unwrap();
         assert!(recovered.exists);
         fs::remove_dir_all(output_dir).unwrap();
+    }
+
+    #[test]
+    fn map_directory_links_are_rejected_before_output_staging() {
+        let temp = ManifestTestDir::new("map-link");
+        let library_root = temp.path.join("library");
+        let outside = temp.path.join("outside");
+        fs::create_dir_all(&library_root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let linked_map = library_root.join("de_mirage");
+
+        #[cfg(unix)]
+        if std::os::unix::fs::symlink(&outside, &linked_map).is_err() {
+            return;
+        }
+        #[cfg(windows)]
+        if std::os::windows::fs::symlink_dir(&outside, &linked_map).is_err() {
+            return;
+        }
+
+        let canonical_library = canonical_normal_library_root(&library_root).unwrap();
+        let error = checked_library_map_directory(&canonical_library, "de_mirage").unwrap_err();
+        assert_eq!(error.code, "map_directory_invalid");
+        assert!(outside.read_dir().unwrap().next().is_none());
+    }
+
+    #[test]
+    fn preflight_extends_hash_when_the_readable_path_is_occupied() {
+        let temp = ManifestTestDir::new("hash-collision");
+        let output_dir = temp.path.join("library");
+        let parsed = Arc::new(ParsedDemo {
+            stem: "match".to_string(),
+            demo_sha256: "abcdef1234567890".repeat(4),
+            map: "de_mirage".to_string(),
+            ..ParsedDemo::default()
+        });
+        let browser = analyze_browser_demo(&parsed, AnalysisOptions::default());
+        let archive_id = archive_info::archive_directory_name(&parsed, &browser);
+        let cached = CachedDemo {
+            analysis_id: "analysis-collision".to_string(),
+            parsed,
+            analysis: analysis(),
+            browser,
+            archive_id: archive_id.clone(),
+            source_modified_at_ms: None,
+            source_size_bytes: None,
+        };
+        fs::create_dir_all(output_dir.join("de_mirage").join(&archive_id)).unwrap();
+
+        let preflight = preflight_output_for(&cached, &output_dir.display().to_string()).unwrap();
+
+        assert!(Path::new(&preflight.root)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .ends_with("--abcdef1234567890"));
+        assert!(!preflight.exists);
+    }
+
+    #[test]
+    fn archive_import_copies_into_map_library_and_is_idempotent() {
+        let temp = ManifestTestDir::new("archive-import");
+        let source_root = temp.path.join("scattered");
+        let source_archive = source_root.join("legacy-output");
+        let replay_path = source_archive.join("round00").join("t").join("a.dtr");
+        fs::create_dir_all(replay_path.parent().unwrap()).unwrap();
+        let mut recording = cs2_demotracer::dtr::Cs2Rec::default();
+        recording.header.map = "de_mirage".to_string();
+        recording.header.round = 0;
+        recording.header.side = 2;
+        recording.header.steam_id = 101;
+        recording
+            .ticks
+            .push(cs2_demotracer::dtr::ReplayTick::default());
+        cs2_demotracer::dtr::write_rec_file(&replay_path, &recording).unwrap();
+        fs::write(
+            source_archive.join("manifest.json"),
+            serde_json::to_vec_pretty(&manifest_json(
+                vec![manifest_round(0, 1)],
+                vec![manifest_file("round00/t/a.dtr", 0, "t", 101)],
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(source_archive.join("conversion.log"), b"portable log").unwrap();
+        fs::write(
+            source_archive.join(OUTPUT_COMPLETION_MARKER),
+            b"legacy marker",
+        )
+        .unwrap();
+
+        let library_root = temp.path.join("library");
+        let request = ImportArchivesRequest {
+            library_root: library_root.display().to_string(),
+            source_root: source_root.display().to_string(),
+        };
+        let first = import_archives_for(&request).unwrap();
+
+        assert_eq!(first.archives_found, 1);
+        assert_eq!(first.archives_imported, 1);
+        assert_eq!(first.duplicates_skipped, 0);
+        assert_eq!(first.archives_rejected, 0);
+        let imported_root = library_root.join("de_mirage").join("match--aaaaaaaaaaaa");
+        assert!(imported_root.join("manifest.json").is_file());
+        assert!(imported_root.join("round00/t/a.dtr").is_file());
+        assert_eq!(
+            fs::read(imported_root.join("conversion.log")).unwrap(),
+            b"portable log"
+        );
+        assert_eq!(
+            fs::read(imported_root.join(OUTPUT_COMPLETION_MARKER)).unwrap(),
+            OUTPUT_COMPLETION_MARKER_CONTENT
+        );
+        assert!(source_archive.join("manifest.json").is_file());
+        assert_eq!(
+            fs::read(source_archive.join(OUTPUT_COMPLETION_MARKER)).unwrap(),
+            b"legacy marker"
+        );
+
+        let second = import_archives_for(&request).unwrap();
+        assert_eq!(second.archives_imported, 0);
+        assert_eq!(second.duplicates_skipped, 1);
+        assert_eq!(second.archives_rejected, 0);
     }
 
     #[test]
@@ -3333,6 +5236,230 @@ mod tests {
     }
 
     #[test]
+    fn source_demo_resolution_reuses_a_recorded_matching_path() {
+        let temp = ManifestTestDir::new("source-pointer");
+        let source = temp.write_file("original.dem", b"local demo bytes");
+        let expected = sha256_hex(b"local demo bytes");
+
+        let resolved =
+            resolve_source_demo_path(&expected, source.to_str(), "original.dem", None).unwrap();
+
+        assert_eq!(resolved, source);
+    }
+
+    #[test]
+    fn source_demo_resolution_returns_a_relocatable_hint_only_when_needed() {
+        let missing = PathBuf::from(r"C:\Moved\original.dem");
+        let error =
+            resolve_source_demo_path(&"aa".repeat(32), missing.to_str(), "original.dem", None)
+                .unwrap_err();
+
+        assert_eq!(error.code, "source_demo_unavailable");
+        assert_eq!(error.path.as_deref(), missing.to_str());
+    }
+
+    #[test]
+    fn source_demo_resolution_never_accepts_a_wrong_hash() {
+        let temp = ManifestTestDir::new("source-hash-mismatch");
+        let source = temp.write_file("wrong.dem", b"wrong demo");
+        let error =
+            resolve_source_demo_path(&"aa".repeat(32), None, "original.dem", source.to_str())
+                .unwrap_err();
+
+        assert_eq!(error.code, "metadata_demo_hash_mismatch");
+        assert_eq!(error.path.as_deref(), source.to_str());
+    }
+
+    #[test]
+    fn archive_source_resolution_uses_the_manifest_hash() {
+        let temp = ManifestTestDir::new("archive-source-resolution");
+        let source = temp.write_file("original.dem", b"matching local demo");
+        let mut manifest = manifest_json(
+            vec![manifest_round(0, 1)],
+            vec![manifest_file("round00/t/player.dtr", 0, "t", 1)],
+        );
+        manifest["demo_path"] = serde_json::json!("original.dem");
+        manifest["demo_sha256"] = serde_json::json!(sha256_hex(b"matching local demo"));
+        let manifest_path = temp.write_manifest(manifest);
+
+        let resolved = resolve_archive_source_for(&manifest_path, source.to_str()).unwrap();
+
+        assert_eq!(PathBuf::from(resolved.source_path), source);
+        assert_eq!(
+            archive_info::read_demo_source_path(&temp.path, &sha256_hex(b"matching local demo"))
+                .as_deref(),
+            source.to_str()
+        );
+    }
+
+    #[test]
+    fn library_refresh_returns_verified_current_sources_to_the_machine_index() {
+        let temp = ManifestTestDir::new("verified-current-source");
+        let source = temp.write_file("source.dem", b"current source demo");
+        let demo_sha256 = sha256_hex(b"current source demo");
+        let mut manifest = manifest_json(
+            vec![manifest_round(0, 1)],
+            vec![manifest_file("round00/t/player.dtr", 0, "t", 1)],
+        );
+        manifest["demo_path"] = serde_json::json!("source.dem");
+        manifest["demo_sha256"] = serde_json::json!(demo_sha256.clone());
+        temp.write_manifest(manifest);
+        temp.write_file(
+            "demo-info.json",
+            &serde_json::to_vec(&serde_json::json!({
+                "schemaVersion": crate::archive_info::DEMO_INFO_SCHEMA_VERSION,
+                "analysisRevision": crate::archive_info::DEMO_INFO_ANALYSIS_REVISION,
+                "demoId": "source-aabbccddeeff",
+                "demoSha256": demo_sha256.clone(),
+                "displayName": "Current source",
+                "sourceFileName": "source.dem",
+                "sourceFileDateIsApproximate": false,
+                "playedAt": null,
+                "map": "de_mirage",
+                "tickRate": 64.0,
+                "durationSeconds": 0.0,
+                "durationEvidence": "observedTicks",
+                "scoreEvidence": "unavailable",
+                "players": [],
+                "manifestAbi": DEMOTRACER_ABI,
+                "dtrFormatVersion": DTR_FORMAT_VERSION,
+                "generatedBy": {
+                    "app": "CS2 DemoTracer",
+                    "version": "0.7.2",
+                    "reason": "test",
+                    "generatedAtMs": 1
+                }
+            }))
+            .unwrap(),
+        );
+        archive_info::write_demo_source_pointer(&temp.path, &demo_sha256, &source).unwrap();
+
+        let result = refresh_library_metadata_for(&RefreshLibraryMetadataRequest {
+            library_root: temp.path.display().to_string(),
+            demo_root: None,
+            source_paths: BTreeMap::new(),
+        })
+        .unwrap();
+
+        assert_eq!(result.archives_current, 1);
+        assert_eq!(
+            result.source_paths.get(&demo_sha256).map(String::as_str),
+            source.to_str()
+        );
+    }
+
+    #[test]
+    fn metadata_refresh_preserves_matching_conversion_intent() {
+        let temp = ManifestTestDir::new("preserve-conversion-intent");
+        let manifest_path = temp.write_manifest(manifest_json(Vec::new(), Vec::new()));
+        let manifest_sha256 = sha256_hex(&fs::read(&manifest_path).unwrap());
+        temp.write_file(
+            "demo-info.json",
+            &serde_json::to_vec(&serde_json::json!({
+                "schemaVersion": crate::archive_info::DEMO_INFO_SCHEMA_VERSION,
+                "analysisRevision": crate::archive_info::DEMO_INFO_ANALYSIS_REVISION,
+                "demoId": "match-aabbccddeeff",
+                "demoSha256": "aa".repeat(32),
+                "displayName": "Match",
+                "sourceFileName": "match.dem",
+                "sourceFileDateIsApproximate": false,
+                "playedAt": null,
+                "map": "de_mirage",
+                "tickRate": 64.0,
+                "durationSeconds": 0.0,
+                "durationEvidence": "observedTicks",
+                "scoreEvidence": "unavailable",
+                "players": [],
+                "manifestAbi": DEMOTRACER_ABI,
+                "dtrFormatVersion": DTR_FORMAT_VERSION,
+                "conversion": {
+                    "converterVersion": "0.7.2",
+                    "selectedRounds": [0, 1],
+                    "side": "both",
+                    "fullRound": false,
+                    "includeSuspicious": false,
+                    "freezePrerollSeconds": 10.0,
+                    "voice": true,
+                    "cosmetics": true,
+                    "stickers": false,
+                    "charms": false,
+                    "manifestSha256": manifest_sha256
+                },
+                "generatedBy": {
+                    "app": "CS2 DemoTracer",
+                    "version": "0.7.2",
+                    "reason": "conversion",
+                    "generatedAtMs": 1
+                }
+            }))
+            .unwrap(),
+        );
+
+        let conversion =
+            preserved_conversion_for_manifest(&temp.path, &"aa".repeat(32), &manifest_path)
+                .unwrap();
+
+        assert!(conversion.voice);
+        assert!(conversion.cosmetics);
+        assert_eq!(conversion.selected_rounds, vec![0, 1]);
+    }
+
+    #[test]
+    fn metadata_refresh_preserves_unbound_intent_without_claiming_manifest_binding() {
+        let temp = ManifestTestDir::new("migrate-unbound-conversion-intent");
+        let manifest_path = temp.write_manifest(manifest_json(Vec::new(), Vec::new()));
+        temp.write_file(
+            "demo-info.json",
+            &serde_json::to_vec(&serde_json::json!({
+                "schemaVersion": crate::archive_info::DEMO_INFO_SCHEMA_VERSION,
+                "analysisRevision": crate::archive_info::DEMO_INFO_ANALYSIS_REVISION,
+                "demoId": "match-aabbccddeeff",
+                "demoSha256": "aa".repeat(32),
+                "displayName": "Match",
+                "sourceFileName": "match.dem",
+                "sourceFileDateIsApproximate": false,
+                "playedAt": null,
+                "map": "de_mirage",
+                "tickRate": 64.0,
+                "durationSeconds": 0.0,
+                "durationEvidence": "observedTicks",
+                "scoreEvidence": "unavailable",
+                "players": [],
+                "manifestAbi": DEMOTRACER_ABI,
+                "dtrFormatVersion": DTR_FORMAT_VERSION,
+                "conversion": {
+                    "converterVersion": "0.7.1",
+                    "selectedRounds": [3, 4],
+                    "side": "both",
+                    "fullRound": true,
+                    "includeSuspicious": false,
+                    "freezePrerollSeconds": 10.0,
+                    "voice": false,
+                    "cosmetics": false,
+                    "stickers": false,
+                    "charms": false
+                },
+                "generatedBy": {
+                    "app": "CS2 DemoTracer",
+                    "version": "0.7.1",
+                    "reason": "conversion",
+                    "generatedAtMs": 1
+                }
+            }))
+            .unwrap(),
+        );
+
+        let conversion =
+            preserved_conversion_for_manifest(&temp.path, &"aa".repeat(32), &manifest_path)
+                .unwrap();
+
+        assert_eq!(conversion.selected_rounds, vec![3, 4]);
+        assert!(conversion.full_round);
+        assert!(conversion.manifest_sha256.is_none());
+        assert!(conversion.manifest_bytes.is_none());
+    }
+
+    #[test]
     fn commands_use_exported_round_and_expected_prefix_order() {
         let commands = build_commands(
             Path::new("output/demo/manifest.json"),
@@ -3439,8 +5566,11 @@ mod tests {
             files_written: 1,
             manifest,
         };
-        let summary = summarize_conversion(report, 1, true, 1);
+        let summary = summarize_conversion(report, 1, true, 1, true, true, true);
         assert_eq!(summary.cosmetics.preset.as_deref(), Some("full"));
+        assert_eq!(summary.cosmetics.requested, Some(true));
+        assert_eq!(summary.cosmetics.sticker_requested, Some(true));
+        assert_eq!(summary.cosmetics.charm_requested, Some(true));
         assert_eq!(summary.first_exported_round, Some(7));
         assert_eq!(summary.players[0].steam_id, "76561198012345678");
     }
@@ -3455,13 +5585,89 @@ mod tests {
         first["cosmetics"] = serde_json::json!({
             "weapons": [{ "stickers": [{ "slot": 0, "sticker_id": 10 }] }]
         });
+        first["ticks"] = serde_json::json!(2400);
+        first["subticks"] = serde_json::json!(80);
+        first["hifi_event_count"] = serde_json::json!(12);
+        first["scoreboard"] = serde_json::json!({
+            "score": 31, "kills": 20, "deaths": 10, "assists": 5, "mvps": 3
+        });
+        let mut round = manifest_round(0, 2);
+        round["scoreboard"] = serde_json::json!({
+            "t_score": 1, "ct_score": 0, "t_team_name": "Alpha", "ct_team_name": "Bravo"
+        });
+        round["bomb_planted_seconds_after_live"] = serde_json::json!(37.25);
         let manifest_path = temp.write_manifest(manifest_json(
-            vec![manifest_round(0, 2), manifest_round(99, 1)],
+            vec![round, manifest_round(99, 1)],
             vec![
                 first,
                 manifest_file("round00/ct/b.dtr", 0, "ct", 76_561_198_012_345_679),
             ],
         ));
+        let manifest_sha256 = sha256_hex(&fs::read(&manifest_path).unwrap());
+        temp.write_file(
+            "demo-info.json",
+            &serde_json::to_vec_pretty(&serde_json::json!({
+                "schemaVersion": 1,
+                "analysisRevision": crate::archive_info::DEMO_INFO_ANALYSIS_REVISION,
+                "demoId": "match-aabbccddeeff",
+                "demoSha256": "aa".repeat(32),
+                "displayName": "Alpha vs Bravo",
+                "sourceFileName": "match.dem",
+                "sourceFilePath": "C:\\Demos\\match.dem",
+                "sourceFileModifiedAtMs": 1_725_000_000_000_u64,
+                "sourceFileDateIsApproximate": true,
+                "playedAt": null,
+                "map": "de_mirage",
+                "tickRate": 64.0,
+                "durationSeconds": 1800.0,
+                "durationEvidence": "demoFileInfo",
+                "demoPatchVersion": 14228,
+                "demoVersionName": "1.42.2.8",
+                "demoSource": { "name": "Faceit", "evidence": "serverName" },
+                "score": {
+                    "teamA": { "score": 13, "name": "Alpha" },
+                    "teamB": { "score": 8, "name": "Bravo" },
+                    "status": "final"
+                },
+                "scoreEvidence": "roundEndEvents",
+                "players": [{
+                    "name": "Alpha One",
+                    "steamId": "76561198012345678",
+                    "side": "t",
+                    "team": "a",
+                    "teamName": "Alpha",
+                    "score": 31,
+                    "kills": 20,
+                    "deaths": 10,
+                    "assists": 5,
+                    "mvps": 3,
+                    "rounds": 21,
+                    "rows": 120000
+                }],
+                "manifestAbi": DEMOTRACER_ABI,
+                "dtrFormatVersion": DTR_FORMAT_VERSION,
+                "conversion": {
+                    "converterVersion": "0.7.2",
+                    "selectedRounds": [0],
+                    "side": "both",
+                    "fullRound": false,
+                    "includeSuspicious": false,
+                    "freezePrerollSeconds": 20.0,
+                    "voice": true,
+                    "cosmetics": true,
+                    "stickers": true,
+                    "charms": false,
+                    "manifestSha256": manifest_sha256
+                },
+                "generatedBy": {
+                    "app": "CS2 DemoTracer",
+                    "version": "0.7.2",
+                    "reason": "test",
+                    "generatedAtMs": 1_725_000_000_000_u64
+                }
+            }))
+            .unwrap(),
+        );
 
         let result = read_manifest_for(&manifest_path.display().to_string()).unwrap();
         assert!(result.playable);
@@ -3470,12 +5676,31 @@ mod tests {
         assert_eq!(result.total_files, 2);
         assert_eq!(result.playable_files, 2);
         assert_eq!(result.players[0].steam_id, "76561198012345678");
+        assert_eq!(result.players[0].name, "Alpha One");
+        assert_eq!(result.players[0].kills, Some(20));
+        assert_eq!(result.display_name, "Alpha vs Bravo");
+        assert_eq!(result.metadata_status, "current");
+        assert_eq!(result.source_path.as_deref(), Some(r"C:\Demos\match.dem"));
+        assert_eq!(result.demo_source.as_ref().unwrap().name, "Faceit");
+        assert_eq!(result.score.as_ref().unwrap().team_a.score, 13);
+        assert_eq!(result.voice.requested, Some(true));
         assert_eq!(result.voice.rounds, vec![0]);
+        assert_eq!(result.cosmetics.requested, Some(true));
+        assert_eq!(result.cosmetics.sticker_requested, Some(true));
+        assert_eq!(result.cosmetics.charm_requested, Some(false));
         assert_eq!(result.cosmetics.preset.as_deref(), Some("full"));
         assert_eq!(result.rounds.len(), 1);
         assert_eq!(result.rounds[0].round, 0);
         assert_eq!(result.rounds[0].t_files, 1);
         assert_eq!(result.rounds[0].ct_files, 1);
+        assert_eq!(result.rounds[0].cosmetic_files, 1);
+        assert_eq!(result.rounds[0].sticker_files, 1);
+        assert_eq!(result.rounds[0].charm_files, 0);
+        assert_eq!(result.rounds[0].ticks, 2400);
+        assert_eq!(result.rounds[0].subticks, 80);
+        assert_eq!(result.rounds[0].hifi_events, 12);
+        assert_eq!(result.rounds[0].bomb_planted_seconds, Some(37.25));
+        assert_eq!(result.rounds[0].scoreboard.as_ref().unwrap().t_score, 1);
         assert_eq!(result.rounds[0].sequence_length, 1);
         assert!(result.rounds[0].available);
         assert!(result.rounds[0]
@@ -3500,6 +5725,8 @@ mod tests {
 
         let result = read_manifest_for(&manifest_path.display().to_string()).unwrap();
         assert!(!result.playable);
+        assert_eq!(result.voice.requested, None);
+        assert_eq!(result.cosmetics.requested, None);
         assert_eq!(result.total_files, 2);
         assert_eq!(result.playable_files, 1);
         assert_eq!(result.rounds.len(), 1);

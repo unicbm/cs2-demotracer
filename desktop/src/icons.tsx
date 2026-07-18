@@ -143,3 +143,39 @@ export function ReplayIcon({ size = 18, ...props }: IconProps) {
     </svg>
   );
 }
+
+export function LibraryIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg {...base(size)} {...props}>
+      <path d="M4 5.5h5.5v5.5H4zM14.5 5.5H20v5.5h-5.5zM4 14h5.5v5.5H4zM14.5 14H20v5.5h-5.5z" />
+    </svg>
+  );
+}
+
+export function SearchIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg {...base(size)} {...props}>
+      <circle cx="10.5" cy="10.5" r="6" />
+      <path d="m15 15 4.5 4.5" />
+    </svg>
+  );
+}
+
+export function RefreshIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg {...base(size)} {...props}>
+      <path d="M19 8.5A7.5 7.5 0 0 0 5.7 6.8L4 8.5" />
+      <path d="M4 4.5v4h4" />
+      <path d="M5 15.5a7.5 7.5 0 0 0 13.3 1.7l1.7-1.7" />
+      <path d="M20 19.5v-4h-4" />
+    </svg>
+  );
+}
+
+export function PlusIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg {...base(size)} {...props}>
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}

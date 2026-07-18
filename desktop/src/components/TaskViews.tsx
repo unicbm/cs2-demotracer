@@ -1,6 +1,7 @@
 import { type RefObject } from "react";
 import {
   AlertIcon,
+  ArrowIcon,
   CheckIcon,
   ChevronIcon,
   CopyIcon,
@@ -10,7 +11,6 @@ import {
 } from "../icons";
 import type { TextDictionary } from "../i18n";
 import type { ConversionSummary, ProgressPhase, ProgressState } from "../types";
-import { PlaybackCommandBuilder, type PlaybackPresetOptions } from "./PlaybackCommandBuilder";
 
 export type CopyTarget = "playback" | "phrase" | "output" | "manifest";
 export type CommandMode = "sequence" | "round";
@@ -225,11 +225,7 @@ interface ResultViewProps {
   result: ConversionSummary;
   warnings: string[];
   copiedTarget: CopyTarget | null;
-  commandMode: CommandMode;
-  playbackPreset: PlaybackPresetOptions;
   resultHeadingRef: RefObject<HTMLHeadingElement | null>;
-  onCommandModeChange: (mode: CommandMode) => void;
-  onPlaybackPresetChange: (patch: Partial<PlaybackPresetOptions>) => void;
   onCopy: (value: string, target: CopyTarget) => void;
   onOpenFolder: () => void;
   onBrowseManifest: () => void;
@@ -244,11 +240,7 @@ export function ResultView({
   result,
   warnings,
   copiedTarget,
-  commandMode,
-  playbackPreset,
   resultHeadingRef,
-  onCommandModeChange,
-  onPlaybackPresetChange,
   onCopy,
   onOpenFolder,
   onBrowseManifest,
@@ -257,8 +249,21 @@ export function ResultView({
   formatNumber,
   formatBytes,
 }: ResultViewProps) {
-  const voiceUnavailable = result.voice.requested && result.voice.sidecars === 0;
   const visibleWarnings = [...new Set(warnings)];
+  const voiceState = result.voice.sidecars > 0
+    ? words.voiceExportedCount.replace("{count}", formatNumber(result.voice.sidecars))
+    : result.voice.requested === true
+      ? words.voiceRequestedEmptyResult
+      : result.voice.requested === false
+        ? words.voiceNotRequested
+        : words.voiceUnknown;
+  const cosmeticState = result.cosmetics.files > 0
+    ? words.cosmeticsExportedCount.replace("{count}", formatNumber(result.cosmetics.files))
+    : result.cosmetics.requested === true
+      ? words.cosmeticsRequestedEmptyResult
+      : result.cosmetics.requested === false
+        ? words.cosmeticsNotRequested
+        : words.cosmeticsUnknown;
 
   return (
     <section className="result-view" aria-labelledby="result-title">
@@ -270,64 +275,56 @@ export function ResultView({
         </div>
       </header>
 
-      {(voiceUnavailable || visibleWarnings.length > 0) ? (
+      {visibleWarnings.length > 0 ? (
         <div className="result-warning" role="status">
           <AlertIcon size={17} />
           <div>
-            <strong>{visibleWarnings.length > 0 ? words.resultWarningsTitle : words.voiceUnavailableTitle}</strong>
-            {voiceUnavailable ? <p>{words.voiceUnavailableBody}</p> : null}
+            <strong>{words.resultWarningsTitle}</strong>
             {visibleWarnings.map((warning) => <p key={warning}>{warning}</p>)}
           </div>
         </div>
       ) : null}
 
-      <PlaybackCommandBuilder
-        words={words}
-        result={result}
-        options={playbackPreset}
-        commandMode={commandMode}
-        copied={copiedTarget === "playback"}
-        onOptionsChange={onPlaybackPresetChange}
-        onCommandModeChange={onCommandModeChange}
-        onCopy={(command) => onCopy(command, "playback")}
-      />
-
-      <div className="result-paths">
-        <div className="result-path-row">
-          <div><span>{words.output}</span><code title={result.root}>{result.root}</code></div>
-          <div className="path-actions">
-            <button className="secondary-button" type="button" onClick={onOpenFolder}><FolderIcon size={15} />{words.openFolder}</button>
-            <button className="icon-button" type="button" onClick={() => onCopy(result.root, "output")} aria-label={words.copyPath} title={words.copyPath}>{copiedTarget === "output" ? <CheckIcon size={15} /> : <CopyIcon size={15} />}</button>
-          </div>
+      <section className="result-next-step" aria-labelledby="result-next-title">
+        <div>
+          <span>{words.nextStep}</span>
+          <h2 id="result-next-title">{words.resultReadyTitle}</h2>
+          <p>{words.resultReadyBody}</p>
         </div>
-        <div className="result-path-row">
-          <div><span>{words.manifest}</span><code title={result.manifestPath}>{result.manifestPath}</code></div>
-          <div className="path-actions">
-            <button className="secondary-button compact-button" type="button" onClick={onBrowseManifest}><ReplayIcon size={14} />{words.browseArchive}</button>
-            <button className="icon-button" type="button" onClick={() => onCopy(result.manifestPath, "manifest")} aria-label={words.copyPath} title={words.copyPath}>{copiedTarget === "manifest" ? <CheckIcon size={15} /> : <CopyIcon size={15} />}</button>
-          </div>
+        <button className="primary-button" type="button" onClick={onBrowseManifest}>
+          <ReplayIcon size={15} />{words.preparePlayback}<ArrowIcon size={15} />
+        </button>
+      </section>
+
+      <div className="result-capabilities" aria-label={words.archiveContents}>
+        <div>
+          <span>{words.voiceCapability}</span>
+          <strong>{voiceState}</strong>
+        </div>
+        <div>
+          <span>{words.cosmeticsCapability}</span>
+          <strong>{cosmeticState}</strong>
         </div>
       </div>
 
       <details className="result-details">
         <summary>{words.resultDetails}<ChevronIcon size={15} /></summary>
+        <div className="result-paths">
+          <div className="result-path-row">
+            <div><span>{words.output}</span><code title={result.root}>{result.root}</code></div>
+            <div className="path-actions">
+              <button className="secondary-button" type="button" onClick={onOpenFolder}><FolderIcon size={15} />{words.openFolder}</button>
+              <button className="icon-button" type="button" onClick={() => onCopy(result.root, "output")} aria-label={words.copyPath} title={words.copyPath}>{copiedTarget === "output" ? <CheckIcon size={15} /> : <CopyIcon size={15} />}</button>
+            </div>
+          </div>
+          <div className="result-path-row">
+            <div><span>{words.manifest}</span><code title={result.manifestPath}>{result.manifestPath}</code></div>
+            <button className="icon-button" type="button" onClick={() => onCopy(result.manifestPath, "manifest")} aria-label={words.copyPath} title={words.copyPath}>{copiedTarget === "manifest" ? <CheckIcon size={15} /> : <CopyIcon size={15} />}</button>
+          </div>
+        </div>
         <div className="result-statline">
           <span><b>{formatNumber(result.validatedFiles)}</b> {words.validatedFiles}</span>
           <span><b>{formatBytes(result.outputBytes)}</b> {words.outputSize}</span>
-          <span><b>{formatNumber(result.players.length)}</b> {words.playerFiles}</span>
-          <span><b>{formatNumber(result.voice.sidecars)}</b> {words.voiceFiles}</span>
-        </div>
-        <div className="player-table-wrap">
-          <table className="player-summary-table">
-            <thead><tr><th scope="col">{words.playerFiles}</th><th scope="col">{words.steamId}</th><th scope="col">{words.rounds}</th><th scope="col">{words.files}</th></tr></thead>
-            <tbody>
-              {result.players.map((player) => (
-                <tr key={`${player.steamId}-${player.team}`}>
-                  <td>{player.name}</td><td><code>{player.steamId}</code></td><td>{player.rounds}</td><td>{player.files}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       </details>
 

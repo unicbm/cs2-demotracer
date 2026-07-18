@@ -649,6 +649,8 @@ mod demoparser_impl {
             wanted_events: vec![
                 "round_freeze_end".to_string(),
                 "round_end".to_string(),
+                "round_announce_match_start".to_string(),
+                "cs_win_panel_match".to_string(),
                 "round_start".to_string(),
                 "bomb_beginplant".to_string(),
                 "bomb_planted".to_string(),
@@ -705,6 +707,11 @@ mod demoparser_impl {
             .get("map_name")
             .cloned()
             .unwrap_or_else(|| "unknown".to_string());
+        let demo_patch_version = header_i32(&header, "patch_version");
+        let demo_version_name = header_text(&header, "demo_version_name");
+        let server_name = header_text(&header, "server_name");
+        let playback_time_seconds =
+            header_f32(&header, "playback_time").filter(|value| value.is_finite() && *value >= 0.0);
 
         let columns = ResolvedColumns::new(&output.prop_controller.prop_infos, &output.df);
         macro_rules! overlay_column {
@@ -983,6 +990,10 @@ mod demoparser_impl {
             stem: stem.to_string(),
             demo_sha256,
             map,
+            demo_patch_version,
+            demo_version_name,
+            server_name,
+            playback_time_seconds,
             tick_rate,
             round_freeze_end_ticks,
             bomb_beginplant_ticks,
@@ -1415,6 +1426,9 @@ mod demoparser_impl {
             event.name.as_str(),
             "round_start"
                 | "round_freeze_end"
+                | "round_end"
+                | "round_announce_match_start"
+                | "cs_win_panel_match"
                 | "bomb_beginplant"
                 | "bomb_planted"
                 | "bomb_dropped"
@@ -1471,10 +1485,28 @@ mod demoparser_impl {
             damage: event_field_i32(event, "dmg_health")
                 .or_else(|| event_field_i32(event, "damage")),
             health: event_field_i32(event, "health"),
+            winner_side: (event.name == "round_end")
+                .then(|| event_winner_side(event))
+                .flatten(),
             chat_text,
             chat_scope,
             chat_message_name,
         })
+    }
+
+    fn event_winner_side(event: &GameEvent) -> Option<u8> {
+        if let Some(value) = event_field_i32(event, "winner") {
+            return matches!(value, 2 | 3).then_some(value as u8);
+        }
+        let normalized = event_field_string(event, "winner")?
+            .trim()
+            .to_ascii_lowercase()
+            .replace(['-', '_', ' '], "");
+        match normalized.as_str() {
+            "2" | "t" | "terrorist" | "terrorists" => Some(2),
+            "3" | "ct" | "counterterrorist" | "counterterrorists" => Some(3),
+            _ => None,
+        }
     }
 
     fn normalize_chat_text(value: String) -> Option<String> {
@@ -1977,9 +2009,75 @@ mod demoparser_impl {
         }
     }
 
+    fn header_text(header: &AHashMap<String, String>, key: &str) -> Option<String> {
+        header
+            .get(key)
+            .map(String::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    }
+
+    fn header_i32(header: &AHashMap<String, String>, key: &str) -> Option<i32> {
+        header_text(header, key).and_then(|value| value.parse::<i32>().ok())
+    }
+
+    fn header_f32(header: &AHashMap<String, String>, key: &str) -> Option<f32> {
+        header_text(header, key).and_then(|value| value.parse::<f32>().ok())
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        #[test]
+        fn demo_version_headers_are_trimmed_and_optional() {
+            let mut header = AHashMap::default();
+            header.insert("patch_version".to_string(), " 14228 ".to_string());
+            header.insert("demo_version_name".to_string(), " 2.0.0.0 ".to_string());
+
+            assert_eq!(header_i32(&header, "patch_version"), Some(14_228));
+            assert_eq!(
+                header_text(&header, "demo_version_name").as_deref(),
+                Some("2.0.0.0")
+            );
+
+            header.insert("patch_version".to_string(), "invalid".to_string());
+            header.insert("demo_version_name".to_string(), "   ".to_string());
+            assert_eq!(header_i32(&header, "patch_version"), None);
+            assert_eq!(header_text(&header, "demo_version_name"), None);
+        }
+
+        #[test]
+        fn playback_time_header_is_parsed_as_seconds() {
+            let mut header = AHashMap::default();
+            header.insert("playback_time".to_string(), " 3034.921875 ".to_string());
+
+            assert_eq!(header_f32(&header, "playback_time"), Some(3034.921875));
+        }
+
+        #[test]
+        fn round_winner_accepts_numeric_and_named_sides() {
+            fn round_end(data: Variant) -> GameEvent {
+                GameEvent {
+                    name: "round_end".to_string(),
+                    tick: 100,
+                    fields: vec![parser::second_pass::game_events::EventField {
+                        name: "winner".to_string(),
+                        data: Some(data),
+                    }],
+                }
+            }
+
+            assert_eq!(event_winner_side(&round_end(Variant::I32(2))), Some(2));
+            assert_eq!(
+                event_winner_side(&round_end(Variant::String(
+                    "Counter-Terrorists".to_string()
+                ))),
+                Some(3)
+            );
+            assert_eq!(event_winner_side(&round_end(Variant::I32(1))), None);
+        }
 
         #[test]
         fn lean_read_skips_only_opt_in_cosmetic_props() {
