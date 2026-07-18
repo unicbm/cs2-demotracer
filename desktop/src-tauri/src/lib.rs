@@ -4702,7 +4702,9 @@ mod tests {
         fs::create_dir_all(&output_dir).unwrap();
 
         let first = preflight_output_for(&cached, &output_dir.display().to_string()).unwrap();
-        let expected_parent = output_dir.join("de_mirage");
+        let expected_parent = canonicalize_public_path(&output_dir)
+            .unwrap()
+            .join("de_mirage");
         let expected_root = expected_parent.join(&archive_id);
         assert_eq!(PathBuf::from(&first.root), expected_root);
         assert!(!first.exists);
