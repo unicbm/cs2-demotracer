@@ -82,7 +82,7 @@ function compactEntry(item) {
   if (!item.image || !englishName || !chineseName) {
     throw new Error(`Incomplete cosmetic catalog entry for cs2-lib item ${item.id}`);
   }
-  return [item.image, englishName, chineseName];
+  return [item.image, englishName, chineseName, item.id, item.rarity ?? "#b0b4ba"];
 }
 
 const mainTypes = new Set(["weapon", "melee", "glove"]);
@@ -120,6 +120,11 @@ const catalog = {
         return [`${item.index}:${wrappedSticker?.index ?? 0}`, compactEntry(item)];
       }),
   ),
+  musicKits: buildMap(
+    items
+      .filter((item) => item.type === "musickit")
+      .map((item) => [`${item.index}`, compactEntry(item)]),
+  ),
 };
 
 mkdirSync(dirname(outputPath), { recursive: true });
@@ -128,5 +133,5 @@ writeFileSync(outputPath, `${JSON.stringify(catalog)}\n`, "utf8");
 console.log(
   `Wrote ${outputPath} (${Object.keys(catalog.items).length} items, ` +
     `${Object.keys(catalog.agents).length} agents, ${Object.keys(catalog.stickers).length} stickers, ` +
-    `${Object.keys(catalog.charms).length} charms).`,
+    `${Object.keys(catalog.charms).length} charms, ${Object.keys(catalog.musicKits).length} music kits).`,
 );

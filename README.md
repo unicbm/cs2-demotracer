@@ -113,6 +113,13 @@ cs2-demotracer.exe validate --input "<output-dir>"
 calculated from the decompressed `.dem` content, so differently compressed copies
 of the same demo resolve to the same archive identity.
 
+HLTV-style sibling segments named `<match>-p1.dem`, `<match>-p2.dem`, and so on
+are detected automatically when any part is selected. DemoTracer parses every
+part once, verifies their header, roster, round, and score continuity, discards
+incomplete restart-boundary shells, and writes one logical archive and one
+`manifest.json`. The ordered part hashes form the logical demo identity; raw demo
+bytes and reset tick counters are never concatenated.
+
 To export demo-backed in-game voice for automatic replay, add `--export-voice`:
 
 ```powershell

@@ -55,6 +55,11 @@ cs2-demotracer.exe validate --input "<output-dir>"
 `inspect` 和 `convert` 也可以直接接受 `<demo.dem.zst>`。Demo 身份使用解压后的
 `.dem` 内容计算，因此同一个 Demo 的不同压缩版本仍会识别为同一份归档。
 
+HLTV 常见的同目录 `<match>-p1.dem`、`<match>-p2.dem` 等连续分段会在选择任一段时
+自动识别。DemoTracer 会逐段解析一次，验证 header、阵容、回合和比分连续性，丢弃
+重启边界的不完整回合壳，最后只生成一份逻辑归档和一个 `manifest.json`。逻辑 Demo
+身份由有序分段 hash 组成；不会拼接原始 demo 字节或直接混排重置后的 tick。
+
 要导出 demo 自带游戏内语音，加 `--export-voice`：
 
 ```powershell

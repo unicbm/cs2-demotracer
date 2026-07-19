@@ -34,6 +34,17 @@ wear, sticker transform, or charm placement. The retained cs2-lib license does
 not relicense Counter-Strike 2 artwork or other third-party material served by
 the catalog CDN.
 
+For weapons and knives with a catalog mapping, the desktop can also open an
+interactive 360-degree preview backed by Ian Lucas's hosted viewer at
+`https://3d.cstrike.app`. This optional preview is embedded as a remote frame
+and therefore requires network access; the catalog image remains the normal
+fallback. Only the cosmetic parameters required to render the selected item
+are included in the viewer URL.
+
+Crosshair previews use the fixed `csgo-sharecode` 5.0.0 decoder under its MIT
+license, then render the decoded settings with DemoTracer's own SVG component.
+The package has no runtime dependencies.
+
 ## In-Game Playback
 
 Playback needs a local Windows x64 CS2 server with:

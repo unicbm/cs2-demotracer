@@ -158,7 +158,6 @@ export function PlayerAnalysisWorkspace({
             <header className="player-analysis-heading">
               <span>{team.name}</span>
               <h1 id="player-analysis-title" ref={headingRef} tabIndex={-1}>{player.name}</h1>
-              <p>{words.playerAnalysisHelp}</p>
             </header>
 
             <div className="player-analysis-dossier">

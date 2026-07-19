@@ -1,5 +1,8 @@
 use clap::{Parser, Subcommand};
-use cs2_demotracer::demo_reader::{read_demo, read_demo_with_options, ReadDemoOptions};
+use cs2_demotracer::demo_reader::ReadDemoOptions;
+use cs2_demotracer::demo_series::{
+    read_demo_source_with_options, resolve_demo_source, DemoSourceSet,
+};
 use cs2_demotracer::export::{
     export_demo, parse_round_list, ConvertOptions, DEFAULT_FREEZE_PREROLL_SECONDS,
 };
@@ -174,7 +177,7 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
             max_round_seconds,
         } => {
             warn_debug_build_for_demo_parse();
-            let parsed = read_demo_with_options(
+            let parsed = read_logical_demo(
                 &demo,
                 ReadDemoOptions {
                     collect_voice: false,
@@ -220,7 +223,7 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
         } => {
             warn_debug_build_for_demo_parse();
             warn_full_demo_parse_for_round_filter("--round");
-            let parsed = read_demo(&demo)?;
+            let parsed = read_logical_demo(&demo, ReadDemoOptions::default())?;
             let analysis = analyze_demo(
                 &parsed,
                 AnalysisOptions {
@@ -282,7 +285,7 @@ pub(crate) fn run() -> cs2_demotracer::Result<()> {
                     accept_cosmetic_export_disclaimer,
                 )?;
             warn_debug_build_for_demo_parse();
-            let parsed = read_demo_with_options(
+            let parsed = read_logical_demo(
                 &demo,
                 ReadDemoOptions {
                     collect_voice: export_voice,
@@ -436,6 +439,25 @@ fn warn_debug_build_for_demo_parse() {
     );
 }
 
+fn read_logical_demo(
+    path: &std::path::Path,
+    options: ReadDemoOptions,
+) -> cs2_demotracer::Result<cs2_demotracer::model::ParsedDemo> {
+    let source = resolve_demo_source(path)?;
+    announce_demo_source(&source);
+    read_demo_source_with_options(&source, options)
+}
+
+fn announce_demo_source(source: &DemoSourceSet) {
+    if source.is_segmented() {
+        eprintln!(
+            "detected {}-part demo series {}; parsing once as one logical match",
+            source.parts.len(),
+            source.logical_stem
+        );
+    }
+}
+
 fn warn_full_demo_parse_for_round_filter(flag: &str) {
     eprintln!(
         "warning: {flag} filters output after demoparser parses the whole demo; selecting one round still parses the full match."
@@ -461,7 +483,7 @@ fn run_wizard() -> cs2_demotracer::Result<()> {
     let output = prompt_path(&output);
 
     println!("\nAnalyzing {} ...", demo.display());
-    let parsed = read_demo_with_options(
+    let parsed = read_logical_demo(
         &demo,
         ReadDemoOptions {
             collect_voice: false,

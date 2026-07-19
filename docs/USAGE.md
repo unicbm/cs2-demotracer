@@ -16,6 +16,11 @@ FACEIT-style `<demo.dem.zst>` inputs are accepted directly by the same commands.
 Zstandard decompression runs inside DemoTracer, and identity is calculated from
 the decompressed demo content.
 
+For contiguous HLTV segments such as `<match>-p1.dem` and `<match>-p2.dem`, pass
+any one part. DemoTracer verifies and merges the complete round sequence into one
+logical analysis and one manifest; it refuses gaps or incompatible parts instead
+of producing separate partial archives.
+
 Convert recommended rounds:
 
 ```powershell

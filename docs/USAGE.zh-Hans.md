@@ -14,6 +14,10 @@ cs2-demotracer.exe inspect --demo <demo.dem>
 同一组命令也可以直接接受 FACEIT 常见的 `<demo.dem.zst>`。Zstandard 解压在
 DemoTracer 进程内完成，归档身份按解压后的 Demo 内容计算。
 
+对于 `<match>-p1.dem`、`<match>-p2.dem` 这类连续 HLTV 分段，只需传入任意一段。
+DemoTracer 会验证并合并完整回合链，生成一份逻辑分析和一个 manifest；遇到缺段或
+不兼容分段会明确拒绝，不会分别产出两份残缺归档。
+
 转换推荐回合：
 
 ```powershell

@@ -14,8 +14,11 @@ use cs2_demotracer::browser_analysis::{
 };
 use cs2_demotracer::demo_id::sha256_hex;
 use cs2_demotracer::demo_reader::{
-    demo_content_sha256, is_supported_demo_path, is_zstd_demo_path, load_demo_input,
-    read_demo_with_options, read_loaded_demo_with_options, ReadDemoOptions,
+    demo_content_sha256, is_supported_demo_path, is_zstd_demo_path, ReadDemoOptions,
+};
+use cs2_demotracer::demo_series::{
+    demo_source_sha256, read_demo_source_with_options, resolve_demo_source,
+    resolve_demo_source_for_sha256, DemoSourceMetadata, DemoSourceSet,
 };
 use cs2_demotracer::dtr::read_rec_file;
 use cs2_demotracer::export::{
@@ -1065,31 +1068,40 @@ async fn analyze_demo(
 ) -> CommandResult<AnalysisDto> {
     validate_max_round_seconds(request.max_round_seconds)?;
     let _busy = state.acquire_busy()?;
-    let source_path = validate_demo_path(&request.path)?;
-    let source_metadata = fs::metadata(&source_path).ok();
+    let requested_path = validate_demo_path(&request.path)?;
+    let expected_sha256 = request
+        .expected_demo_sha256
+        .as_deref()
+        .map(str::trim)
+        .filter(|expected| !expected.is_empty());
+    let source = if let Some(expected_sha256) = expected_sha256 {
+        resolve_validated_demo_source_for_sha256(&requested_path, expected_sha256)?.ok_or_else(
+            || {
+                CommandErrorDto::at_path(
+                    "analysis_demo_hash_mismatch",
+                    "This demo is not the original source for the selected archive.",
+                    &requested_path,
+                )
+            },
+        )?
+    } else {
+        resolve_validated_demo_source(&requested_path)?
+    };
+    let source_path = source.primary_path().to_path_buf();
+    let source_metadata = source.metadata().ok();
     *state.cache()? = None;
 
-    emit_log(
-        &events,
-        LogLevel::Info,
-        format!("Reading {}", source_path.display()),
-    );
+    emit_demo_source(&events, &source);
 
-    let worker_path = source_path.clone();
+    let worker_source = source.clone();
     let worker_events = events.clone();
     let parsed_result = tauri::async_runtime::spawn_blocking(move || {
-        if is_zstd_demo_path(&worker_path) {
+        if worker_source.paths().any(is_zstd_demo_path) {
             emit_phase(&worker_events, TaskPhase::Decompressing);
-            emit_log(
-                &worker_events,
-                LogLevel::Info,
-                format!("Decompressing {}", worker_path.display()),
-            );
         }
-        let input = load_demo_input(&worker_path)?;
         emit_phase(&worker_events, TaskPhase::Parsing);
-        let parsed = read_loaded_demo_with_options(
-            &input,
+        let parsed = read_demo_source_with_options(
+            &worker_source,
             ReadDemoOptions {
                 collect_voice: true,
                 collect_cosmetics: true,
@@ -1112,13 +1124,7 @@ async fn analyze_demo(
         emit_log(&events, LogLevel::Error, error.to_string());
         CommandErrorDto::from_core("analysis_failed", error)
     })?;
-    if request
-        .expected_demo_sha256
-        .as_deref()
-        .map(str::trim)
-        .filter(|expected| !expected.is_empty())
-        .is_some_and(|expected| !parsed.demo_sha256.eq_ignore_ascii_case(expected))
-    {
+    if expected_sha256.is_some_and(|expected| !parsed.demo_sha256.eq_ignore_ascii_case(expected)) {
         return Err(CommandErrorDto::at_path(
             "analysis_demo_hash_mismatch",
             "This demo is not the original source for the selected archive.",
@@ -1127,15 +1133,16 @@ async fn analyze_demo(
     }
     let analysis_id = state.session_id(&parsed);
     let output_demo_id = archive_info::archive_directory_name(&parsed, &browser_analysis);
-    let source_modified_at_ms = source_metadata.as_ref().and_then(metadata_modified_at_ms);
-    let source_size_bytes = source_metadata.as_ref().map(fs::Metadata::len);
+    let source_modified_at_ms = source_metadata.and_then(source_metadata_modified_at_ms);
+    let source_size_bytes = source_metadata.map(|metadata| metadata.size_bytes);
     let dto = browser_analysis_dto(
         &analysis_id,
         &source_path,
         &output_demo_id,
         &parsed,
         &browser_analysis,
-        source_metadata.as_ref(),
+        source_modified_at_ms,
+        source_size_bytes,
     );
 
     *state.cache()? = Some(CachedDemo {
@@ -1333,17 +1340,18 @@ fn refresh_archive_metadata_for(
     let requested_demo_path = requested_demo_path
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let demo_path = resolve_source_demo_path(
+    let source = resolve_source_demo(
         entry.demo_sha256.trim(),
         entry.source_path.as_deref(),
         &entry.demo_path,
         requested_demo_path,
     )?;
+    let demo_path = source.primary_path().to_path_buf();
     let previous_conversion =
         preserved_conversion_for_manifest(archive_root, entry.demo_sha256.trim(), manifest_path);
-    let source_metadata = fs::metadata(&demo_path).ok();
-    let parsed = read_demo_with_options(
-        &demo_path,
+    let source_metadata = source.metadata().ok();
+    let parsed = read_demo_source_with_options(
+        &source,
         ReadDemoOptions {
             collect_voice: false,
             collect_cosmetics: previous_conversion
@@ -1367,8 +1375,8 @@ fn refresh_archive_metadata_for(
         entry.demo_id,
         &parsed,
         &browser,
-        source_metadata.as_ref().and_then(metadata_modified_at_ms),
-        source_metadata.as_ref().map(fs::Metadata::len),
+        source_metadata.and_then(source_metadata_modified_at_ms),
+        source_metadata.map(|metadata| metadata.size_bytes),
         entry.abi,
         entry.format_version,
         "metadataRefresh",
@@ -1386,14 +1394,18 @@ fn refresh_archive_metadata_for(
             .is_some_and(|conversion| conversion.charms),
     );
     info.conversion = previous_conversion;
-    archive_info::write_demo_source_pointer(archive_root, entry.demo_sha256.trim(), &demo_path)
-        .map_err(|error| {
-            CommandErrorDto::at_path(
-                "demo_source_write_failed",
-                error.to_string(),
-                archive_info::demo_source_path(archive_root),
-            )
-        })?;
+    archive_info::write_demo_source_pointer(
+        archive_root,
+        entry.demo_sha256.trim(),
+        source.primary_path(),
+    )
+    .map_err(|error| {
+        CommandErrorDto::at_path(
+            "demo_source_write_failed",
+            error.to_string(),
+            archive_info::demo_source_path(archive_root),
+        )
+    })?;
     let info_path = archive_info::write_demo_info(archive_root, &info).map_err(|error| {
         CommandErrorDto::at_path(
             "demo_info_write_failed",
@@ -1429,12 +1441,13 @@ fn resolve_archive_source_for(
     let requested_demo_path = requested_demo_path
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let source_path = resolve_source_demo_path(
+    let source = resolve_source_demo(
         entry.demo_sha256.trim(),
         entry.source_path.as_deref(),
         &entry.demo_path,
         requested_demo_path,
     )?;
+    let source_path = source.primary_path().to_path_buf();
 
     // Relocation should be remembered immediately. This updates only the
     // desktop-local sidecar; manifest.json remains portable and sanitized.
@@ -1449,15 +1462,14 @@ fn resolve_archive_source_for(
     if let Some(mut info) =
         archive_info::read_matching_demo_info(archive_root, entry.demo_sha256.trim())
     {
-        let source_metadata = fs::metadata(&source_path).ok();
+        let source_metadata = source.metadata().ok();
         info.source_file_path = Some(source_path.display().to_string());
         info.source_file_name = source_path
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or(info.source_file_name);
-        info.source_file_modified_at_ms =
-            source_metadata.as_ref().and_then(metadata_modified_at_ms);
-        info.source_file_size_bytes = source_metadata.as_ref().map(fs::Metadata::len);
+        info.source_file_modified_at_ms = source_metadata.and_then(source_metadata_modified_at_ms);
+        info.source_file_size_bytes = source_metadata.map(|metadata| metadata.size_bytes);
         archive_info::write_demo_info(archive_root, &info).map_err(|error| {
             CommandErrorDto::at_path(
                 "demo_info_write_failed",
@@ -1472,12 +1484,12 @@ fn resolve_archive_source_for(
     })
 }
 
-fn resolve_source_demo_path(
+fn resolve_source_demo(
     expected_sha256: &str,
     recorded_path: Option<&str>,
     fallback_name: &str,
     requested_path: Option<&str>,
-) -> CommandResult<PathBuf> {
+) -> CommandResult<DemoSourceSet> {
     let demo_path_hint = requested_path.or(recorded_path);
     let Some(demo_path_hint) = demo_path_hint else {
         return Err(CommandErrorDto::at_path(
@@ -1486,7 +1498,7 @@ fn resolve_source_demo_path(
             Path::new(fallback_name),
         ));
     };
-    let demo_path = match validate_demo_path(demo_path_hint) {
+    let requested_demo_path = match validate_demo_path(demo_path_hint) {
         Ok(path) => path,
         Err(_) if requested_path.is_none() => {
             return Err(CommandErrorDto::at_path(
@@ -1497,17 +1509,15 @@ fn resolve_source_demo_path(
         }
         Err(error) => return Err(error),
     };
-    let source_hash = demo_content_sha256(&demo_path).map_err(|error| {
-        CommandErrorDto::at_path("metadata_demo_read_failed", error.to_string(), &demo_path)
-    })?;
-    if !source_hash.eq_ignore_ascii_case(expected_sha256) {
-        return Err(CommandErrorDto::at_path(
-            "metadata_demo_hash_mismatch",
-            "The selected original demo does not match this archive's full SHA-256.",
-            &demo_path,
-        ));
-    }
-    Ok(demo_path)
+    resolve_validated_demo_source_for_sha256(&requested_demo_path, expected_sha256)?.ok_or_else(
+        || {
+            CommandErrorDto::at_path(
+                "metadata_demo_hash_mismatch",
+                "The selected original demo does not match this archive's full SHA-256.",
+                &requested_demo_path,
+            )
+        },
+    )
 }
 
 fn preserved_conversion_for_manifest(
@@ -1567,12 +1577,14 @@ fn refresh_library_metadata_for(
         }
         if entry.metadata_status == "current" && entry.source_available {
             let source_matches = entry.source_path.as_deref().is_some_and(|source_path| {
-                match local_demo_hash(Path::new(source_path)) {
-                    Ok(Some(source_hash)) => {
+                match local_demo_hashes(Path::new(source_path)) {
+                    Ok(source_hashes) if !source_hashes.is_empty() => {
                         demos_scanned += 1;
-                        source_hash.eq_ignore_ascii_case(&hash)
+                        source_hashes
+                            .iter()
+                            .any(|source_hash| source_hash.eq_ignore_ascii_case(&hash))
                     }
-                    Ok(None) => false,
+                    Ok(_) => false,
                     Err(error) => {
                         failures.push(format!("{source_path}: {error}"));
                         false
@@ -1605,14 +1617,17 @@ fn refresh_library_metadata_for(
         }
         for candidate in candidates {
             let demo_path = PathBuf::from(candidate);
-            let candidate_hash = match local_demo_hash(&demo_path) {
-                Ok(Some(candidate_hash)) => {
+            let candidate_hashes = match local_demo_hashes(&demo_path) {
+                Ok(candidate_hashes) if !candidate_hashes.is_empty() => {
                     demos_scanned += 1;
-                    candidate_hash
+                    candidate_hashes
                 }
-                Ok(None) | Err(_) => continue,
+                Ok(_) | Err(_) => continue,
             };
-            if !candidate_hash.eq_ignore_ascii_case(&hash) {
+            if !candidate_hashes
+                .iter()
+                .any(|candidate_hash| candidate_hash.eq_ignore_ascii_case(&hash))
+            {
                 continue;
             }
             let entries = targets.get(&hash).cloned().unwrap_or_default();
@@ -1645,32 +1660,42 @@ fn refresh_library_metadata_for(
             if targets.is_empty() {
                 break;
             }
-            let hash = match local_demo_hash(&demo_path) {
-                Ok(Some(hash)) => {
+            let hashes = match local_demo_hashes(&demo_path) {
+                Ok(hashes) if !hashes.is_empty() => {
                     demos_scanned += 1;
-                    hash
+                    hashes
                 }
-                Ok(None) => continue,
+                Ok(_) => continue,
                 Err(error) => {
                     failures.push(format!("{}: {error}", demo_path.display()));
                     continue;
                 }
             };
-            let Some(entries) = targets.get(&hash).cloned() else {
+            let matching_hashes = hashes
+                .into_iter()
+                .filter(|hash| targets.contains_key(hash))
+                .collect::<Vec<_>>();
+            if matching_hashes.is_empty() {
                 continue;
-            };
-            match refresh_metadata_entries_from_demo(&demo_path, &entries, &mut failures) {
-                Ok(updated) => {
-                    archives_updated += updated;
-                    demos_matched += 1;
-                    if updated > 0 {
-                        matched_source_paths.insert(hash.clone(), demo_path.display().to_string());
-                    }
-                    targets.remove(&hash);
-                }
-                Err(error) => failures.push(format!("{}: {error}", demo_path.display())),
             }
-            targets.remove(&hash);
+            for hash in matching_hashes {
+                let entries = targets
+                    .get(&hash)
+                    .cloned()
+                    .expect("matched target hash exists");
+                match refresh_metadata_entries_from_demo(&demo_path, &entries, &mut failures) {
+                    Ok(updated) => {
+                        archives_updated += updated;
+                        demos_matched += 1;
+                        if updated > 0 {
+                            matched_source_paths
+                                .insert(hash.clone(), demo_path.display().to_string());
+                        }
+                    }
+                    Err(error) => failures.push(format!("{}: {error}", demo_path.display())),
+                }
+                targets.remove(&hash);
+            }
         }
     }
 
@@ -1688,13 +1713,27 @@ fn refresh_library_metadata_for(
     })
 }
 
-fn local_demo_hash(path: &Path) -> Result<Option<String>, String> {
+fn local_demo_hashes(path: &Path) -> Result<Vec<String>, String> {
     if !path.is_file() || !is_supported_demo_path(path) {
-        return Ok(None);
+        return Ok(Vec::new());
     }
-    demo_content_sha256(path)
-        .map(Some)
-        .map_err(|error| error.to_string())
+    let source = match resolve_demo_source(path) {
+        Ok(source) => source,
+        Err(_) => {
+            return demo_content_sha256(path)
+                .map(|hash| vec![hash])
+                .map_err(|error| error.to_string());
+        }
+    };
+    let compound = demo_source_sha256(&source).map_err(|error| error.to_string())?;
+    let mut hashes = vec![compound];
+    if source.is_segmented() {
+        let raw = demo_content_sha256(path).map_err(|error| error.to_string())?;
+        if !hashes.iter().any(|hash| hash.eq_ignore_ascii_case(&raw)) {
+            hashes.push(raw);
+        }
+    }
+    Ok(hashes)
 }
 
 fn refresh_metadata_entries_from_demo(
@@ -1702,6 +1741,13 @@ fn refresh_metadata_entries_from_demo(
     entries: &[catalog::LibraryEntryDto],
     failures: &mut Vec<String>,
 ) -> Result<usize, String> {
+    let expected_hash = entries
+        .first()
+        .map(|entry| entry.demo_sha256.trim())
+        .unwrap_or_default();
+    let source = resolve_demo_source_for_sha256(demo_path, expected_hash)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "source demo does not match the archive SHA-256".to_string())?;
     let conversions = entries
         .iter()
         .map(|entry| {
@@ -1712,8 +1758,8 @@ fn refresh_metadata_entries_from_demo(
             )
         })
         .collect::<Vec<_>>();
-    let parsed = read_demo_with_options(
-        demo_path,
+    let parsed = read_demo_source_with_options(
+        &source,
         ReadDemoOptions {
             collect_voice: false,
             collect_cosmetics: conversions
@@ -1723,10 +1769,6 @@ fn refresh_metadata_entries_from_demo(
         },
     )
     .map_err(|error| error.to_string())?;
-    let expected_hash = entries
-        .first()
-        .map(|entry| entry.demo_sha256.trim())
-        .unwrap_or_default();
     if expected_hash.is_empty() || !parsed.demo_sha256.eq_ignore_ascii_case(expected_hash) {
         return Err(format!(
             "source demo changed while it was being read (expected {expected_hash}, got {})",
@@ -1734,7 +1776,7 @@ fn refresh_metadata_entries_from_demo(
         ));
     }
     let browser = analyze_browser_demo(&parsed, AnalysisOptions::default());
-    let source_metadata = fs::metadata(demo_path).ok();
+    let source_metadata = source.metadata().ok();
     let mut updated = 0_usize;
     for (entry, conversion) in entries.iter().zip(conversions) {
         let archive_root = Path::new(&entry.root);
@@ -1742,8 +1784,8 @@ fn refresh_metadata_entries_from_demo(
             entry.demo_id.clone(),
             &parsed,
             &browser,
-            source_metadata.as_ref().and_then(metadata_modified_at_ms),
-            source_metadata.as_ref().map(fs::Metadata::len),
+            source_metadata.and_then(source_metadata_modified_at_ms),
+            source_metadata.map(|metadata| metadata.size_bytes),
             entry.abi,
             entry.format_version,
             "metadataRefresh",
@@ -1764,7 +1806,7 @@ fn refresh_metadata_entries_from_demo(
         if let Err(error) = archive_info::write_demo_source_pointer(
             archive_root,
             entry.demo_sha256.trim(),
-            demo_path,
+            source.primary_path(),
         ) {
             failures.push(format!("{}: {error}", entry.manifest_path));
             continue;
@@ -2172,6 +2214,31 @@ fn collect_demo_files(root: &Path) -> CommandResult<Vec<PathBuf>> {
     }
     demos.sort();
     Ok(demos)
+}
+
+fn resolve_validated_demo_source(path: &Path) -> CommandResult<DemoSourceSet> {
+    let mut source = resolve_demo_source(path)
+        .map_err(|error| CommandErrorDto::from_core("demo_source_resolve_failed", error))?;
+    for part in &mut source.parts {
+        part.path = validate_demo_path(&part.path.display().to_string())?;
+    }
+    Ok(source)
+}
+
+fn resolve_validated_demo_source_for_sha256(
+    path: &Path,
+    expected_sha256: &str,
+) -> CommandResult<Option<DemoSourceSet>> {
+    let requested_path = validate_demo_path(&path.display().to_string())?;
+    let Some(mut source) = resolve_demo_source_for_sha256(&requested_path, expected_sha256)
+        .map_err(|error| CommandErrorDto::from_core("demo_source_resolve_failed", error))?
+    else {
+        return Ok(None);
+    };
+    for part in &mut source.parts {
+        part.path = validate_demo_path(&part.path.display().to_string())?;
+    }
+    Ok(Some(source))
 }
 
 fn validate_demo_path(value: &str) -> CommandResult<PathBuf> {
@@ -3196,12 +3263,13 @@ fn browser_analysis_dto(
     output_demo_id: &str,
     parsed: &ParsedDemo,
     browser: &BrowserDemoAnalysis,
-    source_metadata: Option<&fs::Metadata>,
+    source_modified_at_ms: Option<u64>,
+    source_size_bytes: Option<u64>,
 ) -> AnalysisDto {
     let mut dto = analysis_dto(analysis_id, source_path, output_demo_id, &browser.analysis);
     dto.demo_sha256 = parsed.demo_sha256.clone();
-    dto.source_modified_at_ms = source_metadata.and_then(metadata_modified_at_ms);
-    dto.source_size_bytes = source_metadata.map(|metadata| metadata.len().to_string());
+    dto.source_modified_at_ms = source_modified_at_ms;
+    dto.source_size_bytes = source_size_bytes.map(|value| value.to_string());
     dto.duration_seconds = browser.duration_seconds;
     dto.demo_patch_version = browser.demo_patch_version;
     dto.demo_version_name = browser.demo_version_name.clone();
@@ -3212,10 +3280,9 @@ fn browser_analysis_dto(
     dto
 }
 
-fn metadata_modified_at_ms(metadata: &fs::Metadata) -> Option<u64> {
+fn source_metadata_modified_at_ms(metadata: DemoSourceMetadata) -> Option<u64> {
     metadata
-        .modified()
-        .ok()
+        .modified
         .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
 }
@@ -3651,6 +3718,32 @@ fn emit_log_to_sink(sink: &TaskEventSink, level: LogLevel, message: impl Into<St
     );
 }
 
+fn emit_demo_source_to_sink(sink: &TaskEventSink, source: &DemoSourceSet) {
+    if source.is_segmented() {
+        emit_log_to_sink(
+            sink,
+            LogLevel::Info,
+            format!(
+                "Detected {}-part demo series {}; merging it as one match",
+                source.parts.len(),
+                source.logical_stem
+            ),
+        );
+    }
+    for (index, part) in source.parts.iter().enumerate() {
+        emit_log_to_sink(
+            sink,
+            LogLevel::Info,
+            format!(
+                "Reading part {}/{}: {}",
+                index + 1,
+                source.parts.len(),
+                part.path.display()
+            ),
+        );
+    }
+}
+
 fn run_conversion_with_sink(
     cached: CachedDemo,
     prepared: PreparedConversion,
@@ -3838,29 +3931,18 @@ fn process_batch_demo(
     events: TaskEventSink,
 ) -> CommandResult<batch::BatchProcessResult> {
     validate_max_round_seconds(request.settings.max_round_seconds)?;
-    let source_path = validate_demo_path(&request.source_path.display().to_string())?;
-    let source_metadata = fs::metadata(&source_path).ok();
+    let requested_path = validate_demo_path(&request.source_path.display().to_string())?;
+    let source = resolve_validated_demo_source(&requested_path)?;
+    let source_path = source.primary_path().to_path_buf();
+    let source_metadata = source.metadata().ok();
 
-    emit_log_to_sink(
-        &events,
-        LogLevel::Info,
-        format!("Reading {}", source_path.display()),
-    );
-    if is_zstd_demo_path(&source_path) {
+    emit_demo_source_to_sink(&events, &source);
+    if source.paths().any(is_zstd_demo_path) {
         emit_phase_to_sink(&events, TaskPhase::Decompressing);
-        emit_log_to_sink(
-            &events,
-            LogLevel::Info,
-            format!("Decompressing {}", source_path.display()),
-        );
     }
-    let input = load_demo_input(&source_path).map_err(|error| {
-        emit_log_to_sink(&events, LogLevel::Error, error.to_string());
-        CommandErrorDto::from_core("analysis_failed", error)
-    })?;
     emit_phase_to_sink(&events, TaskPhase::Parsing);
-    let parsed = read_loaded_demo_with_options(
-        &input,
+    let parsed = read_demo_source_with_options(
+        &source,
         ReadDemoOptions {
             collect_voice: request.settings.export_voice,
             collect_cosmetics: request.settings.export_cosmetics,
@@ -3906,8 +3988,8 @@ fn process_batch_demo(
         analysis: browser.analysis.clone(),
         browser,
         archive_id,
-        source_modified_at_ms: source_metadata.as_ref().and_then(metadata_modified_at_ms),
-        source_size_bytes: source_metadata.as_ref().map(fs::Metadata::len),
+        source_modified_at_ms: source_metadata.and_then(source_metadata_modified_at_ms),
+        source_size_bytes: source_metadata.map(|metadata| metadata.size_bytes),
     };
     let convert_request = ConvertDemoRequest {
         analysis_id: cached.analysis_id.clone(),
@@ -4700,6 +4782,32 @@ fn emit_log(channel: &Channel<TaskEvent>, level: LogLevel, message: impl Into<St
             message: message.into(),
         },
     );
+}
+
+fn emit_demo_source(channel: &Channel<TaskEvent>, source: &DemoSourceSet) {
+    if source.is_segmented() {
+        emit_log(
+            channel,
+            LogLevel::Info,
+            format!(
+                "Detected {}-part demo series {}; merging it as one match",
+                source.parts.len(),
+                source.logical_stem
+            ),
+        );
+    }
+    for (index, part) in source.parts.iter().enumerate() {
+        emit_log(
+            channel,
+            LogLevel::Info,
+            format!(
+                "Reading part {}/{}: {}",
+                index + 1,
+                source.parts.len(),
+                part.path.display()
+            ),
+        );
+    }
 }
 
 fn open_folder_path(path: &Path) -> std::io::Result<()> {
@@ -5791,17 +5899,44 @@ mod tests {
         let expected = sha256_hex(b"local demo bytes");
 
         let resolved =
-            resolve_source_demo_path(&expected, source.to_str(), "original.dem", None).unwrap();
+            resolve_source_demo(&expected, source.to_str(), "original.dem", None).unwrap();
 
-        assert_eq!(resolved, source);
+        assert_eq!(resolved.primary_path(), source);
+    }
+
+    #[test]
+    fn source_demo_resolution_accepts_any_part_of_a_matching_series() {
+        let temp = ManifestTestDir::new("source-series");
+        let first = temp.write_file("match-p1.dem", b"part one");
+        let second = temp.write_file("match-p2.dem", b"part two");
+        let source = resolve_demo_source(&second).unwrap();
+        let expected = demo_source_sha256(&source).unwrap();
+
+        let resolved = resolve_source_demo(&expected, second.to_str(), "match.dem", None).unwrap();
+
+        assert_eq!(resolved.primary_path(), first);
+        assert_eq!(resolved.parts.len(), 2);
+    }
+
+    #[test]
+    fn source_demo_resolution_preserves_a_legacy_raw_part_hash() {
+        let temp = ManifestTestDir::new("legacy-source-series");
+        temp.write_file("match-p1.dem", b"part one");
+        let second = temp.write_file("match-p2.dem", b"part two");
+        let expected = sha256_hex(b"part two");
+
+        let resolved =
+            resolve_source_demo(&expected, second.to_str(), "match-p2.dem", None).unwrap();
+
+        assert_eq!(resolved.primary_path(), second);
+        assert_eq!(resolved.parts.len(), 1);
     }
 
     #[test]
     fn source_demo_resolution_returns_a_relocatable_hint_only_when_needed() {
         let missing = PathBuf::from(r"C:\Moved\original.dem");
-        let error =
-            resolve_source_demo_path(&"aa".repeat(32), missing.to_str(), "original.dem", None)
-                .unwrap_err();
+        let error = resolve_source_demo(&"aa".repeat(32), missing.to_str(), "original.dem", None)
+            .unwrap_err();
 
         assert_eq!(error.code, "source_demo_unavailable");
         assert_eq!(error.path.as_deref(), missing.to_str());
@@ -5811,9 +5946,8 @@ mod tests {
     fn source_demo_resolution_never_accepts_a_wrong_hash() {
         let temp = ManifestTestDir::new("source-hash-mismatch");
         let source = temp.write_file("wrong.dem", b"wrong demo");
-        let error =
-            resolve_source_demo_path(&"aa".repeat(32), None, "original.dem", source.to_str())
-                .unwrap_err();
+        let error = resolve_source_demo(&"aa".repeat(32), None, "original.dem", source.to_str())
+            .unwrap_err();
 
         assert_eq!(error.code, "metadata_demo_hash_mismatch");
         assert_eq!(error.path.as_deref(), source.to_str());

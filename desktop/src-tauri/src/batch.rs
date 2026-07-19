@@ -1,5 +1,6 @@
 use super::{AppState, CommandErrorDto, CommandResult, CosmeticConsentDto, TaskEvent, TaskPhase};
 use cs2_demotracer::demo_id::sha256_hex;
+use cs2_demotracer::demo_series::{group_demo_sources, resolve_demo_source, DemoSourceSet};
 use cs2_demotracer::export::DEFAULT_FREEZE_PREROLL_SECONDS;
 use cs2_demotracer::model::{Side, SubtickMode};
 use cs2_demotracer::quality::AnalysisOptions;
@@ -14,7 +15,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
-const BATCH_SCHEMA_VERSION: u32 = 1;
+const BATCH_SCHEMA_VERSION: u32 = 2;
 const DEFAULT_SCAN_LIMIT: usize = 512;
 const MAX_SCAN_RESULTS: usize = 4096;
 const MAX_SCAN_DEPTH: usize = 8;
@@ -479,6 +480,8 @@ pub(crate) struct BatchItemDto {
     pub file_name: String,
     pub size_bytes: String,
     pub modified_at_ms: Option<u64>,
+    #[serde(default)]
+    pub source_parts: Vec<BatchSourcePartDto>,
     pub status: BatchItemStatusDto,
     pub phase: BatchItemPhaseDto,
     pub attempts: u32,
@@ -494,6 +497,15 @@ pub(crate) struct BatchItemDto {
     pub error: Option<BatchErrorDto>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct BatchSourcePartDto {
+    pub part: u32,
+    pub path: String,
+    pub size_bytes: String,
+    pub modified_at_ms: Option<u64>,
+}
+
 impl BatchItemDto {
     fn size_bytes_u64(&self) -> u64 {
         self.size_bytes.parse().unwrap_or(0)
@@ -501,7 +513,13 @@ impl BatchItemDto {
 
     fn estimated_parse_bytes(&self) -> u64 {
         let size = self.size_bytes_u64();
-        if is_compressed_demo_path(Path::new(&self.source_path)) {
+        if self
+            .source_parts
+            .iter()
+            .any(|part| is_compressed_demo_path(Path::new(&part.path)))
+            || (self.source_parts.is_empty()
+                && is_compressed_demo_path(Path::new(&self.source_path)))
+        {
             size.saturating_mul(ESTIMATED_ZSTD_EXPANSION)
         } else {
             size
@@ -804,7 +822,7 @@ async fn run_runtime_async(
 fn scan_demo_folder_for(request: &ScanDemoFolderRequest) -> CommandResult<DemoFolderScanDto> {
     let limit = request.limit.clamp(1, MAX_SCAN_RESULTS);
     let root = validate_source_root(Path::new(request.root.trim()))?;
-    let mut candidates = Vec::new();
+    let mut demo_paths = Vec::new();
     let mut warnings = Vec::new();
     let mut skipped_reparse_points = 0_usize;
     let mut truncated = false;
@@ -848,16 +866,36 @@ fn scan_demo_folder_for(request: &ScanDemoFolderRequest) -> CommandResult<DemoFo
             if !metadata.is_file() || !is_demo_path(&path) {
                 continue;
             }
-            if candidates.len() >= limit {
+            if demo_paths.len() >= MAX_SCAN_RESULTS {
                 truncated = true;
                 break 'scan;
             }
-            candidates.push(scan_candidate(&root, &path, &metadata));
+            demo_paths.push(path);
         }
         for child in child_directories.into_iter().rev() {
             pending.push((child, depth + 1));
         }
     }
+    demo_paths.sort();
+    let mut grouped = BTreeMap::<String, DemoSourceSet>::new();
+    for path in demo_paths {
+        match resolve_demo_source(&path) {
+            Ok(source) => {
+                let key = normalized_path_key(source.primary_path());
+                grouped.entry(key).or_insert(source);
+            }
+            Err(error) => warnings.push(format!("{}: {error}", path.display())),
+        }
+    }
+    let sources = grouped.into_values().collect::<Vec<_>>();
+    if sources.len() > limit {
+        truncated = true;
+    }
+    let mut candidates = sources
+        .iter()
+        .take(limit)
+        .map(|source| scan_candidate(&root, source))
+        .collect::<CommandResult<Vec<_>>>()?;
     candidates.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
     Ok(DemoFolderScanDto {
         root: root.display().to_string(),
@@ -870,8 +908,12 @@ fn scan_demo_folder_for(request: &ScanDemoFolderRequest) -> CommandResult<DemoFo
     })
 }
 
-fn scan_candidate(root: &Path, path: &Path, metadata: &fs::Metadata) -> DemoScanCandidateDto {
-    DemoScanCandidateDto {
+fn scan_candidate(root: &Path, source: &DemoSourceSet) -> CommandResult<DemoScanCandidateDto> {
+    let path = source.primary_path();
+    let metadata = source
+        .metadata()
+        .map_err(|error| CommandErrorDto::from_core("demo_source_inspect_failed", error))?;
+    Ok(DemoScanCandidateDto {
         path: path.display().to_string(),
         relative_path: path
             .strip_prefix(root)
@@ -882,10 +924,10 @@ fn scan_candidate(root: &Path, path: &Path, metadata: &fs::Metadata) -> DemoScan
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| "demo.dem".to_string()),
-        size_bytes: metadata.len().to_string(),
-        compressed: is_compressed_demo_path(path),
-        modified_at_ms: metadata.modified().ok().map(unix_time_ms),
-    }
+        size_bytes: metadata.size_bytes.to_string(),
+        compressed: source.paths().any(is_compressed_demo_path),
+        modified_at_ms: metadata.modified.map(unix_time_ms),
+    })
 }
 
 fn build_batch_ledger(request: &StartBatchImportRequest) -> CommandResult<BatchLedgerDto> {
@@ -896,15 +938,6 @@ fn build_batch_ledger(request: &StartBatchImportRequest) -> CommandResult<BatchL
             "Select at least one demo for batch import.",
         ));
     }
-    if request.demo_paths.len() > MAX_BATCH_ITEMS {
-        return Err(CommandErrorDto::new(
-            "batch_too_large",
-            format!(
-                "A batch can contain at most {MAX_BATCH_ITEMS} demos. Split this folder into smaller batches."
-            ),
-        ));
-    }
-
     let source_root = validate_source_root(Path::new(request.source_root.trim()))?;
     let library_root =
         super::canonical_normal_library_root(Path::new(request.library_root.trim()))?;
@@ -918,20 +951,55 @@ fn build_batch_ledger(request: &StartBatchImportRequest) -> CommandResult<BatchL
         }
     }
     canonical_paths.sort();
-    if canonical_paths.is_empty() {
+    let mut sources = group_demo_sources(canonical_paths)
+        .map_err(|error| CommandErrorDto::from_core("demo_source_group_failed", error))?;
+    for source in &mut sources {
+        for part in &mut source.parts {
+            part.path = validate_batch_demo_path(&source_root, &part.path)?;
+        }
+    }
+    if sources.is_empty() {
         return Err(CommandErrorDto::new(
             "batch_empty",
             "Select at least one unique demo for batch import.",
         ));
     }
+    if sources.len() > MAX_BATCH_ITEMS {
+        return Err(CommandErrorDto::new(
+            "batch_too_large",
+            format!(
+                "A batch can contain at most {MAX_BATCH_ITEMS} demos. Split this folder into smaller batches."
+            ),
+        ));
+    }
 
     let now = unix_time_ms(SystemTime::now());
     let batch_id = new_batch_id(now);
-    let mut items = Vec::with_capacity(canonical_paths.len());
-    for (index, path) in canonical_paths.into_iter().enumerate() {
-        let metadata = fs::symlink_metadata(&path).map_err(|error| {
-            CommandErrorDto::at_path("batch_demo_inspect_failed", error.to_string(), &path)
-        })?;
+    let mut items = Vec::with_capacity(sources.len());
+    for (index, source) in sources.into_iter().enumerate() {
+        let path = source.primary_path();
+        let source_parts = source
+            .parts
+            .iter()
+            .map(|part| {
+                let metadata = fs::symlink_metadata(&part.path).map_err(|error| {
+                    CommandErrorDto::at_path(
+                        "batch_demo_inspect_failed",
+                        error.to_string(),
+                        &part.path,
+                    )
+                })?;
+                Ok(BatchSourcePartDto {
+                    part: part.part,
+                    path: part.path.display().to_string(),
+                    size_bytes: metadata.len().to_string(),
+                    modified_at_ms: metadata.modified().ok().map(unix_time_ms),
+                })
+            })
+            .collect::<CommandResult<Vec<_>>>()?;
+        let metadata = source
+            .metadata()
+            .map_err(|error| CommandErrorDto::from_core("batch_demo_inspect_failed", error))?;
         let relative_path = path
             .strip_prefix(&source_root)
             .unwrap_or(&path)
@@ -940,8 +1008,8 @@ fn build_batch_ledger(request: &StartBatchImportRequest) -> CommandResult<BatchL
         let id_material = format!(
             "{}\0{}\0{}\0{}",
             normalized_path_key(&path),
-            metadata.len(),
-            metadata.modified().ok().map(unix_time_ms).unwrap_or(0),
+            metadata.size_bytes,
+            metadata.modified.map(unix_time_ms).unwrap_or(0),
             index
         );
         let item_id = format!("{}-{index:02}", &sha256_hex(id_material.as_bytes())[..16]);
@@ -953,8 +1021,9 @@ fn build_batch_ledger(request: &StartBatchImportRequest) -> CommandResult<BatchL
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "demo.dem".to_string()),
-            size_bytes: metadata.len().to_string(),
-            modified_at_ms: metadata.modified().ok().map(unix_time_ms),
+            size_bytes: metadata.size_bytes.to_string(),
+            modified_at_ms: metadata.modified.map(unix_time_ms),
+            source_parts,
             status: BatchItemStatusDto::Pending,
             phase: BatchItemPhaseDto::Queued,
             attempts: 0,
@@ -1125,6 +1194,7 @@ fn process_batch_item(
         settings,
         expected_size,
         expected_modified,
+        expected_parts,
         initial_phase,
     ) = runtime.update(|ledger| {
         let batch_id = ledger.batch_id.clone();
@@ -1143,7 +1213,13 @@ fn process_batch_item(
                 "The batch item is not pending.",
             ));
         }
-        let initial_phase = if is_compressed_demo_path(Path::new(&item.source_path)) {
+        let initial_phase = if item
+            .source_parts
+            .iter()
+            .any(|part| is_compressed_demo_path(Path::new(&part.path)))
+            || (item.source_parts.is_empty()
+                && is_compressed_demo_path(Path::new(&item.source_path)))
+        {
             BatchItemPhaseDto::Decompressing
         } else {
             BatchItemPhaseDto::Parsing
@@ -1159,6 +1235,7 @@ fn process_batch_item(
             settings,
             item.size_bytes_u64(),
             item.modified_at_ms,
+            item.source_parts.clone(),
             initial_phase,
         ))
     })?;
@@ -1174,8 +1251,12 @@ fn process_batch_item(
         },
     );
 
-    if let Err(error) = validate_source_fingerprint(&source_path, expected_size, expected_modified)
-    {
+    if let Err(error) = validate_source_fingerprint(
+        &source_path,
+        expected_size,
+        expected_modified,
+        &expected_parts,
+    ) {
         return fail_batch_item(&runtime, events, item_id, error);
     }
 
@@ -1546,19 +1627,51 @@ fn validate_source_fingerprint(
     path: &Path,
     expected_size: u64,
     expected_modified_at_ms: Option<u64>,
+    expected_parts: &[BatchSourcePartDto],
 ) -> CommandResult<()> {
-    let metadata = fs::symlink_metadata(path).map_err(|error| {
-        CommandErrorDto::at_path("batch_source_missing", error.to_string(), path)
-    })?;
-    if !metadata.is_file() || super::catalog::is_symlink_or_reparse(&metadata) {
+    let source = resolve_demo_source(path)
+        .map_err(|error| CommandErrorDto::from_core("batch_source_missing", error))?;
+    for part in &source.parts {
+        let metadata = fs::symlink_metadata(&part.path).map_err(|error| {
+            CommandErrorDto::at_path("batch_source_missing", error.to_string(), &part.path)
+        })?;
+        if !metadata.is_file() || super::catalog::is_symlink_or_reparse(&metadata) {
+            return Err(CommandErrorDto::at_path(
+                "batch_source_invalid",
+                "The queued demo is no longer a normal file.",
+                &part.path,
+            ));
+        }
+    }
+    if source.parts.len() != expected_parts.len() {
         return Err(CommandErrorDto::at_path(
-            "batch_source_invalid",
-            "The queued demo is no longer a normal file.",
+            "batch_source_changed",
+            "The demo segment set changed after it was added to the batch. Rescan the folder before retrying it.",
             path,
         ));
     }
-    let actual_modified = metadata.modified().ok().map(unix_time_ms);
-    if metadata.len() != expected_size
+    for (part, expected) in source.parts.iter().zip(expected_parts) {
+        let metadata = fs::symlink_metadata(&part.path).map_err(|error| {
+            CommandErrorDto::at_path("batch_source_missing", error.to_string(), &part.path)
+        })?;
+        let actual_modified = metadata.modified().ok().map(unix_time_ms);
+        if part.part != expected.part
+            || normalized_path_key(&part.path) != normalized_path_key(Path::new(&expected.path))
+            || metadata.len().to_string() != expected.size_bytes
+            || (expected.modified_at_ms.is_some() && actual_modified != expected.modified_at_ms)
+        {
+            return Err(CommandErrorDto::at_path(
+                "batch_source_changed",
+                "A demo segment changed after it was added to the batch. Rescan the folder before retrying it.",
+                &part.path,
+            ));
+        }
+    }
+    let metadata = source
+        .metadata()
+        .map_err(|error| CommandErrorDto::from_core("batch_source_missing", error))?;
+    let actual_modified = metadata.modified.map(unix_time_ms);
+    if metadata.size_bytes != expected_size
         || (expected_modified_at_ms.is_some() && actual_modified != expected_modified_at_ms)
     {
         return Err(CommandErrorDto::at_path(
@@ -1786,10 +1899,10 @@ fn persist_ledger_atomic(path: &Path, ledger: &BatchLedgerDto) -> CommandResult<
 
 fn load_ledger_with_recovery(path: &Path) -> CommandResult<BatchLedgerDto> {
     let backup_path = backup_ledger_path(path);
-    let primary = load_ledger_file(path).ok();
-    let backup = load_ledger_file(&backup_path).ok();
+    let primary = load_ledger_file(path);
+    let backup = load_ledger_file(&backup_path);
     match (primary, backup) {
-        (Some(primary), Some(backup)) => {
+        (Ok(primary), Ok(backup)) => {
             if backup.revision > primary.revision {
                 restore_backup_as_primary(path, &backup_path)?;
                 Ok(backup)
@@ -1797,16 +1910,24 @@ fn load_ledger_with_recovery(path: &Path) -> CommandResult<BatchLedgerDto> {
                 Ok(primary)
             }
         }
-        (Some(primary), None) => Ok(primary),
-        (None, Some(backup)) => {
+        (Ok(primary), Err(_)) => Ok(primary),
+        (Err(_), Ok(backup)) => {
             restore_backup_as_primary(path, &backup_path)?;
             Ok(backup)
         }
-        (None, None) => Err(CommandErrorDto::at_path(
-            "batch_not_found",
-            "No readable batch state was found.",
-            path,
-        )),
+        (Err(primary_error), Err(backup_error)) => {
+            if path.exists() {
+                Err(primary_error)
+            } else if backup_path.exists() {
+                Err(backup_error)
+            } else {
+                Err(CommandErrorDto::at_path(
+                    "batch_not_found",
+                    "No readable batch state was found.",
+                    path,
+                ))
+            }
+        }
     }
 }
 
@@ -1918,6 +2039,7 @@ mod tests {
                     file_name: "one.dem".to_string(),
                     size_bytes: (512_u64 * 1024 * 1024).to_string(),
                     modified_at_ms: Some(now),
+                    source_parts: Vec::new(),
                     status: BatchItemStatusDto::Completed,
                     phase: BatchItemPhaseDto::Complete,
                     attempts: 1,
@@ -1939,6 +2061,7 @@ mod tests {
                     file_name: "two.dem.zst".to_string(),
                     size_bytes: (256_u64 * 1024 * 1024).to_string(),
                     modified_at_ms: Some(now),
+                    source_parts: Vec::new(),
                     status: BatchItemStatusDto::Pending,
                     phase: BatchItemPhaseDto::Queued,
                     attempts: 0,
@@ -1994,6 +2117,55 @@ mod tests {
     }
 
     #[test]
+    fn scan_groups_numbered_demo_segments_as_one_candidate() {
+        let root = test_directory("segment-scan");
+        fs::write(root.join("match-p1.dem"), b"one").unwrap();
+        fs::write(root.join("match-p2.dem"), b"two-two").unwrap();
+        fs::write(root.join("ordinary.dem"), b"plain").unwrap();
+
+        let scan = scan_demo_folder_for(&ScanDemoFolderRequest {
+            root: root.display().to_string(),
+            recursive: false,
+            limit: 10,
+        })
+        .unwrap();
+
+        assert_eq!(scan.candidates.len(), 2);
+        let segmented = scan
+            .candidates
+            .iter()
+            .find(|candidate| candidate.file_name == "match-p1.dem")
+            .unwrap();
+        assert_eq!(segmented.size_bytes, "10");
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn scan_skips_a_broken_segment_set_without_hiding_other_demos() {
+        let root = test_directory("broken-segment-scan");
+        fs::write(root.join("ordinary.dem"), b"plain").unwrap();
+        fs::write(root.join("broken-p1.dem"), b"one").unwrap();
+        fs::write(root.join("broken-p3.dem"), b"three").unwrap();
+
+        let scan = scan_demo_folder_for(&ScanDemoFolderRequest {
+            root: root.display().to_string(),
+            recursive: false,
+            limit: 10,
+        })
+        .unwrap();
+
+        assert_eq!(scan.candidates.len(), 1);
+        assert_eq!(scan.candidates[0].file_name, "ordinary.dem");
+        assert!(scan
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("missing p2")));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn non_recursive_scan_does_not_descend() {
         let root = test_directory("flat-scan");
         let nested = root.join("nested");
@@ -2040,6 +2212,20 @@ mod tests {
         let recovered = load_ledger_with_recovery(&path).unwrap();
         assert_eq!(recovered.revision, 1);
         assert_eq!(recovered.batch_id, "batch-test-1");
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn legacy_batch_schema_reports_the_real_upgrade_error() {
+        let root = test_directory("legacy-ledger-schema");
+        let path = root.join("batch-test-1.json");
+        let mut ledger = sample_ledger();
+        ledger.schema_version = 1;
+        fs::write(&path, serde_json::to_vec(&ledger).unwrap()).unwrap();
+
+        let error = load_ledger_with_recovery(&path).unwrap_err();
+        assert_eq!(error.code, "batch_schema_unsupported");
 
         fs::remove_dir_all(root).unwrap();
     }

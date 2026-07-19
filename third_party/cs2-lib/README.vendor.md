@@ -7,8 +7,10 @@ catalog and English/Simplified Chinese translations maintained by
 Pinned upstream commit:
 `e8057c583e89d6b7a37f27e1cb7ebdbe94dd6238`.
 
-The generated file retains only identifiers, localized display names, and
-content-hashed CDN image paths needed by the desktop evidence viewer. No
+The generated file retains only identifiers, localized display names,
+rarity colors, viewer identifiers, and content-hashed CDN image paths needed
+by the desktop evidence viewer. It includes weapon, agent, sticker, charm, and
+music-kit lookup entries. No
 upstream TypeScript source or image file is bundled. Preview images are loaded
 at runtime from `https://cdn.cstrike.app` and are catalog illustrations, not an
 exact render of the recorded seed, wear, stickers, or charm placement.

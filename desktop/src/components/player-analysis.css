@@ -196,7 +196,7 @@
 
 .player-analysis-heading {
   max-width: 850px;
-  padding-bottom: 24px;
+  padding-bottom: 18px;
   border-bottom: 1px solid var(--divider-strong);
 }
 
@@ -220,14 +220,6 @@
   line-height: 1.16;
 }
 
-.player-analysis-heading p {
-  max-width: 760px;
-  margin: 8px 0 0;
-  color: var(--text-secondary);
-  font-size: 14px;
-  line-height: 22px;
-}
-
 .player-analysis-dossier {
   min-width: 0;
   padding-top: 24px;
@@ -236,7 +228,7 @@
 .player-analysis-dossier .player-dossier {
   display: grid;
   padding: 0;
-  gap: 28px;
+  gap: 24px;
   border-top: 0;
 }
 
@@ -247,33 +239,32 @@
 }
 
 .player-analysis-dossier .roster-profile-line {
-  min-height: 54px;
+  min-height: 48px;
   padding: 10px 14px;
   background: var(--surface-subtle);
   border: 1px solid var(--divider);
 }
 
-.player-analysis-dossier .roster-profile-line > span small,
+.player-analysis-dossier .roster-profile-facts small,
 .player-analysis-dossier .roster-command-list small,
 .player-analysis-dossier .roster-cosmetic-card summary small {
   font-size: 14px;
 }
 
-.player-analysis-dossier .roster-profile-line code,
+.player-analysis-dossier .roster-profile-facts code,
 .player-analysis-dossier .roster-command-list code,
 .player-analysis-dossier .roster-attachments code {
   font-size: 14px;
   line-height: 21px;
 }
 
-.player-analysis-dossier .roster-profile-line code {
+.player-analysis-dossier .roster-command-list code {
   cursor: text;
   user-select: text;
 }
 
-.player-analysis-dossier .roster-command-list code {
-  cursor: text;
-  user-select: text;
+.player-analysis-dossier .roster-profile-stat strong {
+  font-size: 15px;
 }
 
 .player-analysis-dossier .roster-copy-action,
@@ -282,24 +273,6 @@
   padding-inline: 10px;
   border-radius: 3px;
   font-size: 14px;
-}
-
-.player-analysis-dossier .roster-metric-strip {
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  border-radius: 3px;
-}
-
-.player-analysis-dossier .roster-metric-strip > span {
-  min-height: 64px;
-  padding: 11px 14px;
-}
-
-.player-analysis-dossier .roster-metric-strip small {
-  font-size: 14px;
-}
-
-.player-analysis-dossier .roster-metric-strip strong {
-  font-size: 21px;
 }
 
 .player-analysis-dossier .roster-evidence-section {
@@ -338,7 +311,8 @@
 }
 
 .player-analysis-dossier .roster-cosmetic-list {
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
 }
 
 .player-analysis-dossier .roster-command-list > li {
@@ -369,27 +343,63 @@
   border-radius: 3px;
 }
 
-.crosshair-config-list > li > span {
+.crosshair-code-select {
   display: grid;
   min-width: 0;
   min-height: 56px;
   align-content: center;
   padding: 8px 4px 8px 11px;
   gap: 3px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  text-align: left;
 }
 
-.crosshair-config-list > li > span small {
+.crosshair-code-select small {
   color: var(--text-secondary);
   font-size: 14px;
   font-weight: 650;
 }
 
-.crosshair-config-list > li > span code {
+.crosshair-code-select code {
   overflow-wrap: anywhere;
   color: var(--text-primary);
   font-family: var(--mono);
   font-size: 14px;
   line-height: 20px;
+}
+
+.crosshair-config-list > li.is-selected {
+  border-color: color-mix(in srgb, var(--trace) 55%, var(--divider));
+  box-shadow: inset 3px 0 0 var(--trace);
+}
+
+.crosshair-preview {
+  margin: 0;
+}
+
+.crosshair-preview-stage {
+  display: grid;
+  min-height: 190px;
+  overflow: hidden;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.6);
+  background:
+    radial-gradient(circle at center, rgba(112, 142, 162, 0.18), transparent 42%),
+    linear-gradient(145deg, #17232c, #0b1117);
+  border: 1px solid var(--divider-strong);
+  border-radius: 3px;
+}
+
+.crosshair-preview-svg {
+  width: 148px;
+  height: 148px;
+  overflow: visible;
+}
+
+.crosshair-preview.is-unavailable .crosshair-preview-stage {
+  font-size: 30px;
 }
 
 .crosshair-config-list .roster-copy-action {
@@ -400,11 +410,6 @@
   border-radius: 3px;
 }
 
-.player-analysis-dossier .roster-cosmetic-card > summary {
-  min-height: 76px;
-  padding: 9px 11px;
-}
-
 .player-analysis-dossier .roster-cosmetic-card > summary strong {
   overflow: visible;
   overflow-wrap: anywhere;
@@ -412,11 +417,6 @@
   line-height: 21px;
   text-overflow: clip;
   white-space: normal;
-}
-
-.player-analysis-dossier .roster-cosmetic-preview {
-  width: 142px;
-  height: 94px;
 }
 
 .player-analysis-dossier .roster-cosmetic-details {
@@ -429,6 +429,71 @@
 .player-analysis-dossier .roster-attachments h5,
 .player-analysis-dossier .roster-attachments strong {
   font-size: 14px;
+}
+
+.cosmetic-viewer-scrim {
+  position: fixed;
+  z-index: 110;
+  inset: 0;
+  display: grid;
+  background: #111827;
+}
+
+.cosmetic-viewer-dialog {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  color: #f4f7fa;
+  background: #111827;
+}
+
+.cosmetic-viewer-dialog > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  min-height: 62px;
+  padding: 9px 16px 9px 20px;
+  gap: 16px;
+  background: linear-gradient(90deg, #263652, #1d283e);
+  border-bottom: 3px solid var(--item-rarity, #e14b4b);
+}
+
+.cosmetic-viewer-dialog > header > div {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.cosmetic-viewer-dialog > header span {
+  color: #9eacc0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.cosmetic-viewer-dialog > header strong {
+  overflow: hidden;
+  font-size: 18px;
+  line-height: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cosmetic-viewer-dialog .icon-button {
+  flex: none;
+  color: #dce4ec;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.cosmetic-viewer-dialog iframe {
+  width: 100%;
+  height: 100%;
+  background: #171d2c;
+  border: 0;
 }
 
 @media (max-width: 1280px) {
@@ -525,19 +590,6 @@
   .player-analysis-dossier .roster-cosmetic-list,
   .player-analysis-dossier .roster-cosmetic-details dl {
     grid-template-columns: 1fr;
-  }
-
-  .player-analysis-dossier .roster-metric-strip {
-    grid-template-columns: 1fr;
-  }
-
-  .player-analysis-dossier .roster-metric-strip > span {
-    border-top: 1px solid var(--divider);
-    border-left: 0;
-  }
-
-  .player-analysis-dossier .roster-metric-strip > span:first-child {
-    border-top: 0;
   }
 
 }

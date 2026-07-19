@@ -1,13 +1,14 @@
 use crate::analysis::quality::AnalysisOptions;
 use crate::demo_id::{demo_id, unique_demo_id};
-use crate::demo_reader::{is_supported_demo_path, read_demo_with_options, ReadDemoOptions};
+use crate::demo_reader::{is_supported_demo_path, ReadDemoOptions};
+use crate::demo_series::{read_demo_source_with_options, resolve_demo_source};
 use crate::export::{export_demo, ConvertOptions};
 use crate::model::{
     public_demo_path, RoundPoolCandidate, RoundPoolManifest, Side, SubtickMode, DEMOTRACER_ABI,
 };
 use crate::{io_error, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -45,6 +46,23 @@ pub fn build_round_pool(options: &BuildPoolOptions) -> Result<BuildPoolReport> {
     let mut demo_paths = Vec::new();
     collect_demo_files(&options.demo_dir, options.recursive, &mut demo_paths)?;
     demo_paths.sort();
+    let mut grouped = BTreeMap::new();
+    let mut discovery_failures = Vec::new();
+    for demo_path in demo_paths {
+        match resolve_demo_source(&demo_path) {
+            Ok(source) => {
+                let key = source
+                    .primary_path()
+                    .to_string_lossy()
+                    .replace('\\', "/")
+                    .to_ascii_lowercase();
+                grouped.entry(key).or_insert(source);
+            }
+            Err(error) => discovery_failures.push((demo_path, error)),
+        }
+    }
+    let demo_sources = grouped.into_values().collect::<Vec<_>>();
+    let demos_seen = demo_sources.len() + discovery_failures.len();
 
     let mut pool = RoundPoolManifest {
         format_version: 1,
@@ -53,13 +71,17 @@ pub fn build_round_pool(options: &BuildPoolOptions) -> Result<BuildPoolReport> {
         candidates: Vec::new(),
     };
     let mut used_ids = BTreeSet::new();
-    let mut log = Vec::new();
+    let mut log = discovery_failures
+        .iter()
+        .map(|(path, error)| format!("failed {}: {error}", path.display()))
+        .collect::<Vec<_>>();
     let mut demos_matched = 0_usize;
-    let mut failures = 0_usize;
+    let mut failures = discovery_failures.len();
 
-    for demo_path in &demo_paths {
-        match read_demo_with_options(
-            demo_path,
+    for source in &demo_sources {
+        let demo_path = source.primary_path();
+        match read_demo_source_with_options(
+            source,
             ReadDemoOptions {
                 collect_voice: false,
                 collect_cosmetics: options.export_cosmetics,
@@ -134,7 +156,7 @@ pub fn build_round_pool(options: &BuildPoolOptions) -> Result<BuildPoolReport> {
     fs::write(&manifest_path, serde_json::to_string_pretty(&pool)?)
         .map_err(|e| io_error(&manifest_path, e))?;
     let log_path = root.join("pool_conversion.log");
-    log.push(format!("demos_seen={}", demo_paths.len()));
+    log.push(format!("demos_seen={demos_seen}"));
     log.push(format!("demos_matched={demos_matched}"));
     log.push(format!("candidates={}", pool.candidates.len()));
     log.push(format!("failures={failures}"));
@@ -143,7 +165,7 @@ pub fn build_round_pool(options: &BuildPoolOptions) -> Result<BuildPoolReport> {
     Ok(BuildPoolReport {
         root,
         manifest_path,
-        demos_seen: demo_paths.len(),
+        demos_seen,
         demos_matched,
         candidates: pool.candidates.len(),
         failures,

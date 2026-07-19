@@ -2770,7 +2770,7 @@ fn valid_keychain_id(keychain_id: u32) -> bool {
     demotracer_econ_index().keychain_ids.contains(&keychain_id)
 }
 
-fn valid_music_kit_id(music_kit_id: u32) -> bool {
+pub(crate) fn valid_music_kit_id(music_kit_id: u32) -> bool {
     demotracer_econ_index()
         .music_kit_ids
         .contains(&music_kit_id)

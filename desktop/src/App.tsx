@@ -531,6 +531,7 @@ function App() {
   const [liveMessage, setLiveMessage] = useState("");
 
   const taskTokenRef = useRef(0);
+  const manifestCacheRef = useRef(new Map<string, ManifestArchive>());
   const libraryScanTokenRef = useRef(0);
   const taskWarningsRef = useRef<string[]>([]);
   const isBusyRef = useRef(false);
@@ -1041,15 +1042,9 @@ function App() {
     const returnPhase = phase;
     const returnSection = activeSection;
     const token = ++taskTokenRef.current;
-    setGlobalError(null);
-    setArchivePath(path);
-    setSelectedPlayer(null);
-    setInspectorSheetOpen(false);
-    setActiveSection("library");
-    setPhase("openingArchive");
-    try {
-      const next = await invoke<ManifestArchive>("read_manifest", { path });
-      if (token !== taskTokenRef.current) return;
+    const cacheKey = normalizedDiagnosticPath(path);
+    const cached = manifestCacheRef.current.get(cacheKey);
+    const showArchive = (next: ManifestArchive) => {
       const availableRounds = next.rounds.filter((round) => round.available);
       const firstAvailableRound = availableRounds[0];
       setArchive(next);
@@ -1062,6 +1057,23 @@ function App() {
       setOutputRoot(next.root);
       setSelectedRounds(new Set());
       setPhase("archive");
+    };
+    setGlobalError(null);
+    setArchivePath(path);
+    setSelectedPlayer(null);
+    setInspectorSheetOpen(false);
+    setActiveSection("library");
+    if (cached) {
+      showArchive(cached);
+      return;
+    }
+    setPhase("openingArchive");
+    try {
+      const next = await invoke<ManifestArchive>("read_manifest", { path });
+      if (token !== taskTokenRef.current) return;
+      manifestCacheRef.current.set(cacheKey, next);
+      manifestCacheRef.current.set(normalizedDiagnosticPath(next.manifestPath), next);
+      showArchive(next);
     } catch (reason) {
       if (token !== taskTokenRef.current) return;
       setGlobalError(parseCommandError(reason));
@@ -1174,6 +1186,7 @@ function App() {
         void refreshBatchLedger(event.batchId, generation);
         break;
       case "itemCompleted":
+        manifestCacheRef.current.delete(normalizedDiagnosticPath(event.manifestPath));
         updateBatchLedgerItem(event.batchId, event.itemId, {
           status: "completed",
           phase: "complete",
@@ -1631,6 +1644,7 @@ function App() {
         });
       }
       setDemoSourceIndex((current) => rememberDemoSource(current, entry.demoSha256, result.sourcePath));
+      manifestCacheRef.current.delete(normalizedDiagnosticPath(entry.manifestPath));
       const notice = words.repairArchiveResult.replace("{name}", result.displayName);
       setLibraryNotice(notice);
       setLiveMessage(notice);
@@ -1687,6 +1701,7 @@ function App() {
       source.demoSha256,
       result.sourcePath,
     ));
+    manifestCacheRef.current.delete(normalizedDiagnosticPath(source.manifestPath));
     return result.sourcePath;
   }
 
@@ -1715,6 +1730,7 @@ function App() {
     if (isBusy || roots.length === 0) return;
     let shouldRescan = false;
     try {
+      manifestCacheRef.current.clear();
       setGlobalError(null);
       setLibraryNotice("");
       setRepairingLibrary(true);
@@ -2176,6 +2192,7 @@ function App() {
       });
       if (token !== taskTokenRef.current) return;
       setResult(summary);
+      manifestCacheRef.current.delete(normalizedDiagnosticPath(summary.manifestPath));
       setOutputRoot(summary.root);
       setConversionWarnings(taskWarningsRef.current);
       setCommandMode(summary.rounds.length > 1 ? "sequence" : "round");

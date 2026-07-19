@@ -1,14 +1,18 @@
-import { useState } from "react";
+import { type CSSProperties, useState } from "react";
 import {
+  buildCosmeticViewerUrl,
   resolveCharmCatalog,
   resolveCosmeticCatalog,
+  resolveMusicKitCatalog,
   resolveStickerCatalog,
   type CosmeticCatalogEntry,
 } from "../cosmeticCatalog";
-import { ArrowIcon, CheckIcon, ChevronIcon, CopyIcon, ExternalLinkIcon } from "../icons";
+import { ArrowIcon, CheckIcon, ChevronIcon, CloseIcon, CopyIcon, ExternalLinkIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
 import type { CosmeticEvidence, Language, PlayerDetails, ViewmodelEvidence } from "../types";
 import type { CopyTarget } from "./TaskViews";
+import { CrosshairPreview } from "./CrosshairPreview";
+import { DialogPrimitive } from "./Dialog";
 
 export interface RosterPlayer {
   name: string;
@@ -77,13 +81,6 @@ function wearLabel(wear: number, words: TextDictionary): string {
   return words.wearBattleScarred;
 }
 
-function cosmeticKindLabel(cosmetic: CosmeticEvidence, words: TextDictionary): string {
-  if (cosmetic.kind === "knife") return words.cosmeticKnife;
-  if (cosmetic.kind === "glove") return words.cosmeticGlove;
-  if (cosmetic.kind === "agent") return words.cosmeticAgent;
-  return words.cosmeticWeapon;
-}
-
 function isDisplayableCosmeticEvidence(cosmetic: CosmeticEvidence): boolean {
   if (cosmetic.kind !== "agent") return true;
   const name = cosmetic.itemName?.trim().toLowerCase();
@@ -109,8 +106,8 @@ function cosmeticTitle(
   catalogEntry: CosmeticCatalogEntry | null,
 ): string {
   const fallback = cosmetic.itemDefIndex !== null && cosmetic.itemDefIndex !== undefined
-    ? `${cosmeticKindLabel(cosmetic, words)} #${cosmetic.itemDefIndex}`
-    : cosmeticKindLabel(cosmetic, words);
+    ? `#${cosmetic.itemDefIndex}`
+    : "—";
   const marker = cosmetic.kind === "knife"
     ? "★"
     : cosmetic.quality === 9 || (cosmetic.stattrakCounter !== null && cosmetic.stattrakCounter !== undefined)
@@ -151,6 +148,46 @@ function CatalogImage({
         }
       }}
     />
+  );
+}
+
+function catalogCardStyle(entry: CosmeticCatalogEntry | null): CSSProperties {
+  return { "--item-rarity": entry?.rarity ?? "#9ba4ae" } as CSSProperties;
+}
+
+function SideMarkers({ side, words }: { side: CosmeticEvidence["side"]; words: TextDictionary }) {
+  const sides = side === "t" ? ["t"] : side === "ct" ? ["ct"] : ["ct", "t"];
+  return (
+    <span className="roster-side-markers" aria-label={sides.map((value) => value === "t" ? words.sideT : words.sideCt).join(" / ")}>
+      {sides.map((value) => <i className={`is-${value}`} title={value === "t" ? words.sideT : words.sideCt} key={value} />)}
+    </span>
+  );
+}
+
+function CosmeticViewerDialog({ title, url, words, onClose }: {
+  title: string;
+  url: string;
+  words: TextDictionary;
+  onClose: () => void;
+}) {
+  return (
+    <DialogPrimitive
+      labelledBy="cosmetic-viewer-title"
+      onDismiss={onClose}
+      scrimClassName="cosmetic-viewer-scrim"
+      className="cosmetic-viewer-dialog"
+    >
+      <header>
+        <div>
+          <span>{words.preview360}</span>
+          <strong id="cosmetic-viewer-title">{title}</strong>
+        </div>
+        <button className="icon-button" type="button" onClick={onClose} aria-label={words.close} title={words.close}>
+          <CloseIcon size={18} />
+        </button>
+      </header>
+      <iframe src={url} title={`${words.preview360}: ${title}`} referrerPolicy="no-referrer" allowFullScreen />
+    </DialogPrimitive>
   );
 }
 
@@ -206,6 +243,7 @@ function CosmeticCard({
   copiedTarget,
   onCopy,
   onOpenExternal,
+  onPreview,
 }: {
   cosmetic: CosmeticEvidence;
   index: number;
@@ -215,24 +253,39 @@ function CosmeticCard({
   copiedTarget: CopyTarget | null;
   onCopy: (value: string, target: CopyTarget) => void;
   onOpenExternal: (url: string) => void;
+  onPreview: (title: string, url: string) => void;
 }) {
   const stickers = cosmetic.stickers ?? [];
   const charms = cosmetic.charms ?? [];
-  const side = cosmetic.side === "t" ? words.sideT : cosmetic.side === "ct" ? words.sideCt : null;
   const catalogEntry = resolveCosmeticCatalog(cosmetic, language);
   const title = cosmeticTitle(cosmetic, words, language, catalogEntry);
+  const viewerUrl = buildCosmeticViewerUrl(cosmetic, language);
+  const attachmentEntries = [
+    ...stickers.map((sticker) => resolveStickerCatalog(sticker.stickerId, language)),
+    ...charms.map((charm) => resolveCharmCatalog(charm.charmId, charm.stickerId, language)),
+  ].filter((entry): entry is CosmeticCatalogEntry => entry !== null).slice(0, 5);
   return (
-    <details className="roster-cosmetic-card">
+    <details className="roster-cosmetic-card" style={catalogCardStyle(catalogEntry)}>
       <summary>
-        <div className="roster-cosmetic-summary">
-          {catalogEntry ? <CatalogImage key={catalogEntry.imageUrl} entry={catalogEntry} className="roster-cosmetic-preview" /> : null}
-          <span>
-            <small>{cosmeticKindLabel(cosmetic, words)}{side ? ` · ${side}` : ""}</small>
-            <strong title={title}>{title}</strong>
-          </span>
+        <div className="roster-cosmetic-visual">
+          {catalogEntry ? <CatalogImage key={catalogEntry.imageUrl} entry={catalogEntry} className="roster-cosmetic-preview" /> : <span className="roster-cosmetic-placeholder" />}
+          {attachmentEntries.length > 0 ? (
+            <span className="roster-cosmetic-attachment-strip" aria-hidden="true">
+              {attachmentEntries.map((entry, attachmentIndex) => (
+                <CatalogImage key={`${entry.imageUrl}-${attachmentIndex}`} entry={entry} className="roster-cosmetic-attachment-chip" />
+              ))}
+            </span>
+          ) : null}
+          <SideMarkers side={cosmetic.side} words={words} />
+          <i className="roster-rarity-bar" aria-hidden="true" />
         </div>
-        <ChevronIcon size={14} />
+        <span className="roster-cosmetic-title"><strong title={title}>{title}</strong><ChevronIcon size={14} /></span>
       </summary>
+      {viewerUrl ? (
+        <button className="roster-viewer-launch" type="button" onClick={() => onPreview(title, viewerUrl)} title={words.preview360}>
+          360°
+        </button>
+      ) : null}
       <div className="roster-cosmetic-details">
         <dl>
           {cosmetic.itemDefIndex !== null && cosmetic.itemDefIndex !== undefined ? <div><dt>{words.itemDefinition}</dt><dd>{cosmetic.itemDefIndex}</dd></div> : null}
@@ -322,6 +375,24 @@ function CosmeticCard({
   );
 }
 
+function MusicKitCard({ musicKitId, language, words }: {
+  musicKitId: number;
+  language: Language;
+  words: TextDictionary;
+}) {
+  const entry = resolveMusicKitCatalog(musicKitId, language);
+  const title = entry?.name ?? `${words.musicKit} #${musicKitId}`;
+  return (
+    <article className="roster-cosmetic-card roster-music-kit-card" style={catalogCardStyle(entry)}>
+      <div className="roster-cosmetic-visual">
+        {entry ? <CatalogImage key={entry.imageUrl} entry={entry} className="roster-cosmetic-preview" /> : <span className="roster-cosmetic-placeholder" />}
+        <i className="roster-rarity-bar" aria-hidden="true" />
+      </div>
+      <span className="roster-cosmetic-title"><strong title={title}>{title}</strong></span>
+    </article>
+  );
+}
+
 function CrosshairEvidence({
   codes,
   playerKey,
@@ -335,16 +406,18 @@ function CrosshairEvidence({
   copiedTarget: CopyTarget | null;
   onCopy: (value: string, target: CopyTarget) => void;
 }) {
+  const [previewCode, setPreviewCode] = useState(codes[0]);
   return (
     <section className="roster-evidence-section player-crosshair-section">
-      <header><strong>{words.crosshairCodes}</strong><small>{words.crosshairCodesHelp}</small></header>
+      <header><strong>{words.crosshairCodes}</strong></header>
+      <CrosshairPreview code={previewCode} label={words.crosshairPreview} unavailableLabel={words.crosshairPreviewUnavailable} />
       <ul className="crosshair-config-list">
         {codes.map((code, index) => (
-          <li key={`${code}-${index}`}>
-            <span>
+          <li className={previewCode === code ? "is-selected" : ""} key={`${code}-${index}`}>
+            <button className="crosshair-code-select" type="button" onClick={() => setPreviewCode(code)}>
               <small>{words.sharedCrosshair} {index + 1}</small>
               <code>{code}</code>
-            </span>
+            </button>
             <CopyAction value={code} target={targetFor(playerKey, "crosshair", index)} copiedTarget={copiedTarget} label={words.copyCommand} copiedLabel={words.copied} onCopy={onCopy} />
           </li>
         ))}
@@ -370,17 +443,25 @@ export function PlayerDossier({
   onCopy: (value: string, target: CopyTarget) => void;
   onOpenExternal: (url: string) => void;
 }) {
+  const [viewer, setViewer] = useState<{ title: string; url: string } | null>(null);
   const details = player.details;
   const metrics = metricValues(player);
   const crosshairCodes = details?.crosshairCodes ?? [];
   const viewmodels = (details?.viewmodels ?? []).map(viewmodelCommand).filter(Boolean);
   const cosmetics = (details?.cosmetics ?? []).filter(isDisplayableCosmeticEvidence);
+  const musicKitIds = details?.musicKitIds ?? [];
+  const evidenceCount = cosmetics.length + musicKitIds.length;
   const steamProfileAvailable = hasSteamProfile(player.steamId);
   return (
     <div className="player-dossier">
       <div className="roster-profile-line">
-        <span><small>{words.steamId}</small><code>{player.steamId || "—"}</code></span>
-        <div>
+        <div className="roster-profile-facts">
+          <span><small>{words.steamId}</small><code>{player.steamId || "—"}</code></span>
+          {metrics.kd ? <span className="roster-profile-stat"><small>{words.kd}</small><strong>{metrics.kd}</strong></span> : null}
+          {metrics.adr ? <span className="roster-profile-stat"><small>{words.adr}</small><strong>{metrics.adr}</strong></span> : null}
+          {metrics.hs ? <span className="roster-profile-stat"><small>{words.headshotRate}</small><strong>{metrics.hs}</strong></span> : null}
+        </div>
+        <div className="roster-profile-actions">
           {steamProfileAvailable ? (
             <>
               <CopyAction
@@ -399,14 +480,6 @@ export function PlayerDossier({
         </div>
       </div>
 
-      {metrics.kd || metrics.adr || metrics.hs ? (
-        <div className="roster-metric-strip">
-          {metrics.kd ? <span><small>{words.kd}</small><strong>{metrics.kd}</strong></span> : null}
-          {metrics.adr ? <span><small>{words.adr}</small><strong>{metrics.adr}</strong></span> : null}
-          {metrics.hs ? <span><small>{words.headshotRate}</small><strong>{metrics.hs}</strong></span> : null}
-        </div>
-      ) : null}
-
       <div className="player-setup-grid">
         {crosshairCodes.length > 0 ? (
           <CrosshairEvidence
@@ -421,7 +494,7 @@ export function PlayerDossier({
 
         {viewmodels.length > 0 ? (
           <section className="roster-evidence-section player-viewmodel-section">
-            <header><strong>{words.viewmodelProfiles}</strong><small>{words.viewmodelProfilesHelp}</small></header>
+            <header><strong>{words.viewmodelProfiles}</strong></header>
             <ul className="roster-command-list">
               {viewmodels.map((command, index) => (
                 <li key={command}>
@@ -436,10 +509,9 @@ export function PlayerDossier({
 
       <section className="roster-evidence-section roster-cosmetics">
         <header>
-          <strong>{words.cosmeticEvidence}{words.cosmeticEvidenceCount.replace("{count}", String(cosmetics.length))}</strong>
-          <small>{words.cosmeticEvidenceHelp}</small>
+          <strong>{words.cosmeticEvidence}{words.cosmeticEvidenceCount.replace("{count}", String(evidenceCount))}</strong>
         </header>
-        {cosmetics.length > 0 ? (
+        {evidenceCount > 0 ? (
           <div className="roster-cosmetic-list">
             {cosmetics.map((cosmetic, index) => (
               <CosmeticCard
@@ -451,12 +523,18 @@ export function PlayerDossier({
                 copiedTarget={copiedTarget}
                 onCopy={onCopy}
                 onOpenExternal={onOpenExternal}
+                onPreview={(title, url) => setViewer({ title, url })}
                 key={`${cosmetic.kind}-${cosmetic.itemId || cosmetic.itemDefIndex}-${cosmetic.paintKit}-${cosmetic.side || "both"}-${index}`}
               />
+            ))}
+            {musicKitIds.map((musicKitId) => (
+              <MusicKitCard musicKitId={musicKitId} language={language} words={words} key={`music-kit-${musicKitId}`} />
             ))}
           </div>
         ) : <p className="roster-evidence-empty">{words.cosmeticEvidenceEmpty}</p>}
       </section>
+
+      {viewer ? <CosmeticViewerDialog title={viewer.title} url={viewer.url} words={words} onClose={() => setViewer(null)} /> : null}
 
     </div>
   );

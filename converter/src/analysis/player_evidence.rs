@@ -1,4 +1,4 @@
-use crate::export::inventory_item_cosmetic_evidence;
+use crate::export::{inventory_item_cosmetic_evidence, valid_music_kit_id};
 use crate::inspect_link::item_inspect;
 use crate::model::{
     ParsedDemo, ParsedEconItem, ParsedInventoryWeaponCosmetic, ParsedPlayerTick,
@@ -25,6 +25,8 @@ pub struct BrowserPlayerDetails {
     pub viewmodels: Vec<BrowserViewmodelEvidence>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cosmetics: Vec<BrowserCosmeticEvidence>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub music_kit_ids: Vec<u32>,
 }
 
 impl BrowserPlayerDetails {
@@ -35,6 +37,7 @@ impl BrowserPlayerDetails {
             && self.crosshair_codes.is_empty()
             && self.viewmodels.is_empty()
             && self.cosmetics.is_empty()
+            && self.music_kit_ids.is_empty()
     }
 
     pub fn restrict_cosmetic_export(
@@ -45,6 +48,7 @@ impl BrowserPlayerDetails {
     ) {
         if !export_cosmetics {
             self.cosmetics.clear();
+            self.music_kit_ids.clear();
             return;
         }
         for cosmetic in &mut self.cosmetics {
@@ -232,6 +236,7 @@ struct EvidenceAccumulator {
     knives: BTreeMap<ItemSpec, ObservedItemSpec>,
     gloves: BTreeMap<ItemSpec, ObservedItemSpec>,
     agents: BTreeMap<u32, ObservedAgent>,
+    music_kit_ids: BTreeSet<u32>,
     stats: Option<StatsSnapshot>,
 }
 
@@ -250,6 +255,9 @@ pub(super) fn summarize_player_details(
         let accumulator = accumulators.entry(row.steam_id).or_default();
         accumulator.rounds.insert(row.round);
         update_stats(accumulator, row);
+        if let Some(music_kit_id) = row.music_kit_id.filter(|value| valid_music_kit_id(*value)) {
+            accumulator.music_kit_ids.insert(music_kit_id);
+        }
         if !row.is_alive {
             continue;
         }
@@ -511,6 +519,7 @@ fn finish_details(
             .map(ViewmodelKey::into_evidence)
             .collect(),
         cosmetics,
+        music_kit_ids: accumulator.music_kit_ids.into_iter().collect(),
     }
 }
 
@@ -878,6 +887,7 @@ mod tests {
             viewmodel_offset_z: Some(-1.5),
             scoreboard_headshot_kills: Some(if tick == 100 { 2 } else { 3 }),
             scoreboard_damage: Some(if tick == 100 { 800 } else { 1_250 }),
+            music_kit_id: Some(42),
             inventory_weapon_cosmetics,
             ..ParsedPlayerTick::default()
         }
@@ -914,6 +924,7 @@ mod tests {
         assert_eq!(details.stats_rounds, Some(1));
         assert_eq!(details.crosshair_codes, ["CSGO-AAAAA", "CSGO-BBBBB"]);
         assert_eq!(details.viewmodels.len(), 1);
+        assert_eq!(details.music_kit_ids, [42]);
         assert_eq!(details.cosmetics.len(), 1);
         let cosmetic = &details.cosmetics[0];
         assert_eq!(cosmetic.side, None);
@@ -948,6 +959,7 @@ mod tests {
         let mut without_cosmetics = details.clone();
         without_cosmetics.restrict_cosmetic_export(false, false, false);
         assert!(without_cosmetics.cosmetics.is_empty());
+        assert!(without_cosmetics.music_kit_ids.is_empty());
 
         let mut without_stickers = details;
         without_stickers.restrict_cosmetic_export(true, false, false);

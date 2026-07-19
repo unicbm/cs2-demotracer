@@ -117,7 +117,6 @@ export interface BatchWorkspaceProps {
 interface BatchCopy {
   eyebrow: string;
   title: string;
-  subtitle: string;
   limit: string;
   sourceFolder: string;
   noFolder: string;
@@ -179,7 +178,6 @@ interface BatchCopy {
   stopAfterCurrent: string;
   stopRequested: string;
   stopPolicy: string;
-  completedAreKept: string;
   runComplete: string;
 }
 
@@ -187,7 +185,6 @@ const COPY: Record<Language, BatchCopy> = {
   zh: {
     eyebrow: "本地任务队列",
     title: "批量扫描与入库",
-    subtitle: "扫描一个 Demo 文件夹，以有限并发完成解压、解析、转换和验证。",
     limit: "单批最多 24 个",
     sourceFolder: "Demo 来源文件夹",
     noFolder: "尚未选择文件夹",
@@ -195,7 +192,7 @@ const COPY: Record<Language, BatchCopy> = {
     scan: "扫描 Demo",
     scanning: "正在扫描…",
     rescan: "重新扫描",
-    scanHelp: "识别 .dem 和 .dem.zst；只读取候选，不会移动、修改或上传原文件。",
+    scanHelp: "识别 .dem 和 .dem.zst；同目录的 -p1/-p2 分段会合并为一场比赛，不会移动、修改或上传原文件。",
     candidates: "扫描候选",
     search: "搜索候选 Demo",
     searchPlaceholder: "按文件名筛选",
@@ -265,13 +262,11 @@ const COPY: Record<Language, BatchCopy> = {
     stopAfterCurrent: "当前在跑的项目完成后停止",
     stopRequested: "已请求停止",
     stopPolicy: "不会强行中断已经开始解析或写入的项目；这些在跑项目完成并验证后，不再派发新任务。",
-    completedAreKept: "已经完成并验证的档案会一直保留，不会因停止、失败或重启而静默丢弃。",
     runComplete: "本批任务已结束",
   },
   en: {
     eyebrow: "Local job queue",
     title: "Batch scan and import",
-    subtitle: "Scan a demo folder, then decompress, parse, convert, and validate with bounded concurrency.",
     limit: "Up to 24 per batch",
     sourceFolder: "Demo source folder",
     noFolder: "No folder selected",
@@ -279,7 +274,7 @@ const COPY: Record<Language, BatchCopy> = {
     scan: "Scan for demos",
     scanning: "Scanning…",
     rescan: "Scan again",
-    scanHelp: "Finds .dem and .dem.zst candidates only; source files are never moved, modified, or uploaded.",
+    scanHelp: "Finds .dem and .dem.zst candidates; sibling -p1/-p2 segments are grouped as one match. Source files are never moved, modified, or uploaded.",
     candidates: "Scan candidates",
     search: "Search demo candidates",
     searchPlaceholder: "Filter by file name",
@@ -349,7 +344,6 @@ const COPY: Record<Language, BatchCopy> = {
     stopAfterCurrent: "Stop after active items",
     stopRequested: "Stop requested",
     stopPolicy: "Active parses and writes are not force-terminated. Once those items finish and validate, no new job is dispatched.",
-    completedAreKept: "Completed and validated archives remain available; stopping, failures, or a restart never silently discards them.",
     runComplete: "This batch has finished",
   },
 };
@@ -477,7 +471,6 @@ export function BatchWorkspace({
         <div>
           <span>{copy.eyebrow}</span>
           <h1 id="batch-workspace-title">{copy.title}</h1>
-          <p>{copy.subtitle}</p>
         </div>
         <strong className="batch-limit-badge">{copy.limit}</strong>
       </header>
@@ -681,10 +674,12 @@ export function BatchWorkspace({
           </div>
 
           <footer className={`batch-run-bar is-${runState}`}>
-            <div>
-              <strong>{runState === "complete" ? copy.runComplete : runState === "stopping" ? copy.stopRequested : copy.completedAreKept}</strong>
-              <p>{runState === "running" || runState === "stopping" ? copy.stopPolicy : copy.completedAreKept}</p>
-            </div>
+            {runState === "running" || runState === "stopping" || runState === "complete" ? (
+              <div>
+                <strong>{runState === "complete" ? copy.runComplete : runState === "stopping" ? copy.stopRequested : copy.queueMonitor}</strong>
+                {runState === "running" || runState === "stopping" ? <p>{copy.stopPolicy}</p> : null}
+              </div>
+            ) : <span />}
             <div>
               {working ? (
                 <button className="stop-after-button" type="button" onClick={onStop} disabled={runState === "stopping"}>

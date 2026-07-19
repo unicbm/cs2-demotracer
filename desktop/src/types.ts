@@ -101,6 +101,7 @@ export interface PlayerDetails {
   crosshairCodes?: string[];
   viewmodels?: ViewmodelEvidence[];
   cosmetics?: CosmeticEvidence[];
+  musicKitIds?: number[];
 }
 
 export interface ViewmodelEvidence {
