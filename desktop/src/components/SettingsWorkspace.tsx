@@ -20,11 +20,13 @@ import type {
   Language,
   LocalEnvironmentSettings,
   RuntimeVerificationStatus,
+  ServerConfigDocument,
+  ServerConfigValidation,
 } from "../types";
 import type { PlaybackPresetOptions } from "./PlaybackCommandBuilder";
 import "./settings-workspace.css";
 
-type SettingsSection = "environment" | "paths" | "export" | "playback";
+type SettingsSection = "environment" | "paths" | "export" | "playback" | "serverConfig";
 
 interface SettingsWorkspaceProps {
   words: TextDictionary;
@@ -36,6 +38,11 @@ interface SettingsWorkspaceProps {
   playback: PlaybackPresetOptions;
   candidates: Cs2InstallCandidate[];
   report: EnvironmentDiagnosticReport | null;
+  serverConfigDocument: ServerConfigDocument | null;
+  serverConfigDraft: string;
+  serverConfigValidation: ServerConfigValidation | null;
+  loadingServerConfig: boolean;
+  savingServerConfig: boolean;
   detecting: boolean;
   detectionCompleted: boolean;
   inspecting: boolean;
@@ -44,11 +51,16 @@ interface SettingsWorkspaceProps {
   onDetectCs2: () => void;
   onUseCandidate: (candidate: Cs2InstallCandidate) => void;
   onInspectEnvironment: () => void;
+  onLoadServerConfig: () => void;
+  onServerConfigDraftChange: (json: string) => void;
+  onValidateServerConfig: () => void;
+  onSaveServerConfig: () => void;
   onChooseExportRoot: () => void;
   onAddArchiveRoot: () => void;
   onRemoveArchiveRoot: (root: string) => void;
   onAddDemoRoot: () => void;
   onRemoveDemoRoot: (root: string) => void;
+  onEnvironmentChange: (patch: Partial<LocalEnvironmentSettings>) => void;
   onConverterChange: (patch: Partial<ConverterSettings>) => void;
   onPlaybackChange: (patch: Partial<PlaybackPresetOptions>) => void;
 }
@@ -196,6 +208,11 @@ export function SettingsWorkspace({
   playback,
   candidates,
   report,
+  serverConfigDocument,
+  serverConfigDraft,
+  serverConfigValidation,
+  loadingServerConfig,
+  savingServerConfig,
   detecting,
   detectionCompleted,
   inspecting,
@@ -204,11 +221,16 @@ export function SettingsWorkspace({
   onDetectCs2,
   onUseCandidate,
   onInspectEnvironment,
+  onLoadServerConfig,
+  onServerConfigDraftChange,
+  onValidateServerConfig,
+  onSaveServerConfig,
   onChooseExportRoot,
   onAddArchiveRoot,
   onRemoveArchiveRoot,
   onAddDemoRoot,
   onRemoveDemoRoot,
+  onEnvironmentChange,
   onConverterChange,
   onPlaybackChange,
 }: SettingsWorkspaceProps) {
@@ -535,6 +557,21 @@ export function SettingsWorkspace({
           </div>
         ) : <p className="settings-empty-list">{words.noDemoDirectories}</p>}
       </section>
+
+      <section className="settings-card settings-form-card" aria-labelledby="feedback-settings-title">
+        <div className="settings-card-heading">
+          <div>
+            <h3 id="feedback-settings-title">{words.taskFeedbackTitle}</h3>
+            <p>{words.taskFeedbackHelp}</p>
+          </div>
+        </div>
+        <SettingLine
+          title={words.soundNotifications}
+          description={words.soundNotificationsHelp}
+          checked={environment.soundNotifications}
+          onChange={(soundNotifications) => onEnvironmentChange({ soundNotifications })}
+        />
+      </section>
     </div>
   );
 
@@ -672,6 +709,104 @@ export function SettingsWorkspace({
     </div>
   );
 
+  const effectiveServerValidation = serverConfigValidation ?? serverConfigDocument?.validation ?? null;
+  const serverConfigView = (
+    <div className="settings-pane server-config-pane">
+      <header className="settings-pane-header">
+        <div>
+          <span className="settings-eyebrow">{words.settingsNavServerConfig}</span>
+          <h2>{words.serverConfigTitle}</h2>
+          <p>{words.serverConfigSubtitle}</p>
+        </div>
+        <div className="settings-header-actions">
+          <button className="secondary-button" type="button" disabled={!environment.cs2Path.trim() || loadingServerConfig || savingServerConfig} onClick={onLoadServerConfig}>
+            <RefreshIcon size={16} />{loadingServerConfig ? words.loadingServerConfig : words.loadServerConfig}
+          </button>
+          <button className="secondary-button" type="button" disabled={!serverConfigDraft.trim() || savingServerConfig} onClick={onValidateServerConfig}>
+            <CheckIcon size={16} />{words.validateServerConfig}
+          </button>
+          <button className="primary-button" type="button" disabled={!serverConfigDocument || !serverConfigDraft.trim() || savingServerConfig || effectiveServerValidation?.valid === false} onClick={onSaveServerConfig}>
+            <SlidersIcon size={16} />{savingServerConfig ? words.savingServerConfig : words.saveServerConfig}
+          </button>
+        </div>
+      </header>
+
+      {!environment.cs2Path.trim() ? (
+        <section className="settings-card diagnostic-empty">
+          <span><FolderIcon size={22} /></span>
+          <div><h3>{words.serverConfigNeedsPath}</h3><p>{words.serverConfigNeedsPathHelp}</p></div>
+        </section>
+      ) : !serverConfigDocument ? (
+        <section className="settings-card diagnostic-empty">
+          <span><SlidersIcon size={22} /></span>
+          <div><h3>{words.serverConfigNotLoaded}</h3><p>{words.serverConfigNotLoadedHelp}</p></div>
+        </section>
+      ) : (
+        <>
+          <section className="settings-card server-config-editor-card">
+            <div className="settings-card-heading">
+              <div>
+                <h3>{words.serverConfigEditor}</h3>
+                <p>{words.serverConfigEditorHelp}</p>
+              </div>
+              <span className={`count-badge${serverConfigDocument.exists ? "" : " is-warning"}`}>
+                {serverConfigDocument.source === "installed"
+                  ? words.serverConfigInstalled
+                  : serverConfigDocument.source === "example"
+                    ? words.serverConfigExample
+                    : words.serverConfigBuiltIn}
+              </span>
+            </div>
+            <code className="server-config-path">{serverConfigDocument.configPath}</code>
+            <textarea
+              className="server-config-editor"
+              value={serverConfigDraft}
+              spellCheck={false}
+              aria-label={words.serverConfigEditor}
+              onChange={(event) => onServerConfigDraftChange(event.target.value)}
+            />
+          </section>
+
+          {effectiveServerValidation ? (
+            <section className={`settings-card server-config-validation is-${effectiveServerValidation.valid ? "valid" : "invalid"}`}>
+              <div className="settings-card-heading">
+                <div>
+                  <h3>{effectiveServerValidation.valid ? words.serverConfigValid : words.serverConfigInvalid}</h3>
+                  <p>{words.serverConfigValidationHelp}</p>
+                </div>
+                <span className={`count-badge${effectiveServerValidation.valid ? "" : " is-warning"}`}>
+                  {effectiveServerValidation.errors.length} / {effectiveServerValidation.warnings.length}
+                </span>
+              </div>
+              {[...effectiveServerValidation.errors, ...effectiveServerValidation.warnings].length > 0 ? (
+                <ul className="server-config-issues">
+                  {[...effectiveServerValidation.errors, ...effectiveServerValidation.warnings].map((issue) => (
+                    <li key={`${issue.code}:${issue.path}:${issue.message}`}>
+                      <AlertIcon size={15} /><div><code>{issue.path || "$"}</code><span>{issue.message}</span></div>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="settings-empty-list">{words.serverConfigNoIssues}</p>}
+              {effectiveServerValidation.unknownPaths.length > 0 ? (
+                <details className="server-config-unknown">
+                  <summary>{words.serverConfigUnknownFields.replace("{count}", String(effectiveServerValidation.unknownPaths.length))}</summary>
+                  <p>{words.serverConfigUnknownFieldsHelp}</p>
+                  <div>{effectiveServerValidation.unknownPaths.map((path) => <code key={path}>{path}</code>)}</div>
+                </details>
+              ) : null}
+            </section>
+          ) : null}
+
+          <aside className="safe-defaults-note server-config-reload-note">
+            <span><AlertIcon size={17} /></span>
+            <div><strong>{words.serverConfigReloadTitle}</strong><p>{words.serverConfigReloadHelp}</p></div>
+            <code>{serverConfigDocument.reloadCommand}</code>
+          </aside>
+        </>
+      )}
+    </div>
+  );
+
   return (
     <section className="settings-workspace" aria-labelledby="settings-workspace-title">
       <div className="settings-titlebar">
@@ -694,12 +829,16 @@ export function SettingsWorkspace({
           <button className={section === "playback" ? "is-active" : ""} type="button" aria-current={section === "playback" ? "page" : undefined} onClick={() => setSection("playback")}>
             <ReplayIcon size={17} /><span><strong>{words.settingsNavPlayback}</strong><small>{words.settingsNavPlaybackHelp}</small></span>
           </button>
+          <button className={section === "serverConfig" ? "is-active" : ""} type="button" aria-current={section === "serverConfig" ? "page" : undefined} onClick={() => setSection("serverConfig")}>
+            <LibraryIcon size={17} /><span><strong>{words.settingsNavServerConfig}</strong><small>{words.settingsNavServerConfigHelp}</small></span>
+          </button>
         </nav>
         <div className="settings-content">
           {section === "environment" ? environmentView : null}
           {section === "paths" ? pathsView : null}
           {section === "export" ? exportView : null}
           {section === "playback" ? playbackView : null}
+          {section === "serverConfig" ? serverConfigView : null}
         </div>
       </div>
     </section>

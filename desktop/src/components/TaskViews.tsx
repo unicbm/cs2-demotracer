@@ -76,15 +76,17 @@ interface AnalysisProgressViewProps {
   words: TextDictionary;
   sourceFileName: string;
   elapsedSeconds: number;
+  progressPhase: ProgressPhase;
 }
 
-export function AnalysisProgressView({ words, sourceFileName, elapsedSeconds }: AnalysisProgressViewProps) {
+export function AnalysisProgressView({ words, sourceFileName, elapsedSeconds, progressPhase }: AnalysisProgressViewProps) {
+  const decompressing = progressPhase === "decompressing";
   return (
     <section className="task-progress-view" aria-labelledby="analysis-progress-title">
       <div className="task-progress-copy">
-        <h1 id="analysis-progress-title">{words.analyzingTitle}</h1>
+        <h1 id="analysis-progress-title">{decompressing ? words.decompressingTitle : words.analyzingTitle}</h1>
         <strong>{sourceFileName}</strong>
-        <p>{words.fullParse}</p>
+        <p>{decompressing ? words.decompressingBody : words.fullParse}</p>
       </div>
       <div className="indeterminate-progress" aria-hidden="true"><span /></div>
       <div className="task-progress-meta" role="status" aria-live="polite">

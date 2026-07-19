@@ -5,8 +5,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppChrome } from "./components/AppChrome";
 import { AppSidebar } from "./components/AppSidebar";
 import { ArchiveWorkspace } from "./components/ArchiveWorkspace";
+import {
+  BATCH_SELECTION_LIMIT,
+  BatchWorkspace,
+  type BatchConcurrency,
+  type BatchEtaState,
+  type BatchJobItem,
+  type BatchJobPhase,
+  type BatchRunState,
+  type BatchScanCandidate,
+} from "./components/BatchWorkspace";
 import { DialogPrimitive } from "./components/Dialog";
 import { ExportInspector } from "./components/ExportInspector";
+import { FaqWorkspace } from "./components/FaqWorkspace";
 import { LibraryWorkspace, type LibrarySort } from "./components/LibraryWorkspace";
 import type { PlaybackPresetOptions } from "./components/PlaybackCommandBuilder";
 import { RoundWorkspace } from "./components/RoundWorkspace";
@@ -36,6 +47,11 @@ import {
 } from "./library";
 import type {
   AnalysisResult,
+  BatchEvent,
+  BatchItem,
+  BatchItemPhase,
+  BatchLedger,
+  BatchList,
   Cs2InstallCandidate,
   CommandErrorDto,
   ConversionProgressEvent,
@@ -43,6 +59,7 @@ import type {
   ConverterSettings,
   DemoLibraryEntry,
   DemoLibraryScan,
+  DemoFolderScan,
   EnvironmentDiagnosticReport,
   ImportArchivesResult,
   Language,
@@ -56,6 +73,9 @@ import type {
   RefreshLibraryMetadataResult,
   ResolveArchiveSourceResult,
   RoundInfo,
+  SaveServerConfigResult,
+  ServerConfigDocument,
+  ServerConfigValidation,
   TaskEvent,
   TaskPhase,
   Theme,
@@ -80,7 +100,105 @@ const INITIAL_LIBRARY_PREFERENCES = storedLibraryPreferences();
 const DEFAULT_LOCAL_ENVIRONMENT: LocalEnvironmentSettings = {
   cs2Path: "",
   demoRoots: [],
+  soundNotifications: true,
 };
+
+const BATCH_PREFERENCES_STORAGE_KEY = "demotracer.batch-preferences.v1";
+const ESTIMATED_ZSTD_EXPANSION = 4;
+
+interface StoredBatchPreferences {
+  folderPath: string;
+  concurrency: BatchConcurrency;
+}
+
+interface BatchItemProgress {
+  progress?: number | null;
+  stage?: string | null;
+  startedAtMs?: number;
+  finishedAtMs?: number;
+  written: number;
+  estimated: number;
+}
+
+function storedBatchPreferences(): StoredBatchPreferences {
+  try {
+    const saved = JSON.parse(localStorage.getItem(BATCH_PREFERENCES_STORAGE_KEY) ?? "null") as Partial<StoredBatchPreferences> | null;
+    const concurrency = saved?.concurrency;
+    return {
+      folderPath: typeof saved?.folderPath === "string" ? saved.folderPath : "",
+      concurrency: concurrency === "auto" || concurrency === 1 || concurrency === 2 || concurrency === 3 || concurrency === 4
+        ? concurrency
+        : "auto",
+    };
+  } catch {
+    return { folderPath: "", concurrency: "auto" };
+  }
+}
+
+function batchJobPhase(phase: BatchItemPhase): BatchJobPhase {
+  if (phase === "complete") return "completed";
+  if (phase === "voice") return "converting";
+  return phase;
+}
+
+function batchRunState(status: BatchLedger["status"] | undefined, invocationActive: boolean): BatchRunState {
+  if (invocationActive) {
+    if (status === "stopping") return "stopping";
+    return "running";
+  }
+  if (status === "completed" || status === "completedWithErrors") return "complete";
+  if (status === "paused") return "interrupted";
+  if (status === "running" || status === "stopping" || status === "pending") return "interrupted";
+  return "idle";
+}
+
+function nextBatchItemProgress(current: BatchItemProgress | undefined, task: TaskEvent): BatchItemProgress {
+  const next: BatchItemProgress = current ?? { written: 0, estimated: 0, startedAtMs: Date.now() };
+  if (task.kind === "phase") {
+    return { ...next, progress: task.phase === "complete" ? 1 : next.progress };
+  }
+  if (task.kind === "log") {
+    return task.level === "info" ? next : { ...next, stage: task.message };
+  }
+
+  const event = task.progress;
+  switch (event.event) {
+    case "analysisStarted":
+      return { ...next, progress: 0.02 };
+    case "analysisFinished":
+      return { ...next, progress: 0.05, written: 0, estimated: Math.max(1, event.estimatedFiles) };
+    case "roundStarted":
+      return { ...next, stage: `Round ${event.round}` };
+    case "roundSkipped":
+      return { ...next, stage: `Round ${event.round}: ${event.reason}` };
+    case "playerSkipped":
+      return { ...next, stage: `${event.steamId}: ${event.reason}` };
+    case "playerWritten": {
+      const written = next.written + 1;
+      return {
+        ...next,
+        written,
+        progress: Math.min(0.88, 0.05 + 0.83 * (written / Math.max(1, next.estimated))),
+        stage: event.playerName,
+      };
+    }
+    case "artifactsWritingStarted":
+      return { ...next, progress: 0.9, written: 0, estimated: Math.max(1, event.artifacts), stage: undefined };
+    case "artifactWritten": {
+      const written = next.written + 1;
+      return {
+        ...next,
+        written,
+        progress: Math.min(0.99, 0.9 + 0.09 * (written / Math.max(1, next.estimated))),
+        stage: fileName(event.path),
+      };
+    }
+    case "finished":
+      return { ...next, progress: 1, stage: fileName(event.manifestPath), finishedAtMs: Date.now() };
+    default:
+      return next;
+  }
+}
 
 const DEFAULT_PLAYBACK_PRESET: PlaybackPresetOptions = {
   weapons: true,
@@ -181,6 +299,7 @@ function storedLocalEnvironment(): LocalEnvironmentSettings {
       demoRoots: Array.isArray(saved.demoRoots)
         ? uniqueLibraryRoots(saved.demoRoots.filter((root): root is string => typeof root === "string"))
         : [],
+      soundNotifications: typeof saved.soundNotifications === "boolean" ? saved.soundNotifications : true,
     };
   } catch {
     return { ...DEFAULT_LOCAL_ENVIRONMENT };
@@ -260,6 +379,11 @@ function fileName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 }
 
+function isDemoFilePath(path: string): boolean {
+  const lowered = path.toLowerCase();
+  return lowered.endsWith(".dem") || lowered.endsWith(".dem.zst");
+}
+
 function formatBytes(value: number | string): string {
   const bytes = Number(value);
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
@@ -291,6 +415,7 @@ function parseCommandError(error: unknown): CommandErrorDto {
 }
 
 function phaseFromBackend(phase: TaskPhase, current: ProgressPhase): ProgressPhase {
+  if (phase === "decompressing") return "decompressing";
   if (phase === "parsing") return "parsing";
   if (phase === "analyzing") return "analyzing";
   if (phase === "voice") return "voice";
@@ -347,6 +472,19 @@ function App() {
   const [libraryQuery, setLibraryQuery] = useState("");
   const [libraryMap, setLibraryMap] = useState("");
   const [librarySort, setLibrarySort] = useState<LibrarySort>("recent");
+  const [batchFolderPath, setBatchFolderPath] = useState(() => storedBatchPreferences().folderPath);
+  const [batchScanning, setBatchScanning] = useState(false);
+  const [batchScanError, setBatchScanError] = useState("");
+  const [batchScan, setBatchScan] = useState<DemoFolderScan | null>(null);
+  const [batchSelectedIds, setBatchSelectedIds] = useState<string[]>([]);
+  const [batchConcurrency, setBatchConcurrency] = useState<BatchConcurrency>(() => storedBatchPreferences().concurrency);
+  const [batchLedger, setBatchLedger] = useState<BatchLedger | null>(null);
+  const [batchProgressByItem, setBatchProgressByItem] = useState<Record<string, BatchItemProgress>>({});
+  const [batchEtaSeconds, setBatchEtaSeconds] = useState<number | null>(null);
+  const [batchInvocationActive, setBatchInvocationActive] = useState(false);
+  const [batchStopPending, setBatchStopPending] = useState(false);
+  const [batchStartingCandidates, setBatchStartingCandidates] = useState<BatchScanCandidate[]>([]);
+  const [batchClock, setBatchClock] = useState(() => Date.now());
   const [outputRoot, setOutputRoot] = useState("");
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [selectedRounds, setSelectedRounds] = useState<Set<number>>(new Set());
@@ -360,6 +498,11 @@ function App() {
   );
   const [detectingInstallations, setDetectingInstallations] = useState(false);
   const [inspectingEnvironment, setInspectingEnvironment] = useState(false);
+  const [serverConfigDocument, setServerConfigDocument] = useState<ServerConfigDocument | null>(null);
+  const [serverConfigDraft, setServerConfigDraft] = useState("");
+  const [serverConfigValidation, setServerConfigValidation] = useState<ServerConfigValidation | null>(null);
+  const [loadingServerConfig, setLoadingServerConfig] = useState(false);
+  const [savingServerConfig, setSavingServerConfig] = useState(false);
   const [progress, setProgress] = useState<ProgressState>(emptyProgress);
   const [result, setResult] = useState<ConversionSummary | null>(null);
   const [archive, setArchive] = useState<ManifestArchive | null>(null);
@@ -385,6 +528,12 @@ function App() {
   const isBusyRef = useRef(false);
   const analyzedMaxRoundSecondsRef = useRef(DEFAULT_SETTINGS.maxRoundSeconds);
   const environmentInspectionTokenRef = useRef(0);
+  const batchIdRef = useRef("");
+  const batchGenerationRef = useRef(0);
+  const batchStopPendingRef = useRef(false);
+  const batchCancelGenerationRef = useRef(-1);
+  const taskSoundContextRef = useRef<AudioContext | null>(null);
+  const soundNotificationsRef = useRef(localEnvironment.soundNotifications);
   const retryButtonRef = useRef<HTMLButtonElement | null>(null);
   const resultHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const settingsTriggerRef = useRef<HTMLElement | null>(null);
@@ -398,13 +547,171 @@ function App() {
   const numberFormat = useMemo(() => new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en-US"), [language]);
   const isRepairing = repairingLibrary || Boolean(repairingManifest);
   const isMaintainingLibrary = isRepairing || importingArchives;
-  const isBusy = phase === "analyzing" || phase === "converting" || phase === "openingArchive" || isMaintainingLibrary;
-  isBusyRef.current = phase === "analyzing" || phase === "converting" || isMaintainingLibrary;
+  const isBusy = phase === "analyzing" || phase === "converting" || phase === "openingArchive" || isMaintainingLibrary || batchInvocationActive;
+  isBusyRef.current = phase === "analyzing" || phase === "converting" || isMaintainingLibrary || batchInvocationActive;
   const inspectorDocked = useMediaQuery("(min-width: 1080px)");
   const inspectorVisible = inspectorDocked || inspectorSheetOpen;
   const elapsedSeconds = useElapsed(phase === "analyzing");
   const sourceFileName = analysis?.fileName || fileName(sourcePath);
   const themeTitle = theme === "system" ? words.systemTheme : theme === "light" ? words.lightTheme : words.darkTheme;
+  soundNotificationsRef.current = localEnvironment.soundNotifications;
+  const importedBatchSources = useMemo(() => new Set(
+    (libraryScan?.entries ?? [])
+      .map((entry) => entry.sourcePath)
+      .filter((path): path is string => Boolean(path))
+      .map(normalizedDiagnosticPath),
+  ), [libraryScan]);
+  const batchCandidates = useMemo<BatchScanCandidate[]>(() => {
+    const secondsPerGib = batchLedger?.calibration?.secondsPerGib;
+    return (batchScan?.candidates ?? []).map((candidate) => {
+      const imported = importedBatchSources.has(normalizedDiagnosticPath(candidate.path));
+      const size = Number(candidate.sizeBytes);
+      const estimatedParseSize = candidate.compressed ? size * ESTIMATED_ZSTD_EXPANSION : size;
+      return {
+        id: normalizedDiagnosticPath(candidate.path),
+        path: candidate.path,
+        fileName: candidate.fileName,
+        sizeBytes: candidate.sizeBytes,
+        compressed: candidate.compressed,
+        modifiedAtMs: candidate.modifiedAtMs,
+        status: imported ? "imported" : "ready",
+        reason: imported
+          ? (language === "zh" ? "这个源 Demo 已经有本地档案。" : "This source demo already has a local archive.")
+          : null,
+        estimatedSeconds: secondsPerGib && Number.isFinite(estimatedParseSize)
+          ? Math.max(1, secondsPerGib * estimatedParseSize / (1024 ** 3))
+          : null,
+      };
+    });
+  }, [batchLedger?.calibration?.secondsPerGib, batchScan, importedBatchSources, language]);
+  const batchJobs = useMemo<BatchJobItem[]>(() => {
+    if (!batchLedger) {
+      return batchStartingCandidates.map((candidate) => ({
+        id: candidate.id,
+        candidateId: candidate.id,
+        path: candidate.path,
+        fileName: candidate.fileName,
+        phase: "queued",
+        progress: null,
+      }));
+    }
+    return batchLedger.items.map((item: BatchItem) => {
+      const transient = batchProgressByItem[item.itemId];
+      const phase = item.status === "completed"
+        ? "completed"
+        : item.status === "failed"
+          ? "failed"
+          : batchJobPhase(item.phase);
+      const finishedAt = transient?.finishedAtMs ?? (phase === "completed" || phase === "failed" ? batchLedger.updatedAtMs : undefined);
+      const elapsed = transient?.startedAtMs
+        ? Math.max(0, Math.floor(((finishedAt ?? batchClock) - transient.startedAtMs) / 1000))
+        : null;
+      return {
+        id: item.itemId,
+        candidateId: normalizedDiagnosticPath(item.sourcePath),
+        path: item.sourcePath,
+        fileName: item.fileName,
+        phase,
+        progress: phase === "completed" ? 1 : transient?.progress ?? null,
+        stage: transient?.stage,
+        elapsedSeconds: elapsed,
+        etaSeconds: item.predictedParseMs && (phase === "queued" || phase === "decompressing" || phase === "parsing")
+          ? Math.ceil(item.predictedParseMs / 1000)
+          : null,
+        error: item.error?.message ?? null,
+        outputPath: item.manifestPath ?? null,
+      };
+    });
+  }, [batchClock, batchLedger, batchProgressByItem, batchStartingCandidates]);
+  const batchSummary = useMemo(() => {
+    const items = batchLedger?.items;
+    if (!items) return { total: batchStartingCandidates.length, completed: 0, failed: 0, skipped: 0 };
+    return {
+      total: items.length,
+      completed: items.filter((item) => item.status === "completed").length,
+      failed: items.filter((item) => item.status === "failed").length,
+      skipped: 0,
+    };
+  }, [batchLedger, batchStartingCandidates.length]);
+  const currentBatchRunState = batchStopPending && batchInvocationActive
+    ? "stopping"
+    : batchRunState(batchLedger?.status, batchInvocationActive);
+  const canResumeBatch = !batchInvocationActive && Boolean(batchLedger?.items.some((item) =>
+    item.status === "pending" || item.status === "running"));
+  const batchEta = useMemo<BatchEtaState>(() => {
+    const calibration = batchLedger?.calibration;
+    if (!calibration) {
+      return {
+        status: batchInvocationActive ? "calibrating" : "waiting",
+        sampleFileName: batchLedger?.items.find((item) => item.status === "running")?.fileName ?? null,
+      };
+    }
+    const remainingMs = batchLedger.items
+      .filter((item) => (item.status === "pending" || item.status === "running") && item.parseMs == null)
+      .reduce((total, item) => total + (item.predictedParseMs ?? 0), 0);
+    const effectiveWorkers = 1 + (Math.max(1, batchLedger.concurrency) - 1) * 0.65;
+    const restoredEtaSeconds = Math.ceil(remainingMs / effectiveWorkers / 1000);
+    return {
+      status: "ready",
+      sampleFileName: batchLedger?.items.find((item) => item.itemId === calibration.firstItemId)?.fileName ?? null,
+      sampleSeconds: calibration.firstParseMs / 1000,
+      remainingSeconds: batchEtaSeconds ?? restoredEtaSeconds,
+      confidence: calibration.samples >= 3 ? "high" : calibration.samples >= 2 ? "medium" : "low",
+    };
+  }, [batchEtaSeconds, batchInvocationActive, batchLedger]);
+
+  const primeTaskSound = useCallback((force = false) => {
+    if (!force && !soundNotificationsRef.current) return;
+    try {
+      const context = taskSoundContextRef.current?.state === "closed"
+        ? new AudioContext()
+        : taskSoundContextRef.current ?? new AudioContext();
+      taskSoundContextRef.current = context;
+      if (context.state === "suspended") void context.resume().catch(() => undefined);
+    } catch {
+      // Sound is feedback only. An unavailable audio device must never block a task.
+    }
+  }, []);
+
+  const playTaskSound = useCallback((kind: "success" | "failure" | "stopped") => {
+    if (!soundNotificationsRef.current) return;
+    try {
+      const context = taskSoundContextRef.current?.state === "closed"
+        ? new AudioContext()
+        : taskSoundContextRef.current ?? new AudioContext();
+      taskSoundContextRef.current = context;
+      const schedule = () => {
+        try {
+          const now = context.currentTime;
+          const notes = kind === "success"
+            ? [{ frequency: 660, offset: 0 }, { frequency: 880, offset: 0.14 }]
+            : kind === "stopped"
+              ? [{ frequency: 520, offset: 0 }, { frequency: 390, offset: 0.16 }]
+              : [{ frequency: 330, offset: 0 }, { frequency: 247, offset: 0.18 }];
+          for (const note of notes) {
+            const oscillator = context.createOscillator();
+            const gain = context.createGain();
+            const start = now + note.offset;
+            oscillator.type = "sine";
+            oscillator.frequency.setValueAtTime(note.frequency, start);
+            gain.gain.setValueAtTime(0.0001, start);
+            gain.gain.exponentialRampToValueAtTime(0.075, start + 0.018);
+            gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.14);
+            oscillator.connect(gain);
+            gain.connect(context.destination);
+            oscillator.start(start);
+            oscillator.stop(start + 0.15);
+          }
+        } catch {
+          // Notification audio is deliberately best effort.
+        }
+      };
+      if (context.state === "suspended") void context.resume().then(schedule).catch(() => undefined);
+      else schedule();
+    } catch {
+      // Notification audio is deliberately best effort.
+    }
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -415,6 +722,18 @@ function App() {
       void getCurrentWindow().setTheme(theme === "system" ? null : theme).catch(() => undefined);
     }
   }, [language, theme]);
+
+  useEffect(() => () => {
+    const context = taskSoundContextRef.current;
+    taskSoundContextRef.current = null;
+    if (context) {
+      try {
+        void context.close().catch(() => undefined);
+      } catch {
+        // Best-effort cleanup only.
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (inspectorDocked) setInspectorSheetOpen(false);
@@ -432,6 +751,59 @@ function App() {
   useEffect(() => {
     localStorage.setItem("demotracer.local-environment.v1", JSON.stringify(localEnvironment));
   }, [localEnvironment]);
+
+  useEffect(() => {
+    localStorage.setItem(BATCH_PREFERENCES_STORAGE_KEY, JSON.stringify({
+      folderPath: batchFolderPath,
+      concurrency: batchConcurrency,
+    } satisfies StoredBatchPreferences));
+  }, [batchConcurrency, batchFolderPath]);
+
+  useEffect(() => {
+    const ready = new Set(batchCandidates.filter((candidate) => candidate.status === "ready").map((candidate) => candidate.id));
+    setBatchSelectedIds((current) => {
+      const next = current.filter((id) => ready.has(id)).slice(0, BATCH_SELECTION_LIMIT);
+      return next.length === current.length && next.every((id, index) => id === current[index]) ? current : next;
+    });
+  }, [batchCandidates]);
+
+  useEffect(() => {
+    if (!batchInvocationActive) return;
+    setBatchClock(Date.now());
+    const timer = window.setInterval(() => setBatchClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [batchInvocationActive]);
+
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    let disposed = false;
+    const generation = batchGenerationRef.current;
+    void invoke<BatchList>("list_batch_imports").then(({ batches }) => {
+      if (disposed || generation !== batchGenerationRef.current || batches.length === 0) return;
+      const resumable = batches.find((ledger) =>
+        ledger.status === "pending"
+        || ledger.status === "paused"
+        || ledger.status === "running"
+        || ledger.status === "stopping"
+        || ledger.items.some((item) => item.status === "failed"),
+      );
+      const latest = resumable ?? batches[0];
+      batchIdRef.current = latest.batchId;
+      setBatchLedger(latest);
+      setBatchFolderPath((current) => current || latest.sourceRoot);
+      setBatchConcurrency(latest.requestedConcurrency && latest.requestedConcurrency >= 1 && latest.requestedConcurrency <= 4
+        ? latest.requestedConcurrency as 1 | 2 | 3 | 4
+        : "auto");
+    }).catch((reason) => {
+      if (!disposed && generation === batchGenerationRef.current) {
+        const error = parseCommandError(reason);
+        setBatchScanError(language === "zh"
+          ? `无法检查上次批量队列：${error.message}`
+          : `Could not inspect the previous batch queue: ${error.message}`);
+      }
+    });
+    return () => { disposed = true; };
+  }, []);
 
   useEffect(() => {
     if (environmentReport?.cached) return;
@@ -580,11 +952,12 @@ function App() {
   }, [words]);
 
   const runAnalysis = useCallback(async (path: string, expectedDemoSha256?: string) => {
-    if (!path.toLowerCase().endsWith(".dem")) {
+    if (!isDemoFilePath(path)) {
       setGlobalError({ code: "invalid_demo_path", message: words.invalidDemo, path });
       return;
     }
 
+    primeTaskSound();
     const token = ++taskTokenRef.current;
     const maxRoundSeconds = settings.maxRoundSeconds;
     analyzedMaxRoundSecondsRef.current = maxRoundSeconds;
@@ -625,13 +998,15 @@ function App() {
       setSelectedRounds(new Set(next.rounds.filter((round) => round.selectedByDefault).map((round) => round.round)));
       setOutputDir((current) => current || libraryRoot);
       setPhase("selecting");
+      playTaskSound("success");
     } catch (reason) {
       if (token !== taskTokenRef.current) return;
       const error = parseCommandError(reason);
       setAnalysisError(error.message);
       setPhase("analysisFailed");
+      playTaskSound("failure");
     }
-  }, [absorbEvent, libraryRoot, settings.maxRoundSeconds, words.invalidDemo]);
+  }, [absorbEvent, libraryRoot, playTaskSound, primeTaskSound, settings.maxRoundSeconds, words.invalidDemo]);
 
   const runManifest = useCallback(async (path: string) => {
     if (isBusyRef.current) return;
@@ -707,6 +1082,320 @@ function App() {
     }
   }, []);
 
+  function applyBatchLedger(next: BatchLedger, generation: number, allowBatchSwitch = false) {
+    if (generation !== batchGenerationRef.current) return;
+    const activeBatchId = batchIdRef.current;
+    if (activeBatchId && activeBatchId !== next.batchId && !allowBatchSwitch) return;
+    batchIdRef.current = next.batchId;
+    setBatchLedger((current) => {
+      if (!current || current.batchId !== next.batchId || next.revision > current.revision) return next;
+      return current;
+    });
+    setBatchFolderPath((current) => current || next.sourceRoot);
+  }
+
+  async function refreshBatchLedger(batchId: string, generation: number) {
+    try {
+      const next = await invoke<BatchLedger>("read_batch_import", { request: { batchId } });
+      applyBatchLedger(next, generation);
+    } catch {
+      // The command that owns the batch will surface terminal errors. Event-time refreshes are
+      // best effort so a transient read cannot hide the live per-item event stream.
+    }
+  }
+
+  function updateBatchLedgerItem(batchId: string, itemId: string, patch: Partial<BatchItem>) {
+    setBatchLedger((current) => {
+      if (!current || current.batchId !== batchId) return current;
+      return {
+        ...current,
+        items: current.items.map((item) => item.itemId === itemId ? { ...item, ...patch } : item),
+      };
+    });
+  }
+
+  function handleBatchEvent(event: BatchEvent, generation: number) {
+    if (generation !== batchGenerationRef.current) return;
+    if (batchIdRef.current && batchIdRef.current !== event.batchId) return;
+    batchIdRef.current = event.batchId;
+    if ("parseEtaSeconds" in event && event.parseEtaSeconds !== undefined) {
+      setBatchEtaSeconds(event.parseEtaSeconds ?? null);
+    }
+    switch (event.kind) {
+      case "started":
+        void refreshBatchLedger(event.batchId, generation);
+        if (batchStopPendingRef.current) void requestBatchCancel(event.batchId, generation);
+        break;
+      case "itemPhase":
+        updateBatchLedgerItem(event.batchId, event.itemId, {
+          status: event.phase === "complete" ? "completed" : event.phase === "failed" ? "failed" : "running",
+          phase: event.phase,
+        });
+        setBatchProgressByItem((current) => ({
+          ...current,
+          [event.itemId]: {
+            ...(current[event.itemId] ?? { written: 0, estimated: 0 }),
+            startedAtMs: current[event.itemId]?.startedAtMs ?? Date.now(),
+          },
+        }));
+        break;
+      case "itemTask":
+        setBatchProgressByItem((current) => ({
+          ...current,
+          [event.itemId]: nextBatchItemProgress(current[event.itemId], event.task),
+        }));
+        break;
+      case "estimateUpdated":
+        setBatchEtaSeconds(event.parseEtaSeconds);
+        void refreshBatchLedger(event.batchId, generation);
+        break;
+      case "itemCompleted":
+        updateBatchLedgerItem(event.batchId, event.itemId, {
+          status: "completed",
+          phase: "complete",
+          archiveRoot: event.archiveRoot,
+          manifestPath: event.manifestPath,
+          error: null,
+        });
+        setBatchProgressByItem((current) => ({
+          ...current,
+          [event.itemId]: {
+            ...(current[event.itemId] ?? { written: 0, estimated: 0 }),
+            progress: 1,
+            finishedAtMs: Date.now(),
+          },
+        }));
+        void refreshBatchLedger(event.batchId, generation);
+        break;
+      case "itemFailed":
+        updateBatchLedgerItem(event.batchId, event.itemId, {
+          status: "failed",
+          phase: "failed",
+          error: event.error,
+        });
+        setBatchProgressByItem((current) => ({
+          ...current,
+          [event.itemId]: {
+            ...(current[event.itemId] ?? { written: 0, estimated: 0 }),
+            finishedAtMs: Date.now(),
+          },
+        }));
+        void refreshBatchLedger(event.batchId, generation);
+        break;
+      case "paused":
+        setBatchLedger((current) => current?.batchId === event.batchId ? { ...current, status: "paused" } : current);
+        void refreshBatchLedger(event.batchId, generation);
+        break;
+      case "finished":
+        setBatchLedger((current) => current?.batchId === event.batchId
+          ? { ...current, status: event.failed > 0 ? "completedWithErrors" : "completed" }
+          : current);
+        void refreshBatchLedger(event.batchId, generation);
+        break;
+    }
+  }
+
+  async function scanBatchFolder(root = batchFolderPath) {
+    const folder = root.trim();
+    if (!folder || batchScanning || batchInvocationActive) return;
+    setBatchScanning(true);
+    setBatchScanError("");
+    try {
+      const scan = await invoke<DemoFolderScan>("scan_demo_folder", {
+        request: { root: folder, recursive: true, limit: 512 },
+      });
+      setBatchFolderPath(scan.root);
+      setBatchScan(scan);
+      const imported = new Set(
+        (libraryScan?.entries ?? [])
+          .map((entry) => entry.sourcePath)
+          .filter((path): path is string => Boolean(path))
+          .map(normalizedDiagnosticPath),
+      );
+      setBatchSelectedIds(scan.candidates
+        .filter((candidate) => !imported.has(normalizedDiagnosticPath(candidate.path)))
+        .slice(0, BATCH_SELECTION_LIMIT)
+        .map((candidate) => normalizedDiagnosticPath(candidate.path)));
+      const notices = [
+        scan.truncated
+          ? (language === "zh" ? `扫描结果已限制为前 ${scan.limit} 个 Demo。` : `Scan results were limited to the first ${scan.limit} demos.`)
+          : "",
+        scan.skippedReparsePoints > 0
+          ? (language === "zh" ? `为避免越界，跳过了 ${scan.skippedReparsePoints} 个链接或 junction。` : `Skipped ${scan.skippedReparsePoints} links or junctions to stay inside the selected tree.`)
+          : "",
+        ...scan.warnings.slice(0, 3),
+      ].filter(Boolean);
+      setBatchScanError(notices.join(" "));
+    } catch (reason) {
+      setBatchScan(null);
+      setBatchSelectedIds([]);
+      setBatchScanError(parseCommandError(reason).message);
+    } finally {
+      setBatchScanning(false);
+    }
+  }
+
+  async function chooseBatchFolder() {
+    if (batchScanning || batchInvocationActive) return;
+    try {
+      const path = await invoke<string | null>("choose_demo_batch_dir", {
+        request: { initialPath: batchFolderPath || null },
+      });
+      if (!path) return;
+      setBatchFolderPath(path);
+      await scanBatchFolder(path);
+    } catch (reason) {
+      setBatchScanError(parseCommandError(reason).message);
+    }
+  }
+
+  async function startBatchImport(candidateIds: string[]) {
+    if (batchInvocationActive || candidateIds.length === 0) return;
+    let destination = libraryRoot;
+    if (!destination) destination = (await chooseLibraryRoot()) ?? "";
+    if (!destination) return;
+    const selected = new Set(candidateIds.slice(0, BATCH_SELECTION_LIMIT));
+    const candidates = batchCandidates.filter((candidate) => selected.has(candidate.id) && candidate.status === "ready");
+    if (candidates.length !== selected.size) {
+      setBatchSelectedIds(candidates.map((candidate) => candidate.id));
+      setGlobalError({
+        code: "batch_selection_changed",
+        message: language === "zh"
+          ? "本地库状态刚刚发生变化，已从选择中移除已入库的 Demo。请确认剩余项目后再启动。"
+          : "The local library changed, so already imported demos were removed from the selection. Review the remaining items and start again.",
+      });
+      return;
+    }
+    if (candidates.length === 0) return;
+
+    primeTaskSound();
+    const generation = ++batchGenerationRef.current;
+    batchStopPendingRef.current = false;
+    batchCancelGenerationRef.current = -1;
+    setBatchStopPending(false);
+    batchIdRef.current = "";
+    setBatchLedger(null);
+    setBatchProgressByItem({});
+    setBatchEtaSeconds(null);
+    setBatchStartingCandidates(candidates);
+    setBatchInvocationActive(true);
+    setGlobalError(null);
+    const events = new Channel<BatchEvent>();
+    events.onmessage = (event) => handleBatchEvent(event, generation);
+    try {
+      const next = await invoke<BatchLedger>("start_batch_import", {
+        request: {
+          sourceRoot: batchScan?.root ?? batchFolderPath,
+          libraryRoot: destination,
+          demoPaths: candidates.map((candidate) => candidate.path),
+          concurrency: batchConcurrency === "auto" ? null : batchConcurrency,
+          settings: {
+            includeSuspicious: settings.includeSuspicious,
+            fullRound: settings.fullRound,
+            side: settings.side,
+            subtickMode: settings.subtickMode,
+            maxRoundSeconds: settings.maxRoundSeconds,
+            freezePrerollSeconds: settings.freezePrerollSeconds,
+            exportVoice: settings.exportVoice,
+          },
+        },
+        events,
+      });
+      if (generation !== batchGenerationRef.current) return;
+      applyBatchLedger(next, generation, true);
+      setBatchSelectedIds([]);
+      if (next.status === "paused") playTaskSound("stopped");
+      else if (next.items.some((item) => item.status === "failed")) playTaskSound("failure");
+      else playTaskSound("success");
+      await scanLibrary(withExportRoot(libraryRoots, destination));
+    } catch (reason) {
+      if (generation !== batchGenerationRef.current) return;
+      setGlobalError(parseCommandError(reason));
+      playTaskSound("failure");
+      if (batchIdRef.current) await refreshBatchLedger(batchIdRef.current, generation);
+    } finally {
+      if (generation === batchGenerationRef.current) {
+        batchStopPendingRef.current = false;
+        setBatchStopPending(false);
+        setBatchStartingCandidates([]);
+        setBatchInvocationActive(false);
+      }
+    }
+  }
+
+  async function resumeBatchImport(itemId?: string) {
+    if (batchInvocationActive || !batchLedger) return;
+    primeTaskSound();
+    const generation = ++batchGenerationRef.current;
+    batchStopPendingRef.current = false;
+    batchCancelGenerationRef.current = -1;
+    setBatchStopPending(false);
+    setBatchInvocationActive(true);
+    setBatchProgressByItem({});
+    setBatchEtaSeconds(null);
+    setGlobalError(null);
+    const batchId = batchLedger.batchId;
+    batchIdRef.current = batchId;
+    const events = new Channel<BatchEvent>();
+    events.onmessage = (event) => handleBatchEvent(event, generation);
+    try {
+      const next = await invoke<BatchLedger>("resume_batch_import", {
+        request: {
+          batchId,
+          retryFailed: Boolean(itemId),
+          itemId: itemId ?? null,
+        },
+        events,
+      });
+      if (generation !== batchGenerationRef.current) return;
+      applyBatchLedger(next, generation);
+      if (next.status === "paused") playTaskSound("stopped");
+      else if (next.items.some((item) => item.status === "failed")) playTaskSound("failure");
+      else playTaskSound("success");
+      await scanLibrary(withExportRoot(libraryRoots, next.libraryRoot));
+    } catch (reason) {
+      if (generation !== batchGenerationRef.current) return;
+      setGlobalError(parseCommandError(reason));
+      playTaskSound("failure");
+      await refreshBatchLedger(batchId, generation);
+    } finally {
+      if (generation === batchGenerationRef.current) {
+        batchStopPendingRef.current = false;
+        setBatchStopPending(false);
+        setBatchInvocationActive(false);
+      }
+    }
+  }
+
+  async function requestBatchCancel(batchId: string, generation: number) {
+    if (generation !== batchGenerationRef.current || batchCancelGenerationRef.current === generation) return;
+    batchCancelGenerationRef.current = generation;
+    setBatchLedger((current) => current?.batchId === batchId ? { ...current, status: "stopping", cancelRequested: true } : current);
+    try {
+      const next = await invoke<BatchLedger>("cancel_batch_import", { request: { batchId } });
+      if (generation !== batchGenerationRef.current) return;
+      applyBatchLedger(next, generation);
+    } catch (reason) {
+      if (generation !== batchGenerationRef.current) return;
+      batchStopPendingRef.current = false;
+      setBatchStopPending(false);
+      setBatchLedger((current) => current?.batchId === batchId && current.status === "stopping"
+        ? { ...current, status: "running", cancelRequested: false }
+        : current);
+      setGlobalError(parseCommandError(reason));
+    } finally {
+      if (batchCancelGenerationRef.current === generation) batchCancelGenerationRef.current = -1;
+    }
+  }
+
+  function stopBatchImport() {
+    if (!batchInvocationActive) return;
+    batchStopPendingRef.current = true;
+    setBatchStopPending(true);
+    const batchId = batchIdRef.current || batchLedger?.batchId;
+    if (batchId) void requestBatchCancel(batchId, batchGenerationRef.current);
+  }
+
   useEffect(() => {
     if (libraryRoots.length > 0) void scanLibrary(libraryRoots);
   }, [libraryRoots, scanLibrary]);
@@ -744,7 +1433,7 @@ function App() {
       }
       const path = event.payload.paths[0];
       const lowered = path.toLowerCase();
-      if (lowered.endsWith(".dem")) void runAnalysis(path);
+      if (isDemoFilePath(lowered)) void runAnalysis(path);
       else if (lowered.endsWith(".json")) void runManifest(path);
       else setGlobalError({ code: "invalid_input_path", message: words.invalidInput, path });
     }).then((stop) => { unlisten = stop; });
@@ -1282,6 +1971,62 @@ function App() {
     }));
   }
 
+  async function loadServerConfig() {
+    const cs2Path = localEnvironment.cs2Path.trim();
+    if (!cs2Path || loadingServerConfig || savingServerConfig) return;
+    setLoadingServerConfig(true);
+    setGlobalError(null);
+    try {
+      const document = await invoke<ServerConfigDocument>("load_server_config", { cs2Path });
+      setServerConfigDocument(document);
+      setServerConfigDraft(document.normalizedJson || document.json);
+      setServerConfigValidation(document.validation);
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
+    } finally {
+      setLoadingServerConfig(false);
+    }
+  }
+
+  async function validateServerConfigDraft() {
+    if (!serverConfigDraft.trim()) return;
+    try {
+      const validation = await invoke<ServerConfigValidation>("validate_server_config", {
+        request: { json: serverConfigDraft },
+      });
+      setServerConfigValidation(validation);
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
+    }
+  }
+
+  async function saveServerConfig() {
+    const cs2Path = localEnvironment.cs2Path.trim();
+    if (!cs2Path || !serverConfigDocument || savingServerConfig || !serverConfigDraft.trim()) return;
+    primeTaskSound();
+    setSavingServerConfig(true);
+    setGlobalError(null);
+    try {
+      const saved = await invoke<SaveServerConfigResult>("save_server_config", {
+        request: {
+          cs2Path,
+          json: serverConfigDraft,
+          expectedFingerprint: serverConfigDocument.fingerprint ?? null,
+          replaceExisting: false,
+        },
+      });
+      setServerConfigDocument(saved.document);
+      setServerConfigDraft(saved.document.normalizedJson || saved.document.json);
+      setServerConfigValidation(saved.document.validation);
+      playTaskSound("success");
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
+      playTaskSound("failure");
+    } finally {
+      setSavingServerConfig(false);
+    }
+  }
+
   async function preflightOutput(destination: string): Promise<OutputPreflight | null> {
     if (!analysis) return null;
     try {
@@ -1353,6 +2098,7 @@ function App() {
 
   async function performConvert(overwrite: boolean, destination = outputDir) {
     if (!analysis || selectedRounds.size === 0 || !destination) return;
+    primeTaskSound();
     const token = ++taskTokenRef.current;
     taskWarningsRef.current = [];
     setGlobalError(null);
@@ -1400,6 +2146,7 @@ function App() {
       setOutputDir(destination);
       void scanLibrary(withExportRoot(libraryRoots, destination));
       setPhase("complete");
+      playTaskSound("success");
     } catch (reason) {
       if (token !== taskTokenRef.current) return;
       const error = parseCommandError(reason);
@@ -1413,6 +2160,7 @@ function App() {
         setGlobalError(error);
         setPhase("selecting");
       }
+      playTaskSound("failure");
     }
   }
 
@@ -1556,7 +2304,9 @@ function App() {
               void chooseDemo();
             }
           }}
+          onBatch={() => setActiveSection("batch")}
           onSettings={() => setActiveSection("settings")}
+          onFaq={() => setActiveSection("faq")}
         />
         <main className="app-workspace">
         {globalError ? (
@@ -1567,7 +2317,41 @@ function App() {
           </div>
         ) : null}
 
-        {activeSection === "settings" ? (
+        {activeSection === "faq" ? (
+          <FaqWorkspace words={words} language={language} />
+        ) : activeSection === "batch" ? (
+          <BatchWorkspace
+            words={words}
+            language={language}
+            folderPath={batchFolderPath}
+            scanning={batchScanning}
+            scanError={batchScanError}
+            candidates={batchCandidates}
+            selectedCandidateIds={batchSelectedIds}
+            concurrency={batchConcurrency}
+            runState={currentBatchRunState}
+            canResume={canResumeBatch}
+            jobs={batchJobs}
+            eta={batchEta}
+            summary={batchSummary}
+            soundNotifications={localEnvironment.soundNotifications}
+            onChooseFolder={() => void chooseBatchFolder()}
+            onScan={() => void scanBatchFolder()}
+            onSelectionChange={setBatchSelectedIds}
+            onConcurrencyChange={setBatchConcurrency}
+            onSoundNotificationsChange={(enabled) => {
+              if (enabled) primeTaskSound(true);
+              setLocalEnvironment((current) => ({ ...current, soundNotifications: enabled }));
+            }}
+            onStart={(candidateIds) => void startBatchImport(candidateIds)}
+            onResume={() => void resumeBatchImport()}
+            onStop={() => void stopBatchImport()}
+            onRetryJob={(jobId) => void resumeBatchImport(jobId)}
+            onOpenArchive={(job) => {
+              if (job.outputPath) void runManifest(job.outputPath);
+            }}
+          />
+        ) : activeSection === "settings" ? (
           <SettingsWorkspace
             words={words}
             language={language}
@@ -1578,22 +2362,38 @@ function App() {
             playback={playbackPreset}
             candidates={installCandidates}
             report={environmentReport}
+            serverConfigDocument={serverConfigDocument}
+            serverConfigDraft={serverConfigDraft}
+            serverConfigValidation={serverConfigValidation}
+            loadingServerConfig={loadingServerConfig}
+            savingServerConfig={savingServerConfig}
             detecting={detectingInstallations}
             detectionCompleted={installDetectionCompleted}
             inspecting={inspectingEnvironment}
             onCs2PathChange={(cs2Path) => {
               setLocalEnvironment((current) => ({ ...current, cs2Path }));
               setEnvironmentReport(null);
+              setServerConfigDocument(null);
+              setServerConfigDraft("");
+              setServerConfigValidation(null);
             }}
             onBrowseCs2={() => void chooseCs2Directory()}
             onDetectCs2={() => void detectCs2Installations()}
             onUseCandidate={useCs2Candidate}
             onInspectEnvironment={() => void runEnvironmentInspection()}
+            onLoadServerConfig={() => void loadServerConfig()}
+            onServerConfigDraftChange={(json) => {
+              setServerConfigDraft(json);
+              setServerConfigValidation(null);
+            }}
+            onValidateServerConfig={() => void validateServerConfigDraft()}
+            onSaveServerConfig={() => void saveServerConfig()}
             onChooseExportRoot={() => void chooseLibraryRoot()}
             onAddArchiveRoot={() => void addLibraryRoot()}
             onRemoveArchiveRoot={removeLibraryRoot}
             onAddDemoRoot={() => void addDemoRoot()}
             onRemoveDemoRoot={removeDemoRoot}
+            onEnvironmentChange={(patch) => setLocalEnvironment((current) => ({ ...current, ...patch }))}
             onConverterChange={updateSettings}
             onPlaybackChange={(patch) => setPlaybackPreset((current) => ({ ...current, ...patch }))}
           />
@@ -1653,7 +2453,7 @@ function App() {
             onClose={resetSession}
           />
         ) : null}
-        {phase === "analyzing" ? <AnalysisProgressView words={words} sourceFileName={sourceFileName} elapsedSeconds={elapsedSeconds} /> : null}
+        {phase === "analyzing" ? <AnalysisProgressView words={words} sourceFileName={sourceFileName} elapsedSeconds={elapsedSeconds} progressPhase={progress.phase} /> : null}
         {phase === "analysisFailed" ? (
           <AnalysisFailedView words={words} error={analysisError} retryButtonRef={retryButtonRef} onRetry={() => void runAnalysis(sourcePath)} onChangeDemo={() => void chooseDemo(sourcePath)} />
         ) : null}

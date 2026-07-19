@@ -19,7 +19,9 @@ function normalizedDemoHash(value: string): string | null {
 }
 
 function isDemoPath(value: unknown): value is string {
-  return typeof value === "string" && value.trim().toLocaleLowerCase().endsWith(".dem");
+  if (typeof value !== "string") return false;
+  const lowered = value.trim().toLocaleLowerCase();
+  return lowered.endsWith(".dem") || lowered.endsWith(".dem.zst");
 }
 
 export function storedDemoSourceIndex(): DemoSourceIndex {

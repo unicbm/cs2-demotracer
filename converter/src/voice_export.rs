@@ -190,7 +190,7 @@ mod imp {
     }
 
     fn parse_voice_frames(request: &VoiceBatchExportRequest) -> Result<ParsedVoiceData> {
-        let bytes = fs::read(&request.demo).map_err(|e| io_error(&request.demo, e))?;
+        let input = crate::demo_reader::load_demo_input(&request.demo)?;
         let huf = create_huffman_lookup_table();
         let settings = ParserInputs {
             real_name_to_og_name: AHashMap::default(),
@@ -213,7 +213,7 @@ mod imp {
         };
         let mut parser = Parser::new(settings, ParsingMode::Normal);
         let output = parser
-            .parse_demo(&bytes)
+            .parse_demo(&input.bytes)
             .map_err(|e| Error::Parser(format!("{e:?}")))?;
         let map = output
             .header
@@ -270,13 +270,8 @@ mod imp {
         frames.sort_by_key(|frame| (frame.xuid, frame.tick));
 
         Ok(ParsedVoiceData {
-            demo_stem: request
-                .demo
-                .file_stem()
-                .and_then(|value| value.to_str())
-                .unwrap_or("demo")
-                .to_string(),
-            demo_sha256: crate::demo_id::sha256_hex(&bytes),
+            demo_stem: input.stem,
+            demo_sha256: crate::demo_id::sha256_hex(&input.bytes),
             map,
             frames,
         })

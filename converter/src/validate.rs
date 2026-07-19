@@ -56,9 +56,11 @@ fn validate_public_artifacts(input: &Path) -> crate::Result<()> {
 }
 
 fn forbidden_public_artifact_reason(path: &Path) -> Option<&'static str> {
+    if crate::demo_reader::is_supported_demo_path(path) {
+        return Some("raw demo file");
+    }
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
     match ext.as_str() {
-        "dem" => Some("raw demo file"),
         "cs2rec" => Some("raw replay dump"),
         "csv" | "parquet" => Some("debug trace/data dump"),
         _ => None,
@@ -393,6 +395,10 @@ mod tests {
     fn public_artifact_hygiene_rejects_raw_and_debug_dumps() {
         assert_eq!(
             forbidden_public_artifact_reason(Path::new("match.dem")),
+            Some("raw demo file")
+        );
+        assert_eq!(
+            forbidden_public_artifact_reason(Path::new("FACEIT-MATCH.DEM.ZST")),
             Some("raw demo file")
         );
         assert_eq!(

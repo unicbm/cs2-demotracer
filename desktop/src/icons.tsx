@@ -179,3 +179,23 @@ export function PlusIcon({ size = 18, ...props }: IconProps) {
     </svg>
   );
 }
+
+export function BatchIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+      <path d="M5 5.5h11.5a2 2 0 0 1 2 2V19H7a2 2 0 0 1-2-2V5.5Z" />
+      <path d="M8.5 2.5H19a2 2 0 0 1 2 2V16" />
+      <path d="M9 10h5M9 14h5" />
+    </svg>
+  );
+}
+
+export function HelpIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.8 9a2.45 2.45 0 1 1 3.62 2.15c-.88.5-1.42 1.02-1.42 2.1" />
+      <path d="M12 17h.01" />
+    </svg>
+  );
+}

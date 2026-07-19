@@ -4,6 +4,7 @@ use super::{
     MIN_SUPPORTED_MANIFEST_ABI,
 };
 use cs2_demotracer::demo_id::sha256_hex;
+use cs2_demotracer::demo_reader::is_supported_demo_path;
 use cs2_demotracer::model::{DEMOTRACER_ABI, DTR_FORMAT_VERSION};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -550,11 +551,7 @@ fn apply_demo_info(
 
 fn source_demo_path_is_available(value: &str) -> bool {
     let path = Path::new(value);
-    path.is_file()
-        && path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("dem"))
+    path.is_file() && is_supported_demo_path(path)
 }
 
 fn manifest_compatibility(abi: i32, format_version: u32) -> String {

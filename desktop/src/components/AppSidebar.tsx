@@ -1,4 +1,4 @@
-import { LibraryIcon, PlusIcon, SlidersIcon } from "../icons";
+import { BatchIcon, HelpIcon, LibraryIcon, PlusIcon, SlidersIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
 import type { WorkspaceSection } from "../types";
 import "./app-sidebar.css";
@@ -9,18 +9,24 @@ export function AppSidebar({
   busy,
   onLibrary,
   onConvert,
+  onBatch,
   onSettings,
+  onFaq,
 }: {
   words: TextDictionary;
   activeSection: WorkspaceSection;
   busy: boolean;
   onLibrary: () => void;
   onConvert: () => void;
+  onBatch: () => void;
   onSettings: () => void;
+  onFaq: () => void;
 }) {
   const libraryActive = activeSection === "library";
   const conversionActive = activeSection === "convert";
+  const batchActive = activeSection === "batch";
   const settingsActive = activeSection === "settings";
+  const faqActive = activeSection === "faq";
   return (
     <aside className="app-sidebar" aria-label={words.mainNavigation}>
       <nav>
@@ -47,6 +53,17 @@ export function AppSidebar({
           <span>{words.navConvert}</span>
         </button>
         <button
+          className={batchActive ? "is-active" : ""}
+          type="button"
+          onClick={onBatch}
+          disabled={busy}
+          aria-current={batchActive ? "page" : undefined}
+          title={words.navBatch}
+        >
+          <BatchIcon size={19} />
+          <span>{words.navBatch}</span>
+        </button>
+        <button
           className={settingsActive ? "is-active" : ""}
           type="button"
           onClick={onSettings}
@@ -56,6 +73,17 @@ export function AppSidebar({
         >
           <SlidersIcon size={19} />
           <span>{words.navSettings}</span>
+        </button>
+        <button
+          className={faqActive ? "is-active" : ""}
+          type="button"
+          onClick={onFaq}
+          disabled={busy}
+          aria-current={faqActive ? "page" : undefined}
+          title={words.navFaq}
+        >
+          <HelpIcon size={19} />
+          <span>{words.navFaq}</span>
         </button>
       </nav>
       <div className="app-sidebar-status">

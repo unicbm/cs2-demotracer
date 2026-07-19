@@ -831,3 +831,116 @@
 @media (prefers-reduced-motion: reduce) {
   .settings-pane { animation: none; }
 }
+
+.server-config-pane { min-width: 0; }
+
+.server-config-editor-card {
+  display: grid;
+  gap: 12px;
+}
+
+.server-config-path {
+  display: block;
+  overflow: hidden;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--workspace);
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.server-config-editor {
+  width: 100%;
+  min-height: 420px;
+  resize: vertical;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--workspace) 92%, #111820);
+  color: var(--text);
+  font: 12.5px/1.6 "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  tab-size: 2;
+}
+
+.server-config-editor:focus {
+  outline: 2px solid color-mix(in srgb, var(--trace) 44%, transparent);
+  outline-offset: 1px;
+  border-color: var(--trace);
+}
+
+.server-config-validation.is-valid {
+  border-color: color-mix(in srgb, var(--success) 38%, var(--border));
+}
+
+.server-config-validation.is-invalid {
+  border-color: color-mix(in srgb, var(--danger) 46%, var(--border));
+}
+
+.server-config-issues {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.server-config-issues li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 9px;
+  align-items: start;
+  padding: 10px 12px;
+  border-radius: 7px;
+  background: var(--warning-soft);
+}
+
+.server-config-issues li div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.server-config-issues code {
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+.server-config-issues span { color: var(--text-muted); }
+
+.server-config-unknown {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.server-config-unknown summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.server-config-unknown p {
+  margin: 7px 0;
+  color: var(--text-muted);
+}
+
+.server-config-unknown div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.server-config-unknown code {
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: var(--workspace);
+}
+
+.server-config-reload-note code {
+  align-self: center;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: var(--workspace);
+  white-space: nowrap;
+}

@@ -1,6 +1,7 @@
 use cs2_demotracer::browser_analysis::{
     BrowserDemoAnalysis, BrowserDemoSource, BrowserPlayerSummary, BrowserScoreSummary,
 };
+use cs2_demotracer::demo_reader::is_supported_demo_path;
 use cs2_demotracer::model::ParsedDemo;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
@@ -269,14 +270,11 @@ pub(crate) fn write_demo_source_pointer(
             .chars()
             .all(|character| character.is_ascii_hexdigit())
         || !source_path.is_absolute()
-        || !source_path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("dem"))
+        || !is_supported_demo_path(source_path)
     {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "source pointer requires a full demo hash and absolute .dem path",
+            "source pointer requires a full demo hash and absolute .dem or .dem.zst path",
         ));
     }
     let metadata = fs::metadata(source_path).ok();
@@ -687,7 +685,7 @@ mod tests {
     #[test]
     fn source_pointer_round_trips_and_is_bound_to_the_full_hash() {
         let root = test_directory("source-pointer");
-        let source = root.join("match.dem");
+        let source = root.join("match.dem.zst");
         fs::write(&source, b"demo").unwrap();
         let hash = "ab".repeat(32);
 

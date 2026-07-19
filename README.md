@@ -12,8 +12,10 @@ Trace CS2 demos into bot-executable route replays.
 > has been locally verified. Demos using the newer delta user-command encoding
 > require converter v0.5.0 or newer; the `.dtr` format is unchanged.
 
-CS2 DemoTracer converts CS2 `.dem` files into compact `.dtr` replay files, then
-plays those routes back through bots on a local CS2 server. The normal converter
+CS2 DemoTracer converts CS2 `.dem` files, including FACEIT-style `.dem.zst`
+downloads, into compact `.dtr` replay files, then plays those routes back through
+bots on a local CS2 server. Zstandard decompression is built into the converter;
+players do not need a separate extraction tool. The normal converter
 path uses separate packaged Windows x64 CLI and GUI downloads; Python, Node.js,
 Conda, and game-server plugins are not required for conversion. The desktop GUI
 uses Tauri and requires the Microsoft Edge WebView2 Runtime, which is normally
@@ -86,8 +88,9 @@ Choose only what you need from the
 
 - `cs2-demotracer-cli-v<version>-windows-x64.zip`: the smallest converter
   download for CLI, wizard, batch, and pool workflows.
-- `cs2-demotracer-gui-v<version>-windows-x64.zip`: the Tauri single-demo desktop
-  converter and local `manifest.json` replay archive browser.
+- `cs2-demotracer-gui-v<version>-windows-x64.zip`: the Tauri desktop converter
+  with single-demo and bounded batch import, plus a local `manifest.json` replay
+  archive browser.
 - `cs2-demotracer-playback-v<version>-windows-x64.zip`: the server-side
   CounterStrikeSharp/Metamod plugins and runtimes for replaying `.dtr` files on
   a local Windows x64 CS2 server.
@@ -105,6 +108,10 @@ cs2-demotracer.exe inspect --demo "<demo.dem>"
 cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>"
 cs2-demotracer.exe validate --input "<output-dir>"
 ```
+
+`inspect` and `convert` also accept `<demo.dem.zst>` directly. Demo identity is
+calculated from the decompressed `.dem` content, so differently compressed copies
+of the same demo resolve to the same archive identity.
 
 To export demo-backed in-game voice for automatic replay, add `--export-voice`:
 
@@ -140,7 +147,7 @@ New GUI conversions are grouped as
 remains the identity. Each archive includes a pretty-printed desktop
 `demo-info.json` catalog summary next to the unchanged, portable ABI 17
 `manifest.json`, plus a small `demo-source.json` local provenance pointer. Both
-desktop sidecars can contain the original local `.dem` path; that pointer is
+desktop sidecars can contain the original local `.dem` or `.dem.zst` path; that pointer is
 never part of the playback manifest or its ABI.
 The library lightly indexes these files; `.dtr` payloads are read only after a
 replay is opened for full validation. Library cards show the map,
@@ -160,6 +167,19 @@ scratch. **Organize old
 archives** validates scattered replay folders, copies each unique demo into the
 map-grouped main library, and leaves every source folder untouched.
 
+The GUI Batch workspace scans a user-selected folder recursively and can import
+up to 24 `.dem` or `.dem.zst` files per batch. Compressed inputs are decompressed
+in-process and are never rewritten. Auto mode chooses 2–4 concurrent parsers from
+the local CPU; 1–4 can also be selected manually. The first parsed demo
+calibrates a same-machine file-size ETA, which is refined as more demos finish.
+Archive writing and validation use the normal atomic conversion path. Stopping
+is graceful: already-started items finish, no new items are dispatched, and
+every completed archive remains in the library. The queue ledger is stored
+locally so an interrupted or restarted batch can resume without silently
+discarding completed work. Completion, failure, and stopped states can play an
+optional notification sound. Extra-long HLTV P1 + P2 demo pairs are not merged
+automatically in this version.
+
 The GUI also has a Settings workspace for output, archive, raw-demo, export,
 and playback defaults. Its environment page accepts a manual CS2 path or an
 explicit user-triggered Steam discovery, then performs a read-only check of
@@ -168,6 +188,11 @@ and known BotController/BotHider vendor conflicts. It does not execute scanned
 DLLs or automatically rewrite the game installation. A fresh, privacy-bounded
 DemoTracer heartbeat can additionally prove loaded runtime contracts and CSS
 plugin directory names; stale evidence is never shown as active.
+After a CS2 folder is explicitly selected, the server-config page can load,
+validate, and save the installed `demotracer.config.json`. Saving preserves
+unknown JSON fields, rejects an externally changed file instead of overwriting
+it, and reminds the operator to run `dtr_config_reload`; editing the offline
+file does not prove that the CSS plugin has reloaded it.
 
 More commands:
 

@@ -1,6 +1,6 @@
 use crate::analysis::quality::AnalysisOptions;
 use crate::demo_id::{demo_id, unique_demo_id};
-use crate::demo_reader::{read_demo_with_options, ReadDemoOptions};
+use crate::demo_reader::{is_supported_demo_path, read_demo_with_options, ReadDemoOptions};
 use crate::export::{export_demo, ConvertOptions};
 use crate::model::{
     public_demo_path, RoundPoolCandidate, RoundPoolManifest, Side, SubtickMode, DEMOTRACER_ABI,
@@ -152,7 +152,7 @@ pub fn build_round_pool(options: &BuildPoolOptions) -> Result<BuildPoolReport> {
 
 fn collect_demo_files(path: &Path, recursive: bool, out: &mut Vec<PathBuf>) -> Result<()> {
     if path.is_file() {
-        if is_demo_file(path) {
+        if is_supported_demo_path(path) {
             out.push(path.to_path_buf());
         }
         return Ok(());
@@ -164,21 +164,28 @@ fn collect_demo_files(path: &Path, recursive: bool, out: &mut Vec<PathBuf>) -> R
         let path = entry.path();
         if path.is_dir() && recursive {
             collect_demo_files(&path, recursive, out)?;
-        } else if is_demo_file(&path) {
+        } else if is_supported_demo_path(&path) {
             out.push(path);
         }
     }
     Ok(())
 }
 
-fn is_demo_file(path: &Path) -> bool {
-    path.extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("dem"))
-}
-
 fn map_matches(actual: &str, expected: &str) -> bool {
     let actual = actual.trim().to_ascii_lowercase();
     let expected = expected.trim().to_ascii_lowercase();
     actual == expected || actual.strip_prefix("de_") == Some(expected.as_str())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pool_accepts_plain_and_zstd_demo_paths() {
+        assert!(is_supported_demo_path(Path::new("match.dem")));
+        assert!(is_supported_demo_path(Path::new("match.DEM.ZST")));
+        assert!(!is_supported_demo_path(Path::new("match.zst")));
+        assert!(!is_supported_demo_path(Path::new("manifest.json")));
+    }
 }

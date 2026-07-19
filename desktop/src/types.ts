@@ -1,7 +1,7 @@
 export type Language = "zh" | "en";
 export type Theme = "system" | "light" | "dark";
 export type SideChoice = "both" | "t" | "ct";
-export type WorkspaceSection = "library" | "convert" | "settings";
+export type WorkspaceSection = "library" | "convert" | "batch" | "settings" | "faq";
 export type SubtickMode = "auto" | "off";
 
 export type Phase =
@@ -17,6 +17,7 @@ export type Phase =
 
 export type ProgressPhase =
   | "preparing"
+  | "decompressing"
   | "parsing"
   | "analyzing"
   | "writing"
@@ -345,6 +346,7 @@ export interface ConverterSettings {
 export interface LocalEnvironmentSettings {
   cs2Path: string;
   demoRoots: string[];
+  soundNotifications: boolean;
 }
 
 export interface Cs2InstallCandidate {
@@ -423,6 +425,41 @@ export interface EnvironmentDiagnosticReport {
   receipt: EnvironmentInstallReceipt;
 }
 
+export interface ServerConfigIssue {
+  path: string;
+  code: string;
+  message: string;
+}
+
+export interface ServerConfigValidation {
+  valid: boolean;
+  errors: ServerConfigIssue[];
+  warnings: ServerConfigIssue[];
+  unknownPaths: string[];
+  hasLegacyAlign: boolean;
+  hasNewSections: boolean;
+}
+
+export interface ServerConfigDocument {
+  cs2Root: string;
+  gameCsgoPath: string;
+  configPath: string;
+  source: "installed" | "example" | "builtInDefault";
+  exists: boolean;
+  json: string;
+  normalizedJson?: string | null;
+  fingerprint?: string | null;
+  validation: ServerConfigValidation;
+  runtimeVerified: boolean;
+  reloadCommand: string;
+}
+
+export interface SaveServerConfigResult {
+  document: ServerConfigDocument;
+  requiresReload: boolean;
+  reloadCommand: string;
+}
+
 export type LogLevel = "info" | "warning" | "error";
 
 export interface ActivityLogEntry {
@@ -445,7 +482,7 @@ export interface ProgressState {
   announcement: string;
 }
 
-export type TaskPhase = "parsing" | "analyzing" | "exporting" | "voice" | "validating" | "complete";
+export type TaskPhase = "decompressing" | "parsing" | "analyzing" | "exporting" | "voice" | "validating" | "complete";
 
 export type ConversionProgressEvent =
   | { event: "analysisStarted" }
@@ -472,3 +509,123 @@ export type TaskEvent =
   | { kind: "phase"; phase: TaskPhase }
   | { kind: "log"; level: LogLevel; message: string }
   | { kind: "progress"; progress: ConversionProgressEvent };
+
+export interface DemoScanCandidate {
+  path: string;
+  relativePath: string;
+  fileName: string;
+  sizeBytes: string;
+  compressed: boolean;
+  modifiedAtMs?: number | null;
+}
+
+export interface DemoFolderScan {
+  root: string;
+  recursive: boolean;
+  limit: number;
+  candidates: DemoScanCandidate[];
+  truncated: boolean;
+  skippedReparsePoints: number;
+  warnings: string[];
+}
+
+export type BatchStatus =
+  | "pending"
+  | "running"
+  | "stopping"
+  | "paused"
+  | "completed"
+  | "completedWithErrors";
+
+export type BatchItemStatus = "pending" | "running" | "completed" | "failed";
+export type BatchItemPhase =
+  | "queued"
+  | "decompressing"
+  | "parsing"
+  | "analyzing"
+  | "converting"
+  | "voice"
+  | "validating"
+  | "complete"
+  | "failed";
+
+export interface BatchError {
+  code: string;
+  message: string;
+  path?: string | null;
+}
+
+export interface BatchCalibration {
+  samples: number;
+  secondsPerGib: number;
+  firstItemId: string;
+  firstParseMs: number;
+}
+
+export interface BatchItem {
+  itemId: string;
+  sourcePath: string;
+  relativePath: string;
+  fileName: string;
+  sizeBytes: string;
+  modifiedAtMs?: number | null;
+  status: BatchItemStatus;
+  phase: BatchItemPhase;
+  attempts: number;
+  parseMs?: number | null;
+  predictedParseMs?: number | null;
+  demoSha256?: string | null;
+  map?: string | null;
+  serverName?: string | null;
+  archiveRoot?: string | null;
+  manifestPath?: string | null;
+  roundsExported?: number | null;
+  filesWritten?: number | null;
+  error?: BatchError | null;
+}
+
+export interface BatchLedger {
+  schemaVersion: number;
+  batchId: string;
+  revision: number;
+  createdAtMs: number;
+  updatedAtMs: number;
+  sourceRoot: string;
+  libraryRoot: string;
+  settings: {
+    includeSuspicious: boolean;
+    fullRound: boolean;
+    side: SideChoice;
+    subtickMode: SubtickMode;
+    maxRoundSeconds: number;
+    freezePrerollSeconds: number;
+    exportVoice: boolean;
+  };
+  status: BatchStatus;
+  cancelRequested: boolean;
+  requestedConcurrency?: number | null;
+  concurrency: number;
+  calibration?: BatchCalibration | null;
+  items: BatchItem[];
+}
+
+export interface BatchList {
+  batches: BatchLedger[];
+}
+
+export type BatchEvent =
+  | { kind: "started"; batchId: string; total: number; concurrency: number }
+  | { kind: "itemPhase"; batchId: string; itemId: string; phase: BatchItemPhase; parseEtaSeconds?: number | null }
+  | { kind: "itemTask"; batchId: string; itemId: string; task: TaskEvent; parseEtaSeconds?: number | null }
+  | { kind: "estimateUpdated"; batchId: string; parseEtaSeconds: number; samples: number }
+  | {
+      kind: "itemCompleted";
+      batchId: string;
+      itemId: string;
+      archiveRoot: string;
+      manifestPath: string;
+      parseEtaSeconds?: number | null;
+    }
+  | { kind: "itemFailed"; batchId: string; itemId: string; error: BatchError; parseEtaSeconds?: number | null }
+  | { kind: "paused"; batchId: string; completed: number; failed: number; pending: number }
+  | { kind: "finished"; batchId: string; completed: number; failed: number };

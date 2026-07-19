@@ -12,6 +12,10 @@ Inspect the demo first:
 cs2-demotracer.exe inspect --demo <demo.dem>
 ```
 
+FACEIT-style `<demo.dem.zst>` inputs are accepted directly by the same commands.
+Zstandard decompression runs inside DemoTracer, and identity is calculated from
+the decompressed demo content.
+
 Convert recommended rounds:
 
 ```powershell
@@ -80,7 +84,7 @@ manifest reader and validates its referenced replay files. Newly converted
 demos write the desktop sidecar from the same parsed `ParsedDemo`, including
 round-end-derived score, stable team identities across
 side swaps, K/D/A, header/server platform evidence, and full `CDemoFileInfo`
-playback duration. It also stores the original absolute `.dem` path for local
+playback duration. It also stores the original absolute `.dem` or `.dem.zst` path for local
 reuse in `demo-info.json` and a small independent `demo-source.json`; the
 portable manifest remains sanitized. A score without an explicit match-end panel is labeled as
 complete only through the last observed round. Legacy manifest scoreboard
@@ -94,7 +98,7 @@ present in the demo. **Organize old archives** strictly validates scattered
 archive folders, skips duplicate full demo hashes, and copies accepted archives
 into the map-grouped main library without moving or deleting their sources.
 
-The GUI Settings workspace keeps output/archive roots separate from raw `.dem`
+The GUI Settings workspace keeps output/archive roots separate from raw `.dem`/`.dem.zst`
 library roots, remembers safe export and playback defaults, and provides a
 local environment inspection. CS2 discovery runs only after the user clicks
 the detection action; a manually entered CS2 or `game/csgo` path is always

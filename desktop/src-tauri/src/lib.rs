@@ -1,13 +1,22 @@
 mod archive_info;
+mod batch;
 mod catalog;
 mod diagnostics;
+mod server_config;
 
+use batch::{
+    cancel_batch_import, choose_demo_batch_dir, list_batch_imports, read_batch_import,
+    resume_batch_import, scan_demo_folder, start_batch_import,
+};
 use cs2_demotracer::browser_analysis::{
     analyze_browser_demo, BrowserDemoAnalysis, BrowserDemoSource, BrowserPlayerSummary,
     BrowserScoreSummary,
 };
 use cs2_demotracer::demo_id::sha256_hex;
-use cs2_demotracer::demo_reader::{read_demo_with_options, ReadDemoOptions};
+use cs2_demotracer::demo_reader::{
+    demo_content_sha256, is_supported_demo_path, is_zstd_demo_path, load_demo_input,
+    read_demo_with_options, read_loaded_demo_with_options, ReadDemoOptions,
+};
 use cs2_demotracer::dtr::read_rec_file;
 use cs2_demotracer::export::{
     export_demo_to_root_with_progress, ConversionArtifactKind, ConversionProgress,
@@ -22,6 +31,7 @@ use cs2_demotracer::validate::validate_dtr_path;
 use cs2_demotracer::voice_export::export_round_voice_sidecars;
 use diagnostics::{choose_cs2_dir, detect_cs2_installations, inspect_cs2_install};
 use serde::{Deserialize, Serialize};
+use server_config::{load_server_config, save_server_config, validate_server_config};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -42,6 +52,7 @@ const OUTPUT_COMPLETION_MARKER: &str = ".demotracer-complete";
 const OUTPUT_COMPLETION_MARKER_CONTENT: &[u8] = b"CS2 DemoTracer output completed successfully.\n";
 
 static NEXT_STAGING_NONCE: AtomicU64 = AtomicU64::new(1);
+static BATCH_CONVERSION_LOCK: Mutex<()> = Mutex::new(());
 
 pub(crate) type CommandResult<T> = Result<T, CommandErrorDto>;
 
@@ -95,6 +106,7 @@ pub enum TaskEvent {
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TaskPhase {
+    Decompressing,
     Parsing,
     Analyzing,
     Exporting,
@@ -940,7 +952,7 @@ async fn choose_demo(initial_path: Option<String>) -> CommandResult<Option<Strin
     tauri::async_runtime::spawn_blocking(move || {
         let mut dialog = rfd::FileDialog::new()
             .set_title("Choose a CS2 demo")
-            .add_filter("CS2 demo", &["dem"]);
+            .add_filter("CS2 demo (.dem, .dem.zst)", &["dem", "zst"]);
         if let Some(value) = initial_path
             .as_deref()
             .map(str::trim)
@@ -1049,7 +1061,6 @@ async fn analyze_demo(
     let source_metadata = fs::metadata(&source_path).ok();
     *state.cache()? = None;
 
-    emit_phase(&events, TaskPhase::Parsing);
     emit_log(
         &events,
         LogLevel::Info,
@@ -1059,8 +1070,18 @@ async fn analyze_demo(
     let worker_path = source_path.clone();
     let worker_events = events.clone();
     let parsed_result = tauri::async_runtime::spawn_blocking(move || {
-        let parsed = read_demo_with_options(
-            &worker_path,
+        if is_zstd_demo_path(&worker_path) {
+            emit_phase(&worker_events, TaskPhase::Decompressing);
+            emit_log(
+                &worker_events,
+                LogLevel::Info,
+                format!("Decompressing {}", worker_path.display()),
+            );
+        }
+        let input = load_demo_input(&worker_path)?;
+        emit_phase(&worker_events, TaskPhase::Parsing);
+        let parsed = read_loaded_demo_with_options(
+            &input,
             ReadDemoOptions {
                 collect_voice: true,
                 collect_cosmetics: true,
@@ -1406,10 +1427,9 @@ fn resolve_source_demo_path(
         }
         Err(error) => return Err(error),
     };
-    let source_bytes = fs::read(&demo_path).map_err(|error| {
+    let source_hash = demo_content_sha256(&demo_path).map_err(|error| {
         CommandErrorDto::at_path("metadata_demo_read_failed", error.to_string(), &demo_path)
     })?;
-    let source_hash = sha256_hex(&source_bytes);
     if !source_hash.eq_ignore_ascii_case(expected_sha256) {
         return Err(CommandErrorDto::at_path(
             "metadata_demo_hash_mismatch",
@@ -1583,16 +1603,11 @@ fn refresh_library_metadata_for(
 }
 
 fn local_demo_hash(path: &Path) -> Result<Option<String>, String> {
-    if !path.is_file()
-        || !path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("dem"))
-    {
+    if !path.is_file() || !is_supported_demo_path(path) {
         return Ok(None);
     }
-    fs::read(path)
-        .map(|bytes| Some(sha256_hex(&bytes)))
+    demo_content_sha256(path)
+        .map(Some)
         .map_err(|error| error.to_string())
 }
 
@@ -2015,7 +2030,7 @@ fn collect_demo_files(root: &Path) -> CommandResult<Vec<PathBuf>> {
     if !metadata.is_dir() || catalog::is_symlink_or_reparse(&metadata) {
         return Err(CommandErrorDto::at_path(
             "demo_source_root_invalid",
-            "Choose a normal folder containing original .dem files.",
+            "Choose a normal folder containing original .dem or .dem.zst files.",
             root,
         ));
     }
@@ -2040,12 +2055,7 @@ fn collect_demo_files(root: &Path) -> CommandResult<Vec<PathBuf>> {
             }
             if metadata.is_dir() && depth < MAX_DEMO_SCAN_DEPTH {
                 pending.push((path, depth + 1));
-            } else if metadata.is_file()
-                && path
-                    .extension()
-                    .and_then(|extension| extension.to_str())
-                    .is_some_and(|extension| extension.eq_ignore_ascii_case("dem"))
-            {
+            } else if metadata.is_file() && is_supported_demo_path(&path) {
                 demos.push(path);
                 if demos.len() >= MAX_DEMO_FILES {
                     return Ok(demos);
@@ -2059,15 +2069,11 @@ fn collect_demo_files(root: &Path) -> CommandResult<Vec<PathBuf>> {
 
 fn validate_demo_path(value: &str) -> CommandResult<PathBuf> {
     let path = PathBuf::from(value.trim());
-    let is_demo = path.is_file()
-        && path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("dem"));
+    let is_demo = path.is_file() && is_supported_demo_path(&path);
     if !is_demo {
         return Err(CommandErrorDto::at_path(
             "invalid_demo_path",
-            "Choose an existing CS2 .dem file.",
+            "Choose an existing CS2 .dem or .dem.zst file.",
             &path,
         ));
     }
@@ -3490,6 +3496,36 @@ fn run_conversion(
     request: ConvertDemoRequest,
     events: Channel<TaskEvent>,
 ) -> CommandResult<ConversionSummaryDto> {
+    let sink: TaskEventSink = Arc::new(move |event| emit(&events, event));
+    run_conversion_with_sink(cached, prepared, request, sink)
+}
+
+type TaskEventSink = Arc<dyn Fn(TaskEvent) + Send + Sync>;
+
+fn emit_to_sink(sink: &TaskEventSink, event: TaskEvent) {
+    sink(event);
+}
+
+fn emit_phase_to_sink(sink: &TaskEventSink, phase: TaskPhase) {
+    emit_to_sink(sink, TaskEvent::Phase { phase });
+}
+
+fn emit_log_to_sink(sink: &TaskEventSink, level: LogLevel, message: impl Into<String>) {
+    emit_to_sink(
+        sink,
+        TaskEvent::Log {
+            level,
+            message: message.into(),
+        },
+    );
+}
+
+fn run_conversion_with_sink(
+    cached: CachedDemo,
+    prepared: PreparedConversion,
+    request: ConvertDemoRequest,
+    events: TaskEventSink,
+) -> CommandResult<ConversionSummaryDto> {
     let final_root = prepared.root.clone();
     let output_dir = prepared.output_dir.clone();
     let mut demo_info = archive_info::DemoArchiveInfo::from_analysis(
@@ -3532,7 +3568,7 @@ fn run_conversion(
         request.overwrite,
         &mut file_ops,
         |staging_root| {
-            emit_phase(&events, TaskPhase::Exporting);
+            emit_phase_to_sink(&events, TaskPhase::Exporting);
             let progress_events = events.clone();
             let progress_final_root = final_root.clone();
             let report = export_demo_to_root_with_progress(
@@ -3543,7 +3579,7 @@ fn run_conversion(
                     if let Some(progress) =
                         public_conversion_progress(progress, &progress_final_root)
                     {
-                        emit(&progress_events, TaskEvent::Progress { progress });
+                        emit_to_sink(&progress_events, TaskEvent::Progress { progress });
                     }
                 },
             )
@@ -3551,11 +3587,11 @@ fn run_conversion(
 
             let mut voice_summaries = Vec::new();
             if request.export_voice {
-                emit_phase(&events, TaskPhase::Voice);
+                emit_phase_to_sink(&events, TaskPhase::Voice);
                 let reports = export_round_voice_sidecars(&cached.parsed, &report)
                     .map_err(|error| CommandErrorDto::from_core("voice_export_failed", error))?;
                 if reports.is_empty() {
-                    emit_log(
+                    emit_log_to_sink(
                         &events,
                         LogLevel::Warning,
                         "Voice sidecar export skipped: the selected rounds contain no voice frames.",
@@ -3574,7 +3610,7 @@ fn run_conversion(
                 }
             }
 
-            emit_phase(&events, TaskPhase::Validating);
+            emit_phase_to_sink(&events, TaskPhase::Validating);
             let validated_files = validate_dtr_path(&report.root)
                 .map_err(|error| CommandErrorDto::from_core("validation_failed", error))?;
             let manifest_bytes = fs::read(&report.manifest_path).map_err(|error| {
@@ -3618,11 +3654,11 @@ fn run_conversion(
     )?;
 
     if let Some(warning) = transaction.backup_cleanup_warning {
-        emit_log(&events, LogLevel::Warning, warning);
+        emit_log_to_sink(&events, LogLevel::Warning, warning);
     }
     let mut staged = transaction.value;
     for voice in &staged.voice_summaries {
-        emit_log(
+        emit_log_to_sink(
             &events,
             LogLevel::Info,
             format!(
@@ -3636,7 +3672,7 @@ fn run_conversion(
     }
     staged.report.root = final_root.clone();
     staged.report.manifest_path = final_root.join("manifest.json");
-    emit(
+    emit_to_sink(
         &events,
         TaskEvent::Progress {
             progress: ConversionProgressDto::Finished {
@@ -3655,8 +3691,190 @@ fn run_conversion(
         request.export_stickers,
         request.export_charms,
     );
-    emit_phase(&events, TaskPhase::Complete);
+    emit_phase_to_sink(&events, TaskPhase::Complete);
     Ok(summary)
+}
+
+fn process_batch_demo(
+    request: batch::BatchProcessRequest,
+    events: TaskEventSink,
+) -> CommandResult<batch::BatchProcessResult> {
+    validate_max_round_seconds(request.settings.max_round_seconds)?;
+    let source_path = validate_demo_path(&request.source_path.display().to_string())?;
+    let source_metadata = fs::metadata(&source_path).ok();
+
+    emit_log_to_sink(
+        &events,
+        LogLevel::Info,
+        format!("Reading {}", source_path.display()),
+    );
+    if is_zstd_demo_path(&source_path) {
+        emit_phase_to_sink(&events, TaskPhase::Decompressing);
+        emit_log_to_sink(
+            &events,
+            LogLevel::Info,
+            format!("Decompressing {}", source_path.display()),
+        );
+    }
+    let input = load_demo_input(&source_path).map_err(|error| {
+        emit_log_to_sink(&events, LogLevel::Error, error.to_string());
+        CommandErrorDto::from_core("analysis_failed", error)
+    })?;
+    emit_phase_to_sink(&events, TaskPhase::Parsing);
+    let parsed = read_loaded_demo_with_options(
+        &input,
+        ReadDemoOptions {
+            collect_voice: request.settings.export_voice,
+            // Batch import deliberately excludes the risk-gated cosmetic lane. A player can
+            // still use the single-demo flow when they explicitly need those options.
+            collect_cosmetics: false,
+        },
+    )
+    .map_err(|error| {
+        emit_log_to_sink(&events, LogLevel::Error, error.to_string());
+        CommandErrorDto::from_core("analysis_failed", error)
+    })?;
+
+    emit_phase_to_sink(&events, TaskPhase::Analyzing);
+    let browser = analyze_browser_demo(
+        &parsed,
+        AnalysisOptions {
+            max_round_seconds: request.settings.max_round_seconds,
+            ..AnalysisOptions::default()
+        },
+    );
+    let selected_rounds = browser
+        .analysis
+        .rounds
+        .iter()
+        .filter(|round| {
+            request.settings.include_suspicious || round.status == RoundStatus::Recommended
+        })
+        .map(|round| round.round)
+        .collect::<Vec<_>>();
+    if selected_rounds.is_empty() {
+        return Err(CommandErrorDto::at_path(
+            "no_recommended_rounds",
+            "No recommended rounds were found. Import this demo individually to inspect or include suspicious rounds.",
+            &source_path,
+        ));
+    }
+
+    let demo_sha256 = parsed.demo_sha256.clone();
+    let map = browser.analysis.map.clone();
+    let server_name = browser.server_name.clone();
+    let archive_id = archive_info::archive_directory_name(&parsed, &browser);
+    let cached = CachedDemo {
+        analysis_id: format!("{}-{}", request.batch_id, request.item_id),
+        parsed: Arc::new(parsed),
+        analysis: browser.analysis.clone(),
+        browser,
+        archive_id,
+        source_modified_at_ms: source_metadata.as_ref().and_then(metadata_modified_at_ms),
+        source_size_bytes: source_metadata.as_ref().map(fs::Metadata::len),
+    };
+    let convert_request = ConvertDemoRequest {
+        analysis_id: cached.analysis_id.clone(),
+        output_dir: request.library_root.display().to_string(),
+        selected_rounds,
+        include_suspicious: request.settings.include_suspicious,
+        full_round: request.settings.full_round,
+        side: request.settings.side,
+        subtick_mode: request.settings.subtick_mode,
+        max_round_seconds: request.settings.max_round_seconds,
+        freeze_preroll_seconds: request.settings.freeze_preroll_seconds,
+        export_voice: request.settings.export_voice,
+        export_cosmetics: false,
+        export_stickers: false,
+        export_charms: false,
+        cosmetic_consent: None,
+        overwrite: OverwriteModeDto::Deny,
+    };
+    // Parsing and analysis stay concurrent. Archive selection, writing, and validation are
+    // serialized so duplicate demos cannot race for the same transaction root and several
+    // exporters cannot multiply peak memory use.
+    let _conversion_guard = BATCH_CONVERSION_LOCK.lock().map_err(|_| {
+        CommandErrorDto::new(
+            "batch_conversion_state_poisoned",
+            "The batch conversion coordinator is unavailable. Resume the batch after restarting the app.",
+        )
+    })?;
+    let prepared = prepare_conversion(&convert_request, &cached)?;
+    if let Some(existing) = reconcile_completed_batch_archive(
+        &prepared.root,
+        &demo_sha256,
+        &map,
+        server_name.clone(),
+        &events,
+    )? {
+        return Ok(existing);
+    }
+    let summary = run_conversion_with_sink(cached, prepared, convert_request, events)?;
+
+    Ok(batch::BatchProcessResult {
+        archive_root: PathBuf::from(&summary.root),
+        manifest_path: PathBuf::from(&summary.manifest_path),
+        demo_sha256,
+        map,
+        server_name,
+        rounds_exported: summary.rounds_exported,
+        files_written: summary.files_written,
+    })
+}
+
+fn reconcile_completed_batch_archive(
+    root: &Path,
+    expected_demo_sha256: &str,
+    map: &str,
+    server_name: Option<String>,
+    events: &TaskEventSink,
+) -> CommandResult<Option<batch::BatchProcessResult>> {
+    let marker = root.join(OUTPUT_COMPLETION_MARKER);
+    let manifest_path = root.join("manifest.json");
+    if !file_contents_equal(&marker, OUTPUT_COMPLETION_MARKER_CONTENT).unwrap_or(false)
+        || !manifest_path.is_file()
+    {
+        return Ok(None);
+    }
+
+    emit_phase_to_sink(events, TaskPhase::Validating);
+    let archive = match read_manifest_for(&manifest_path.display().to_string()) {
+        Ok(archive)
+            if archive.playable
+                && archive
+                    .demo_sha256
+                    .eq_ignore_ascii_case(expected_demo_sha256) =>
+        {
+            archive
+        }
+        Ok(_) | Err(_) => return Ok(None),
+    };
+    emit_log_to_sink(
+        events,
+        LogLevel::Info,
+        format!(
+            "A complete validated archive already exists at {}; keeping it.",
+            root.display()
+        ),
+    );
+    emit_phase_to_sink(events, TaskPhase::Complete);
+    Ok(Some(batch::BatchProcessResult {
+        archive_root: root.to_path_buf(),
+        manifest_path,
+        demo_sha256: expected_demo_sha256.to_string(),
+        map: if archive.map.trim().is_empty() {
+            map.to_string()
+        } else {
+            archive.map
+        },
+        server_name,
+        rounds_exported: archive
+            .rounds
+            .iter()
+            .filter(|round| round.available)
+            .count(),
+        files_written: archive.total_files,
+    }))
 }
 
 struct StagedConversion {
@@ -3868,7 +4086,7 @@ where
     }
 
     let backup_cleanup_warning =
-        match promote_staged_output(file_ops, &staging_root, final_root, &backup_root) {
+        match promote_staged_output(file_ops, &staging_root, final_root, &backup_root, overwrite) {
             Ok(warning) => warning,
             Err(error) => {
                 cleanup_staging(file_ops, &staging_root);
@@ -3981,6 +4199,7 @@ fn promote_staged_output<O: OutputFileOps>(
     staging_root: &Path,
     final_root: &Path,
     backup_root: &Path,
+    overwrite: OverwriteModeDto,
 ) -> CommandResult<Option<String>> {
     let staging_metadata = file_ops.metadata(staging_root).map_err(|error| {
         CommandErrorDto::at_path("output_promote_failed", error.to_string(), staging_root)
@@ -4004,6 +4223,9 @@ fn promote_staged_output<O: OutputFileOps>(
         return Ok(None);
     };
     require_normal_output_directory(&final_metadata, final_root)?;
+    if overwrite == OverwriteModeDto::Deny {
+        return Err(output_exists_error(final_root));
+    }
     if file_ops
         .metadata(backup_root)
         .map_err(|error| {
@@ -4358,6 +4580,7 @@ fn open_folder_path(path: &Path) -> std::io::Result<()> {
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
+        .manage(batch::BatchState::default())
         .invoke_handler(tauri::generate_handler![
             choose_demo,
             choose_manifest,
@@ -4368,6 +4591,16 @@ pub fn run() {
             choose_cs2_dir,
             detect_cs2_installations,
             inspect_cs2_install,
+            load_server_config,
+            validate_server_config,
+            save_server_config,
+            choose_demo_batch_dir,
+            scan_demo_folder,
+            start_batch_import,
+            resume_batch_import,
+            read_batch_import,
+            list_batch_imports,
+            cancel_batch_import,
             analyze_demo,
             preflight_output,
             read_manifest,

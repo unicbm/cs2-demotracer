@@ -41,6 +41,23 @@ pub enum Error {
     InvalidDemo(String),
     #[error("demoparser error: {0}")]
     Parser(String),
+    #[error("failed to decompress zstd demo {path}: {source}")]
+    ZstdDemo {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("decompressed demo exceeds the safety limit of {limit_bytes} bytes: {path}")]
+    DecompressedDemoTooLarge { path: String, limit_bytes: u64 },
+    #[error(
+        "cannot allocate memory while loading demo {path} after {decoded_bytes} decoded bytes: {source}"
+    )]
+    DemoAllocation {
+        path: String,
+        decoded_bytes: u64,
+        #[source]
+        source: std::collections::TryReserveError,
+    },
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
     #[error("this build was compiled without the `{0}` feature")]

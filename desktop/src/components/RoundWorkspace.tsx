@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ArrowIcon, FolderIcon, SlidersIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
 import type { AnalysisResult, RoundInfo } from "../types";
+import { AnalysisOverview } from "./AnalysisOverview";
 import { RoundTable, type RoundTableLabels } from "./RoundTable";
 
 interface RoundWorkspaceProps {
@@ -70,6 +71,7 @@ export function RoundWorkspace({
 
   return (
     <section className="round-workspace" aria-label={words.rounds}>
+      <AnalysisOverview analysis={analysis} words={words} />
       <div className="round-toolbar">
         <strong className="round-summary">{summary}</strong>
         <div className="round-batch-actions">

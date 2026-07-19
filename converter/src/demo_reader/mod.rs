@@ -1,6 +1,365 @@
 use crate::model::ParsedDemo;
-use crate::{Error, Result};
-use std::path::Path;
+use crate::{io_error, Error, Result};
+use sha2::{Digest, Sha256};
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
+
+/// Hard ceiling for decompressed `.dem.zst` input. Parsing already requires the
+/// complete demo in memory, and this prevents a small untrusted archive from
+/// expanding without bound before it reaches demoparser.
+pub const MAX_DECOMPRESSED_DEMO_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
+const ZSTD_FRAME_MAGIC: u32 = 0xFD2F_B528;
+const ZSTD_SKIPPABLE_MAGIC_BASE: u32 = 0x184D_2A50;
+const ZSTD_FRAME_HEADER_MAX_BYTES: usize = 18;
+const MAX_ZSTD_WINDOW_LOG: u32 = 27; // 128 MiB decoder history window.
+const READ_BUFFER_BYTES: usize = 64 * 1024;
+
+#[derive(Clone, Debug)]
+pub struct LoadedDemoInput {
+    pub bytes: Vec<u8>,
+    pub stem: String,
+    pub display_path: String,
+    pub compressed: bool,
+}
+
+/// Returns true for the supported compressed demo filename form, ignoring
+/// ASCII case (for example, `match.dem.zst`).
+pub fn is_zstd_demo_path(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.to_ascii_lowercase().ends_with(".dem.zst"))
+}
+
+/// Returns true for `.dem` and `.dem.zst` paths, ignoring ASCII case.
+pub fn is_supported_demo_path(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            let name = name.to_ascii_lowercase();
+            name.ends_with(".dem") || name.ends_with(".dem.zst")
+        })
+}
+
+/// Reads the logical CS2 demo bytes. Zstd is detected from either the
+/// `.dem.zst` filename or frame magic and decompressed with a hard output cap.
+pub fn read_demo_input_bytes(path: &Path) -> Result<Vec<u8>> {
+    read_demo_input_bytes_with_limit(path, MAX_DECOMPRESSED_DEMO_BYTES).map(|(bytes, _)| bytes)
+}
+
+/// Loads and, when needed, decompresses a demo without parsing it. Callers can
+/// use this to expose a separate decompression stage before invoking
+/// `read_loaded_demo_with_options`.
+pub fn load_demo_input(path: &Path) -> Result<LoadedDemoInput> {
+    let (bytes, compressed) = read_demo_input_bytes_with_limit(path, MAX_DECOMPRESSED_DEMO_BYTES)?;
+    Ok(LoadedDemoInput {
+        bytes,
+        stem: demo_input_stem(path),
+        display_path: path.display().to_string(),
+        compressed,
+    })
+}
+
+/// Hashes logical demo content without parsing it or retaining the whole demo
+/// in memory. Compressed inputs are hashed after decompression and use the same
+/// safety limit as parsing.
+pub fn demo_content_sha256(path: &Path) -> Result<String> {
+    let (mut reader, compressed) = open_demo_content_reader(path, MAX_DECOMPRESSED_DEMO_BYTES)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; READ_BUFFER_BYTES];
+    let mut total = 0_u64;
+
+    loop {
+        let read = reader
+            .read(&mut buffer)
+            .map_err(|error| demo_content_read_error(path, compressed, error))?;
+        if read == 0 {
+            break;
+        }
+        total = total.saturating_add(read as u64);
+        enforce_decompressed_limit(path, compressed, total, MAX_DECOMPRESSED_DEMO_BYTES)?;
+        hasher.update(&buffer[..read]);
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn read_demo_input_bytes_with_limit(path: &Path, limit: u64) -> Result<(Vec<u8>, bool)> {
+    let (mut reader, compressed) = open_demo_content_reader(path, limit)?;
+    let mut output = Vec::new();
+    let mut buffer = [0_u8; READ_BUFFER_BYTES];
+    let mut total = 0_u64;
+
+    loop {
+        let read = reader
+            .read(&mut buffer)
+            .map_err(|error| demo_content_read_error(path, compressed, error))?;
+        if read == 0 {
+            break;
+        }
+        total = total.saturating_add(read as u64);
+        enforce_decompressed_limit(path, compressed, total, limit)?;
+        reserve_demo_capacity(&mut output, read, path, total)?;
+        output.extend_from_slice(&buffer[..read]);
+    }
+
+    Ok((output, compressed))
+}
+
+fn open_demo_content_reader(path: &Path, limit: u64) -> Result<(Box<dyn Read>, bool)> {
+    let mut file = File::open(path).map_err(|error| io_error(path, error))?;
+    let mut prefix = [0_u8; ZSTD_FRAME_HEADER_MAX_BYTES];
+    let prefix_len = file
+        .read(&mut prefix)
+        .map_err(|error| io_error(path, error))?;
+    file.seek(SeekFrom::Start(0))
+        .map_err(|error| io_error(path, error))?;
+
+    let magic_is_zstd = has_zstd_magic(&prefix[..prefix_len]);
+    let compressed = is_zstd_demo_path(path)
+        || path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("zst"))
+        || magic_is_zstd;
+
+    if compressed {
+        if magic_is_zstd {
+            if let Ok(Some(content_size)) =
+                zstd::zstd_safe::get_frame_content_size(&prefix[..prefix_len])
+            {
+                enforce_decompressed_limit(path, true, content_size, limit)?;
+            }
+        }
+        let mut decoder =
+            zstd::stream::read::Decoder::new(file).map_err(|source| Error::ZstdDemo {
+                path: path.display().to_string(),
+                source,
+            })?;
+        decoder
+            .window_log_max(MAX_ZSTD_WINDOW_LOG)
+            .map_err(|source| Error::ZstdDemo {
+                path: path.display().to_string(),
+                source,
+            })?;
+        Ok((Box::new(decoder), true))
+    } else {
+        Ok((Box::new(file), false))
+    }
+}
+
+fn reserve_demo_capacity(
+    output: &mut Vec<u8>,
+    additional: usize,
+    path: &Path,
+    decoded_bytes: u64,
+) -> Result<()> {
+    output
+        .try_reserve(additional)
+        .map_err(|source| Error::DemoAllocation {
+            path: path.display().to_string(),
+            decoded_bytes,
+            source,
+        })
+}
+
+fn has_zstd_magic(prefix: &[u8]) -> bool {
+    let Some(first_four) = prefix.get(..4) else {
+        return false;
+    };
+    let Ok(bytes) = <[u8; 4]>::try_from(first_four) else {
+        return false;
+    };
+    let magic = u32::from_le_bytes(bytes);
+    magic == ZSTD_FRAME_MAGIC || magic & 0xFFFF_FFF0 == ZSTD_SKIPPABLE_MAGIC_BASE
+}
+
+fn enforce_decompressed_limit(path: &Path, compressed: bool, total: u64, limit: u64) -> Result<()> {
+    if compressed && total > limit {
+        return Err(Error::DecompressedDemoTooLarge {
+            path: path.display().to_string(),
+            limit_bytes: limit,
+        });
+    }
+    Ok(())
+}
+
+fn demo_content_read_error(path: &Path, compressed: bool, source: std::io::Error) -> Error {
+    if compressed {
+        Error::ZstdDemo {
+            path: path.display().to_string(),
+            source,
+        }
+    } else {
+        io_error(path, source)
+    }
+}
+
+fn demo_input_stem(path: &Path) -> String {
+    let first_stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("demo");
+    if path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("zst"))
+    {
+        PathBuf::from(first_stem)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("demo")
+            .to_string()
+    } else {
+        first_stem.to_string()
+    }
+}
+
+#[cfg(test)]
+mod input_tests {
+    use super::*;
+    use std::fs;
+    use std::io::Write;
+
+    #[test]
+    fn supported_paths_cover_plain_and_faceit_zstd_names() {
+        assert!(is_supported_demo_path(Path::new("match.dem")));
+        assert!(is_supported_demo_path(Path::new("MATCH.DEM.ZST")));
+        assert!(is_zstd_demo_path(Path::new("match.dem.zst")));
+        assert!(!is_zstd_demo_path(Path::new("match.dem")));
+        assert!(!is_supported_demo_path(Path::new("match.zst")));
+        assert!(!is_supported_demo_path(Path::new("match.dem.zip")));
+    }
+
+    #[test]
+    fn plain_demo_bytes_and_hash_are_unchanged() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("match.dem");
+        let bytes = b"PBDEMS2\0logical demo bytes";
+        fs::write(&path, bytes).unwrap();
+
+        let loaded = load_demo_input(&path).unwrap();
+        assert_eq!(loaded.bytes, bytes);
+        assert_eq!(loaded.stem, "match");
+        assert_eq!(loaded.display_path, path.display().to_string());
+        assert!(!loaded.compressed);
+        assert_eq!(
+            demo_content_sha256(&path).unwrap(),
+            crate::demo_id::sha256_hex(bytes)
+        );
+    }
+
+    #[test]
+    fn faceit_zstd_demo_loads_with_logical_stem_and_content_hash() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("faceit-match.dem.zst");
+        let bytes = b"PBDEMS2\0decompressed demo bytes";
+        let compressed = zstd::stream::encode_all(&bytes[..], 1).unwrap();
+        fs::write(&path, compressed).unwrap();
+
+        let loaded = load_demo_input(&path).unwrap();
+        assert_eq!(loaded.bytes, bytes);
+        assert_eq!(loaded.stem, "faceit-match");
+        assert_eq!(loaded.display_path, path.display().to_string());
+        assert!(loaded.compressed);
+        assert_eq!(
+            demo_content_sha256(&path).unwrap(),
+            crate::demo_id::sha256_hex(bytes)
+        );
+    }
+
+    #[test]
+    fn zstd_magic_is_detected_even_with_dem_extension() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("renamed.dem");
+        let bytes = b"PBDEMS2\0compressed despite extension";
+        let compressed = zstd::stream::encode_all(&bytes[..], 1).unwrap();
+        fs::write(&path, compressed).unwrap();
+
+        let loaded = load_demo_input(&path).unwrap();
+        assert_eq!(loaded.bytes, bytes);
+        assert_eq!(loaded.stem, "renamed");
+        assert!(loaded.compressed);
+    }
+
+    #[test]
+    fn compressed_output_limit_is_enforced() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("oversize.dem.zst");
+        let bytes = vec![b'x'; 1_025];
+        let compressed = zstd::stream::encode_all(&bytes[..], 1).unwrap();
+        fs::write(&path, compressed).unwrap();
+
+        let error = read_demo_input_bytes_with_limit(&path, 1_024).unwrap_err();
+        assert!(matches!(
+            error,
+            Error::DecompressedDemoTooLarge {
+                limit_bytes: 1_024,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn declared_frame_size_is_rejected_before_payload_decode() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("declared-oversize.dem.zst");
+        let bytes = vec![b'x'; 1_025];
+        let mut encoder = zstd::stream::write::Encoder::new(Vec::new(), 1).unwrap();
+        encoder.include_contentsize(true).unwrap();
+        encoder
+            .set_pledged_src_size(Some(bytes.len() as u64))
+            .unwrap();
+        encoder.write_all(&bytes).unwrap();
+        let compressed = encoder.finish().unwrap();
+
+        // A complete frame header is sufficient for the declared-size check;
+        // keeping only the prefix proves the decoder payload is never needed.
+        fs::write(
+            &path,
+            &compressed[..compressed.len().min(ZSTD_FRAME_HEADER_MAX_BYTES)],
+        )
+        .unwrap();
+
+        let error = read_demo_input_bytes_with_limit(&path, 1_024).unwrap_err();
+        assert!(matches!(
+            error,
+            Error::DecompressedDemoTooLarge {
+                limit_bytes: 1_024,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn allocation_failure_is_reported_instead_of_panicking() {
+        let mut output = Vec::new();
+        let error = reserve_demo_capacity(
+            &mut output,
+            usize::MAX,
+            Path::new("too-large.dem.zst"),
+            u64::MAX,
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, Error::DemoAllocation { .. }));
+        assert!(error
+            .to_string()
+            .contains("cannot allocate memory while loading demo"));
+    }
+
+    #[test]
+    fn corrupt_zstd_input_has_a_specific_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("broken.dem.zst");
+        fs::write(&path, b"not a zstd frame").unwrap();
+
+        let error = read_demo_input_bytes(&path).unwrap_err();
+        assert!(matches!(error, Error::ZstdDemo { .. }));
+        assert!(error.to_string().contains("failed to decompress zstd demo"));
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct ReadDemoOptions {
@@ -22,7 +381,6 @@ impl Default for ReadDemoOptions {
 #[cfg(feature = "demoparser")]
 mod demoparser_impl {
     use super::*;
-    use crate::io_error;
     use crate::model::{
         AvatarImageFormat, ParsedAvatarOverride, ParsedEconItem, ParsedGameEvent,
         ParsedInventoryWeaponAttribute, ParsedInventoryWeaponCosmetic, ParsedPlayerTick,
@@ -42,7 +400,6 @@ mod demoparser_impl {
     use parser::second_pass::variants::{PropColumn, VarVec, Variant};
     use rayon::prelude::*;
     use std::collections::{BTreeMap, BTreeSet};
-    use std::fs;
 
     const COSMETIC_PLAYER_PROPS: &[&str] = &[
         "inventory_weapon_cosmetics",
@@ -516,20 +873,22 @@ mod demoparser_impl {
     }
 
     pub fn read_demo_with_options(path: &Path, options: ReadDemoOptions) -> Result<ParsedDemo> {
-        let bytes = fs::read(path).map_err(|e| io_error(path, e))?;
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("demo")
-            .to_string();
-        read_demo_bytes_with_options(&bytes, &stem, &path.display().to_string(), options)
+        let input = load_demo_input(path)?;
+        read_loaded_demo_with_options(&input, options)
     }
 
     pub fn read_demo_bytes(bytes: &[u8], stem: &str, display_path: &str) -> Result<ParsedDemo> {
         read_demo_bytes_with_options(bytes, stem, display_path, ReadDemoOptions::default())
     }
 
-    fn read_demo_bytes_with_options(
+    pub fn read_loaded_demo_with_options(
+        input: &LoadedDemoInput,
+        options: ReadDemoOptions,
+    ) -> Result<ParsedDemo> {
+        read_demo_bytes_with_options(&input.bytes, &input.stem, &input.display_path, options)
+    }
+
+    pub fn read_demo_bytes_with_options(
         bytes: &[u8],
         stem: &str,
         display_path: &str,
@@ -2298,9 +2657,13 @@ pub use demoparser_impl::read_demo;
 #[cfg(feature = "demoparser")]
 pub use demoparser_impl::read_demo_bytes;
 #[cfg(feature = "demoparser")]
+pub use demoparser_impl::read_demo_bytes_with_options;
+#[cfg(feature = "demoparser")]
 pub use demoparser_impl::read_demo_header_map_bytes;
 #[cfg(feature = "demoparser")]
 pub use demoparser_impl::read_demo_with_options;
+#[cfg(feature = "demoparser")]
+pub use demoparser_impl::read_loaded_demo_with_options;
 
 #[cfg(not(feature = "demoparser"))]
 pub fn read_demo(_path: &Path) -> Result<ParsedDemo> {
@@ -2314,6 +2677,24 @@ pub fn read_demo_with_options(_path: &Path, _options: ReadDemoOptions) -> Result
 
 #[cfg(not(feature = "demoparser"))]
 pub fn read_demo_bytes(_bytes: &[u8], _stem: &str, _display_path: &str) -> Result<ParsedDemo> {
+    Err(Error::FeatureDisabled("demoparser"))
+}
+
+#[cfg(not(feature = "demoparser"))]
+pub fn read_demo_bytes_with_options(
+    _bytes: &[u8],
+    _stem: &str,
+    _display_path: &str,
+    _options: ReadDemoOptions,
+) -> Result<ParsedDemo> {
+    Err(Error::FeatureDisabled("demoparser"))
+}
+
+#[cfg(not(feature = "demoparser"))]
+pub fn read_loaded_demo_with_options(
+    _input: &LoadedDemoInput,
+    _options: ReadDemoOptions,
+) -> Result<ParsedDemo> {
     Err(Error::FeatureDisabled("demoparser"))
 }
 
