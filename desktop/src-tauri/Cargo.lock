@@ -680,6 +680,7 @@ dependencies = [
  "brotli",
  "parser",
  "rayon",
+ "regex",
  "serde",
  "serde_json",
  "sha2",

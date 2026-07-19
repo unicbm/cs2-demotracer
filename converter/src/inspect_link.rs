@@ -4,6 +4,8 @@ use crate::model::{
     ReplayCosmeticInspect, ReplayItemCosmetic, ReplayWeaponCharm, ReplayWeaponCosmetic,
     ReplayWeaponSticker,
 };
+use regex::Regex;
+use std::sync::OnceLock;
 
 const PREVIEW_COMMAND: &str = "csgo_econ_action_preview ";
 const PREVIEW_URL: &str = "steam://run/730/en/+csgo_econ_action_preview%20";
@@ -25,7 +27,7 @@ pub(crate) fn weapon_inspect(
         quality: cosmetic.quality.and_then(|value| u32::try_from(value).ok()),
         paintwear: cosmetic.wear.to_bits(),
         paintseed: cosmetic.seed,
-        customname: cosmetic.custom_name.as_deref(),
+        customname: inspect_compatible_custom_name(cosmetic.custom_name.as_deref()),
         ..PreviewData::default()
     };
     if let Some(counter) = cosmetic
@@ -54,7 +56,7 @@ pub(crate) fn item_inspect(
         rarity,
         paintwear: cosmetic.wear.to_bits(),
         paintseed: cosmetic.seed,
-        customname: cosmetic.custom_name.as_deref(),
+        customname: inspect_compatible_custom_name(cosmetic.custom_name.as_deref()),
         ..PreviewData::default()
     }))
 }
@@ -76,6 +78,23 @@ struct PreviewData<'a> {
 
 fn valid_wear(wear: f32) -> bool {
     wear.is_finite() && (0.0..=1.0).contains(&wear)
+}
+
+fn inspect_compatible_custom_name(custom_name: Option<&str>) -> Option<&str> {
+    // Preview consumers reject the whole synthetic item when field 11 violates
+    // CS2's NameTag grammar. The original demo value remains separate evidence.
+    const NAME_TAG_PATTERN: &str =
+        r"\A[A-Za-z0-9`!@#$%^&*+=(){}\[\]/|\\,.?:;'_\p{Han}\p{Hiragana}\p{Katakana}\s]{0,20}\z";
+    static NAME_TAG: OnceLock<Regex> = OnceLock::new();
+
+    let custom_name = custom_name?;
+    if custom_name.starts_with(' ') {
+        return None;
+    }
+    NAME_TAG
+        .get_or_init(|| Regex::new(NAME_TAG_PATTERN).expect("valid inspect name-tag pattern"))
+        .is_match(custom_name)
+        .then_some(custom_name)
 }
 
 fn build_inspect(preview: PreviewData<'_>) -> ReplayCosmeticInspect {
@@ -242,6 +261,24 @@ mod tests {
             inspect.command,
             "csgo_econ_action_preview 00188304209D03280638C9D39FEA03409C02487E8790"
         );
+    }
+
+    #[test]
+    fn incompatible_custom_name_does_not_invalidate_preview_payload() {
+        let mut cosmetic = item(515, 568, 142, f32::from_bits(0x3c43_cb58));
+        cosmetic.custom_name = Some("千古风流今在此，万里功名莫放休".to_string());
+
+        let inspect = item_inspect(&cosmetic, Some(6)).unwrap();
+
+        assert_eq!(
+            inspect.command,
+            "csgo_econ_action_preview 0018830420B804280638D8968FE203408E015A2FE4E0"
+        );
+        assert_eq!(
+            inspect_compatible_custom_name(Some("千古风流今在此,万里功名莫放休")),
+            Some("千古风流今在此,万里功名莫放休")
+        );
+        assert_eq!(inspect_compatible_custom_name(Some("not-compatible")), None);
     }
 
     #[test]

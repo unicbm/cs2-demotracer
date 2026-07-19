@@ -1280,6 +1280,9 @@ async fn open_external(request: OpenExternalRequest) -> CommandResult<()> {
 fn validate_external_url(value: &str) -> CommandResult<String> {
     const PROFILE_PREFIX: &str = "https://steamcommunity.com/profiles/";
     const INSPECT_PREFIX: &str = "steam://run/730/en/+csgo_econ_action_preview%20";
+    const LEGACY_INSPECT_PREFIX: &str =
+        "steam://rungame/730/76561202255233023/+csgo_econ_action_preview%20";
+    const STEAM_PROTOCOL_CHAR_LIMIT: usize = 300;
     let value = value.trim();
     if let Some(steam_id) = value.strip_prefix(PROFILE_PREFIX) {
         let valid = steam_id.len() == 17
@@ -1291,15 +1294,19 @@ fn validate_external_url(value: &str) -> CommandResult<String> {
             return Ok(value.to_string());
         }
     }
-    if let Some(payload) = value.strip_prefix(INSPECT_PREFIX) {
-        let valid = value.len() <= 300
-            && payload.len() >= 10
-            && payload.len() % 2 == 0
-            && payload
-                .chars()
-                .all(|character| character.is_ascii_hexdigit());
-        if valid {
-            return Ok(value.to_string());
+    for prefix in [INSPECT_PREFIX, LEGACY_INSPECT_PREFIX] {
+        if let Some(payload) = value.strip_prefix(prefix) {
+            let canonical = format!("{INSPECT_PREFIX}{payload}");
+            let valid = value.len() <= STEAM_PROTOCOL_CHAR_LIMIT
+                && canonical.len() <= STEAM_PROTOCOL_CHAR_LIMIT
+                && payload.len() >= 10
+                && payload.len() % 2 == 0
+                && payload
+                    .chars()
+                    .all(|character| character.is_ascii_hexdigit());
+            if valid {
+                return Ok(canonical);
+            }
         }
     }
     Err(CommandErrorDto::new(
@@ -4796,17 +4803,35 @@ mod tests {
         assert_eq!(validate_external_url(profile).unwrap(), profile);
         assert_eq!(validate_external_url(inspect).unwrap(), inspect);
 
+        let payload = "0018830420B804280638D8968FE203408E015A2DE58D83E58FA4E9A38EE6B581E4BB8AE59CA8E6ADA4EFBC8CE4B887E9878CE58A9FE5908DE88EABE694BEE4BC9102C1C58A";
+        let legacy_inspect =
+            format!("steam://rungame/730/76561202255233023/+csgo_econ_action_preview%20{payload}");
+        assert_eq!(
+            validate_external_url(&legacy_inspect).unwrap(),
+            format!("steam://run/730/en/+csgo_econ_action_preview%20{payload}")
+        );
+
         for rejected in [
             "https://example.com/76561198147750283",
             "https://steamcommunity.com/profiles/76561198147750283/edit",
             "steam://run/730/en/+csgo_econ_action_preview%20not-hex",
-            "steam://rungame/730/76561202255233023/+csgo_econ_action_preview%20001122334455",
+            "steam://rungame/730/76561202255233023/+csgo_econ_action_preview%2000112233445",
+            "steam://rungame/730/1/+csgo_econ_action_preview%20001122334455",
         ] {
             assert_eq!(
                 validate_external_url(rejected).unwrap_err().code,
                 "external_url_not_allowed"
             );
         }
+
+        let oversized = format!(
+            "steam://rungame/730/76561202255233023/+csgo_econ_action_preview%20{}",
+            "00".repeat(118)
+        );
+        assert_eq!(
+            validate_external_url(&oversized).unwrap_err().code,
+            "external_url_not_allowed"
+        );
     }
 
     fn round(round: u32, status: RoundStatus) -> cs2_demotracer::model::RoundSummary {

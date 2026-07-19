@@ -285,6 +285,7 @@ dependencies = [
  "dialoguer",
  "parser",
  "rayon",
+ "regex",
  "serde",
  "serde_json",
  "sha2",
