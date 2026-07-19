@@ -1,9 +1,8 @@
 import { ChevronIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
-import type { AnalysisPlayerSummary, AnalysisResult, Language } from "../types";
+import type { AnalysisPlayerSummary, AnalysisResult } from "../types";
 import { displayMap, MapArtwork } from "./MapArtwork";
-import { RosterTeam } from "./PlayerRoster";
-import type { CopyTarget } from "./TaskViews";
+import { RosterTeam, type PlayerSelection } from "./PlayerRoster";
 import "./analysis-overview.css";
 import "./archive-workspace.css";
 
@@ -53,21 +52,7 @@ function platformName(value: string): string {
   return value.toLowerCase() === "faceit" ? "FACEIT" : value;
 }
 
-export function AnalysisOverview({
-  analysis,
-  language,
-  words,
-  copiedTarget,
-  onCopy,
-  onOpenExternal,
-}: {
-  analysis: AnalysisResult;
-  language: Language;
-  words: TextDictionary;
-  copiedTarget: CopyTarget | null;
-  onCopy: (value: string, target: CopyTarget) => void;
-  onOpenExternal: (url: string) => void;
-}) {
+export function analysisRoster(analysis: AnalysisResult, words: TextDictionary) {
   const teamAName = cleanTeamName(analysis.score?.teamA.name)
     || teamNameFromPlayers(analysis.players, "a")
     || words.teamA;
@@ -75,9 +60,28 @@ export function AnalysisOverview({
     || teamNameFromPlayers(analysis.players, "b")
     || words.teamB;
   const sortedPlayers = [...analysis.players].sort((left, right) => left.name.localeCompare(right.name));
-  const teamA = sortedPlayers.filter((player) => player.team.toLowerCase() === "a");
-  const teamB = sortedPlayers.filter((player) => player.team.toLowerCase() === "b");
-  const unassigned = sortedPlayers.filter((player) => !["a", "b"].includes(player.team.toLowerCase()));
+  return {
+    teamAName,
+    teamBName,
+    sortedPlayers,
+    teamA: sortedPlayers.filter((player) => player.team.toLowerCase() === "a"),
+    teamB: sortedPlayers.filter((player) => player.team.toLowerCase() === "b"),
+    unassigned: sortedPlayers.filter((player) => !["a", "b"].includes(player.team.toLowerCase())),
+  };
+}
+
+export function AnalysisOverview({
+  analysis,
+  words,
+  onSelectPlayer,
+  onOpenExternal,
+}: {
+  analysis: AnalysisResult;
+  words: TextDictionary;
+  onSelectPlayer: (selection: PlayerSelection) => void;
+  onOpenExternal: (url: string) => void;
+}) {
+  const { teamAName, teamBName, sortedPlayers, teamA, teamB, unassigned } = analysisRoster(analysis, words);
 
   return (
     <div className="analysis-overview">
@@ -118,10 +122,10 @@ export function AnalysisOverview({
             <ChevronIcon size={15} />
           </summary>
           <div className="archive-roster-grid">
-            <RosterTeam name={teamAName} players={teamA} language={language} words={words} countLabel={words.rosterPlayerCount} copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
-            <RosterTeam name={teamBName} players={teamB} language={language} words={words} countLabel={words.rosterPlayerCount} className="is-team-b" copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
+            <RosterTeam teamId="a" name={teamAName} players={teamA} words={words} countLabel={words.rosterPlayerCount} onSelectPlayer={onSelectPlayer} onOpenExternal={onOpenExternal} />
+            <RosterTeam teamId="b" name={teamBName} players={teamB} words={words} countLabel={words.rosterPlayerCount} className="is-team-b" onSelectPlayer={onSelectPlayer} onOpenExternal={onOpenExternal} />
             {unassigned.length > 0
-              ? <RosterTeam name={words.unassignedPlayers} players={unassigned} language={language} words={words} countLabel={words.rosterPlayerCount} className="is-unassigned" copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
+              ? <RosterTeam teamId="unknown" name={words.unassignedPlayers} players={unassigned} words={words} countLabel={words.rosterPlayerCount} className="is-unassigned" onSelectPlayer={onSelectPlayer} onOpenExternal={onOpenExternal} />
               : null}
           </div>
         </details>

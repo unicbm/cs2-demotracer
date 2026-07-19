@@ -2,7 +2,9 @@ import { useMemo, useState } from "react";
 import { ArrowIcon, FolderIcon, SlidersIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
 import type { AnalysisResult, Language, RoundInfo } from "../types";
-import { AnalysisOverview } from "./AnalysisOverview";
+import { AnalysisOverview, analysisRoster } from "./AnalysisOverview";
+import { PlayerAnalysisWorkspace, type PlayerAnalysisTeam } from "./PlayerAnalysisWorkspace";
+import type { PlayerSelection } from "./PlayerRoster";
 import { RoundTable, type RoundTableLabels } from "./RoundTable";
 import type { CopyTarget } from "./TaskViews";
 
@@ -15,6 +17,7 @@ interface RoundWorkspaceProps {
   outputDir: string;
   outputRoot: string;
   copiedTarget: CopyTarget | null;
+  selectedPlayer: PlayerSelection | null;
   onToggleRound: (round: RoundInfo) => void;
   onRestoreRecommended: () => void;
   onClearSelection: () => void;
@@ -22,6 +25,8 @@ interface RoundWorkspaceProps {
   onChooseOutput: () => void;
   onOpenSettings: (trigger: HTMLButtonElement) => void;
   onConvert: () => void;
+  onSelectPlayer: (selection: PlayerSelection) => void;
+  onClosePlayer: () => void;
   onCopy: (value: string, target: CopyTarget) => void;
   onOpenExternal: (url: string) => void;
   formatNumber: (value: number) => string;
@@ -42,6 +47,7 @@ export function RoundWorkspace({
   outputDir,
   outputRoot,
   copiedTarget,
+  selectedPlayer,
   onToggleRound,
   onRestoreRecommended,
   onClearSelection,
@@ -49,6 +55,8 @@ export function RoundWorkspace({
   onChooseOutput,
   onOpenSettings,
   onConvert,
+  onSelectPlayer,
+  onClosePlayer,
   onCopy,
   onOpenExternal,
   formatNumber,
@@ -77,15 +85,35 @@ export function RoundWorkspace({
     .replace("{recommended}", formatNumber(recommendedCount))
     .replace("{suspicious}", formatNumber(suspiciousCount));
   const canConvert = selectedRounds.size > 0 && Boolean(outputDir);
+  const roster = analysisRoster(analysis, words);
+  const playerTeams: PlayerAnalysisTeam[] = [
+    { id: "a", name: roster.teamAName, players: roster.teamA },
+    { id: "b", name: roster.teamBName, players: roster.teamB },
+    ...(roster.unassigned.length > 0 ? [{ id: "unknown", name: words.unassignedPlayers, players: roster.unassigned }] : []),
+  ];
+
+  if (selectedPlayer !== null) {
+    return (
+      <PlayerAnalysisWorkspace
+        words={words}
+        language={language}
+        teams={playerTeams}
+        selectedPlayer={selectedPlayer}
+        copiedTarget={copiedTarget}
+        onSelectPlayer={onSelectPlayer}
+        onBack={onClosePlayer}
+        onCopy={onCopy}
+        onOpenExternal={onOpenExternal}
+      />
+    );
+  }
 
   return (
     <section className="round-workspace" aria-label={words.rounds}>
       <AnalysisOverview
         analysis={analysis}
-        language={language}
         words={words}
-        copiedTarget={copiedTarget}
-        onCopy={onCopy}
+        onSelectPlayer={onSelectPlayer}
         onOpenExternal={onOpenExternal}
       />
       <div className="round-toolbar">

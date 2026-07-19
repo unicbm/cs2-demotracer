@@ -3,7 +3,8 @@ import type { TextDictionary } from "../i18n";
 import type { ConversionSummary, Language, ManifestArchive, ManifestArchiveRound, PlayerSummary } from "../types";
 import { displayMap, MapArtwork, mapArtworkStyle } from "./MapArtwork";
 import { PlaybackCommandBuilder, type PlaybackPresetOptions } from "./PlaybackCommandBuilder";
-import { RosterTeam } from "./PlayerRoster";
+import { PlayerAnalysisWorkspace, type PlayerAnalysisTeam } from "./PlayerAnalysisWorkspace";
+import { RosterTeam, type PlayerSelection } from "./PlayerRoster";
 import type { CommandMode, CopyTarget } from "./TaskViews";
 import "./archive-workspace.css";
 
@@ -16,12 +17,15 @@ interface ArchiveWorkspaceProps {
   commandMode: CommandMode;
   playbackPreset: PlaybackPresetOptions;
   copiedTarget: CopyTarget | null;
+  selectedPlayer: PlayerSelection | null;
   onSelectRound: (round: number) => void;
   onCommandModeChange: (mode: CommandMode) => void;
   onPlaybackPresetChange: (patch: Partial<PlaybackPresetOptions>) => void;
   onCopy: (value: string, target: CopyTarget) => void;
   onOpenExternal: (url: string) => void;
   onOpenFolder: () => void;
+  onSelectPlayer: (selection: PlayerSelection) => void;
+  onClosePlayer: () => void;
   onReconvert: () => void;
   onChooseManifest: () => void;
   onClose: () => void;
@@ -194,12 +198,15 @@ export function ArchiveWorkspace({
   commandMode,
   playbackPreset,
   copiedTarget,
+  selectedPlayer,
   onSelectRound,
   onCommandModeChange,
   onPlaybackPresetChange,
   onCopy,
   onOpenExternal,
   onOpenFolder,
+  onSelectPlayer,
+  onClosePlayer,
   onReconvert,
   onChooseManifest,
   onClose,
@@ -226,6 +233,27 @@ export function ArchiveWorkspace({
   const teamARoster = rosterPlayers.filter((player) => playerMatchIdentity(player, teamAName, teamBName) === "a");
   const teamBRoster = rosterPlayers.filter((player) => playerMatchIdentity(player, teamAName, teamBName) === "b");
   const unassignedRoster = rosterPlayers.filter((player) => playerMatchIdentity(player, teamAName, teamBName) === null);
+  const playerTeams: PlayerAnalysisTeam[] = [
+    { id: "a", name: teamAName, players: teamARoster },
+    { id: "b", name: teamBName, players: teamBRoster },
+    ...(unassignedRoster.length > 0 ? [{ id: "unknown", name: words.unassignedPlayers, players: unassignedRoster }] : []),
+  ];
+
+  if (selectedPlayer !== null) {
+    return (
+      <PlayerAnalysisWorkspace
+        words={words}
+        language={language}
+        teams={playerTeams}
+        selectedPlayer={selectedPlayer}
+        copiedTarget={copiedTarget}
+        onSelectPlayer={onSelectPlayer}
+        onBack={onClosePlayer}
+        onCopy={onCopy}
+        onOpenExternal={onOpenExternal}
+      />
+    );
+  }
 
   return (
     <section className="archive-workspace" aria-labelledby="archive-workspace-title" style={mapArtworkStyle(archive.map)}>
@@ -283,10 +311,10 @@ export function ArchiveWorkspace({
             <ChevronIcon size={15} />
           </summary>
           <div className="archive-roster-grid">
-            <RosterTeam name={teamAName} players={teamARoster} language={language} words={words} countLabel={words.rosterPlayerCount} copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
-            <RosterTeam name={teamBName} players={teamBRoster} language={language} words={words} countLabel={words.rosterPlayerCount} className="is-team-b" copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
+            <RosterTeam teamId="a" name={teamAName} players={teamARoster} words={words} countLabel={words.rosterPlayerCount} onSelectPlayer={onSelectPlayer} onOpenExternal={onOpenExternal} />
+            <RosterTeam teamId="b" name={teamBName} players={teamBRoster} words={words} countLabel={words.rosterPlayerCount} className="is-team-b" onSelectPlayer={onSelectPlayer} onOpenExternal={onOpenExternal} />
             {unassignedRoster.length > 0 ? (
-              <RosterTeam name={words.unassignedPlayers} players={unassignedRoster} language={language} words={words} countLabel={words.rosterPlayerCount} className="is-unassigned" copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
+              <RosterTeam teamId="unknown" name={words.unassignedPlayers} players={unassignedRoster} words={words} countLabel={words.rosterPlayerCount} className="is-unassigned" onSelectPlayer={onSelectPlayer} onOpenExternal={onOpenExternal} />
             ) : null}
           </div>
         </details>

@@ -20,6 +20,7 @@ import { ExportInspector } from "./components/ExportInspector";
 import { FaqWorkspace } from "./components/FaqWorkspace";
 import { LibraryWorkspace, type LibrarySort } from "./components/LibraryWorkspace";
 import type { PlaybackPresetOptions } from "./components/PlaybackCommandBuilder";
+import { playerSelectionKey, type PlayerSelection } from "./components/PlayerRoster";
 import { RoundWorkspace } from "./components/RoundWorkspace";
 import { SettingsWorkspace } from "./components/SettingsWorkspace";
 import {
@@ -514,6 +515,7 @@ function App() {
   const [archive, setArchive] = useState<ManifestArchive | null>(null);
   const [archivePath, setArchivePath] = useState("");
   const [selectedArchiveRound, setSelectedArchiveRound] = useState<number | null>(null);
+  const [selectedPlayer, setSelectedPlayer] = useState<PlayerSelection | null>(null);
   const [conversionWarnings, setConversionWarnings] = useState<string[]>([]);
   const [analysisError, setAnalysisError] = useState("");
   const [validationError, setValidationError] = useState("");
@@ -556,7 +558,7 @@ function App() {
   const isBusy = phase === "analyzing" || phase === "converting" || phase === "openingArchive" || isMaintainingLibrary || batchInvocationActive;
   isBusyRef.current = phase === "analyzing" || phase === "converting" || isMaintainingLibrary || batchInvocationActive;
   const inspectorDocked = useMediaQuery("(min-width: 1080px)");
-  const inspectorVisible = inspectorDocked || inspectorSheetOpen;
+  const inspectorVisible = selectedPlayer === null && (inspectorDocked || inspectorSheetOpen);
   const elapsedSeconds = useElapsed(phase === "analyzing");
   const sourceFileName = analysis?.fileName || fileName(sourcePath);
   const themeTitle = theme === "system" ? words.systemTheme : theme === "light" ? words.lightTheme : words.darkTheme;
@@ -990,6 +992,7 @@ function App() {
     setArchive(null);
     setArchivePath("");
     setSelectedArchiveRound(null);
+    setSelectedPlayer(null);
     setOutputRoot("");
     setSelectedRounds(new Set());
     setInspectorSheetOpen(false);
@@ -1040,6 +1043,7 @@ function App() {
     const token = ++taskTokenRef.current;
     setGlobalError(null);
     setArchivePath(path);
+    setSelectedPlayer(null);
     setInspectorSheetOpen(false);
     setActiveSection("library");
     setPhase("openingArchive");
@@ -2245,6 +2249,17 @@ function App() {
     }
   }
 
+  function closePlayerAnalysis() {
+    const selectionKey = selectedPlayer ? playerSelectionKey(selectedPlayer) : null;
+    setSelectedPlayer(null);
+    if (!selectionKey) return;
+    window.requestAnimationFrame(() => {
+      const trigger = [...document.querySelectorAll<HTMLButtonElement>("[data-player-key]")]
+        .find((button) => button.dataset.playerKey === selectionKey);
+      (trigger ?? document.querySelector<HTMLButtonElement>("[data-player-key]"))?.focus();
+    });
+  }
+
   function resetSession() {
     ++taskTokenRef.current;
     setActiveSection("library");
@@ -2256,6 +2271,7 @@ function App() {
     setArchive(null);
     setArchivePath("");
     setSelectedArchiveRound(null);
+    setSelectedPlayer(null);
     setSelectedRounds(new Set());
     setProgress(emptyProgress());
     setAnalysisError("");
@@ -2290,6 +2306,7 @@ function App() {
         outputDir={outputDir}
         outputRoot={outputRoot}
         copiedTarget={copiedTarget}
+        selectedPlayer={selectedPlayer}
         onToggleRound={toggleRound}
         onRestoreRecommended={restoreRecommended}
         onClearSelection={() => setSelectedRounds(new Set())}
@@ -2300,6 +2317,8 @@ function App() {
           setInspectorSheetOpen(true);
         }}
         onConvert={() => void beginConvert()}
+        onSelectPlayer={setSelectedPlayer}
+        onClosePlayer={closePlayerAnalysis}
         onCopy={(value, target) => void copyText(value, target)}
         onOpenExternal={(url) => void openExternal(url)}
         formatNumber={(value) => numberFormat.format(value)}
@@ -2491,6 +2510,7 @@ function App() {
             commandMode={commandMode}
             playbackPreset={playbackPreset}
             copiedTarget={copiedTarget}
+            selectedPlayer={selectedPlayer}
             onSelectRound={(round) => {
               setSelectedArchiveRound(round);
               if (archive.rounds.find((item) => item.round === round)?.sequenceLength === 0) {
@@ -2502,6 +2522,8 @@ function App() {
             onCopy={(value, target) => void copyText(value, target)}
             onOpenExternal={(url) => void openExternal(url)}
             onOpenFolder={() => void openPath(archive.root)}
+            onSelectPlayer={setSelectedPlayer}
+            onClosePlayer={closePlayerAnalysis}
             onReconvert={() => void reconvertArchive(archive)}
             onChooseManifest={() => void chooseManifest()}
             onClose={resetSession}

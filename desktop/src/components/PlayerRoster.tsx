@@ -5,10 +5,11 @@ import {
   resolveStickerCatalog,
   type CosmeticCatalogEntry,
 } from "../cosmeticCatalog";
-import { CheckIcon, ChevronIcon, CopyIcon, ExternalLinkIcon } from "../icons";
+import { ArrowIcon, CheckIcon, ChevronIcon, CopyIcon, ExternalLinkIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
 import type { CosmeticEvidence, Language, PlayerDetails, ViewmodelEvidence } from "../types";
 import type { CopyTarget } from "./TaskViews";
+import { CrosshairPreview } from "./CrosshairPreview";
 
 export interface RosterPlayer {
   name: string;
@@ -19,15 +20,23 @@ export interface RosterPlayer {
   details?: PlayerDetails | null;
 }
 
+export interface PlayerSelection {
+  teamId: string;
+  playerIndex: number;
+}
+
+export function playerSelectionKey(selection: PlayerSelection): string {
+  return `${selection.teamId}:${selection.playerIndex}`;
+}
+
 interface RosterTeamProps<T extends RosterPlayer> {
+  teamId: string;
   name: string;
   players: T[];
-  language: Language;
   words: TextDictionary;
   countLabel: string;
   className?: string;
-  copiedTarget: CopyTarget | null;
-  onCopy: (value: string, target: CopyTarget) => void;
+  onSelectPlayer: (selection: PlayerSelection) => void;
   onOpenExternal: (url: string) => void;
 }
 
@@ -35,12 +44,16 @@ function steamProfileUrl(steamId: string): string {
   return `https://steamcommunity.com/profiles/${steamId}`;
 }
 
+function hasSteamProfile(steamId: string): boolean {
+  return /^[1-9]\d{16}$/.test(steamId);
+}
+
 function targetFor(
-  steamId: string,
+  playerKey: string,
   kind: "steam" | "crosshair" | "viewmodel" | "inspect",
   index = 0,
 ): CopyTarget {
-  return `player:${steamId}:${kind}:${index}`;
+  return `player:${playerKey}:${kind}:${index}`;
 }
 
 function formatConfigNumber(value: number): string {
@@ -179,7 +192,7 @@ function CopyAction({
 function CosmeticCard({
   cosmetic,
   index,
-  steamId,
+  playerKey,
   language,
   words,
   copiedTarget,
@@ -188,7 +201,7 @@ function CosmeticCard({
 }: {
   cosmetic: CosmeticEvidence;
   index: number;
-  steamId: string;
+  playerKey: string;
   language: Language;
   words: TextDictionary;
   copiedTarget: CopyTarget | null;
@@ -277,7 +290,7 @@ function CosmeticCard({
             {cosmetic.inspectCommand ? (
               <CopyAction
                 value={cosmetic.inspectCommand}
-                target={targetFor(steamId, "inspect", index)}
+                target={targetFor(playerKey, "inspect", index)}
                 copiedTarget={copiedTarget}
                 label={words.copyInspectCommand}
                 copiedLabel={words.copied}
@@ -296,7 +309,47 @@ function CosmeticCard({
   );
 }
 
-function PlayerDrawer({
+function CrosshairEvidence({
+  codes,
+  playerKey,
+  words,
+  copiedTarget,
+  onCopy,
+}: {
+  codes: string[];
+  playerKey: string;
+  words: TextDictionary;
+  copiedTarget: CopyTarget | null;
+  onCopy: (value: string, target: CopyTarget) => void;
+}) {
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const selectedCode = codes[Math.min(selectedIndex, codes.length - 1)];
+  if (!selectedCode) return null;
+
+  return (
+    <section className="roster-evidence-section player-crosshair-section">
+      <header><strong>{words.crosshairCodes}</strong><small>{words.crosshairCodesHelp}</small></header>
+      <CrosshairPreview code={selectedCode} words={words} />
+      <ul className="crosshair-config-list">
+        {codes.map((code, index) => {
+          const selected = index === selectedIndex;
+          return (
+            <li className={selected ? "is-selected" : ""} key={code}>
+              <button type="button" aria-pressed={selected} onClick={() => setSelectedIndex(index)}>
+                <small>{words.sharedCrosshair} {index + 1}</small>
+                <code>{code}</code>
+              </button>
+              <CopyAction value={code} target={targetFor(playerKey, "crosshair", index)} copiedTarget={copiedTarget} label={words.copyCommand} copiedLabel={words.copied} onCopy={onCopy} />
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+export function PlayerDossier({
+  playerKey,
   player,
   language,
   words,
@@ -304,6 +357,7 @@ function PlayerDrawer({
   onCopy,
   onOpenExternal,
 }: {
+  playerKey: string;
   player: RosterPlayer;
   language: Language;
   words: TextDictionary;
@@ -316,22 +370,27 @@ function PlayerDrawer({
   const crosshairCodes = details?.crosshairCodes ?? [];
   const viewmodels = (details?.viewmodels ?? []).map(viewmodelCommand).filter(Boolean);
   const cosmetics = details?.cosmetics ?? [];
+  const steamProfileAvailable = hasSteamProfile(player.steamId);
   return (
-    <div className="roster-player-drawer">
+    <div className="player-dossier">
       <div className="roster-profile-line">
-        <span><small>{words.steamId}</small><code>{player.steamId}</code></span>
+        <span><small>{words.steamId}</small><code>{player.steamId || "—"}</code></span>
         <div>
-          <CopyAction
-            value={player.steamId}
-            target={targetFor(player.steamId, "steam")}
-            copiedTarget={copiedTarget}
-            label={words.copySteamId}
-            copiedLabel={words.copied}
-            onCopy={onCopy}
-          />
-          <button className="roster-external-action" type="button" onClick={() => onOpenExternal(steamProfileUrl(player.steamId))}>
-            <ExternalLinkIcon size={13} />{words.openSteamProfile}
-          </button>
+          {steamProfileAvailable ? (
+            <>
+              <CopyAction
+                value={player.steamId}
+                target={targetFor(playerKey, "steam")}
+                copiedTarget={copiedTarget}
+                label={words.copySteamId}
+                copiedLabel={words.copied}
+                onCopy={onCopy}
+              />
+              <button className="roster-external-action" type="button" onClick={() => onOpenExternal(steamProfileUrl(player.steamId))}>
+                <ExternalLinkIcon size={13} />{words.openSteamProfile}
+              </button>
+            </>
+          ) : null}
         </div>
       </div>
 
@@ -342,6 +401,33 @@ function PlayerDrawer({
           {metrics.hs ? <span><small>{words.headshotRate}</small><strong>{metrics.hs}</strong></span> : null}
         </div>
       ) : null}
+
+      <div className="player-setup-grid">
+        {crosshairCodes.length > 0 ? (
+          <CrosshairEvidence
+            key={playerKey}
+            codes={crosshairCodes}
+            playerKey={playerKey}
+            words={words}
+            copiedTarget={copiedTarget}
+            onCopy={onCopy}
+          />
+        ) : null}
+
+        {viewmodels.length > 0 ? (
+          <section className="roster-evidence-section player-viewmodel-section">
+            <header><strong>{words.viewmodelProfiles}</strong><small>{words.viewmodelProfilesHelp}</small></header>
+            <ul className="roster-command-list">
+              {viewmodels.map((command, index) => (
+                <li key={command}>
+                  <span><small>{words.viewmodelProfile.replace("{index}", String(index + 1))}</small><code>{command}</code></span>
+                  <CopyAction value={command} target={targetFor(playerKey, "viewmodel", index)} copiedTarget={copiedTarget} label={words.copyCommand} copiedLabel={words.copied} onCopy={onCopy} />
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+      </div>
 
       <section className="roster-evidence-section roster-cosmetics">
         <header>
@@ -354,7 +440,7 @@ function PlayerDrawer({
               <CosmeticCard
                 cosmetic={cosmetic}
                 index={index}
-                steamId={player.steamId}
+                playerKey={playerKey}
                 language={language}
                 words={words}
                 copiedTarget={copiedTarget}
@@ -367,50 +453,20 @@ function PlayerDrawer({
         ) : <p className="roster-evidence-empty">{words.cosmeticEvidenceEmpty}</p>}
       </section>
 
-      {crosshairCodes.length > 0 ? (
-        <section className="roster-evidence-section">
-          <header><strong>{words.crosshairCodes}</strong><small>{words.crosshairCodesHelp}</small></header>
-          <ul className="roster-command-list">
-            {crosshairCodes.map((code, index) => (
-              <li key={code}>
-                <span><small>{words.sharedCrosshair}</small><code>{code}</code></span>
-                <CopyAction value={code} target={targetFor(player.steamId, "crosshair", index)} copiedTarget={copiedTarget} label={words.copyCommand} copiedLabel={words.copied} onCopy={onCopy} />
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      {viewmodels.length > 0 ? (
-        <section className="roster-evidence-section">
-          <header><strong>{words.viewmodelProfiles}</strong><small>{words.viewmodelProfilesHelp}</small></header>
-          <ul className="roster-command-list">
-            {viewmodels.map((command, index) => (
-              <li key={command}>
-                <span><small>{words.viewmodelProfile.replace("{index}", String(index + 1))}</small><code>{command}</code></span>
-                <CopyAction value={command} target={targetFor(player.steamId, "viewmodel", index)} copiedTarget={copiedTarget} label={words.copyCommand} copiedLabel={words.copied} onCopy={onCopy} />
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
     </div>
   );
 }
 
 export function RosterTeam<T extends RosterPlayer>({
+  teamId,
   name,
   players,
-  language,
   words,
   countLabel,
   className = "",
-  copiedTarget,
-  onCopy,
+  onSelectPlayer,
   onOpenExternal,
 }: RosterTeamProps<T>) {
-  const [expandedSteamId, setExpandedSteamId] = useState<string | null>(null);
   const stat = (value: number | null | undefined) => value ?? "—";
   return (
     <section className={`archive-roster-team ${className}`.trim()} aria-label={name}>
@@ -419,20 +475,23 @@ export function RosterTeam<T extends RosterPlayer>({
         <span>{countLabel.replace("{count}", String(players.length))}</span>
       </header>
       <ul>
-        {players.map((player) => {
-          const expanded = player.steamId === expandedSteamId;
+        {players.map((player, playerIndex) => {
+          const selection = { teamId, playerIndex };
+          const selectionKey = playerSelectionKey(selection);
+          const steamProfileAvailable = hasSteamProfile(player.steamId);
           const hasKda = player.kills !== null && player.kills !== undefined
             || player.deaths !== null && player.deaths !== undefined
             || player.assists !== null && player.assists !== undefined;
           return (
-            <li className={expanded ? "roster-player is-expanded" : "roster-player"} key={`${player.steamId}-${player.name}`}>
+            <li className="roster-player" key={selectionKey}>
               <button
                 className="roster-player-summary"
                 type="button"
-                aria-expanded={expanded}
-                title={words.rosterPlayerHint}
-                onClick={() => setExpandedSteamId((current) => current === player.steamId ? null : player.steamId)}
+                data-player-key={selectionKey}
+                title={steamProfileAvailable ? words.rosterPlayerHint : words.playerAnalysis}
+                onClick={() => onSelectPlayer(selection)}
                 onContextMenu={(event) => {
+                  if (!steamProfileAvailable) return;
                   event.preventDefault();
                   onOpenExternal(steamProfileUrl(player.steamId));
                 }}
@@ -447,11 +506,8 @@ export function RosterTeam<T extends RosterPlayer>({
                   </span>
                 ) : null}
                 <code title={`${words.steamId} ${player.steamId}`}>{player.steamId}</code>
-                <ChevronIcon size={13} />
+                <ArrowIcon size={13} />
               </button>
-              {expanded ? (
-                <PlayerDrawer player={player} language={language} words={words} copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
-              ) : null}
             </li>
           );
         })}
