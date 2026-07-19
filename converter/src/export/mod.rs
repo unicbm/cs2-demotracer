@@ -3487,6 +3487,10 @@ mod tests {
             Some("agents\\models\\tm_phoenix_heavy\\tm_phoenix_heavy.vmdl")
         );
         assert_eq!(agent_model_path_from_name("customplayer_t_map_based"), None);
+        assert_eq!(
+            agent_model_path_from_name("customplayer_ct_map_based"),
+            None
+        );
     }
 
     #[test]

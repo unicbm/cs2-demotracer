@@ -5,8 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "check": "npm run check:crosshair && tsc --noEmit --pretty false && tsc --noEmit --pretty false -p tsconfig.node.json",
-    "check:crosshair": "node scripts/check-crosshair.mjs",
+    "check": "tsc --noEmit --pretty false && tsc --noEmit --pretty false -p tsconfig.node.json",
     "build": "tsc --noEmit --pretty false && tsc --noEmit --pretty false -p tsconfig.node.json && vite build",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
@@ -14,7 +13,6 @@
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",
-    "csgo-sharecode": "5.0.0",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },

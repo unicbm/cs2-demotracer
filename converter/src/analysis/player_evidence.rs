@@ -313,7 +313,7 @@ pub(super) fn summarize_player_details(
             row.agent_skin
                 .as_deref()
                 .map(str::trim)
-                .filter(|name| !name.is_empty()),
+                .filter(|name| !name.is_empty() && !is_map_based_default_agent(name)),
         ) {
             accumulator
                 .agents
@@ -705,6 +705,13 @@ fn clean_name(value: &str) -> Option<String> {
     (!value.is_empty()).then(|| value.to_string())
 }
 
+fn is_map_based_default_agent(name: &str) -> bool {
+    matches!(
+        name,
+        "customplayer_t_map_based" | "customplayer_ct_map_based"
+    )
+}
+
 fn summarized_side(sides: &BTreeSet<u8>) -> Option<String> {
     (sides.len() == 1)
         .then(|| {
@@ -947,5 +954,40 @@ mod tests {
         assert!(without_stickers.cosmetics[0].stickers.is_empty());
         assert!(without_stickers.cosmetics[0].inspect_command.is_none());
         assert!(without_stickers.cosmetics[0].inspect_url.is_none());
+    }
+
+    #[test]
+    fn ignores_map_based_default_agents_but_keeps_real_agent_evidence() {
+        let steam_id = STEAM_ID64_BASE + 123;
+        let mut default_t = player_row(steam_id, 100, 2, Vec::new());
+        default_t.agent_item_def_index = Some(5036);
+        default_t.agent_skin = Some("customplayer_t_map_based".to_string());
+        let mut default_ct = player_row(steam_id, 200, 3, Vec::new());
+        default_ct.agent_item_def_index = Some(5037);
+        default_ct.agent_skin = Some("customplayer_ct_map_based".to_string());
+        let mut real_agent = player_row(steam_id, 300, 3, Vec::new());
+        real_agent.agent_item_def_index = Some(4713);
+        real_agent.agent_skin = Some("customplayer_ctm_swat_variantg".to_string());
+        let parsed = ParsedDemo {
+            rows: vec![default_t, default_ct, real_agent],
+            ..ParsedDemo::default()
+        };
+
+        let details = summarize_player_details(&parsed, None, Some(1))
+            .remove(&steam_id)
+            .expect("player evidence");
+        let agents = details
+            .cosmetics
+            .iter()
+            .filter(|cosmetic| cosmetic.kind == "agent")
+            .collect::<Vec<_>>();
+
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents[0].item_def_index, Some(4713));
+        assert_eq!(
+            agents[0].item_name.as_deref(),
+            Some("customplayer_ctm_swat_variantg")
+        );
+        assert_eq!(agents[0].side.as_deref(), Some("ct"));
     }
 }

@@ -626,8 +626,18 @@
 }
 
 .roster-cosmetic-details dl > div { display: flex; justify-content: space-between; min-width: 0; gap: 6px; }
-.roster-cosmetic-details dt { color: var(--text-tertiary); font-size: 12px; }
-.roster-cosmetic-details dd { overflow: hidden; margin: 0; color: var(--text-secondary); font-family: var(--mono); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.roster-cosmetic-details dt { flex: none; color: var(--text-tertiary); font-size: 12px; white-space: nowrap; }
+.roster-cosmetic-details dd { min-width: 0; overflow: hidden; margin: 0; color: var(--text-secondary); font-family: var(--mono); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.roster-cosmetic-details dl > .is-custom-name { grid-column: 1 / -1; }
+.roster-cosmetic-details .is-custom-name dd {
+  flex: 1;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-align: right;
+  text-overflow: clip;
+  user-select: text;
+  white-space: normal;
+}
 
 .roster-attachments h5 { margin: 0 0 4px; color: var(--text-secondary); font-size: 12.5px; }
 .roster-attachments li { display: flex; align-items: center; padding: 6px 7px; gap: 6px; background: var(--surface-subtle); border-radius: 3px; }

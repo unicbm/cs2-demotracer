@@ -9,7 +9,6 @@ import { ArrowIcon, CheckIcon, ChevronIcon, CopyIcon, ExternalLinkIcon } from ".
 import type { TextDictionary } from "../i18n";
 import type { CosmeticEvidence, Language, PlayerDetails, ViewmodelEvidence } from "../types";
 import type { CopyTarget } from "./TaskViews";
-import { CrosshairPreview } from "./CrosshairPreview";
 
 export interface RosterPlayer {
   name: string;
@@ -83,6 +82,15 @@ function cosmeticKindLabel(cosmetic: CosmeticEvidence, words: TextDictionary): s
   if (cosmetic.kind === "glove") return words.cosmeticGlove;
   if (cosmetic.kind === "agent") return words.cosmeticAgent;
   return words.cosmeticWeapon;
+}
+
+function isDisplayableCosmeticEvidence(cosmetic: CosmeticEvidence): boolean {
+  if (cosmetic.kind !== "agent") return true;
+  const name = cosmetic.itemName?.trim().toLowerCase();
+  return cosmetic.itemDefIndex !== 5036
+    && cosmetic.itemDefIndex !== 5037
+    && name !== "customplayer_t_map_based"
+    && name !== "customplayer_ct_map_based";
 }
 
 function markedCatalogName(name: string, marker: string, language: Language): string {
@@ -232,7 +240,12 @@ function CosmeticCard({
           {cosmetic.seed !== null && cosmetic.seed !== undefined ? <div><dt>{words.patternTemplate}</dt><dd>{cosmetic.seed}</dd></div> : null}
           {cosmetic.wear !== null && cosmetic.wear !== undefined ? <div><dt>{words.wearRating}</dt><dd>{cosmetic.wear.toFixed(8)}</dd></div> : null}
           {cosmetic.stattrakCounter !== null && cosmetic.stattrakCounter !== undefined ? <div><dt>{words.stattrakCount}</dt><dd>{cosmetic.stattrakCounter}</dd></div> : null}
-          {cosmetic.customName ? <div><dt>{words.customName}</dt><dd>{cosmetic.customName}</dd></div> : null}
+          {cosmetic.customName ? (
+            <div className="is-custom-name">
+              <dt>{words.customName}</dt>
+              <dd title={cosmetic.customName}>{cosmetic.customName}</dd>
+            </div>
+          ) : null}
           {cosmetic.itemId ? <div><dt>{words.itemId}</dt><dd>{cosmetic.itemId}</dd></div> : null}
         </dl>
 
@@ -322,27 +335,19 @@ function CrosshairEvidence({
   copiedTarget: CopyTarget | null;
   onCopy: (value: string, target: CopyTarget) => void;
 }) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const selectedCode = codes[Math.min(selectedIndex, codes.length - 1)];
-  if (!selectedCode) return null;
-
   return (
     <section className="roster-evidence-section player-crosshair-section">
       <header><strong>{words.crosshairCodes}</strong><small>{words.crosshairCodesHelp}</small></header>
-      <CrosshairPreview code={selectedCode} words={words} />
       <ul className="crosshair-config-list">
-        {codes.map((code, index) => {
-          const selected = index === selectedIndex;
-          return (
-            <li className={selected ? "is-selected" : ""} key={code}>
-              <button type="button" aria-pressed={selected} onClick={() => setSelectedIndex(index)}>
-                <small>{words.sharedCrosshair} {index + 1}</small>
-                <code>{code}</code>
-              </button>
-              <CopyAction value={code} target={targetFor(playerKey, "crosshair", index)} copiedTarget={copiedTarget} label={words.copyCommand} copiedLabel={words.copied} onCopy={onCopy} />
-            </li>
-          );
-        })}
+        {codes.map((code, index) => (
+          <li key={`${code}-${index}`}>
+            <span>
+              <small>{words.sharedCrosshair} {index + 1}</small>
+              <code>{code}</code>
+            </span>
+            <CopyAction value={code} target={targetFor(playerKey, "crosshair", index)} copiedTarget={copiedTarget} label={words.copyCommand} copiedLabel={words.copied} onCopy={onCopy} />
+          </li>
+        ))}
       </ul>
     </section>
   );
@@ -369,7 +374,7 @@ export function PlayerDossier({
   const metrics = metricValues(player);
   const crosshairCodes = details?.crosshairCodes ?? [];
   const viewmodels = (details?.viewmodels ?? []).map(viewmodelCommand).filter(Boolean);
-  const cosmetics = details?.cosmetics ?? [];
+  const cosmetics = (details?.cosmetics ?? []).filter(isDisplayableCosmeticEvidence);
   const steamProfileAvailable = hasSteamProfile(player.steamId);
   return (
     <div className="player-dossier">

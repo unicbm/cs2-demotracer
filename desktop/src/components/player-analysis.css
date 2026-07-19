@@ -349,84 +349,6 @@
   border-radius: 3px;
 }
 
-.crosshair-preview {
-  display: grid;
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  background: #171b20;
-  border: 1px solid var(--divider);
-  border-radius: 3px;
-}
-
-.crosshair-preview-stage {
-  position: relative;
-  display: grid;
-  min-height: 210px;
-  overflow: hidden;
-  place-items: center;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
-    radial-gradient(circle at center, #39434d 0, #262d35 43%, #15191e 100%);
-  background-size: 32px 32px, 32px 32px, auto;
-}
-
-.crosshair-preview-stage::before,
-.crosshair-preview-stage::after {
-  position: absolute;
-  content: "";
-  background: rgba(255, 255, 255, 0.055);
-  pointer-events: none;
-}
-
-.crosshair-preview-stage::before {
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  width: 1px;
-}
-
-.crosshair-preview-stage::after {
-  top: 50%;
-  right: 0;
-  left: 0;
-  height: 1px;
-}
-
-.crosshair-preview-svg {
-  position: relative;
-  z-index: 1;
-  display: block;
-  width: min(72%, 190px);
-  height: auto;
-  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.42));
-}
-
-.crosshair-preview figcaption {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  min-width: 0;
-  padding: 9px 11px;
-  gap: 12px;
-  color: #d7dde3;
-  border-top: 1px solid rgba(255, 255, 255, 0.11);
-  font-size: 14px;
-}
-
-.crosshair-preview figcaption code {
-  color: #aeb8c2 !important;
-  font-size: 14px !important;
-  text-align: right;
-}
-
-.crosshair-preview.is-unavailable .crosshair-preview-stage {
-  min-height: 150px;
-  color: #adb5bd;
-  font-size: 32px;
-}
-
 .crosshair-config-list {
   display: grid;
   margin: 0;
@@ -444,35 +366,25 @@
   gap: 8px;
   background: color-mix(in srgb, var(--surface-raised) 78%, var(--workspace));
   border: 1px solid var(--divider);
-  border-left: 3px solid transparent;
   border-radius: 3px;
 }
 
-.crosshair-config-list > li.is-selected {
-  background: var(--trace-soft);
-  border-left-color: var(--trace);
-}
-
-.crosshair-config-list > li > button {
+.crosshair-config-list > li > span {
   display: grid;
   min-width: 0;
   min-height: 56px;
-  padding: 8px 4px 8px 10px;
+  align-content: center;
+  padding: 8px 4px 8px 11px;
   gap: 3px;
-  color: inherit;
-  background: transparent;
-  border: 0;
-  text-align: left;
-  user-select: none;
 }
 
-.crosshair-config-list > li > button small {
+.crosshair-config-list > li > span small {
   color: var(--text-secondary);
   font-size: 14px;
   font-weight: 650;
 }
 
-.crosshair-config-list > li > button code {
+.crosshair-config-list > li > span code {
   overflow-wrap: anywhere;
   color: var(--text-primary);
   font-family: var(--mono);
@@ -628,12 +540,4 @@
     border-top: 0;
   }
 
-  .crosshair-preview figcaption {
-    display: grid;
-    grid-template-columns: 1fr;
-  }
-
-  .crosshair-preview figcaption code {
-    text-align: left;
-  }
 }
