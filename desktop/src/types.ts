@@ -660,6 +660,9 @@ export interface BatchLedger {
     maxRoundSeconds: number;
     freezePrerollSeconds: number;
     exportVoice: boolean;
+    exportCosmetics: boolean;
+    exportStickers: boolean;
+    exportCharms: boolean;
   };
   status: BatchStatus;
   cancelRequested: boolean;

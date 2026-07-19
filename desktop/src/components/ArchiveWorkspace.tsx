@@ -1,6 +1,6 @@
 import { AlertIcon, ArrowIcon, CheckIcon, ChevronIcon, CopyIcon, FolderIcon, RefreshIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
-import type { ConversionSummary, ManifestArchive, ManifestArchiveRound, PlayerSummary } from "../types";
+import type { ConversionSummary, Language, ManifestArchive, ManifestArchiveRound, PlayerSummary } from "../types";
 import { displayMap, MapArtwork, mapArtworkStyle } from "./MapArtwork";
 import { PlaybackCommandBuilder, type PlaybackPresetOptions } from "./PlaybackCommandBuilder";
 import { RosterTeam } from "./PlayerRoster";
@@ -9,6 +9,7 @@ import "./archive-workspace.css";
 
 interface ArchiveWorkspaceProps {
   words: TextDictionary;
+  language: Language;
   archive: ManifestArchive;
   busy: boolean;
   selectedRound: number;
@@ -186,6 +187,7 @@ function ArchiveIssues({ archive, words }: { archive: ManifestArchive; words: Te
 
 export function ArchiveWorkspace({
   words,
+  language,
   archive,
   busy,
   selectedRound,
@@ -281,10 +283,10 @@ export function ArchiveWorkspace({
             <ChevronIcon size={15} />
           </summary>
           <div className="archive-roster-grid">
-            <RosterTeam name={teamAName} players={teamARoster} words={words} countLabel={words.rosterPlayerCount} copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
-            <RosterTeam name={teamBName} players={teamBRoster} words={words} countLabel={words.rosterPlayerCount} className="is-team-b" copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
+            <RosterTeam name={teamAName} players={teamARoster} language={language} words={words} countLabel={words.rosterPlayerCount} copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
+            <RosterTeam name={teamBName} players={teamBRoster} language={language} words={words} countLabel={words.rosterPlayerCount} className="is-team-b" copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
             {unassignedRoster.length > 0 ? (
-              <RosterTeam name={words.unassignedPlayers} players={unassignedRoster} words={words} countLabel={words.rosterPlayerCount} className="is-unassigned" copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
+              <RosterTeam name={words.unassignedPlayers} players={unassignedRoster} language={language} words={words} countLabel={words.rosterPlayerCount} className="is-unassigned" copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
             ) : null}
           </div>
         </details>

@@ -1,13 +1,14 @@
 import { useMemo, useState } from "react";
 import { ArrowIcon, FolderIcon, SlidersIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
-import type { AnalysisResult, RoundInfo } from "../types";
+import type { AnalysisResult, Language, RoundInfo } from "../types";
 import { AnalysisOverview } from "./AnalysisOverview";
 import { RoundTable, type RoundTableLabels } from "./RoundTable";
 import type { CopyTarget } from "./TaskViews";
 
 interface RoundWorkspaceProps {
   words: TextDictionary;
+  language: Language;
   analysis: AnalysisResult;
   selectedRounds: Set<number>;
   allowSuspicious: boolean;
@@ -34,6 +35,7 @@ function compactPath(path: string, limit = 72): string {
 
 export function RoundWorkspace({
   words,
+  language,
   analysis,
   selectedRounds,
   allowSuspicious,
@@ -80,6 +82,7 @@ export function RoundWorkspace({
     <section className="round-workspace" aria-label={words.rounds}>
       <AnalysisOverview
         analysis={analysis}
+        language={language}
         words={words}
         copiedTarget={copiedTarget}
         onCopy={onCopy}

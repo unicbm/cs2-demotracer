@@ -1279,8 +1279,7 @@ async fn open_external(request: OpenExternalRequest) -> CommandResult<()> {
 
 fn validate_external_url(value: &str) -> CommandResult<String> {
     const PROFILE_PREFIX: &str = "https://steamcommunity.com/profiles/";
-    const INSPECT_PREFIX: &str =
-        "steam://rungame/730/76561202255233023/+csgo_econ_action_preview%20";
+    const INSPECT_PREFIX: &str = "steam://run/730/en/+csgo_econ_action_preview%20";
     let value = value.trim();
     if let Some(steam_id) = value.strip_prefix(PROFILE_PREFIX) {
         let valid = steam_id.len() == 17
@@ -1333,12 +1332,16 @@ fn refresh_archive_metadata_for(
         &entry.demo_path,
         requested_demo_path,
     )?;
+    let previous_conversion =
+        preserved_conversion_for_manifest(archive_root, entry.demo_sha256.trim(), manifest_path);
     let source_metadata = fs::metadata(&demo_path).ok();
     let parsed = read_demo_with_options(
         &demo_path,
         ReadDemoOptions {
             collect_voice: false,
-            collect_cosmetics: false,
+            collect_cosmetics: previous_conversion
+                .as_ref()
+                .is_some_and(|conversion| conversion.cosmetics),
         },
     )
     .map_err(|error| CommandErrorDto::from_core("metadata_demo_parse_failed", error))?;
@@ -1353,8 +1356,6 @@ fn refresh_archive_metadata_for(
         ));
     }
     let browser = analyze_browser_demo(&parsed, AnalysisOptions::default());
-    let previous_conversion =
-        preserved_conversion_for_manifest(archive_root, entry.demo_sha256.trim(), manifest_path);
     let mut info = archive_info::DemoArchiveInfo::from_analysis(
         entry.demo_id,
         &parsed,
@@ -1364,6 +1365,18 @@ fn refresh_archive_metadata_for(
         entry.abi,
         entry.format_version,
         "metadataRefresh",
+    );
+    restrict_player_cosmetic_details(
+        &mut info.players,
+        previous_conversion
+            .as_ref()
+            .is_some_and(|conversion| conversion.cosmetics),
+        previous_conversion
+            .as_ref()
+            .is_some_and(|conversion| conversion.stickers),
+        previous_conversion
+            .as_ref()
+            .is_some_and(|conversion| conversion.charms),
     );
     info.conversion = previous_conversion;
     archive_info::write_demo_source_pointer(archive_root, entry.demo_sha256.trim(), &demo_path)
@@ -1508,6 +1521,22 @@ fn preserved_conversion_for_manifest(
         // that the old sidecar did not actually observe. Readers expose its
         // flags only when a manifest hash is present and matches.
         None => Some(conversion),
+    }
+}
+
+fn restrict_player_cosmetic_details(
+    players: &mut [BrowserPlayerSummary],
+    export_cosmetics: bool,
+    export_stickers: bool,
+    export_charms: bool,
+) {
+    for player in players {
+        if let Some(details) = player.details.as_mut() {
+            details.restrict_cosmetic_export(export_cosmetics, export_stickers, export_charms);
+            if details.is_empty() {
+                player.details = None;
+            }
+        }
     }
 }
 
@@ -1666,11 +1695,24 @@ fn refresh_metadata_entries_from_demo(
     entries: &[catalog::LibraryEntryDto],
     failures: &mut Vec<String>,
 ) -> Result<usize, String> {
+    let conversions = entries
+        .iter()
+        .map(|entry| {
+            preserved_conversion_for_manifest(
+                Path::new(&entry.root),
+                entry.demo_sha256.trim(),
+                Path::new(&entry.manifest_path),
+            )
+        })
+        .collect::<Vec<_>>();
     let parsed = read_demo_with_options(
         demo_path,
         ReadDemoOptions {
             collect_voice: false,
-            collect_cosmetics: false,
+            collect_cosmetics: conversions
+                .iter()
+                .flatten()
+                .any(|conversion| conversion.cosmetics),
         },
     )
     .map_err(|error| error.to_string())?;
@@ -1687,7 +1729,7 @@ fn refresh_metadata_entries_from_demo(
     let browser = analyze_browser_demo(&parsed, AnalysisOptions::default());
     let source_metadata = fs::metadata(demo_path).ok();
     let mut updated = 0_usize;
-    for entry in entries {
+    for (entry, conversion) in entries.iter().zip(conversions) {
         let archive_root = Path::new(&entry.root);
         let mut info = archive_info::DemoArchiveInfo::from_analysis(
             entry.demo_id.clone(),
@@ -1699,11 +1741,19 @@ fn refresh_metadata_entries_from_demo(
             entry.format_version,
             "metadataRefresh",
         );
-        info.conversion = preserved_conversion_for_manifest(
-            archive_root,
-            entry.demo_sha256.trim(),
-            Path::new(&entry.manifest_path),
+        restrict_player_cosmetic_details(
+            &mut info.players,
+            conversion
+                .as_ref()
+                .is_some_and(|conversion| conversion.cosmetics),
+            conversion
+                .as_ref()
+                .is_some_and(|conversion| conversion.stickers),
+            conversion
+                .as_ref()
+                .is_some_and(|conversion| conversion.charms),
         );
+        info.conversion = conversion;
         if let Err(error) = archive_info::write_demo_source_pointer(
             archive_root,
             entry.demo_sha256.trim(),
@@ -3167,6 +3217,7 @@ struct PreparedConversion {
     output_dir: PathBuf,
     root: PathBuf,
     options: ConvertOptions,
+    cosmetics: CosmeticFlags,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -3179,6 +3230,15 @@ struct CosmeticFlags {
 fn prepare_conversion(
     request: &ConvertDemoRequest,
     cached: &CachedDemo,
+) -> CommandResult<PreparedConversion> {
+    let cosmetics = validate_cosmetic_request(request)?;
+    prepare_conversion_with_cosmetics(request, cached, cosmetics)
+}
+
+fn prepare_conversion_with_cosmetics(
+    request: &ConvertDemoRequest,
+    cached: &CachedDemo,
+    cosmetics: CosmeticFlags,
 ) -> CommandResult<PreparedConversion> {
     validate_max_round_seconds(request.max_round_seconds)?;
     if !request.freeze_preroll_seconds.is_finite()
@@ -3200,8 +3260,6 @@ fn prepare_conversion(
         &selected_rounds,
         request.include_suspicious,
     )?;
-    let cosmetics = validate_cosmetic_request(request)?;
-
     let resolved = resolve_output_paths(&request.output_dir, cached)?;
     let options = ConvertOptions {
         output_dir: resolved.output_dir.clone(),
@@ -3224,6 +3282,7 @@ fn prepare_conversion(
         output_dir: resolved.output_dir,
         root: resolved.root,
         options,
+        cosmetics,
     })
 }
 
@@ -3508,12 +3567,22 @@ fn validate_round_selection(
 }
 
 fn validate_cosmetic_request(request: &ConvertDemoRequest) -> CommandResult<CosmeticFlags> {
-    if !request.export_cosmetics {
-        if request
-            .cosmetic_consent
-            .as_ref()
-            .is_some_and(|consent| !consent.phrase.trim().is_empty())
-        {
+    validate_cosmetic_options(
+        request.export_cosmetics,
+        request.export_stickers,
+        request.export_charms,
+        request.cosmetic_consent.as_ref(),
+    )
+}
+
+fn validate_cosmetic_options(
+    export_cosmetics: bool,
+    export_stickers: bool,
+    export_charms: bool,
+    cosmetic_consent: Option<&CosmeticConsentDto>,
+) -> CommandResult<CosmeticFlags> {
+    if !export_cosmetics {
+        if cosmetic_consent.is_some_and(|consent| !consent.phrase.trim().is_empty()) {
             return Err(CommandErrorDto::new(
                 "unexpected_cosmetic_consent",
                 "Cosmetic risk confirmation requires cosmetic export to be enabled.",
@@ -3526,7 +3595,7 @@ fn validate_cosmetic_request(request: &ConvertDemoRequest) -> CommandResult<Cosm
         });
     }
 
-    let consent = request.cosmetic_consent.as_ref().ok_or_else(|| {
+    let consent = cosmetic_consent.ok_or_else(|| {
         CommandErrorDto::new(
             "cosmetic_consent_required",
             "Cosmetic export requires the exact risk-confirmation phrase.",
@@ -3540,8 +3609,8 @@ fn validate_cosmetic_request(request: &ConvertDemoRequest) -> CommandResult<Cosm
     }
     Ok(CosmeticFlags {
         cosmetics: true,
-        stickers: request.export_stickers,
-        charms: request.export_charms,
+        stickers: export_stickers,
+        charms: export_charms,
     })
 }
 
@@ -3581,6 +3650,7 @@ fn run_conversion_with_sink(
     request: ConvertDemoRequest,
     events: TaskEventSink,
 ) -> CommandResult<ConversionSummaryDto> {
+    let cosmetics = prepared.cosmetics;
     let final_root = prepared.root.clone();
     let output_dir = prepared.output_dir.clone();
     let mut demo_info = archive_info::DemoArchiveInfo::from_analysis(
@@ -3597,18 +3667,12 @@ fn run_conversion_with_sink(
         DTR_FORMAT_VERSION,
         "conversion",
     );
-    for player in &mut demo_info.players {
-        if let Some(details) = player.details.as_mut() {
-            details.restrict_cosmetic_export(
-                request.export_cosmetics,
-                request.export_stickers,
-                request.export_charms,
-            );
-            if details.is_empty() {
-                player.details = None;
-            }
-        }
-    }
+    restrict_player_cosmetic_details(
+        &mut demo_info.players,
+        cosmetics.cosmetics,
+        cosmetics.stickers,
+        cosmetics.charms,
+    );
     let mut selected_rounds = request.selected_rounds.clone();
     selected_rounds.sort_unstable();
     selected_rounds.dedup();
@@ -3620,9 +3684,9 @@ fn run_conversion_with_sink(
         include_suspicious: request.include_suspicious,
         freeze_preroll_seconds: request.freeze_preroll_seconds,
         voice: request.export_voice,
-        cosmetics: request.export_cosmetics,
-        stickers: request.export_stickers,
-        charms: request.export_charms,
+        cosmetics: cosmetics.cosmetics,
+        stickers: cosmetics.stickers,
+        charms: cosmetics.charms,
         manifest_sha256: None,
         manifest_bytes: None,
         round_count: None,
@@ -3754,9 +3818,9 @@ fn run_conversion_with_sink(
         staged.validated_files,
         request.export_voice,
         staged.voice_summaries.len(),
-        request.export_cosmetics,
-        request.export_stickers,
-        request.export_charms,
+        cosmetics.cosmetics,
+        cosmetics.stickers,
+        cosmetics.charms,
     );
     emit_phase_to_sink(&events, TaskPhase::Complete);
     Ok(summary)
@@ -3792,9 +3856,7 @@ fn process_batch_demo(
         &input,
         ReadDemoOptions {
             collect_voice: request.settings.export_voice,
-            // Batch import deliberately excludes the risk-gated cosmetic lane. A player can
-            // still use the single-demo flow when they explicitly need those options.
-            collect_cosmetics: false,
+            collect_cosmetics: request.settings.export_cosmetics,
         },
     )
     .map_err(|error| {
@@ -3851,9 +3913,9 @@ fn process_batch_demo(
         max_round_seconds: request.settings.max_round_seconds,
         freeze_preroll_seconds: request.settings.freeze_preroll_seconds,
         export_voice: request.settings.export_voice,
-        export_cosmetics: false,
-        export_stickers: false,
-        export_charms: false,
+        export_cosmetics: request.settings.export_cosmetics,
+        export_stickers: request.settings.export_stickers,
+        export_charms: request.settings.export_charms,
         cosmetic_consent: None,
         overwrite: OverwriteModeDto::Deny,
     };
@@ -3866,7 +3928,15 @@ fn process_batch_demo(
             "The batch conversion coordinator is unavailable. Resume the batch after restarting the app.",
         )
     })?;
-    let prepared = prepare_conversion(&convert_request, &cached)?;
+    let prepared = prepare_conversion_with_cosmetics(
+        &convert_request,
+        &cached,
+        CosmeticFlags {
+            cosmetics: request.settings.export_cosmetics,
+            stickers: request.settings.export_stickers,
+            charms: request.settings.export_charms,
+        },
+    )?;
     if let Some(existing) = reconcile_completed_batch_archive(
         &prepared.root,
         &demo_sha256,
@@ -4720,8 +4790,8 @@ mod tests {
     fn external_urls_are_limited_to_exact_steam_targets() {
         let profile = "https://steamcommunity.com/profiles/76561198147750283";
         let inspect = concat!(
-            "steam://rungame/730/76561202255233023/+csgo_econ_action_preview%20",
-            "001122334455"
+            "steam://run/730/en/+csgo_econ_action_preview%20",
+            "0018A62720C04E280638B9F5C2F10340E706411C0C20"
         );
         assert_eq!(validate_external_url(profile).unwrap(), profile);
         assert_eq!(validate_external_url(inspect).unwrap(), inspect);
@@ -4729,7 +4799,8 @@ mod tests {
         for rejected in [
             "https://example.com/76561198147750283",
             "https://steamcommunity.com/profiles/76561198147750283/edit",
-            "steam://rungame/730/76561202255233023/+csgo_econ_action_preview%20not-hex",
+            "steam://run/730/en/+csgo_econ_action_preview%20not-hex",
+            "steam://rungame/730/76561202255233023/+csgo_econ_action_preview%20001122334455",
         ] {
             assert_eq!(
                 validate_external_url(rejected).unwrap_err().code,
@@ -5626,6 +5697,69 @@ mod tests {
     }
 
     #[test]
+    fn cosmetic_detail_restriction_preserves_non_cosmetic_player_evidence() {
+        let mut players: Vec<BrowserPlayerSummary> = serde_json::from_value(serde_json::json!([
+            {
+                "name": "Player",
+                "steamId": "76561198012345678",
+                "side": "CT",
+                "team": "a",
+                "teamName": "Alpha",
+                "score": 12,
+                "kills": 8,
+                "deaths": 6,
+                "assists": 2,
+                "mvps": 1,
+                "rounds": 12,
+                "rows": 100,
+                "details": {
+                    "headshotKills": 4,
+                    "totalDamage": 900,
+                    "statsRounds": 12,
+                    "crosshairCodes": ["CSGO-AAAAA"],
+                    "viewmodels": [{ "fov": 68.0 }],
+                    "cosmetics": [{
+                        "kind": "weapon",
+                        "itemDefIndex": 16,
+                        "stickers": [{
+                            "slot": 0,
+                            "stickerId": 10,
+                            "wear": 0.0,
+                            "offsetX": 0.0,
+                            "offsetY": 0.0
+                        }],
+                        "charms": [{
+                            "slot": 0,
+                            "charmId": 20,
+                            "offsetX": 0.0,
+                            "offsetY": 0.0,
+                            "offsetZ": 0.0
+                        }],
+                        "inspectCommand": "csgo_econ_action_preview 00",
+                        "inspectUrl": "steam://rungame/example"
+                    }]
+                }
+            }
+        ]))
+        .unwrap();
+
+        restrict_player_cosmetic_details(&mut players, true, false, true);
+        let details = players[0].details.as_ref().unwrap();
+        assert_eq!(details.headshot_kills, Some(4));
+        assert_eq!(details.crosshair_codes, ["CSGO-AAAAA"]);
+        assert!(details.cosmetics[0].stickers.is_empty());
+        assert_eq!(details.cosmetics[0].charms.len(), 1);
+        assert!(details.cosmetics[0].inspect_command.is_none());
+        assert!(details.cosmetics[0].inspect_url.is_none());
+
+        restrict_player_cosmetic_details(&mut players, false, true, true);
+        let details = players[0].details.as_ref().unwrap();
+        assert!(details.cosmetics.is_empty());
+        assert_eq!(details.total_damage, Some(900));
+        assert_eq!(details.viewmodels.len(), 1);
+    }
+
+    #[test]
     fn source_demo_resolution_reuses_a_recorded_matching_path() {
         let temp = ManifestTestDir::new("source-pointer");
         let source = temp.write_file("original.dem", b"local demo bytes");
@@ -5747,7 +5881,7 @@ mod tests {
             "demo-info.json",
             &serde_json::to_vec(&serde_json::json!({
                 "schemaVersion": crate::archive_info::DEMO_INFO_SCHEMA_VERSION,
-                "analysisRevision": crate::archive_info::DEMO_INFO_ANALYSIS_REVISION,
+                "analysisRevision": 3,
                 "demoId": "match-aabbccddeeff",
                 "demoSha256": "aa".repeat(32),
                 "displayName": "Match",
@@ -5789,6 +5923,10 @@ mod tests {
             preserved_conversion_for_manifest(&temp.path, &"aa".repeat(32), &manifest_path)
                 .unwrap();
 
+        assert!(matches!(
+            archive_info::read_demo_info(&temp.path, &"aa".repeat(32)),
+            archive_info::DemoInfoRead::Stale
+        ));
         assert!(conversion.voice);
         assert!(conversion.cosmetics);
         assert_eq!(conversion.selected_rounds, vec![0, 1]);

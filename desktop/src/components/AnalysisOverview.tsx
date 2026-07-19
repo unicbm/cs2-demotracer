@@ -1,6 +1,6 @@
 import { ChevronIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
-import type { AnalysisPlayerSummary, AnalysisResult } from "../types";
+import type { AnalysisPlayerSummary, AnalysisResult, Language } from "../types";
 import { displayMap, MapArtwork } from "./MapArtwork";
 import { RosterTeam } from "./PlayerRoster";
 import type { CopyTarget } from "./TaskViews";
@@ -55,12 +55,14 @@ function platformName(value: string): string {
 
 export function AnalysisOverview({
   analysis,
+  language,
   words,
   copiedTarget,
   onCopy,
   onOpenExternal,
 }: {
   analysis: AnalysisResult;
+  language: Language;
   words: TextDictionary;
   copiedTarget: CopyTarget | null;
   onCopy: (value: string, target: CopyTarget) => void;
@@ -116,10 +118,10 @@ export function AnalysisOverview({
             <ChevronIcon size={15} />
           </summary>
           <div className="archive-roster-grid">
-            <RosterTeam name={teamAName} players={teamA} words={words} countLabel={words.rosterPlayerCount} copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
-            <RosterTeam name={teamBName} players={teamB} words={words} countLabel={words.rosterPlayerCount} className="is-team-b" copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
+            <RosterTeam name={teamAName} players={teamA} language={language} words={words} countLabel={words.rosterPlayerCount} copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
+            <RosterTeam name={teamBName} players={teamB} language={language} words={words} countLabel={words.rosterPlayerCount} className="is-team-b" copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
             {unassigned.length > 0
-              ? <RosterTeam name={words.unassignedPlayers} players={unassigned} words={words} countLabel={words.rosterPlayerCount} className="is-unassigned" copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
+              ? <RosterTeam name={words.unassignedPlayers} players={unassigned} language={language} words={words} countLabel={words.rosterPlayerCount} className="is-unassigned" copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
               : null}
           </div>
         </details>

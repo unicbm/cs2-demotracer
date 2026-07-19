@@ -1,5 +1,5 @@
 import { type RefObject, useEffect, useRef } from "react";
-import { CheckIcon, CloseIcon } from "../icons";
+import { CloseIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
 import type { ConverterSettings, SideChoice } from "../types";
 import { DialogPrimitive } from "./Dialog";
@@ -134,10 +134,7 @@ function InspectorContents({
           <h3>{words.highRisk}</h3>
           <div className="setting-line">
             <div>
-              <strong className="risk-label">
-                {words.exportCosmetics}
-                {settings.exportCosmetics ? <span><CheckIcon size={12} />{words.sessionConfirmed}</span> : null}
-              </strong>
+              <strong>{words.exportCosmetics}</strong>
               <small>{words.cosmeticsHelp}</small>
             </div>
             <SwitchControl

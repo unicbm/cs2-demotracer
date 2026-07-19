@@ -6,7 +6,7 @@ use crate::model::{
 };
 
 const PREVIEW_COMMAND: &str = "csgo_econ_action_preview ";
-const PREVIEW_URL: &str = "steam://rungame/730/76561202255233023/+csgo_econ_action_preview%20";
+const PREVIEW_URL: &str = "steam://run/730/en/+csgo_econ_action_preview%20";
 const STEAM_PROTOCOL_CHAR_LIMIT: usize = 300;
 
 pub(crate) fn weapon_inspect(
@@ -224,6 +224,13 @@ mod tests {
         assert_eq!(
             inspect.command,
             "csgo_econ_action_preview 0018AA2720B14E280638B9FB9DEC034084063BFD7E70"
+        );
+        assert_eq!(
+            inspect.steam_url.as_deref(),
+            Some(concat!(
+                "steam://run/730/en/+csgo_econ_action_preview%20",
+                "0018AA2720B14E280638B9FB9DEC034084063BFD7E70"
+            ))
         );
     }
 

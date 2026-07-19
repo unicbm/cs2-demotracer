@@ -1,4 +1,4 @@
-use super::{AppState, CommandErrorDto, CommandResult, TaskEvent, TaskPhase};
+use super::{AppState, CommandErrorDto, CommandResult, CosmeticConsentDto, TaskEvent, TaskPhase};
 use cs2_demotracer::demo_id::sha256_hex;
 use cs2_demotracer::export::DEFAULT_FREEZE_PREROLL_SECONDS;
 use cs2_demotracer::model::{Side, SubtickMode};
@@ -329,6 +329,12 @@ pub(crate) struct BatchConversionSettingsDto {
     pub freeze_preroll_seconds: f32,
     #[serde(default = "default_true")]
     pub export_voice: bool,
+    #[serde(default)]
+    pub export_cosmetics: bool,
+    #[serde(default)]
+    pub export_stickers: bool,
+    #[serde(default)]
+    pub export_charms: bool,
 }
 
 impl Default for BatchConversionSettingsDto {
@@ -341,6 +347,9 @@ impl Default for BatchConversionSettingsDto {
             max_round_seconds: default_max_round_seconds(),
             freeze_preroll_seconds: DEFAULT_FREEZE_PREROLL_SECONDS,
             export_voice: true,
+            export_cosmetics: false,
+            export_stickers: false,
+            export_charms: false,
         }
     }
 }
@@ -356,6 +365,8 @@ pub(crate) struct StartBatchImportRequest {
     pub concurrency: Option<usize>,
     #[serde(default)]
     pub settings: BatchConversionSettingsDto,
+    #[serde(default)]
+    pub cosmetic_consent: Option<CosmeticConsentDto>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -878,7 +889,7 @@ fn scan_candidate(root: &Path, path: &Path, metadata: &fs::Metadata) -> DemoScan
 }
 
 fn build_batch_ledger(request: &StartBatchImportRequest) -> CommandResult<BatchLedgerDto> {
-    validate_batch_settings(&request.settings)?;
+    let settings = validated_batch_settings(&request.settings, request.cosmetic_consent.as_ref())?;
     if request.demo_paths.is_empty() {
         return Err(CommandErrorDto::new(
             "batch_empty",
@@ -968,7 +979,7 @@ fn build_batch_ledger(request: &StartBatchImportRequest) -> CommandResult<BatchL
         updated_at_ms: now,
         source_root: source_root.display().to_string(),
         library_root: library_root.display().to_string(),
-        settings: request.settings.clone(),
+        settings,
         status: BatchStatusDto::Pending,
         cancel_requested: false,
         requested_concurrency: request.concurrency,
@@ -976,6 +987,24 @@ fn build_batch_ledger(request: &StartBatchImportRequest) -> CommandResult<BatchL
         calibration: None,
         items,
     })
+}
+
+fn validated_batch_settings(
+    requested: &BatchConversionSettingsDto,
+    cosmetic_consent: Option<&CosmeticConsentDto>,
+) -> CommandResult<BatchConversionSettingsDto> {
+    validate_batch_settings(requested)?;
+    let cosmetics = super::validate_cosmetic_options(
+        requested.export_cosmetics,
+        requested.export_stickers,
+        requested.export_charms,
+        cosmetic_consent,
+    )?;
+    let mut settings = requested.clone();
+    settings.export_cosmetics = cosmetics.cosmetics;
+    settings.export_stickers = cosmetics.stickers;
+    settings.export_charms = cosmetics.charms;
+    Ok(settings)
 }
 
 fn validate_batch_settings(settings: &BatchConversionSettingsDto) -> CommandResult<()> {
@@ -2028,5 +2057,71 @@ mod tests {
         assert!((MIN_AUTO_BATCH_CONCURRENCY..=MAX_BATCH_CONCURRENCY).contains(&concurrency));
         assert_eq!(requested_batch_concurrency(Some(1)).unwrap(), 1);
         assert!(requested_batch_concurrency(Some(5)).is_err());
+    }
+
+    #[test]
+    fn batch_ledger_round_trips_cosmetic_intent_without_the_consent_phrase() {
+        let mut ledger = sample_ledger();
+        ledger.settings.export_cosmetics = true;
+        ledger.settings.export_stickers = true;
+        ledger.settings.export_charms = false;
+
+        let json = serde_json::to_string(&ledger).unwrap();
+        assert!(!json.contains("phrase"));
+        let restored: BatchLedgerDto = serde_json::from_str(&json).unwrap();
+        assert!(restored.settings.export_cosmetics);
+        assert!(restored.settings.export_stickers);
+        assert!(!restored.settings.export_charms);
+    }
+
+    #[test]
+    fn legacy_batch_settings_default_cosmetic_export_off() {
+        let settings: BatchConversionSettingsDto = serde_json::from_value(serde_json::json!({
+            "includeSuspicious": false,
+            "fullRound": false,
+            "side": "both",
+            "subtickMode": "auto",
+            "maxRoundSeconds": 240.0,
+            "freezePrerollSeconds": 10.0,
+            "exportVoice": true
+        }))
+        .unwrap();
+
+        assert!(!settings.export_cosmetics);
+        assert!(!settings.export_stickers);
+        assert!(!settings.export_charms);
+    }
+
+    #[test]
+    fn batch_settings_require_consent_once_and_store_normalized_flags() {
+        let mut requested = BatchConversionSettingsDto {
+            export_cosmetics: false,
+            export_stickers: true,
+            export_charms: true,
+            ..BatchConversionSettingsDto::default()
+        };
+        let normalized = validated_batch_settings(&requested, None).unwrap();
+        assert!(!normalized.export_cosmetics);
+        assert!(!normalized.export_stickers);
+        assert!(!normalized.export_charms);
+
+        requested.export_cosmetics = true;
+        let wrong = CosmeticConsentDto {
+            phrase: "close enough".to_string(),
+        };
+        assert_eq!(
+            validated_batch_settings(&requested, Some(&wrong))
+                .unwrap_err()
+                .code,
+            "cosmetic_consent_required"
+        );
+
+        let accepted = CosmeticConsentDto {
+            phrase: super::super::COSMETIC_CONFIRMATION_PHRASE.to_string(),
+        };
+        let normalized = validated_batch_settings(&requested, Some(&accepted)).unwrap();
+        assert!(normalized.export_cosmetics);
+        assert!(normalized.export_stickers);
+        assert!(normalized.export_charms);
     }
 }

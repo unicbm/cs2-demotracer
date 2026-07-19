@@ -104,6 +104,7 @@ const DEFAULT_LOCAL_ENVIRONMENT: LocalEnvironmentSettings = {
 };
 
 const BATCH_PREFERENCES_STORAGE_KEY = "demotracer.batch-preferences.v1";
+const COSMETIC_CONSENT_STORAGE_KEY = "demotracer.cosmetic-consent.v1";
 const ESTIMATED_ZSTD_EXPANSION = 4;
 
 interface StoredBatchPreferences {
@@ -235,6 +236,10 @@ function storedTheme(): Theme {
   return saved === "light" || saved === "dark" || saved === "system" ? saved : "system";
 }
 
+function storedCosmeticConsent(): boolean {
+  return localStorage.getItem(COSMETIC_CONSENT_STORAGE_KEY) === "accepted";
+}
+
 function storedSettings(): ConverterSettings {
   try {
     const saved = JSON.parse(localStorage.getItem("demotracer.settings") ?? "null") as Partial<ConverterSettings> | null;
@@ -259,7 +264,7 @@ function storedSettings(): ConverterSettings {
         ? saved.maxRoundSeconds
         : DEFAULT_SETTINGS.maxRoundSeconds,
       exportVoice: typeof saved.exportVoice === "boolean" ? saved.exportVoice : DEFAULT_SETTINGS.exportVoice,
-      exportCosmetics: false,
+      exportCosmetics: storedCosmeticConsent() && saved.exportCosmetics === true,
       exportStickers: typeof saved.exportStickers === "boolean" ? saved.exportStickers : DEFAULT_SETTINGS.exportStickers,
       exportCharms: typeof saved.exportCharms === "boolean" ? saved.exportCharms : DEFAULT_SETTINGS.exportCharms,
       includeSuspicious: false,
@@ -489,6 +494,7 @@ function App() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [selectedRounds, setSelectedRounds] = useState<Set<number>>(new Set());
   const [settings, setSettings] = useState<ConverterSettings>(storedSettings);
+  const [cosmeticConsentAccepted, setCosmeticConsentAccepted] = useState(storedCosmeticConsent);
   const [playbackPreset, setPlaybackPreset] = useState<PlaybackPresetOptions>(storedPlaybackPreset);
   const [localEnvironment, setLocalEnvironment] = useState<LocalEnvironmentSettings>(storedLocalEnvironment);
   const [installCandidates, setInstallCandidates] = useState<Cs2InstallCandidate[]>([]);
@@ -638,6 +644,10 @@ function App() {
     : batchRunState(batchLedger?.status, batchInvocationActive);
   const canResumeBatch = !batchInvocationActive && Boolean(batchLedger?.items.some((item) =>
     item.status === "pending" || item.status === "running"));
+  const batchCosmeticOptionsLocked = batchInvocationActive || canResumeBatch;
+  const batchCosmeticSettings = batchLedger && batchCosmeticOptionsLocked
+    ? batchLedger.settings
+    : settings;
   const batchEta = useMemo<BatchEtaState>(() => {
     const calibration = batchLedger?.calibration;
     if (!calibration) {
@@ -740,9 +750,19 @@ function App() {
   }, [inspectorDocked]);
 
   useEffect(() => {
-    const persisted = { ...settings, exportCosmetics: false, includeSuspicious: false };
+    const persisted = {
+      ...settings,
+      exportCosmetics: cosmeticConsentAccepted && settings.exportCosmetics,
+      includeSuspicious: false,
+    };
     localStorage.setItem("demotracer.settings", JSON.stringify(persisted));
-  }, [settings]);
+  }, [cosmeticConsentAccepted, settings]);
+
+  useEffect(() => {
+    if (cosmeticConsentAccepted) {
+      localStorage.setItem(COSMETIC_CONSENT_STORAGE_KEY, "accepted");
+    }
+  }, [cosmeticConsentAccepted]);
 
   useEffect(() => {
     localStorage.setItem("demotracer.playback-preset.v1", JSON.stringify(playbackPreset));
@@ -974,7 +994,7 @@ function App() {
     setSelectedRounds(new Set());
     setInspectorSheetOpen(false);
     setCosmeticPhrase("");
-    setSettings((current) => ({ ...current, exportCosmetics: false, includeSuspicious: false }));
+    setSettings((current) => ({ ...current, includeSuspicious: false }));
     setProgress({ ...emptyProgress(), phase: "parsing" });
     setActiveSection("library");
     setPhase("analyzing");
@@ -1251,6 +1271,10 @@ function App() {
 
   async function startBatchImport(candidateIds: string[]) {
     if (batchInvocationActive || candidateIds.length === 0) return;
+    if (settings.exportCosmetics && !cosmeticConsentAccepted) {
+      requestCosmeticExport();
+      return;
+    }
     let destination = libraryRoot;
     if (!destination) destination = (await chooseLibraryRoot()) ?? "";
     if (!destination) return;
@@ -1297,7 +1321,11 @@ function App() {
             maxRoundSeconds: settings.maxRoundSeconds,
             freezePrerollSeconds: settings.freezePrerollSeconds,
             exportVoice: settings.exportVoice,
+            exportCosmetics: settings.exportCosmetics,
+            exportStickers: settings.exportCosmetics && settings.exportStickers,
+            exportCharms: settings.exportCosmetics && settings.exportCharms,
           },
+          cosmeticConsent: settings.exportCosmetics ? { phrase: COSMETIC_PHRASE } : null,
         },
         events,
       });
@@ -2069,6 +2097,15 @@ function App() {
     setSettings((current) => ({ ...current, ...patch }));
   }
 
+  function requestCosmeticExport() {
+    if (cosmeticConsentAccepted) {
+      setSettings((current) => ({ ...current, exportCosmetics: true }));
+      return;
+    }
+    setCosmeticPhrase("");
+    setCosmeticOpen(true);
+  }
+
   function restoreDefaultSettings() {
     setSettings({ ...DEFAULT_SETTINGS });
     setCosmeticPhrase("");
@@ -2083,8 +2120,8 @@ function App() {
     let destination = outputDir;
     if (!destination) destination = (await chooseOutput()) ?? "";
     if (!destination) return;
-    if (settings.exportCosmetics && !consentIsValid(cosmeticPhrase)) {
-      setCosmeticOpen(true);
+    if (settings.exportCosmetics && !cosmeticConsentAccepted) {
+      requestCosmeticExport();
       return;
     }
     const preflight = await preflightOutput(destination);
@@ -2128,7 +2165,7 @@ function App() {
           exportCosmetics: settings.exportCosmetics,
           exportStickers: settings.exportCosmetics && settings.exportStickers,
           exportCharms: settings.exportCosmetics && settings.exportCharms,
-          cosmeticConsent: settings.exportCosmetics ? { phrase: cosmeticPhrase } : null,
+          cosmeticConsent: settings.exportCosmetics ? { phrase: COSMETIC_PHRASE } : null,
           overwrite: overwrite ? "replace" : "deny",
         },
         events,
@@ -2226,7 +2263,7 @@ function App() {
     setGlobalError(null);
     setInspectorSheetOpen(false);
     setCosmeticPhrase("");
-    setSettings((current) => ({ ...current, exportCosmetics: false, includeSuspicious: false }));
+    setSettings((current) => ({ ...current, includeSuspicious: false }));
   }
 
   function cycleTheme() {
@@ -2246,6 +2283,7 @@ function App() {
     <div className="selection-layout">
       <RoundWorkspace
         words={words}
+        language={language}
         analysis={analysis}
         selectedRounds={selectedRounds}
         allowSuspicious={settings.includeSuspicious}
@@ -2273,10 +2311,7 @@ function App() {
           docked={inspectorDocked}
           returnFocusRef={settingsTriggerRef}
           onChange={updateSettings}
-          onRequestCosmetics={() => {
-            setCosmeticPhrase("");
-            setCosmeticOpen(true);
-          }}
+          onRequestCosmetics={requestCosmeticExport}
           onClose={() => setInspectorSheetOpen(false)}
           onRestoreDefaults={restoreDefaultSettings}
         />
@@ -2339,10 +2374,21 @@ function App() {
             eta={batchEta}
             summary={batchSummary}
             soundNotifications={localEnvironment.soundNotifications}
+            exportCosmetics={batchCosmeticSettings.exportCosmetics}
+            exportStickers={batchCosmeticSettings.exportStickers}
+            exportCharms={batchCosmeticSettings.exportCharms}
+            cosmeticOptionsLocked={batchCosmeticOptionsLocked}
+            retryCosmeticSettings={batchLedger ? {
+              cosmetics: batchLedger.settings.exportCosmetics,
+              stickers: batchLedger.settings.exportStickers,
+              charms: batchLedger.settings.exportCharms,
+            } : null}
             onChooseFolder={() => void chooseBatchFolder()}
             onScan={() => void scanBatchFolder()}
             onSelectionChange={setBatchSelectedIds}
             onConcurrencyChange={setBatchConcurrency}
+            onRequestCosmetics={requestCosmeticExport}
+            onCosmeticOptionsChange={updateSettings}
             onSoundNotificationsChange={(enabled) => {
               if (enabled) primeTaskSound(true);
               setLocalEnvironment((current) => ({ ...current, soundNotifications: enabled }));
@@ -2363,6 +2409,7 @@ function App() {
             exportRoot={libraryRoot}
             archiveRoots={libraryRoots}
             converter={settings}
+            cosmeticConsentAccepted={cosmeticConsentAccepted}
             playback={playbackPreset}
             candidates={installCandidates}
             report={environmentReport}
@@ -2399,6 +2446,7 @@ function App() {
             onRemoveDemoRoot={removeDemoRoot}
             onEnvironmentChange={(patch) => setLocalEnvironment((current) => ({ ...current, ...patch }))}
             onConverterChange={updateSettings}
+            onRequestCosmetics={requestCosmeticExport}
             onPlaybackChange={(patch) => setPlaybackPreset((current) => ({ ...current, ...patch }))}
           />
         ) : (
@@ -2436,6 +2484,7 @@ function App() {
         {phase === "archive" && archive ? (
           <ArchiveWorkspace
             words={words}
+            language={language}
             archive={archive}
             busy={Boolean(repairingManifest)}
             selectedRound={selectedArchiveRound ?? -1}
@@ -2536,7 +2585,9 @@ function App() {
           <footer className="dialog-actions">
             <button className="secondary-button" type="button" onClick={() => setCosmeticOpen(false)}>{words.cancel}</button>
             <button className="primary-button" type="button" disabled={!consentIsValid(cosmeticPhrase)} onClick={() => {
+              setCosmeticConsentAccepted(true);
               setSettings((current) => ({ ...current, exportCosmetics: true }));
+              setCosmeticPhrase("");
               setCosmeticOpen(false);
             }}>{words.enableCosmetics}<ArrowIcon size={15} /></button>
           </footer>

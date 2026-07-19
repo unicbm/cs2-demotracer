@@ -327,7 +327,7 @@
 .archive-roster-team > header strong {
   overflow: hidden;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -336,7 +336,7 @@
 .archive-roster-team > header span {
   flex: none;
   color: var(--text-tertiary);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .archive-roster-team > ul {
@@ -348,7 +348,7 @@
 }
 
 .archive-roster-team > ul > li {
-  min-height: 25px;
+  min-height: 34px;
   background: color-mix(in srgb, var(--surface-subtle) 72%, transparent);
   border: 1px solid transparent;
   border-radius: 4px;
@@ -365,14 +365,15 @@
   grid-template-columns: minmax(0, 1fr) auto auto 14px;
   align-items: center;
   width: 100%;
-  min-height: 25px;
-  padding: 3px 7px;
+  min-height: 34px;
+  padding: 5px 9px;
   gap: 10px;
   color: inherit;
   background: transparent;
   border: 0;
   border-radius: 3px;
   text-align: left;
+  user-select: none;
 }
 
 .roster-player-summary:hover {
@@ -382,7 +383,7 @@
 .roster-player-summary > strong {
   overflow: hidden;
   color: var(--text-primary);
-  font-size: 10.5px;
+  font-size: 12.5px;
   font-weight: 625;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -402,7 +403,7 @@
   min-width: 58px;
   color: var(--text-primary);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 11.5px;
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
@@ -417,22 +418,21 @@
 .roster-player-summary > code {
   color: var(--text-secondary);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11.5px;
   font-variant-numeric: tabular-nums;
-  user-select: all;
   white-space: nowrap;
 }
 
 .roster-player-drawer {
   display: grid;
-  padding: 5px 7px 8px;
-  gap: 7px;
+  padding: 8px 9px 11px;
+  gap: 10px;
   border-top: 1px solid var(--divider);
 }
 
 .archive-workspace .archive-roster-grid,
 .analysis-overview .archive-roster-grid {
-  max-height: 260px;
+  max-height: 380px;
   overflow: auto;
   scrollbar-gutter: stable;
 }
@@ -446,6 +446,7 @@
 }
 
 .roster-profile-line {
+  flex-wrap: wrap;
   justify-content: space-between;
   min-width: 0;
   gap: 8px;
@@ -460,7 +461,7 @@
 .roster-command-list small,
 .roster-cosmetic-card summary small {
   color: var(--text-tertiary);
-  font-size: 8.5px;
+  font-size: 12px;
   font-weight: 650;
   letter-spacing: 0.02em;
 }
@@ -470,7 +471,7 @@
 .roster-attachments code {
   color: var(--text-secondary);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 13px;
 }
 
 .roster-profile-line > div,
@@ -480,14 +481,14 @@
 .roster-external-action {
   display: inline-flex;
   align-items: center;
-  min-height: 23px;
-  padding: 2px 6px;
+  min-height: 29px;
+  padding: 3px 8px;
   gap: 4px;
   color: var(--text-secondary);
   background: transparent;
   border: 1px solid var(--divider);
   border-radius: 4px;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 650;
   white-space: nowrap;
 }
@@ -513,19 +514,19 @@
   align-items: baseline;
   justify-content: space-between;
   min-width: 0;
-  padding: 4px 6px;
+  padding: 6px 8px;
   gap: 5px;
   border-left: 1px solid var(--divider);
 }
 
 .roster-metric-strip > span:first-child { border-left: 0; }
-.roster-metric-strip small { color: var(--text-tertiary); font-size: 8px; font-weight: 700; }
-.roster-metric-strip strong { color: var(--text-primary); font-family: var(--mono); font-size: 10px; }
+.roster-metric-strip small { color: var(--text-tertiary); font-size: 11.5px; font-weight: 700; }
+.roster-metric-strip strong { color: var(--text-primary); font-family: var(--mono); font-size: 14px; }
 
 .roster-evidence-section {
   display: grid;
   min-width: 0;
-  gap: 4px;
+  gap: 6px;
 }
 
 .roster-evidence-section > header {
@@ -535,13 +536,21 @@
   gap: 7px;
 }
 
-.roster-evidence-section > header strong { color: var(--text-primary); font-size: 9.5px; }
+.roster-evidence-section > header strong { flex: none; color: var(--text-primary); font-size: 13.5px; }
 .roster-evidence-section > header small {
-  overflow: hidden;
   color: var(--text-tertiary);
-  font-size: 8.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.roster-evidence-empty {
+  margin: 0;
+  padding: 7px 9px;
+  color: var(--text-tertiary);
+  background: color-mix(in srgb, var(--workspace) 52%, transparent);
+  border-left: 2px solid var(--divider-strong);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .roster-command-list,
@@ -558,7 +567,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   min-width: 0;
-  padding: 4px 5px;
+  padding: 6px 7px;
   gap: 6px;
   background: color-mix(in srgb, var(--workspace) 52%, transparent);
   border-radius: 3px;
@@ -579,23 +588,33 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  min-height: 32px;
-  padding: 4px 6px;
+  min-height: 40px;
+  padding: 6px 8px;
   gap: 7px;
   cursor: pointer;
   list-style: none;
 }
 
 .roster-cosmetic-card > summary::-webkit-details-marker { display: none; }
-.roster-cosmetic-card > summary > span { display: grid; min-width: 0; gap: 1px; }
-.roster-cosmetic-card > summary strong { overflow: hidden; color: var(--text-primary); font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
+.roster-cosmetic-summary { display: flex; align-items: center; min-width: 0; gap: 8px; }
+.roster-cosmetic-summary > span { display: grid; min-width: 0; gap: 1px; }
+.roster-cosmetic-card > summary strong { overflow: hidden; color: var(--text-primary); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .roster-cosmetic-card > summary svg { color: var(--text-tertiary); transition: transform 120ms ease; }
 .roster-cosmetic-card[open] > summary svg { transform: rotate(180deg); }
 
+.roster-cosmetic-preview {
+  display: block;
+  width: 104px;
+  height: 72px;
+  object-fit: contain;
+  background: color-mix(in srgb, var(--surface-raised) 72%, var(--workspace));
+  border: 1px solid var(--divider);
+}
+
 .roster-cosmetic-details {
   display: grid;
-  padding: 6px;
-  gap: 6px;
+  padding: 8px;
+  gap: 8px;
   border-top: 1px solid var(--divider);
 }
 
@@ -607,13 +626,23 @@
 }
 
 .roster-cosmetic-details dl > div { display: flex; justify-content: space-between; min-width: 0; gap: 6px; }
-.roster-cosmetic-details dt { color: var(--text-tertiary); font-size: 8.5px; }
-.roster-cosmetic-details dd { overflow: hidden; margin: 0; color: var(--text-secondary); font-family: var(--mono); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.roster-cosmetic-details dt { color: var(--text-tertiary); font-size: 12px; }
+.roster-cosmetic-details dd { overflow: hidden; margin: 0; color: var(--text-secondary); font-family: var(--mono); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
 
-.roster-attachments h5 { margin: 0 0 3px; color: var(--text-secondary); font-size: 9px; }
-.roster-attachments li { display: grid; padding: 3px 5px; gap: 1px; background: var(--surface-subtle); border-radius: 3px; }
-.roster-attachments strong { color: var(--text-secondary); font-size: 8.5px; }
-.roster-attachments code { overflow-wrap: anywhere; line-height: 14px; }
+.roster-attachments h5 { margin: 0 0 4px; color: var(--text-secondary); font-size: 12.5px; }
+.roster-attachments li { display: flex; align-items: center; padding: 6px 7px; gap: 6px; background: var(--surface-subtle); border-radius: 3px; }
+.roster-attachments li > span { display: grid; flex: 1; min-width: 0; gap: 2px; }
+.roster-attachments strong { overflow: hidden; color: var(--text-secondary); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.roster-attachments code { overflow-wrap: anywhere; font-size: 11.5px; line-height: 17px; }
+
+.roster-attachment-preview {
+  display: block;
+  width: 44px;
+  height: 36px;
+  object-fit: contain;
+  background: color-mix(in srgb, var(--surface-raised) 72%, var(--workspace));
+  border: 1px solid var(--divider);
+}
 
 .archive-split-view {
   display: grid;
@@ -1049,6 +1078,7 @@
   .archive-roster-grid { grid-template-columns: 1fr; padding-inline: 14px; }
   .archive-roster-team,
   .archive-roster-team.is-team-b { padding: 10px 0 0; border-left: 0; }
+  .roster-cosmetic-preview { width: 84px; height: 60px; }
   .archive-roster-team.is-team-b { border-top: 1px solid var(--divider); }
   .archive-playback-pane { padding-inline: 14px; }
   .archive-round-option { grid-template-columns: 45px 52px minmax(72px, 1fr) auto; padding-inline: 8px; gap: 7px; }

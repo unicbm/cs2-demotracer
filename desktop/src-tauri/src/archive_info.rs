@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub(crate) const DEMO_INFO_FILE_NAME: &str = "demo-info.json";
 pub(crate) const DEMO_SOURCE_FILE_NAME: &str = "demo-source.json";
 pub(crate) const DEMO_INFO_SCHEMA_VERSION: u32 = 1;
-pub(crate) const DEMO_INFO_ANALYSIS_REVISION: u32 = 3;
+pub(crate) const DEMO_INFO_ANALYSIS_REVISION: u32 = 4;
 const MAX_DEMO_INFO_BYTES: u64 = 1024 * 1024;
 const MAX_DEMO_SOURCE_BYTES: u64 = 64 * 1024;
 

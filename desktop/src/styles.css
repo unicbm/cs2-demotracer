@@ -1411,22 +1411,6 @@ input[type="radio"] {
   border-top: 1px solid color-mix(in srgb, var(--warning) 22%, transparent);
 }
 
-.risk-label {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.risk-label > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  color: var(--success);
-  font-size: var(--type-micro);
-  font-weight: 600;
-}
-
 .sub-settings {
   display: flex;
   margin: 12px 0 0;

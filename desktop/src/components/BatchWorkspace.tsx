@@ -87,11 +87,26 @@ export interface BatchWorkspaceProps {
   eta?: BatchEtaState | null;
   summary: BatchRunSummary;
   soundNotifications: boolean;
+  exportCosmetics: boolean;
+  exportStickers: boolean;
+  exportCharms: boolean;
+  cosmeticOptionsLocked: boolean;
+  retryCosmeticSettings?: {
+    cosmetics: boolean;
+    stickers: boolean;
+    charms: boolean;
+  } | null;
   onChooseFolder: () => void;
   onScan: () => void;
   onSelectionChange: (candidateIds: string[]) => void;
   onConcurrencyChange: (value: BatchConcurrency) => void;
   onSoundNotificationsChange: (enabled: boolean) => void;
+  onRequestCosmetics: () => void;
+  onCosmeticOptionsChange: (patch: {
+    exportCosmetics?: boolean;
+    exportStickers?: boolean;
+    exportCharms?: boolean;
+  }) => void;
   onStart: (candidateIds: string[]) => void;
   onResume: () => void;
   onStop: () => void;
@@ -125,11 +140,15 @@ interface BatchCopy {
   estimatedItem: string;
   estimatedCompressedItem: string;
   compressedSize: string;
-  queueSetup: string;
+  currentQueueSetup: string;
+  nextQueueSetup: string;
+  queueOptions: string;
   concurrency: string;
   concurrencyHelp: string;
   concurrencyAuto: string;
   concurrencyValue: string;
+  evidenceExport: string;
+  cosmeticsBatchHelp: string;
   sound: string;
   soundHelp: string;
   queueMonitor: string;
@@ -152,6 +171,8 @@ interface BatchCopy {
   elapsed: string;
   remaining: string;
   retry: string;
+  retryOriginalSettings: string;
+  cosmeticsNotSaved: string;
   openArchive: string;
   start: string;
   resume: string;
@@ -194,11 +215,15 @@ const COPY: Record<Language, BatchCopy> = {
     estimatedItem: "预计 {time}",
     estimatedCompressedItem: "初始预计 {time}",
     compressedSize: "压缩包 {size}",
-    queueSetup: "任务设置",
+    currentQueueSetup: "当前任务设置",
+    nextQueueSetup: "下一批设置",
+    queueOptions: "并发与档案证据",
     concurrency: "并发解析",
     concurrencyHelp: "Auto 根据本机 CPU 选择有限并发；手动模式最多 4 个。",
     concurrencyAuto: "Auto（推荐）",
     concurrencyValue: "{count} 个并发",
+    evidenceExport: "档案证据",
+    cosmeticsBatchHelp: "开启后，本批每个 Demo 都会解析并保留可归属给选手的饰品证据；首次风险确认后会沿用设置中的选择。",
     sound: "完成与错误提示音",
     soundHelp: "整批完成或需要处理错误时播放一次；不会为每个成功项目连续响铃。",
     queueMonitor: "处理进度",
@@ -232,6 +257,8 @@ const COPY: Record<Language, BatchCopy> = {
     elapsed: "已用 {time}",
     remaining: "剩余约 {time}",
     retry: "重试",
+    retryOriginalSettings: "重试沿用原批次：{details}",
+    cosmeticsNotSaved: "不保存饰品证据",
     openArchive: "打开档案",
     start: "开始入库 {count} 个 Demo",
     resume: "恢复未完成队列",
@@ -272,11 +299,15 @@ const COPY: Record<Language, BatchCopy> = {
     estimatedItem: "Est. {time}",
     estimatedCompressedItem: "Initial est. {time}",
     compressedSize: "Compressed {size}",
-    queueSetup: "Job settings",
+    currentQueueSetup: "Current job settings",
+    nextQueueSetup: "Next batch settings",
+    queueOptions: "Concurrency and archive evidence",
     concurrency: "Concurrent parses",
     concurrencyHelp: "Auto chooses bounded concurrency from the local CPU; manual mode is capped at four.",
     concurrencyAuto: "Auto (recommended)",
     concurrencyValue: "{count} concurrent",
+    evidenceExport: "Archive evidence",
+    cosmeticsBatchHelp: "When enabled, every demo in this batch is parsed for player-attributable cosmetic evidence. The setting is reused after the first risk confirmation.",
     sound: "Completion and error sounds",
     soundHelp: "Plays once when the batch finishes or needs attention, not after every successful item.",
     queueMonitor: "Job progress",
@@ -310,6 +341,8 @@ const COPY: Record<Language, BatchCopy> = {
     elapsed: "Elapsed {time}",
     remaining: "About {time} left",
     retry: "Retry",
+    retryOriginalSettings: "Retry uses the original batch: {details}",
+    cosmeticsNotSaved: "No cosmetic evidence",
     openArchive: "Open archive",
     start: "Import {count} demos",
     resume: "Resume unfinished queue",
@@ -373,11 +406,18 @@ export function BatchWorkspace({
   eta,
   summary,
   soundNotifications,
+  exportCosmetics,
+  exportStickers,
+  exportCharms,
+  cosmeticOptionsLocked,
+  retryCosmeticSettings,
   onChooseFolder,
   onScan,
   onSelectionChange,
   onConcurrencyChange,
   onSoundNotificationsChange,
+  onRequestCosmetics,
+  onCosmeticOptionsChange,
   onStart,
   onResume,
   onStop,
@@ -398,6 +438,13 @@ export function BatchWorkspace({
   const selectableVisible = filteredCandidates.filter(isCandidateSelectable);
   const processed = Math.min(summary.total, summary.completed + summary.failed + summary.skipped);
   const overallProgress = summary.total > 0 ? Math.min(1, processed / summary.total) : 0;
+  const retryEvidenceDetails = retryCosmeticSettings?.cosmetics
+    ? [
+      words.exportCosmetics,
+      retryCosmeticSettings.stickers ? words.exportStickers : null,
+      retryCosmeticSettings.charms ? words.exportCharms : null,
+    ].filter((detail): detail is string => Boolean(detail)).join(" · ")
+    : copy.cosmeticsNotSaved;
 
   function toggleCandidate(candidate: BatchScanCandidate) {
     if (!isCandidateSelectable(candidate) || working) return;
@@ -506,7 +553,8 @@ export function BatchWorkspace({
           </div>
 
           <section className="batch-queue-settings" aria-labelledby="batch-settings-title">
-            <header><span>{copy.queueSetup}</span><strong id="batch-settings-title">{copy.concurrency}</strong></header>
+            <header><span>{cosmeticOptionsLocked ? copy.currentQueueSetup : copy.nextQueueSetup}</span><strong id="batch-settings-title">{copy.queueOptions}</strong></header>
+            <strong className="batch-setting-label">{copy.concurrency}</strong>
             <div className="batch-concurrency-options" role="radiogroup" aria-label={copy.concurrency}>
               {(["auto", 1, 2, 3, 4] as const).map((value) => (
                 <button
@@ -514,7 +562,7 @@ export function BatchWorkspace({
                   type="button"
                   role="radio"
                   aria-checked={concurrency === value}
-                  disabled={working}
+                  disabled={working || cosmeticOptionsLocked}
                   key={value}
                   onClick={() => onConcurrencyChange(value)}
                 >
@@ -523,6 +571,31 @@ export function BatchWorkspace({
               ))}
             </div>
             <p>{concurrency === "auto" ? copy.concurrencyAuto : copy.concurrencyValue.replace("{count}", String(concurrency))} · {copy.concurrencyHelp}</p>
+
+            <fieldset className="batch-cosmetic-settings" disabled={working || cosmeticOptionsLocked}>
+              <legend>{copy.evidenceExport}</legend>
+              <label className="batch-setting-checkbox">
+                <input
+                  type="checkbox"
+                  checked={exportCosmetics}
+                  onChange={(event) => {
+                    if (event.target.checked) onRequestCosmetics();
+                    else onCosmeticOptionsChange({ exportCosmetics: false });
+                  }}
+                />
+                <span>
+                  <strong>{words.exportCosmetics}</strong>
+                  <small>{copy.cosmeticsBatchHelp}</small>
+                </span>
+              </label>
+              {exportCosmetics ? (
+                <div className="batch-cosmetic-detail-options">
+                  <label><input type="checkbox" checked={exportStickers} onChange={(event) => onCosmeticOptionsChange({ exportStickers: event.target.checked })} />{words.exportStickers}</label>
+                  <label><input type="checkbox" checked={exportCharms} onChange={(event) => onCosmeticOptionsChange({ exportCharms: event.target.checked })} />{words.exportCharms}</label>
+                </div>
+              ) : null}
+            </fieldset>
+
             <label className="batch-sound-toggle">
               <input type="checkbox" checked={soundNotifications} onChange={(event) => onSoundNotificationsChange(event.target.checked)} />
               <span aria-hidden="true"><i /></span>
@@ -588,6 +661,11 @@ export function BatchWorkspace({
                     {job.error ? <p className="batch-job-error" role="alert">{job.error}</p> : null}
                   </div>
                   <div className="batch-job-actions">
+                    {job.phase === "failed" && retryCosmeticSettings && !working ? (
+                      <small className="batch-job-retry-settings">
+                        {copy.retryOriginalSettings.replace("{details}", retryEvidenceDetails)}
+                      </small>
+                    ) : null}
                     {job.phase === "failed" && onRetryJob && !working ? <button className="quiet-button" type="button" onClick={() => onRetryJob(job.id)}><ReplayIcon size={13} />{copy.retry}</button> : null}
                     {job.phase === "completed" && onOpenArchive && !working ? <button className="quiet-button" type="button" onClick={() => onOpenArchive(job)}>{copy.openArchive}<ArrowIcon size={13} /></button> : null}
                   </div>

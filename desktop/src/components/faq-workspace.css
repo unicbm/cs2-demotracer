@@ -299,24 +299,9 @@
   margin: 0 0 20px -8px;
 }
 
-.faq-answer-category {
-  display: inline-flex;
-  min-height: 24px;
-  padding: 0 8px;
-  align-items: center;
-  color: var(--trace);
-  background: color-mix(in srgb, var(--trace) 9%, transparent);
-  border: 1px solid color-mix(in srgb, var(--trace) 18%, transparent);
-  border-radius: 999px;
-  font-size: 8.5px;
-  font-weight: 750;
-  letter-spacing: 0.065em;
-  text-transform: uppercase;
-}
-
 .faq-answer-pane h2 {
   max-width: 720px;
-  margin-top: 12px;
+  margin-top: 4px;
   font-family: var(--faq-display);
   font-size: clamp(23px, 3vw, 31px);
   font-stretch: condensed;

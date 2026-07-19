@@ -35,6 +35,7 @@ interface SettingsWorkspaceProps {
   exportRoot: string;
   archiveRoots: string[];
   converter: ConverterSettings;
+  cosmeticConsentAccepted: boolean;
   playback: PlaybackPresetOptions;
   candidates: Cs2InstallCandidate[];
   report: EnvironmentDiagnosticReport | null;
@@ -62,6 +63,7 @@ interface SettingsWorkspaceProps {
   onRemoveDemoRoot: (root: string) => void;
   onEnvironmentChange: (patch: Partial<LocalEnvironmentSettings>) => void;
   onConverterChange: (patch: Partial<ConverterSettings>) => void;
+  onRequestCosmetics: () => void;
   onPlaybackChange: (patch: Partial<PlaybackPresetOptions>) => void;
 }
 
@@ -205,6 +207,7 @@ export function SettingsWorkspace({
   exportRoot,
   archiveRoots,
   converter,
+  cosmeticConsentAccepted,
   playback,
   candidates,
   report,
@@ -232,6 +235,7 @@ export function SettingsWorkspace({
   onRemoveDemoRoot,
   onEnvironmentChange,
   onConverterChange,
+  onRequestCosmetics,
   onPlaybackChange,
 }: SettingsWorkspaceProps) {
   const [section, setSection] = useState<SettingsSection>("environment");
@@ -608,6 +612,23 @@ export function SettingsWorkspace({
 
         <SettingLine title={words.exportVoice} description={words.voiceHelp} checked={converter.exportVoice} onChange={(exportVoice) => onConverterChange({ exportVoice })} />
 
+        <SettingLine
+          title={words.exportCosmetics}
+          description={cosmeticConsentAccepted ? words.cosmeticDefaultAcceptedHelp : words.cosmeticDefaultHelp}
+          checked={converter.exportCosmetics}
+          onChange={(exportCosmetics) => {
+            if (exportCosmetics) onRequestCosmetics();
+            else onConverterChange({ exportCosmetics: false });
+          }}
+        />
+
+        {converter.exportCosmetics ? (
+          <div className="settings-dependent-options">
+            <label><input type="checkbox" checked={converter.exportStickers} onChange={(event) => onConverterChange({ exportStickers: event.target.checked })} />{words.exportStickers}</label>
+            <label><input type="checkbox" checked={converter.exportCharms} onChange={(event) => onConverterChange({ exportCharms: event.target.checked })} />{words.exportCharms}</label>
+          </div>
+        ) : null}
+
         <div className="settings-number-row">
           <div><strong>{words.freezePreroll}</strong><small>{words.freezePrerollDefaultHelp}</small></div>
           <label>
@@ -660,7 +681,7 @@ export function SettingsWorkspace({
       <aside className="safe-defaults-note">
         <span><AlertIcon size={17} /></span>
         <div><strong>{words.sessionOnlySettingsTitle}</strong><p>{words.sessionOnlySettingsBody}</p></div>
-        <button className="text-button" type="button" onClick={() => onConverterChange({ side: "both", fullRound: false, freezePrerollSeconds: 10, subtickMode: "auto", maxRoundSeconds: 240, exportVoice: true })}>{words.restoreSafeDefaults}</button>
+        <button className="text-button" type="button" onClick={() => onConverterChange({ side: "both", fullRound: false, freezePrerollSeconds: 10, subtickMode: "auto", maxRoundSeconds: 240, exportVoice: true, exportCosmetics: false, exportStickers: false, exportCharms: false })}>{words.restoreSafeDefaults}</button>
       </aside>
     </div>
   );

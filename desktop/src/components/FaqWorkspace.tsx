@@ -405,7 +405,6 @@ export function FaqWorkspace({ words, language }: FaqWorkspaceProps) {
 
             <article className="faq-answer-pane" key={selectedEntry.id}>
               <span className="faq-pane-label">{copy.answer}</span>
-              <small className="faq-answer-category">{copy.categories[selectedEntry.category]}</small>
               <h2>{selectedEntry.question}</h2>
               <p className="faq-answer-summary">{selectedEntry.summary}</p>
               <div className="faq-answer-body">

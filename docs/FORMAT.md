@@ -62,7 +62,7 @@ weapon, knife, or glove cosmetic:
 {
   "inspect": {
     "command": "csgo_econ_action_preview <payload-hex>",
-    "steam_url": "steam://rungame/730/76561202255233023/+csgo_econ_action_preview%20<payload-hex>"
+    "steam_url": "steam://run/730/en/+csgo_econ_action_preview%20<payload-hex>"
   }
 }
 ```

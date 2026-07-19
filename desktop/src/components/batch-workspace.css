@@ -440,6 +440,13 @@
   font-size: 10.5px;
 }
 
+.batch-setting-label {
+  display: block;
+  margin-top: 9px;
+  color: var(--text-secondary);
+  font-size: 9.5px;
+}
+
 .batch-concurrency-options {
   display: grid;
   grid-template-columns: 1.35fr repeat(4, 0.7fr);
@@ -477,6 +484,80 @@
   color: var(--text-tertiary);
   font-size: 8.5px;
   line-height: 1.45;
+}
+
+.batch-cosmetic-settings {
+  min-width: 0;
+  margin: 10px 0 0;
+  padding: 9px 0 0;
+  border: 0;
+  border-top: 1px solid var(--divider);
+}
+
+.batch-cosmetic-settings legend {
+  width: 100%;
+  padding: 0 0 7px;
+  color: var(--text-tertiary);
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.batch-setting-checkbox {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.batch-setting-checkbox > input,
+.batch-cosmetic-detail-options input {
+  width: 15px;
+  height: 15px;
+  margin: 1px 0 0;
+  accent-color: var(--trace);
+}
+
+.batch-setting-checkbox > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.batch-setting-checkbox strong {
+  color: var(--text-primary);
+  font-size: 9.5px;
+}
+
+.batch-setting-checkbox small {
+  color: var(--text-tertiary);
+  font-size: 8.5px;
+  line-height: 1.45;
+}
+
+.batch-cosmetic-settings:disabled .batch-setting-checkbox,
+.batch-cosmetic-settings:disabled .batch-cosmetic-detail-options {
+  cursor: default;
+  opacity: 0.56;
+}
+
+.batch-cosmetic-detail-options {
+  display: flex;
+  align-items: center;
+  margin: 8px 0 0 23px;
+  gap: 15px;
+}
+
+.batch-cosmetic-detail-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 9px;
+  font-weight: 650;
+  cursor: pointer;
 }
 
 .batch-sound-toggle {
@@ -854,6 +935,14 @@
   gap: 4px;
 }
 
+.batch-job-retry-settings {
+  max-width: 190px;
+  color: var(--text-tertiary);
+  font-size: 8.5px;
+  line-height: 1.35;
+  text-align: right;
+}
+
 .batch-job-actions:empty {
   display: none;
 }
@@ -1025,6 +1114,10 @@
     grid-column: 2;
     justify-self: start;
   }
+
+  .batch-job-retry-settings {
+    text-align: left;
+  }
 }
 
 @media (max-height: 720px) and (min-width: 821px) {
@@ -1039,8 +1132,34 @@
   .batch-heading p,
   .batch-source-copy small,
   .batch-queue-settings > p,
-  .batch-sound-toggle small {
+  .batch-sound-toggle small,
+  .batch-setting-checkbox small {
     display: none;
+  }
+
+  .batch-queue-settings {
+    padding-block: 8px;
+  }
+
+  .batch-setting-label {
+    margin-top: 5px;
+  }
+
+  .batch-cosmetic-settings {
+    margin-top: 7px;
+    padding-top: 6px;
+  }
+
+  .batch-cosmetic-settings legend {
+    padding-bottom: 4px;
+  }
+
+  .batch-cosmetic-detail-options {
+    margin-top: 5px;
+  }
+
+  .batch-candidate-list {
+    min-height: 72px;
   }
 
   .batch-source-panel {

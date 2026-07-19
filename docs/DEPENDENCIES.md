@@ -25,6 +25,15 @@ the payload layout and checksum behavior documented by
 under its MIT license. The converter does not ship the npm package or require
 Node.js, a Steam/GC lookup, or a third-party inspect API at runtime.
 
+The desktop's checked-in cosmetic name/image catalog is generated from a
+pinned revision of [`ianlucas/cs2-lib`](https://github.com/ianlucas/cs2-lib)
+under its MIT license. It contains only compact lookup metadata; no upstream
+package or image file is bundled. Catalog previews are fetched on demand from
+`https://cdn.cstrike.app` and do not claim to render the demo's exact seed,
+wear, sticker transform, or charm placement. The retained cs2-lib license does
+not relicense Counter-Strike 2 artwork or other third-party material served by
+the catalog CDN.
+
 ## In-Game Playback
 
 Playback needs a local Windows x64 CS2 server with:
