@@ -1,7 +1,7 @@
 export type Language = "zh" | "en";
 export type Theme = "system" | "light" | "dark";
 export type SideChoice = "both" | "t" | "ct";
-export type WorkspaceSection = "library" | "convert" | "batch" | "settings" | "faq";
+export type WorkspaceSection = "library" | "batch" | "settings" | "faq";
 export type SubtickMode = "auto" | "off";
 
 export type Phase =
@@ -91,6 +91,65 @@ export interface AnalysisPlayerSummary {
   deaths?: number | null;
   assists?: number | null;
   mvps?: number | null;
+  details?: PlayerDetails | null;
+}
+
+export interface PlayerDetails {
+  headshotKills?: number | null;
+  totalDamage?: number | null;
+  statsRounds?: number | null;
+  crosshairCodes?: string[];
+  viewmodels?: ViewmodelEvidence[];
+  cosmetics?: CosmeticEvidence[];
+}
+
+export interface ViewmodelEvidence {
+  fov?: number | null;
+  offsetX?: number | null;
+  offsetY?: number | null;
+  offsetZ?: number | null;
+}
+
+export interface CosmeticEvidence {
+  kind: "weapon" | "knife" | "glove" | "agent" | string;
+  side?: "t" | "ct" | string | null;
+  itemDefIndex?: number | null;
+  itemName?: string | null;
+  paintKit?: number | null;
+  finishName?: string | null;
+  seed?: number | null;
+  wear?: number | null;
+  quality?: number | null;
+  stattrakCounter?: number | null;
+  originalOwnerSteamId?: string | null;
+  itemAccountId?: number | null;
+  itemId?: string | null;
+  customName?: string | null;
+  stickers?: StickerEvidence[];
+  charms?: CharmEvidence[];
+  inspectCommand?: string | null;
+  inspectUrl?: string | null;
+}
+
+export interface StickerEvidence {
+  slot: number;
+  stickerId: number;
+  wear: number;
+  offsetX: number;
+  offsetY: number;
+  scale?: number | null;
+  rotation?: number | null;
+}
+
+export interface CharmEvidence {
+  slot: number;
+  charmId: number;
+  offsetX: number;
+  offsetY: number;
+  offsetZ: number;
+  seed?: number | null;
+  highlight?: number | null;
+  stickerId?: number | null;
 }
 
 export interface LibraryPlayerSummary {
@@ -205,6 +264,7 @@ export interface PlayerSummary {
   deaths?: number | null;
   assists?: number | null;
   mvps?: number | null;
+  details?: PlayerDetails | null;
 }
 
 export interface RoundOutputSummary {

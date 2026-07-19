@@ -672,6 +672,8 @@ pub struct ParsedPlayerTick {
     pub scoreboard_kills: Option<u32>,
     pub scoreboard_deaths: Option<u32>,
     pub scoreboard_assists: Option<u32>,
+    pub scoreboard_headshot_kills: Option<u32>,
+    pub scoreboard_damage: Option<u32>,
     pub armor_value: u32,
     pub has_helmet: bool,
     pub has_defuser: bool,

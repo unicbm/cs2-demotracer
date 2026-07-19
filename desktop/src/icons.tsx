@@ -180,6 +180,15 @@ export function PlusIcon({ size = 18, ...props }: IconProps) {
   );
 }
 
+export function ExternalLinkIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg {...base(size)} {...props}>
+      <path d="M13 5h6v6M19 5l-8 8" />
+      <path d="M17 13v5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 5 18v-9a1.5 1.5 0 0 1 1.5-1.5h5" />
+    </svg>
+  );
+}
+
 export function BatchIcon({ size = 18, ...props }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>

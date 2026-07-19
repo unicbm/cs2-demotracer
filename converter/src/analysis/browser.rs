@@ -1,7 +1,13 @@
+use super::player_evidence::summarize_player_details;
 use super::quality::{analyze_demo, AnalysisOptions};
 use crate::model::{DemoAnalysis, ParsedDemo};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
+
+pub use super::player_evidence::{
+    BrowserCharmEvidence, BrowserCosmeticEvidence, BrowserPlayerDetails, BrowserStickerEvidence,
+    BrowserViewmodelEvidence,
+};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +47,8 @@ pub struct BrowserPlayerSummary {
     pub mvps: Option<u32>,
     pub rounds: usize,
     pub rows: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub details: Option<BrowserPlayerDetails>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -63,6 +71,13 @@ pub struct BrowserTeamScore {
 pub fn analyze_browser_demo(parsed: &ParsedDemo, options: AnalysisOptions) -> BrowserDemoAnalysis {
     let analysis = analyze_demo(parsed, options);
     let match_summary = summarize_match(parsed);
+    let stats_rounds = match_summary.score.as_ref().and_then(|score| {
+        score
+            .team_a
+            .score
+            .checked_add(score.team_b.score)
+            .filter(|rounds| *rounds > 0)
+    });
     BrowserDemoAnalysis {
         duration_seconds: summarize_duration(parsed, &analysis),
         demo_patch_version: parsed.demo_patch_version,
@@ -74,6 +89,7 @@ pub fn analyze_browser_demo(parsed: &ParsedDemo, options: AnalysisOptions) -> Br
             parsed,
             &match_summary.team_by_steam_id,
             match_summary.match_window,
+            stats_rounds,
         ),
         score: match_summary.score,
     }
@@ -129,15 +145,17 @@ fn summarize_players(
     parsed: &ParsedDemo,
     team_by_steam_id: &BTreeMap<u64, PersistentTeam>,
 ) -> Vec<BrowserPlayerSummary> {
-    summarize_players_in_window(parsed, team_by_steam_id, None)
+    summarize_players_in_window(parsed, team_by_steam_id, None, None)
 }
 
 fn summarize_players_in_window(
     parsed: &ParsedDemo,
     team_by_steam_id: &BTreeMap<u64, PersistentTeam>,
     match_window: Option<(i32, i32)>,
+    stats_rounds: Option<u32>,
 ) -> Vec<BrowserPlayerSummary> {
     let mut players: BTreeMap<u64, PlayerAccumulator> = BTreeMap::new();
+    let mut details = summarize_player_details(parsed, match_window, stats_rounds);
     for row in parsed.rows.iter().filter(|row| {
         match_window
             .is_none_or(|(start_tick, end_tick)| row.tick >= start_tick && row.tick <= end_tick)
@@ -179,6 +197,7 @@ fn summarize_players_in_window(
                 mvps: scoreboard.mvps,
                 rounds: player.rounds.len(),
                 rows: player.rows,
+                details: details.remove(&steam_id),
             }
         })
         .collect()
@@ -978,6 +997,7 @@ mod tests {
             mvps: Some(2),
             rounds: 24,
             rows: 128,
+            details: None,
         };
 
         let value = serde_json::to_value(player).unwrap();
@@ -1117,8 +1137,12 @@ mod tests {
         assert_eq!((score.team_a.score, score.team_b.score), (13, 8));
         assert_eq!(score.status, "final");
 
-        let players =
-            summarize_players_in_window(&parsed, &summary.team_by_steam_id, summary.match_window);
+        let players = summarize_players_in_window(
+            &parsed,
+            &summary.team_by_steam_id,
+            summary.match_window,
+            None,
+        );
         let alpha = players
             .iter()
             .find(|player| player.steam_id == "1")

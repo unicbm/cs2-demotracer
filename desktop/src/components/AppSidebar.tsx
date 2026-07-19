@@ -1,4 +1,4 @@
-import { BatchIcon, HelpIcon, LibraryIcon, PlusIcon, SlidersIcon } from "../icons";
+import { BatchIcon, HelpIcon, LibraryIcon, SlidersIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
 import type { WorkspaceSection } from "../types";
 import "./app-sidebar.css";
@@ -8,7 +8,6 @@ export function AppSidebar({
   activeSection,
   busy,
   onLibrary,
-  onConvert,
   onBatch,
   onSettings,
   onFaq,
@@ -17,13 +16,11 @@ export function AppSidebar({
   activeSection: WorkspaceSection;
   busy: boolean;
   onLibrary: () => void;
-  onConvert: () => void;
   onBatch: () => void;
   onSettings: () => void;
   onFaq: () => void;
 }) {
   const libraryActive = activeSection === "library";
-  const conversionActive = activeSection === "convert";
   const batchActive = activeSection === "batch";
   const settingsActive = activeSection === "settings";
   const faqActive = activeSection === "faq";
@@ -40,17 +37,6 @@ export function AppSidebar({
         >
           <LibraryIcon size={19} />
           <span>{words.navLibrary}</span>
-        </button>
-        <button
-          className={conversionActive ? "is-active" : ""}
-          type="button"
-          onClick={onConvert}
-          disabled={busy}
-          aria-current={conversionActive ? "page" : undefined}
-          title={words.navConvert}
-        >
-          <PlusIcon size={19} />
-          <span>{words.navConvert}</span>
         </button>
         <button
           className={batchActive ? "is-active" : ""}

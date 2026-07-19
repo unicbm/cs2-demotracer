@@ -3,6 +3,7 @@ import type { TextDictionary } from "../i18n";
 import type { ConversionSummary, ManifestArchive, ManifestArchiveRound, PlayerSummary } from "../types";
 import { displayMap, MapArtwork, mapArtworkStyle } from "./MapArtwork";
 import { PlaybackCommandBuilder, type PlaybackPresetOptions } from "./PlaybackCommandBuilder";
+import { RosterTeam } from "./PlayerRoster";
 import type { CommandMode, CopyTarget } from "./TaskViews";
 import "./archive-workspace.css";
 
@@ -18,6 +19,7 @@ interface ArchiveWorkspaceProps {
   onCommandModeChange: (mode: CommandMode) => void;
   onPlaybackPresetChange: (patch: Partial<PlaybackPresetOptions>) => void;
   onCopy: (value: string, target: CopyTarget) => void;
+  onOpenExternal: (url: string) => void;
   onOpenFolder: () => void;
   onReconvert: () => void;
   onChooseManifest: () => void;
@@ -113,45 +115,6 @@ function playerMatchIdentity(
   return null;
 }
 
-function RosterTeam({
-  name,
-  players,
-  countLabel,
-  kdaLabel,
-  className = "",
-}: {
-  name: string;
-  players: PlayerSummary[];
-  countLabel: string;
-  kdaLabel: string;
-  className?: string;
-}) {
-  const stat = (value: number | null | undefined) => value ?? "—";
-  return (
-    <section className={`archive-roster-team ${className}`.trim()} aria-label={name}>
-      <header>
-        <strong title={name}>{name}</strong>
-        <span>{countLabel.replace("{count}", String(players.length))}</span>
-      </header>
-      <ul>
-        {players.map((player) => (
-          <li key={`${player.steamId}-${player.name}`}>
-            <strong title={player.name}>{player.name}</strong>
-            <span
-              className="archive-roster-kda"
-              title={`${kdaLabel}: ${stat(player.kills)} / ${stat(player.deaths)} / ${stat(player.assists)}`}
-              aria-label={`${player.name} ${kdaLabel}: ${stat(player.kills)} / ${stat(player.deaths)} / ${stat(player.assists)}`}
-            >
-              <b>{stat(player.kills)}</b><i>/</i><b>{stat(player.deaths)}</b><i>/</i><b>{stat(player.assists)}</b>
-            </span>
-            <code title={`SteamID64 ${player.steamId}`}>{player.steamId}</code>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
 function roundStableScore(
   round: ManifestArchiveRound,
   teamAName: string,
@@ -233,6 +196,7 @@ export function ArchiveWorkspace({
   onCommandModeChange,
   onPlaybackPresetChange,
   onCopy,
+  onOpenExternal,
   onOpenFolder,
   onReconvert,
   onChooseManifest,
@@ -317,10 +281,10 @@ export function ArchiveWorkspace({
             <ChevronIcon size={15} />
           </summary>
           <div className="archive-roster-grid">
-            <RosterTeam name={teamAName} players={teamARoster} countLabel={words.rosterPlayerCount} kdaLabel={words.kda} />
-            <RosterTeam name={teamBName} players={teamBRoster} countLabel={words.rosterPlayerCount} kdaLabel={words.kda} className="is-team-b" />
+            <RosterTeam name={teamAName} players={teamARoster} words={words} countLabel={words.rosterPlayerCount} copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
+            <RosterTeam name={teamBName} players={teamBRoster} words={words} countLabel={words.rosterPlayerCount} className="is-team-b" copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
             {unassignedRoster.length > 0 ? (
-              <RosterTeam name={words.unassignedPlayers} players={unassignedRoster} countLabel={words.rosterPlayerCount} kdaLabel={words.kda} className="is-unassigned" />
+              <RosterTeam name={words.unassignedPlayers} players={unassignedRoster} words={words} countLabel={words.rosterPlayerCount} className="is-unassigned" copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
             ) : null}
           </div>
         </details>

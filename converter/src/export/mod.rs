@@ -2331,6 +2331,69 @@ fn inventory_weapon_cosmetics_for_row(
     (!weapons.is_empty()).then_some(weapons)
 }
 
+pub(crate) fn inventory_item_cosmetic_evidence(
+    item: &ParsedInventoryWeaponCosmetic,
+) -> Option<ReplayWeaponCosmetic> {
+    let weapon_def_index = normalize_weapon_def_index(item.item_def_index);
+    if !is_weapon_cosmetic_def_index(weapon_def_index)
+        || !has_trusted_inventory_weapon_cosmetic_identity(item)
+    {
+        return None;
+    }
+    let spec = inventory_cosmetic_paint_spec(item)?;
+    if !valid_weapon_cosmetic_paint(weapon_def_index, spec.paint_kit) {
+        return None;
+    }
+
+    let stickers = cosmetic_sticker_set_from_slice(&item.stickers)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|sticker| ReplayWeaponSticker {
+            slot: sticker.slot,
+            sticker_id: sticker.sticker_id,
+            wear: f32::from_bits(sticker.wear_bits),
+            offset_x: f32::from_bits(sticker.offset_x_bits),
+            offset_y: f32::from_bits(sticker.offset_y_bits),
+            scale: sticker.scale_bits.map(f32::from_bits),
+            rotation: sticker.rotation_bits.map(f32::from_bits),
+        })
+        .collect();
+    let charms = cosmetic_charm_set_from_attributes(&item.attributes)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|charm| ReplayWeaponCharm {
+            slot: charm.slot,
+            charm_id: charm.charm_id,
+            offset_x: f32::from_bits(charm.offset_x_bits),
+            offset_y: f32::from_bits(charm.offset_y_bits),
+            offset_z: f32::from_bits(charm.offset_z_bits),
+            seed: charm.seed,
+            highlight: charm.highlight,
+            sticker_id: charm.sticker_id,
+        })
+        .collect();
+    let mut cosmetic = ReplayWeaponCosmetic {
+        weapon_def_index,
+        paint_kit: spec.paint_kit,
+        seed: spec.seed,
+        wear: f32::from_bits(spec.wear_bits),
+        quality: (item.entity_quality == Some(9)).then_some(9),
+        stattrak_counter: inventory_stattrak_counter(item),
+        original_owner_steam_id: item.original_owner_xuid.filter(|value| *value != 0),
+        item_account_id: item.item_account_id.filter(|value| *value != 0),
+        item_id: combine_item_id(item.item_id_high, item.item_id_low).filter(|value| *value != 0),
+        custom_name: cosmetic_custom_name_value(item.custom_name.as_deref()),
+        stickers,
+        charms,
+        inspect: None,
+    };
+    cosmetic.inspect = weapon_inspect(
+        &cosmetic,
+        weapon_cosmetic_rarity(cosmetic.weapon_def_index, cosmetic.paint_kit),
+    );
+    Some(cosmetic)
+}
+
 fn inventory_cosmetic_paint_spec(
     item: &ParsedInventoryWeaponCosmetic,
 ) -> Option<CosmeticPaintSpec> {
@@ -5359,6 +5422,8 @@ mod tests {
             scoreboard_kills: None,
             scoreboard_deaths: None,
             scoreboard_assists: None,
+            scoreboard_headshot_kills: None,
+            scoreboard_damage: None,
             armor_value: 100,
             has_helmet: true,
             has_defuser: false,

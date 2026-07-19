@@ -2,6 +2,8 @@ import { ChevronIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
 import type { AnalysisPlayerSummary, AnalysisResult } from "../types";
 import { displayMap, MapArtwork } from "./MapArtwork";
+import { RosterTeam } from "./PlayerRoster";
+import type { CopyTarget } from "./TaskViews";
 import "./analysis-overview.css";
 import "./archive-workspace.css";
 
@@ -51,44 +53,19 @@ function platformName(value: string): string {
   return value.toLowerCase() === "faceit" ? "FACEIT" : value;
 }
 
-function RosterTeam({
-  name,
-  players,
+export function AnalysisOverview({
+  analysis,
   words,
-  className = "",
+  copiedTarget,
+  onCopy,
+  onOpenExternal,
 }: {
-  name: string;
-  players: AnalysisPlayerSummary[];
+  analysis: AnalysisResult;
   words: TextDictionary;
-  className?: string;
+  copiedTarget: CopyTarget | null;
+  onCopy: (value: string, target: CopyTarget) => void;
+  onOpenExternal: (url: string) => void;
 }) {
-  const stat = (value: number | null | undefined) => value ?? "—";
-  return (
-    <section className={`archive-roster-team ${className}`.trim()} aria-label={name}>
-      <header>
-        <strong title={name}>{name}</strong>
-        <span>{words.rosterPlayerCount.replace("{count}", String(players.length))}</span>
-      </header>
-      <ul>
-        {players.map((player) => (
-          <li key={`${player.steamId}-${player.name}`}>
-            <strong title={player.name}>{player.name}</strong>
-            <span
-              className="archive-roster-kda"
-              title={`${words.kda}: ${stat(player.kills)} / ${stat(player.deaths)} / ${stat(player.assists)}`}
-              aria-label={`${player.name} ${words.kda}: ${stat(player.kills)} / ${stat(player.deaths)} / ${stat(player.assists)}`}
-            >
-              <b>{stat(player.kills)}</b><i>/</i><b>{stat(player.deaths)}</b><i>/</i><b>{stat(player.assists)}</b>
-            </span>
-            <code title={`${words.steamId} ${player.steamId}`}>{player.steamId}</code>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-export function AnalysisOverview({ analysis, words }: { analysis: AnalysisResult; words: TextDictionary }) {
   const teamAName = cleanTeamName(analysis.score?.teamA.name)
     || teamNameFromPlayers(analysis.players, "a")
     || words.teamA;
@@ -139,10 +116,10 @@ export function AnalysisOverview({ analysis, words }: { analysis: AnalysisResult
             <ChevronIcon size={15} />
           </summary>
           <div className="archive-roster-grid">
-            <RosterTeam name={teamAName} players={teamA} words={words} />
-            <RosterTeam name={teamBName} players={teamB} words={words} className="is-team-b" />
+            <RosterTeam name={teamAName} players={teamA} words={words} countLabel={words.rosterPlayerCount} copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
+            <RosterTeam name={teamBName} players={teamB} words={words} countLabel={words.rosterPlayerCount} className="is-team-b" copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
             {unassigned.length > 0
-              ? <RosterTeam name={words.unassignedPlayers} players={unassigned} words={words} className="is-unassigned" />
+              ? <RosterTeam name={words.unassignedPlayers} players={unassigned} words={words} countLabel={words.rosterPlayerCount} className="is-unassigned" copiedTarget={copiedTarget} onCopy={onCopy} onOpenExternal={onOpenExternal} />
               : null}
           </div>
         </details>

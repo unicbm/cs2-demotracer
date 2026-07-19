@@ -12,7 +12,12 @@ import {
 import type { TextDictionary } from "../i18n";
 import type { ConversionSummary, ProgressPhase, ProgressState } from "../types";
 
-export type CopyTarget = "playback" | "phrase" | "output" | "manifest";
+export type CopyTarget =
+  | "playback"
+  | "phrase"
+  | "output"
+  | "manifest"
+  | `player:${string}:${"steam" | "crosshair" | "viewmodel" | "inspect"}:${number}`;
 export type CommandMode = "sequence" | "round";
 
 interface DemoPickerViewProps {

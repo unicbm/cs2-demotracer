@@ -4,6 +4,7 @@ import type { TextDictionary } from "../i18n";
 import type { AnalysisResult, RoundInfo } from "../types";
 import { AnalysisOverview } from "./AnalysisOverview";
 import { RoundTable, type RoundTableLabels } from "./RoundTable";
+import type { CopyTarget } from "./TaskViews";
 
 interface RoundWorkspaceProps {
   words: TextDictionary;
@@ -12,6 +13,7 @@ interface RoundWorkspaceProps {
   allowSuspicious: boolean;
   outputDir: string;
   outputRoot: string;
+  copiedTarget: CopyTarget | null;
   onToggleRound: (round: RoundInfo) => void;
   onRestoreRecommended: () => void;
   onClearSelection: () => void;
@@ -19,6 +21,8 @@ interface RoundWorkspaceProps {
   onChooseOutput: () => void;
   onOpenSettings: (trigger: HTMLButtonElement) => void;
   onConvert: () => void;
+  onCopy: (value: string, target: CopyTarget) => void;
+  onOpenExternal: (url: string) => void;
   formatNumber: (value: number) => string;
 }
 
@@ -35,6 +39,7 @@ export function RoundWorkspace({
   allowSuspicious,
   outputDir,
   outputRoot,
+  copiedTarget,
   onToggleRound,
   onRestoreRecommended,
   onClearSelection,
@@ -42,6 +47,8 @@ export function RoundWorkspace({
   onChooseOutput,
   onOpenSettings,
   onConvert,
+  onCopy,
+  onOpenExternal,
   formatNumber,
 }: RoundWorkspaceProps) {
   const [expandedRound, setExpandedRound] = useState<number | null>(null);
@@ -71,7 +78,13 @@ export function RoundWorkspace({
 
   return (
     <section className="round-workspace" aria-label={words.rounds}>
-      <AnalysisOverview analysis={analysis} words={words} />
+      <AnalysisOverview
+        analysis={analysis}
+        words={words}
+        copiedTarget={copiedTarget}
+        onCopy={onCopy}
+        onOpenExternal={onOpenExternal}
+      />
       <div className="round-toolbar">
         <strong className="round-summary">{summary}</strong>
         <div className="round-batch-actions">

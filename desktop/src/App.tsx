@@ -976,7 +976,7 @@ function App() {
     setCosmeticPhrase("");
     setSettings((current) => ({ ...current, exportCosmetics: false, includeSuspicious: false }));
     setProgress({ ...emptyProgress(), phase: "parsing" });
-    setActiveSection("convert");
+    setActiveSection("library");
     setPhase("analyzing");
     taskWarningsRef.current = [];
 
@@ -2200,6 +2200,14 @@ function App() {
     }
   }
 
+  async function openExternal(url: string) {
+    try {
+      await invoke("open_external", { request: { url } });
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
+    }
+  }
+
   function resetSession() {
     ++taskTokenRef.current;
     setActiveSection("library");
@@ -2243,6 +2251,7 @@ function App() {
         allowSuspicious={settings.includeSuspicious}
         outputDir={outputDir}
         outputRoot={outputRoot}
+        copiedTarget={copiedTarget}
         onToggleRound={toggleRound}
         onRestoreRecommended={restoreRecommended}
         onClearSelection={() => setSelectedRounds(new Set())}
@@ -2253,6 +2262,8 @@ function App() {
           setInspectorSheetOpen(true);
         }}
         onConvert={() => void beginConvert()}
+        onCopy={(value, target) => void copyText(value, target)}
+        onOpenExternal={(url) => void openExternal(url)}
         formatNumber={(value) => numberFormat.format(value)}
       />
       {inspectorVisible ? (
@@ -2297,13 +2308,6 @@ function App() {
           activeSection={activeSection}
           busy={isBusy}
           onLibrary={resetSession}
-          onConvert={() => {
-            if (phase === "analyzing" || phase === "analysisFailed" || phase === "selecting" || phase === "converting" || phase === "validationFailed" || phase === "complete") {
-              setActiveSection("convert");
-            } else {
-              void chooseDemo();
-            }
-          }}
           onBatch={() => setActiveSection("batch")}
           onSettings={() => setActiveSection("settings")}
           onFaq={() => setActiveSection("faq")}
@@ -2447,6 +2451,7 @@ function App() {
             onCommandModeChange={setCommandMode}
             onPlaybackPresetChange={(patch) => setPlaybackPreset((current) => ({ ...current, ...patch }))}
             onCopy={(value, target) => void copyText(value, target)}
+            onOpenExternal={(url) => void openExternal(url)}
             onOpenFolder={() => void openPath(archive.root)}
             onReconvert={() => void reconvertArchive(archive)}
             onChooseManifest={() => void chooseManifest()}

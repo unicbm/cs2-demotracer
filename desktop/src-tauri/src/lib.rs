@@ -9,8 +9,8 @@ use batch::{
     resume_batch_import, scan_demo_folder, start_batch_import,
 };
 use cs2_demotracer::browser_analysis::{
-    analyze_browser_demo, BrowserDemoAnalysis, BrowserDemoSource, BrowserPlayerSummary,
-    BrowserScoreSummary,
+    analyze_browser_demo, BrowserDemoAnalysis, BrowserDemoSource, BrowserPlayerDetails,
+    BrowserPlayerSummary, BrowserScoreSummary,
 };
 use cs2_demotracer::demo_id::sha256_hex;
 use cs2_demotracer::demo_reader::{
@@ -414,6 +414,8 @@ pub struct PlayerSummaryDto {
     pub assists: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mvps: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<BrowserPlayerDetails>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -450,6 +452,12 @@ pub struct CommandSummaryDto {
 #[serde(rename_all = "camelCase")]
 pub struct OpenOutputRequest {
     pub path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenExternalRequest {
+    pub url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1257,6 +1265,48 @@ async fn open_output(request: OpenOutputRequest) -> CommandResult<()> {
         .await
         .map_err(|error| CommandErrorDto::new("open_output_worker_failed", error.to_string()))?
         .map_err(|error| CommandErrorDto::at_path("open_output_failed", error.to_string(), &path))
+}
+
+#[tauri::command]
+async fn open_external(request: OpenExternalRequest) -> CommandResult<()> {
+    let url = validate_external_url(&request.url)?;
+    let worker_url = url.clone();
+    tauri::async_runtime::spawn_blocking(move || open_external_url(&worker_url))
+        .await
+        .map_err(|error| CommandErrorDto::new("open_external_worker_failed", error.to_string()))?
+        .map_err(|error| CommandErrorDto::new("open_external_failed", error.to_string()))
+}
+
+fn validate_external_url(value: &str) -> CommandResult<String> {
+    const PROFILE_PREFIX: &str = "https://steamcommunity.com/profiles/";
+    const INSPECT_PREFIX: &str =
+        "steam://rungame/730/76561202255233023/+csgo_econ_action_preview%20";
+    let value = value.trim();
+    if let Some(steam_id) = value.strip_prefix(PROFILE_PREFIX) {
+        let valid = steam_id.len() == 17
+            && steam_id.chars().all(|character| character.is_ascii_digit())
+            && steam_id
+                .parse::<u64>()
+                .is_ok_and(|number| number >= 76_561_197_960_265_728);
+        if valid {
+            return Ok(value.to_string());
+        }
+    }
+    if let Some(payload) = value.strip_prefix(INSPECT_PREFIX) {
+        let valid = value.len() <= 300
+            && payload.len() >= 10
+            && payload.len() % 2 == 0
+            && payload
+                .chars()
+                .all(|character| character.is_ascii_hexdigit());
+        if valid {
+            return Ok(value.to_string());
+        }
+    }
+    Err(CommandErrorDto::new(
+        "external_url_not_allowed",
+        "Only SteamID64 profile pages and DemoTracer-generated CS2 inspect links can be opened.",
+    ))
 }
 
 fn refresh_archive_metadata_for(
@@ -2943,6 +2993,7 @@ fn summarize_manifest_players(files: &[PlayableManifestFile]) -> Vec<PlayerSumma
             deaths: player.scoreboard.as_ref().and_then(|value| value.deaths),
             assists: player.scoreboard.as_ref().and_then(|value| value.assists),
             mvps: player.scoreboard.as_ref().and_then(|value| value.mvps),
+            details: None,
         })
         .collect::<Vec<_>>();
     summaries.sort_by(|left, right| {
@@ -2988,6 +3039,9 @@ fn overlay_archive_players(
             if player.mvps.is_some() {
                 summary.mvps = player.mvps;
             }
+            if player.details.is_some() {
+                summary.details = player.details.clone();
+            }
             summary.rounds = summary.rounds.max(player.rounds);
         } else {
             summaries.push(PlayerSummaryDto {
@@ -3008,6 +3062,7 @@ fn overlay_archive_players(
                 deaths: player.deaths,
                 assists: player.assists,
                 mvps: player.mvps,
+                details: player.details.clone(),
             });
         }
     }
@@ -3542,6 +3597,18 @@ fn run_conversion_with_sink(
         DTR_FORMAT_VERSION,
         "conversion",
     );
+    for player in &mut demo_info.players {
+        if let Some(details) = player.details.as_mut() {
+            details.restrict_cosmetic_export(
+                request.export_cosmetics,
+                request.export_stickers,
+                request.export_charms,
+            );
+            if details.is_empty() {
+                player.details = None;
+            }
+        }
+    }
     let mut selected_rounds = request.selected_rounds.clone();
     selected_rounds.sort_unstable();
     selected_rounds.dedup();
@@ -4454,6 +4521,7 @@ fn summarize_exported_players(files: &[ConvertedFile]) -> Vec<PlayerSummaryDto> 
             deaths: player.scoreboard.as_ref().and_then(|value| value.deaths),
             assists: player.scoreboard.as_ref().and_then(|value| value.assists),
             mvps: player.scoreboard.as_ref().and_then(|value| value.mvps),
+            details: None,
         })
         .collect::<Vec<_>>();
     summaries.sort_by(|left, right| {
@@ -4577,6 +4645,29 @@ fn open_folder_path(path: &Path) -> std::io::Result<()> {
     }
 }
 
+fn open_external_url(url: &str) -> std::io::Result<()> {
+    #[cfg(windows)]
+    {
+        Command::new("rundll32.exe")
+            .arg("url.dll,FileProtocolHandler")
+            .arg(url)
+            .spawn()?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open").arg(url).spawn()?;
+        return Ok(());
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open").arg(url).spawn()?;
+        Ok(())
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
@@ -4610,7 +4701,8 @@ pub fn run() {
             refresh_library_metadata,
             import_archives,
             convert_demo,
-            open_output
+            open_output,
+            open_external
         ])
         .run(tauri::generate_context!())
         .expect("failed to run CS2 DemoTracer desktop app");
@@ -4623,6 +4715,28 @@ mod tests {
         ConversionManifest, ConvertedRound, EconomyClass, ReplayCosmetics, ReplayItemCosmetic,
         ReplayLoadout, ReplayWeaponCharm, ReplayWeaponCosmetic, ReplayWeaponSticker, TeamEconomy,
     };
+
+    #[test]
+    fn external_urls_are_limited_to_exact_steam_targets() {
+        let profile = "https://steamcommunity.com/profiles/76561198147750283";
+        let inspect = concat!(
+            "steam://rungame/730/76561202255233023/+csgo_econ_action_preview%20",
+            "001122334455"
+        );
+        assert_eq!(validate_external_url(profile).unwrap(), profile);
+        assert_eq!(validate_external_url(inspect).unwrap(), inspect);
+
+        for rejected in [
+            "https://example.com/76561198147750283",
+            "https://steamcommunity.com/profiles/76561198147750283/edit",
+            "steam://rungame/730/76561202255233023/+csgo_econ_action_preview%20not-hex",
+        ] {
+            assert_eq!(
+                validate_external_url(rejected).unwrap_err().code,
+                "external_url_not_allowed"
+            );
+        }
+    }
 
     fn round(round: u32, status: RoundStatus) -> cs2_demotracer::model::RoundSummary {
         cs2_demotracer::model::RoundSummary {

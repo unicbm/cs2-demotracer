@@ -348,6 +348,8 @@ mod tests {
             scoreboard_kills: None,
             scoreboard_deaths: None,
             scoreboard_assists: None,
+            scoreboard_headshot_kills: None,
+            scoreboard_damage: None,
             armor_value: 0,
             has_helmet: false,
             has_defuser: false,
