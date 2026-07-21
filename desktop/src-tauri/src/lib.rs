@@ -6344,7 +6344,7 @@ mod tests {
             map: "de_mirage".to_string(),
             tick_rate: 64.0,
             abi: 17,
-            format_version: 7,
+            format_version: DTR_FORMAT_VERSION,
             avatar_overrides: Vec::new(),
             rounds: vec![converted_round(7, 1)],
             files: vec![converted_file(

@@ -56,6 +56,7 @@ internal static class DtrReplayReader
     private const uint SectionCommandFrames = 6;
     private const uint SectionMovementExtras = 7;
     private const uint SectionVersionV1 = 1;
+    private const uint SectionVersionV2 = 2;
 
     private static readonly byte[] RecMagic =
     [
@@ -281,7 +282,7 @@ internal static class DtrReplayReader
                 EnsureRemaining(
                     reader,
                     checked(header.CompressedLength + remainingHeaderBytes),
-                    "v7 section payload and remaining headers");
+                    "section payload and remaining headers");
                 SkipExact(reader, header.CompressedLength);
                 continue;
             }
@@ -316,23 +317,33 @@ internal static class DtrReplayReader
                     "movement extras",
                     tickCount,
                     ExpectedSectionLength(tickCount, BotControllerNative.ReplayMovementExtraByteSize, "movement extras")),
-                _ => throw new InvalidDataException($"unsupported known v7 section {header.SectionId}")
+                _ => throw new InvalidDataException($"unsupported known section {header.SectionId}")
             };
             RejectDuplicate(!seenKnownSections.Add(header.SectionId), name);
-            RequireSectionShape(header, name, expectedElementCount, expectedUncompressedLength);
+            var usesV2ColumnLayout = version >= 8 &&
+                header.SectionId is SectionSnapshots or SectionCommandFrames;
+            RequireSectionShape(
+                header,
+                name,
+                expectedElementCount,
+                usesV2ColumnLayout ? null : expectedUncompressedLength,
+                usesV2ColumnLayout ? SectionVersionV2 : SectionVersionV1);
             ValidateKnownSectionCodec(header, name);
 
             EnsureRemaining(
                 reader,
                 checked(header.CompressedLength + remainingHeaderBytes),
-                "v7 section payload and remaining headers");
-            var compressed = ReadExact(reader, header.CompressedLength, "v7 section payload");
+                "section payload and remaining headers");
+            var compressed = ReadExact(reader, header.CompressedLength, "section payload");
             var body = DecodeSectionBody(compressed, header.Codec, header.UncompressedLength);
 
             switch (header.SectionId)
             {
                 case SectionSnapshots:
-                    snapshots = ReadSnapshotsFromSection(body, snapshotCount);
+                    snapshots = ReadSnapshotsFromSection(
+                        body,
+                        snapshotCount,
+                        header.SectionVersion);
                     break;
                 case SectionTickMetadata:
                     tickMetadata = ReadTickMetadataFromSection(body, tickCount);
@@ -354,7 +365,10 @@ internal static class DtrReplayReader
                     seenHighFidelity = true;
                     break;
                 case SectionCommandFrames:
-                    commandFrames = ReadCommandFramesFromSection(body, tickCount);
+                    commandFrames = ReadCommandFramesFromSection(
+                        body,
+                        tickCount,
+                        header.SectionVersion);
                     break;
                 case SectionMovementExtras:
                     movementExtras = ReadMovementExtrasFromSection(body, tickCount);
@@ -363,15 +377,15 @@ internal static class DtrReplayReader
         }
 
         if (snapshots is null)
-            throw new InvalidDataException("missing required v7 section snapshots");
+            throw new InvalidDataException("missing required section snapshots");
         if (tickMetadata is null)
-            throw new InvalidDataException("missing required v7 section tick metadata");
+            throw new InvalidDataException("missing required section tick metadata");
         if (subticks is null)
-            throw new InvalidDataException("missing required v7 section subticks");
+            throw new InvalidDataException("missing required section subticks");
         if (projectileCount > 0 && projectiles is null)
-            throw new InvalidDataException("missing required v7 section projectiles");
+            throw new InvalidDataException("missing required section projectiles");
         if (metadataJsonLength > 0 && !seenHighFidelity)
-            throw new InvalidDataException("missing required v7 section high fidelity metadata");
+            throw new InvalidDataException("missing required section high fidelity metadata");
 
         var ticks = new NativeReplayTick[tickCount];
         long expectedSubticks = 0;
@@ -504,16 +518,30 @@ internal static class DtrReplayReader
         DtrSectionHeader header,
         string name,
         int expectedElementCount,
-        int expectedUncompressedLength)
+        int? expectedUncompressedLength,
+        uint expectedSectionVersion)
     {
-        if (header.SectionVersion != SectionVersionV1)
-            throw new InvalidDataException($"unsupported {name} section version {header.SectionVersion}");
+        if (header.SectionVersion != expectedSectionVersion)
+        {
+            throw new InvalidDataException(
+                $"unsupported {name} section version {header.SectionVersion}; expected {expectedSectionVersion}");
+        }
         if (header.ElementCount != expectedElementCount)
             throw new InvalidDataException(
                 $"{name} section count {header.ElementCount} != expected {expectedElementCount}");
-        if (header.UncompressedLength != expectedUncompressedLength)
+        if (expectedUncompressedLength.HasValue &&
+            header.UncompressedLength != expectedUncompressedLength.Value)
+        {
             throw new InvalidDataException(
                 $"{name} section length {header.UncompressedLength} != expected {expectedUncompressedLength}");
+        }
+        if (expectedSectionVersion == SectionVersionV2 &&
+            expectedElementCount == 0 &&
+            header.UncompressedLength != 0)
+        {
+            throw new InvalidDataException(
+                $"empty {name} section has non-zero length {header.UncompressedLength}");
+        }
     }
 
     private static void ValidateKnownSectionCodec(DtrSectionHeader header, string name)
@@ -530,16 +558,16 @@ internal static class DtrReplayReader
     private static void RejectDuplicate(bool seen, string name)
     {
         if (seen)
-            throw new InvalidDataException($"duplicate v7 section {name}");
+            throw new InvalidDataException($"duplicate section {name}");
     }
 
     private static byte[] DecodeSectionBody(byte[] compressed, byte codec, int expectedLength)
     {
         return codec switch
         {
-            SectionCodecNone => RequireExactLength(compressed, expectedLength, "uncompressed v7 section"),
+            SectionCodecNone => RequireExactLength(compressed, expectedLength, "uncompressed section"),
             RecCodecBrotli => DecompressBrotli(compressed, expectedLength),
-            _ => throw new InvalidDataException($"unsupported v7 section codec {codec}")
+            _ => throw new InvalidDataException($"unsupported section codec {codec}")
         };
     }
 
@@ -567,7 +595,7 @@ internal static class DtrReplayReader
         {
             var read = reader.Read(buffer[..Math.Min(buffer.Length, remaining)]);
             if (read == 0)
-                throw new EndOfStreamException("truncated skipped v7 section");
+                throw new EndOfStreamException("truncated skipped section");
             remaining -= read;
         }
     }
@@ -706,13 +734,80 @@ internal static class DtrReplayReader
         };
     }
 
-    private static NativeMovementSnapshot[] ReadSnapshotsFromSection(byte[] body, int count)
+    private static NativeMovementSnapshot[] ReadSnapshotsFromSection(
+        byte[] body,
+        int count,
+        uint sectionVersion)
+        => sectionVersion switch
+        {
+            SectionVersionV1 => ReadSnapshotsFromSectionV1(body, count),
+            SectionVersionV2 => ReadSnapshotsFromSectionV2(body, count),
+            _ => throw new InvalidDataException(
+                $"unsupported snapshots section version {sectionVersion}")
+        };
+
+    private static NativeMovementSnapshot[] ReadSnapshotsFromSectionV1(byte[] body, int count)
     {
         using var stream = new MemoryStream(body, writable: false);
         using var reader = new BinaryReader(stream);
         var snapshots = new NativeMovementSnapshot[count];
         for (var i = 0; i < count; i++)
             snapshots[i] = ReadCurrentSnapshot(reader);
+        RequireConsumed(stream, "snapshots");
+        return snapshots;
+    }
+
+    private static NativeMovementSnapshot[] ReadSnapshotsFromSectionV2(byte[] body, int count)
+    {
+        using var stream = new MemoryStream(body, writable: false);
+        using var reader = new BinaryReader(stream);
+        var snapshots = new NativeMovementSnapshot[count];
+        ReadDeltaUInt32Column(reader, count, "snapshot origin x", (index, value) =>
+            snapshots[index].OriginX = BitConverter.UInt32BitsToSingle(value));
+        ReadDeltaUInt32Column(reader, count, "snapshot origin y", (index, value) =>
+            snapshots[index].OriginY = BitConverter.UInt32BitsToSingle(value));
+        ReadDeltaUInt32Column(reader, count, "snapshot origin z", (index, value) =>
+            snapshots[index].OriginZ = BitConverter.UInt32BitsToSingle(value));
+        ReadDeltaUInt32Column(reader, count, "snapshot velocity x", (index, value) =>
+            snapshots[index].VelX = BitConverter.UInt32BitsToSingle(value));
+        ReadDeltaUInt32Column(reader, count, "snapshot velocity y", (index, value) =>
+            snapshots[index].VelY = BitConverter.UInt32BitsToSingle(value));
+        ReadDeltaUInt32Column(reader, count, "snapshot velocity z", (index, value) =>
+            snapshots[index].VelZ = BitConverter.UInt32BitsToSingle(value));
+        ReadDeltaUInt32Column(reader, count, "snapshot pitch", (index, value) =>
+            snapshots[index].Pitch = BitConverter.UInt32BitsToSingle(value));
+        ReadDeltaUInt32Column(reader, count, "snapshot yaw", (index, value) =>
+            snapshots[index].Yaw = BitConverter.UInt32BitsToSingle(value));
+        ReadDeltaUInt32Column(reader, count, "snapshot roll", (index, value) =>
+            snapshots[index].Roll = BitConverter.UInt32BitsToSingle(value));
+        ReadDeltaUInt32Column(reader, count, "snapshot entity flags", (index, value) =>
+            snapshots[index].EntityFlags = value);
+        ReadDeltaByteColumn(reader, count, "snapshot move type", (index, value) =>
+            snapshots[index].MoveType = value);
+        ReadDeltaUInt64Column(reader, count, "snapshot buttons", (index, value) =>
+            snapshots[index].Buttons = value);
+        ReadDeltaUInt64Column(reader, count, "snapshot buttons1", (index, value) =>
+            snapshots[index].Buttons1 = value);
+        ReadDeltaUInt64Column(reader, count, "snapshot buttons2", (index, value) =>
+            snapshots[index].Buttons2 = value);
+        ReadDeltaUInt32Column(reader, count, "snapshot duck amount", (index, value) =>
+            snapshots[index].DuckAmount = BitConverter.UInt32BitsToSingle(value));
+        ReadDeltaUInt32Column(reader, count, "snapshot duck speed", (index, value) =>
+            snapshots[index].DuckSpeed = BitConverter.UInt32BitsToSingle(value));
+        ReadDeltaUInt32Column(reader, count, "snapshot ladder x", (index, value) =>
+            snapshots[index].LadderNormalX = BitConverter.UInt32BitsToSingle(value));
+        ReadDeltaUInt32Column(reader, count, "snapshot ladder y", (index, value) =>
+            snapshots[index].LadderNormalY = BitConverter.UInt32BitsToSingle(value));
+        ReadDeltaUInt32Column(reader, count, "snapshot ladder z", (index, value) =>
+            snapshots[index].LadderNormalZ = BitConverter.UInt32BitsToSingle(value));
+        ReadDeltaByteColumn(reader, count, "snapshot ducked", (index, value) =>
+            snapshots[index].Ducked = value);
+        ReadDeltaByteColumn(reader, count, "snapshot ducking", (index, value) =>
+            snapshots[index].Ducking = value);
+        ReadDeltaByteColumn(reader, count, "snapshot desires duck", (index, value) =>
+            snapshots[index].DesiresDuck = value);
+        ReadDeltaByteColumn(reader, count, "snapshot actual move type", (index, value) =>
+            snapshots[index].ActualMoveType = value);
         RequireConsumed(stream, "snapshots");
         return snapshots;
     }
@@ -768,7 +863,19 @@ internal static class DtrReplayReader
         };
     }
 
-    private static NativeReplayCommandFrame[] ReadCommandFramesFromSection(byte[] body, int count)
+    private static NativeReplayCommandFrame[] ReadCommandFramesFromSection(
+        byte[] body,
+        int count,
+        uint sectionVersion)
+        => sectionVersion switch
+        {
+            SectionVersionV1 => ReadCommandFramesFromSectionV1(body, count),
+            SectionVersionV2 => ReadCommandFramesFromSectionV2(body, count),
+            _ => throw new InvalidDataException(
+                $"unsupported command frames section version {sectionVersion}")
+        };
+
+    private static NativeReplayCommandFrame[] ReadCommandFramesFromSectionV1(byte[] body, int count)
     {
         using var stream = new MemoryStream(body, writable: false);
         using var reader = new BinaryReader(stream);
@@ -798,6 +905,150 @@ internal static class DtrReplayReader
         }
         RequireConsumed(stream, "command frames");
         return frames;
+    }
+
+    private static NativeReplayCommandFrame[] ReadCommandFramesFromSectionV2(byte[] body, int count)
+    {
+        using var stream = new MemoryStream(body, writable: false);
+        using var reader = new BinaryReader(stream);
+        var frames = new NativeReplayCommandFrame[count];
+        ReadDeltaUInt32Column(reader, count, "command forward move", (index, value) =>
+            frames[index].ForwardMove = BitConverter.UInt32BitsToSingle(value));
+        ReadDeltaUInt32Column(reader, count, "command left move", (index, value) =>
+            frames[index].LeftMove = BitConverter.UInt32BitsToSingle(value));
+        ReadDeltaUInt32Column(reader, count, "command up move", (index, value) =>
+            frames[index].UpMove = BitConverter.UInt32BitsToSingle(value));
+        ReadDeltaUInt32Column(reader, count, "command pitch", (index, value) =>
+            frames[index].Pitch = BitConverter.UInt32BitsToSingle(value));
+        ReadDeltaUInt32Column(reader, count, "command yaw", (index, value) =>
+            frames[index].Yaw = BitConverter.UInt32BitsToSingle(value));
+        ReadDeltaUInt32Column(reader, count, "command roll", (index, value) =>
+            frames[index].Roll = BitConverter.UInt32BitsToSingle(value));
+        ReadDeltaUInt64Column(reader, count, "command buttons", (index, value) =>
+            frames[index].Buttons = value);
+        ReadDeltaUInt64Column(reader, count, "command buttons1", (index, value) =>
+            frames[index].Buttons1 = value);
+        ReadDeltaUInt64Column(reader, count, "command buttons2", (index, value) =>
+            frames[index].Buttons2 = value);
+        ReadDeltaUInt32Column(reader, count, "command mouse dx", (index, value) =>
+            frames[index].MouseDx = unchecked((int)value));
+        ReadDeltaUInt32Column(reader, count, "command mouse dy", (index, value) =>
+            frames[index].MouseDy = unchecked((int)value));
+        ReadDeltaUInt32Column(reader, count, "command weapon select", (index, value) =>
+            frames[index].WeaponSelect = unchecked((int)value));
+        ReadDeltaUInt32Column(reader, count, "command fields", (index, value) =>
+            frames[index].Fields = value);
+        ReadDeltaByteColumn(reader, count, "command left hand desired", (index, value) =>
+            frames[index].LeftHandDesired = value);
+        RequireConsumed(stream, "command frames");
+        return frames;
+    }
+
+    private static void ReadDeltaUInt32Column(
+        BinaryReader reader,
+        int count,
+        string name,
+        Action<int, uint> set)
+    {
+        if (count == 0)
+            return;
+        var previous = reader.ReadUInt32();
+        set(0, previous);
+        for (var index = 1; index < count; index++)
+        {
+            var delta = unchecked((uint)UnzigzagUInt32(ReadUleb128UInt32(reader, name)));
+            var current = unchecked(previous + delta);
+            set(index, current);
+            previous = current;
+        }
+    }
+
+    private static void ReadDeltaUInt64Column(
+        BinaryReader reader,
+        int count,
+        string name,
+        Action<int, ulong> set)
+    {
+        if (count == 0)
+            return;
+        var previous = reader.ReadUInt64();
+        set(0, previous);
+        for (var index = 1; index < count; index++)
+        {
+            var delta = unchecked((ulong)UnzigzagUInt64(ReadUleb128UInt64(reader, name)));
+            var current = unchecked(previous + delta);
+            set(index, current);
+            previous = current;
+        }
+    }
+
+    private static void ReadDeltaByteColumn(
+        BinaryReader reader,
+        int count,
+        string name,
+        Action<int, byte> set)
+    {
+        if (count == 0)
+            return;
+        var previous = reader.ReadByte();
+        set(0, previous);
+        for (var index = 1; index < count; index++)
+        {
+            var encoded = ReadUleb128UInt32(reader, name);
+            if (encoded > byte.MaxValue)
+                throw new InvalidDataException($"{name} delta {encoded} exceeds byte");
+            var delta = unchecked((byte)(sbyte)UnzigzagByte((byte)encoded));
+            var current = unchecked((byte)(previous + delta));
+            set(index, current);
+            previous = current;
+        }
+    }
+
+    private static sbyte UnzigzagByte(byte value)
+        => unchecked((sbyte)((value >> 1) ^ (uint)-(int)(value & 1)));
+
+    private static int UnzigzagUInt32(uint value)
+        => unchecked((int)(value >> 1) ^ -(int)(value & 1));
+
+    private static long UnzigzagUInt64(ulong value)
+        => unchecked((long)(value >> 1) ^ -(long)(value & 1));
+
+    private static uint ReadUleb128UInt32(BinaryReader reader, string name)
+    {
+        uint value = 0;
+        for (var index = 0; index < 5; index++)
+        {
+            var next = reader.ReadByte();
+            if (index == 4 && (next & 0xf0) != 0)
+                throw new InvalidDataException($"{name} varint overflows uint32");
+            value |= (uint)(next & 0x7f) << (index * 7);
+            if ((next & 0x80) == 0)
+            {
+                if (index > 0 && next == 0)
+                    throw new InvalidDataException($"{name} varint is not canonical");
+                return value;
+            }
+        }
+        throw new InvalidDataException($"{name} varint is too long");
+    }
+
+    private static ulong ReadUleb128UInt64(BinaryReader reader, string name)
+    {
+        ulong value = 0;
+        for (var index = 0; index < 10; index++)
+        {
+            var next = reader.ReadByte();
+            if (index == 9 && (next & 0xfe) != 0)
+                throw new InvalidDataException($"{name} varint overflows uint64");
+            value |= (ulong)(next & 0x7f) << (index * 7);
+            if ((next & 0x80) == 0)
+            {
+                if (index > 0 && next == 0)
+                    throw new InvalidDataException($"{name} varint is not canonical");
+                return value;
+            }
+        }
+        throw new InvalidDataException($"{name} varint is too long");
     }
 
     private static NativeReplayMovementExtra[] ReadMovementExtrasFromSection(byte[] body, int count)
@@ -830,7 +1081,7 @@ internal static class DtrReplayReader
     private static void RequireConsumed(Stream stream, string name)
     {
         if (stream.Position != stream.Length)
-            throw new InvalidDataException($"trailing bytes in v7 {name} section");
+            throw new InvalidDataException($"trailing bytes in {name} section");
     }
 
     private static ReplayProjectileEvent ReadProjectileEvent(BinaryReader reader)

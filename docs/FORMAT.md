@@ -11,8 +11,8 @@ values.
 ## Version Gates
 
 - Magic: `CSDTRREC`
-- Current writer format: `.dtr` v7
-- Runtime reader support: v3 through v7
+- Current writer format: `.dtr` v8
+- Runtime reader support: v3 through v8
 - Current manifest ABI: 17
 - Current BotController native ABI: 16
 - Current DemoTracer companion API: 6
@@ -22,19 +22,21 @@ Compatibility notes:
 - v3 files do not contain projectile metadata.
 - v3/v4 files use `play_start_tick_index = 0`.
 - v3-v5 files do not contain high-fidelity metadata JSON.
-- v7 files require the matching playback bundle with BotController native ABI 16
-  and extended replay capability.
+- v7+ files require the matching playback bundle with BotController native ABI
+  16 and extended replay capability.
+- v8 keeps the v7 section container and changes only the snapshot and command
+  frame section payloads to bit-exact columnar delta-varint layouts.
 
 ## Reader Safety Limits
 
 The maintained Rust/Desktop and C# readers apply the same default resource
 policy before attacker-controlled allocation or Brotli decoding. These are
-reader safety limits, not a change to the v7 binary layout or ABI:
+reader safety limits, not a change to the binary layout or ABI:
 
 | Resource | Default ceiling |
 | --- | ---: |
 | File bytes | 64 MiB |
-| v7 sections | 32 |
+| v7+ sections | 32 |
 | Compressed bytes per section | 48 MiB |
 | Total compressed section bytes | 64 MiB |
 | Decoded bytes per section | 48 MiB |
@@ -49,7 +51,7 @@ The tick ceiling still permits about 8.5 minutes at 64 tick or 4.25 minutes at
 128 tick for a single player-round replay.
 
 File-backed readers also compare every declared payload length with the bytes
-actually remaining in the opened file. Unknown v7 sections count against the
+actually remaining in the opened file. Unknown v7+ sections count against the
 same byte budgets and are skipped through a fixed-size buffer. A Brotli stream
 that produces more than its declared decoded length is rejected immediately.
 
@@ -73,14 +75,15 @@ exceed the Steam protocol's 300-character launch limit. The uppercase payload
 is a deterministic CS2 `CEconItemPreviewDataBlock` protobuf with the native
 leading byte and xCRC trailer. It contains appearance evidence only and is not
 an inventory/market asset identifier. Because this is additive derived JSON
-that old readers ignore, it does not change `.dtr` v7 or manifest ABI 17.
+that old readers ignore, it does not change the `.dtr` format or manifest ABI
+17.
 
 ## Header
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | magic | 8 bytes | `CSDTRREC` |
-| version | `u32` | Current writer emits `7` |
+| version | `u32` | Current writer emits `8` |
 | tick_rate | `f32` | Demo tickrate estimate |
 | round | `u32` | `total_rounds_played` window |
 | side | `u8` | `2=T`, `3=CT`, `0=unknown` |
@@ -93,7 +96,7 @@ that old readers ignore, it does not change `.dtr` v7 or manifest ABI 17.
 | metadata_json_len | `u32` | Byte length of high-fidelity metadata JSON; v6+ |
 | map | `u16 len + utf8` | Map name |
 | player_name | `u16 len + utf8` | Demo player name |
-| section_count | `u32` | v7 only; number of section records |
+| section_count | `u32` | v7+ only; number of section records |
 
 For v3-v6 legacy files, the header continues after `player_name` with
 `codec: u8`, `body_uncompressed_len: u64`, `body_compressed_len: u64`, followed
@@ -104,14 +107,14 @@ context before `play_start_tick_index`. Playback still begins at
 `round_freeze_end`; the pre-start context preserves held grenade button state
 without replaying arbitrarily long paused freeze time.
 
-## v7 Sections
+## v7+ Section Container
 
-Each v7 section is:
+Each v7+ section is:
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | section_id | `u32` | Known IDs listed below |
-| section_version | `u32` | `1` for current layouts |
+| section_version | `u32` | Layout version for this section |
 | codec | `u8` | `0 = none`; readers may also accept `1 = Brotli` |
 | pad | 3 bytes | Ignored by readers |
 | flags | `u32` | Reserved |
@@ -122,25 +125,60 @@ Each v7 section is:
 
 Required sections:
 
-| ID | Section | Count | Bytes Each |
-| ---: | --- | ---: | ---: |
-| 1 | `MovementSnapshotV3` chain | `0 if tick_count == 0, else tick_count + 1` | 92 |
-| 2 | tick metadata | `tick_count` | 8 |
-| 5 | `SubtickMoveV3` | `subtick_count` | 28 |
+| ID | Section | Section version | Count | Decoded payload |
+| ---: | --- | ---: | ---: | --- |
+| 1 | `MovementSnapshotV3` chain | `1` in v7; `2` in v8 | `0 if tick_count == 0, else tick_count + 1` | v1: 92 bytes each; v2: columnar delta-varint stream |
+| 2 | tick metadata | `1` | `tick_count` | 8 bytes each |
+| 5 | `SubtickMoveV3` | `1` | `subtick_count` | 28 bytes each |
 
 Optional sections:
 
-| ID | Section | Count | Bytes Each |
-| ---: | --- | ---: | ---: |
-| 3 | `ProjectileEventV4` | `projectile_count` | 48 |
-| 4 | `HighFidelityMetadataV6` | `0 or 1` | UTF-8 JSON |
-| 6 | `CommandFrameV1` | `tick_count` | 68 |
-| 7 | `MovementExtraV1` | `tick_count` | 48 |
+| ID | Section | Section version | Count | Decoded payload |
+| ---: | --- | ---: | ---: | --- |
+| 3 | `ProjectileEventV4` | `1` | `projectile_count` | 48 bytes each |
+| 4 | `HighFidelityMetadataV6` | `1` | `0 or 1` | UTF-8 JSON |
+| 6 | `CommandFrameV1` | `1` in v7; `2` in v8 | `tick_count` | v1: 68 bytes each; v2: columnar delta-varint stream |
+| 7 | `MovementExtraV1` | `1` | `tick_count` | 48 bytes each |
 
 Unknown section IDs must be skipped using `compressed_len`. Duplicate known
 sections are invalid. Missing required sections are invalid. Optional
 tick-aligned sections may be omitted; when present, their `element_count` must
 equal `tick_count`.
+
+## v8 Columnar Delta-Varint Sections
+
+Section version 2 is bit-exact and lossless. It changes storage only; decoded
+`MovementSnapshotV3` and `CommandFrameV1` values are identical to v7 values.
+
+Each logical field is stored as one complete time-series column. Array fields
+use component order. Snapshot columns follow this order:
+
+`origin[3]`, `velocity[3]`, `angles[3]`, `entity_flags`, `move_type`,
+`buttons`, `buttons1`, `buttons2`, `duck_amount`, `duck_speed`,
+`ladder_normal[3]`, `ducked`, `ducking`, `desires_duck`,
+`actual_move_type`.
+
+Command-frame columns follow this order:
+
+`forward_move`, `left_move`, `up_move`, `pitch`, `yaw`, `roll`, `buttons`,
+`buttons1`, `buttons2`, `mouse_dx`, `mouse_dy`, `weapon_select`, `fields`,
+`left_hand_desired`.
+
+For every column:
+
+1. An empty column writes no bytes.
+2. The first value is written in its original little-endian width.
+3. Each later value computes `delta = current_bits - previous_bits` modulo the
+   field width.
+4. Interpret `delta` as signed two's-complement, ZigZag-encode it, then write
+   canonical unsigned LEB128.
+
+`f32` columns operate on the original IEEE-754 `to_bits()` value, not on a
+numeric approximation. Signed integer columns operate on their raw bit pattern.
+The five one-byte snapshot columns and `left_hand_desired` use the same rule at
+8-bit width. V1 alignment padding is not stored in v2 payloads and is restored
+as zero in native structs. For v2 sections, `uncompressed_len` is the exact
+column stream length rather than `element_count × struct_size`.
 
 ## Legacy v3-v6 Body
 
@@ -253,7 +291,7 @@ This layout is 92 bytes with `Pack=4`.
 ## High-Fidelity Metadata
 
 v6+ files may include a UTF-8 JSON blob. In v3-v6 legacy files it appears after
-projectile events and before subtick moves inside the Brotli body. In v7 it is
+projectile events and before subtick moves inside the Brotli body. In v7+ it is
 section ID `4`.
 
 The top-level object contains:
@@ -290,16 +328,17 @@ Projectile metadata entries contain:
 ## Parser Checklist
 
 1. Read and validate magic `CSDTRREC`.
-2. Require `version == 7` for current writer output, or accept `version == 3`
-   through `6` for backward compatibility.
+2. Require `version == 8` for current writer output, or accept `version == 3`
+   through `7` for backward compatibility.
 3. Read `tick_count`, `subtick_count`, `projectile_count`,
    `play_start_tick_index`, `metadata_json_len`, `map`, and `player_name`. For
    v3, treat `projectile_count` as `0`; for v3/v4, treat
    `play_start_tick_index` as `0`; for v3-v5, treat `metadata_json_len` as `0`.
-4. For v7, read `section_count`, parse known sections, and skip unknown
+4. For v7+, read `section_count`, parse known sections, and skip unknown
    sections using `compressed_len`.
-5. For v7, require snapshot, tick metadata, and subtick sections; require
+5. For v7+, require snapshot, tick metadata, and subtick sections; require
    projectile/high-fidelity sections when their header counts are non-zero.
+   Require snapshot/command section version 1 for v7 and version 2 for v8.
 6. For v3-v6, require legacy `codec == 1`, verify legacy body length, then
    Brotli-decompress exactly `body_compressed_len` bytes.
 7. Rebuild ticks from the snapshot chain and metadata.

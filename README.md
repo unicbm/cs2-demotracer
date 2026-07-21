@@ -244,16 +244,17 @@ loader and BotController runtime. Detailed binary layout is documented in
 [`docs/FORMAT.md`](docs/FORMAT.md).
 
 - Magic: `CSDTRREC`
-- Current writer format: `.dtr` v7
-- Runtime reader support: v3 through v7
+- Current writer format: `.dtr` v8
+- Runtime reader support: v3 through v8
 - Current manifest ABI: 17
 - Current BotController native ABI: 16, minor 31 or newer
 - Current DemoTracer BotHider API: 1
 - Current DemoTracer companion API: 6
 - Endianness: little-endian
-- Current v7 layout: section container with required movement snapshot, tick
-  metadata, and subtick sections; optional projectile, high-fidelity metadata,
-  command-frame, and movement-extra sections.
+- Current v8 layout: the v7 section container with bit-exact columnar
+  delta-varint snapshot and command-frame sections; required tick metadata and
+  subtick sections; optional projectile, high-fidelity metadata, command-frame,
+  and movement-extra sections.
 - Maintained Rust/Desktop and C# readers enforce bounded file, section, decoded
   byte, item-count, and per-tick subtick limits before allocating or decoding.
 

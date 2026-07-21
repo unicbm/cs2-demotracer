@@ -153,6 +153,111 @@ public sealed class DtrReplayReaderLimitsTests : IDisposable
     }
 
     [Fact]
+    public void ReadsV8ColumnDeltaSectionsBitExactly()
+    {
+        var pre = new NativeMovementSnapshot
+        {
+            OriginX = -0.0f,
+            OriginY = 2.0f,
+            OriginZ = 3.0f,
+            VelX = 4.0f,
+            VelY = 5.0f,
+            VelZ = 6.0f,
+            Pitch = 7.0f,
+            Yaw = 8.0f,
+            Roll = -0.0f,
+            EntityFlags = 9,
+            MoveType = 10,
+            Buttons = 11,
+            Buttons1 = 12,
+            Buttons2 = 13,
+            DuckAmount = 0.25f,
+            DuckSpeed = 8.0f,
+            LadderNormalX = -0.0f,
+            LadderNormalY = 0.0f,
+            LadderNormalZ = 1.0f,
+            Ducked = 1,
+            Ducking = 1,
+            DesiresDuck = 1,
+            ActualMoveType = 10
+        };
+        var post = pre;
+        post.OriginX = 1.5f;
+        post.Yaw = -179.5f;
+        post.Buttons = ulong.MaxValue;
+        post.Ducked = 0;
+        var command = new NativeReplayCommandFrame
+        {
+            ForwardMove = 123.5f,
+            LeftMove = -45.25f,
+            UpMove = -0.0f,
+            Pitch = 17.0f,
+            Yaw = -91.0f,
+            Roll = -0.0f,
+            Buttons = ulong.MaxValue,
+            Buttons1 = 2,
+            Buttons2 = 3,
+            MouseDx = int.MinValue,
+            MouseDy = int.MaxValue,
+            WeaponSelect = -1,
+            Fields = 0xff,
+            LeftHandDesired = 1
+        };
+        var snapshotPayload = BuildV2SnapshotPayload([pre, post]);
+        var commandPayload = BuildV2CommandPayload([command]);
+        var tickMetadata = new byte[8];
+        BitConverter.GetBytes(42).CopyTo(tickMetadata, 0);
+        var path = WriteFile(writer =>
+        {
+            WriteCompleteHeader(writer, version: 8, tickCount: 1, subtickCount: 0);
+            writer.Write(4U);
+            WriteSection(
+                writer,
+                sectionId: 1,
+                codec: CodecNone,
+                elementCount: 2,
+                payload: snapshotPayload,
+                sectionVersion: 2);
+            WriteSection(writer, sectionId: 2, codec: CodecNone, elementCount: 1, payload: tickMetadata);
+            WriteSection(writer, sectionId: 5, codec: CodecNone, elementCount: 0, payload: []);
+            WriteSection(
+                writer,
+                sectionId: 6,
+                codec: CodecNone,
+                elementCount: 1,
+                payload: commandPayload,
+                sectionVersion: 2);
+        });
+
+        var replay = DtrReplayReader.Read(path);
+
+        Assert.Equal(8U, replay.Version);
+        Assert.Single(replay.Ticks);
+        Assert.Equal(
+            BitConverter.SingleToUInt32Bits(pre.OriginX),
+            BitConverter.SingleToUInt32Bits(replay.Ticks[0].Pre.OriginX));
+        Assert.Equal(
+            BitConverter.SingleToUInt32Bits(post.OriginX),
+            BitConverter.SingleToUInt32Bits(replay.Ticks[0].Post.OriginX));
+        Assert.Equal(
+            BitConverter.SingleToUInt32Bits(post.Yaw),
+            BitConverter.SingleToUInt32Bits(replay.Ticks[0].Post.Yaw));
+        Assert.Equal(post.Buttons, replay.Ticks[0].Post.Buttons);
+        Assert.Equal(post.Ducked, replay.Ticks[0].Post.Ducked);
+        Assert.Equal(42, replay.Ticks[0].WeaponDefIndex);
+        var decodedCommand = Assert.Single(replay.CommandFrames);
+        Assert.Equal(
+            BitConverter.SingleToUInt32Bits(command.UpMove),
+            BitConverter.SingleToUInt32Bits(decodedCommand.UpMove));
+        Assert.Equal(command.Buttons, decodedCommand.Buttons);
+        Assert.Equal(command.MouseDx, decodedCommand.MouseDx);
+        Assert.Equal(command.MouseDy, decodedCommand.MouseDy);
+        Assert.Equal(command.WeaponSelect, decodedCommand.WeaponSelect);
+        Assert.Equal(command.Fields, decodedCommand.Fields);
+        Assert.Equal(command.LeftHandDesired, decodedCommand.LeftHandDesired);
+    }
+
+    [Fact]
     public void RejectsV7SectionCountBeforeReadingSectionHeaders()
     {
         var path = WriteFile(writer =>
@@ -207,7 +312,7 @@ public sealed class DtrReplayReaderLimitsTests : IDisposable
 
         var error = Assert.Throws<EndOfStreamException>(() => DtrReplayReader.Read(path));
 
-        Assert.Contains("v7 section payload and remaining headers", error.Message);
+        Assert.Contains("section payload and remaining headers", error.Message);
     }
 
     [Fact]
@@ -375,7 +480,8 @@ public sealed class DtrReplayReaderLimitsTests : IDisposable
         byte codec,
         int elementCount,
         byte[] payload,
-        int? uncompressedLength = null)
+        int? uncompressedLength = null,
+        uint sectionVersion = 1)
     {
         WriteSectionHeader(
             writer,
@@ -383,7 +489,8 @@ public sealed class DtrReplayReaderLimitsTests : IDisposable
             codec,
             elementCount,
             uncompressedLength ?? payload.Length,
-            payload.Length);
+            payload.Length,
+            sectionVersion);
         writer.Write(payload);
     }
 
@@ -393,10 +500,11 @@ public sealed class DtrReplayReaderLimitsTests : IDisposable
         byte codec,
         int elementCount,
         int uncompressedLength,
-        int compressedLength)
+        int compressedLength,
+        uint sectionVersion = 1)
     {
         writer.Write(sectionId);
-        writer.Write(1U);
+        writer.Write(sectionVersion);
         writer.Write(codec);
         writer.Write((byte)0);
         writer.Write((ushort)0);
@@ -404,6 +512,127 @@ public sealed class DtrReplayReaderLimitsTests : IDisposable
         writer.Write((uint)elementCount);
         writer.Write((ulong)uncompressedLength);
         writer.Write((ulong)compressedLength);
+    }
+
+    private static byte[] BuildV2SnapshotPayload(NativeMovementSnapshot[] snapshots)
+    {
+        using var output = new MemoryStream();
+        using var writer = new BinaryWriter(output, Encoding.UTF8, leaveOpen: true);
+        WriteDeltaUInt32Column(writer, snapshots.Select(value => BitConverter.SingleToUInt32Bits(value.OriginX)));
+        WriteDeltaUInt32Column(writer, snapshots.Select(value => BitConverter.SingleToUInt32Bits(value.OriginY)));
+        WriteDeltaUInt32Column(writer, snapshots.Select(value => BitConverter.SingleToUInt32Bits(value.OriginZ)));
+        WriteDeltaUInt32Column(writer, snapshots.Select(value => BitConverter.SingleToUInt32Bits(value.VelX)));
+        WriteDeltaUInt32Column(writer, snapshots.Select(value => BitConverter.SingleToUInt32Bits(value.VelY)));
+        WriteDeltaUInt32Column(writer, snapshots.Select(value => BitConverter.SingleToUInt32Bits(value.VelZ)));
+        WriteDeltaUInt32Column(writer, snapshots.Select(value => BitConverter.SingleToUInt32Bits(value.Pitch)));
+        WriteDeltaUInt32Column(writer, snapshots.Select(value => BitConverter.SingleToUInt32Bits(value.Yaw)));
+        WriteDeltaUInt32Column(writer, snapshots.Select(value => BitConverter.SingleToUInt32Bits(value.Roll)));
+        WriteDeltaUInt32Column(writer, snapshots.Select(value => value.EntityFlags));
+        WriteDeltaByteColumn(writer, snapshots.Select(value => value.MoveType));
+        WriteDeltaUInt64Column(writer, snapshots.Select(value => value.Buttons));
+        WriteDeltaUInt64Column(writer, snapshots.Select(value => value.Buttons1));
+        WriteDeltaUInt64Column(writer, snapshots.Select(value => value.Buttons2));
+        WriteDeltaUInt32Column(writer, snapshots.Select(value => BitConverter.SingleToUInt32Bits(value.DuckAmount)));
+        WriteDeltaUInt32Column(writer, snapshots.Select(value => BitConverter.SingleToUInt32Bits(value.DuckSpeed)));
+        WriteDeltaUInt32Column(writer, snapshots.Select(value => BitConverter.SingleToUInt32Bits(value.LadderNormalX)));
+        WriteDeltaUInt32Column(writer, snapshots.Select(value => BitConverter.SingleToUInt32Bits(value.LadderNormalY)));
+        WriteDeltaUInt32Column(writer, snapshots.Select(value => BitConverter.SingleToUInt32Bits(value.LadderNormalZ)));
+        WriteDeltaByteColumn(writer, snapshots.Select(value => value.Ducked));
+        WriteDeltaByteColumn(writer, snapshots.Select(value => value.Ducking));
+        WriteDeltaByteColumn(writer, snapshots.Select(value => value.DesiresDuck));
+        WriteDeltaByteColumn(writer, snapshots.Select(value => value.ActualMoveType));
+        writer.Flush();
+        return output.ToArray();
+    }
+
+    private static byte[] BuildV2CommandPayload(NativeReplayCommandFrame[] frames)
+    {
+        using var output = new MemoryStream();
+        using var writer = new BinaryWriter(output, Encoding.UTF8, leaveOpen: true);
+        WriteDeltaUInt32Column(writer, frames.Select(value => BitConverter.SingleToUInt32Bits(value.ForwardMove)));
+        WriteDeltaUInt32Column(writer, frames.Select(value => BitConverter.SingleToUInt32Bits(value.LeftMove)));
+        WriteDeltaUInt32Column(writer, frames.Select(value => BitConverter.SingleToUInt32Bits(value.UpMove)));
+        WriteDeltaUInt32Column(writer, frames.Select(value => BitConverter.SingleToUInt32Bits(value.Pitch)));
+        WriteDeltaUInt32Column(writer, frames.Select(value => BitConverter.SingleToUInt32Bits(value.Yaw)));
+        WriteDeltaUInt32Column(writer, frames.Select(value => BitConverter.SingleToUInt32Bits(value.Roll)));
+        WriteDeltaUInt64Column(writer, frames.Select(value => value.Buttons));
+        WriteDeltaUInt64Column(writer, frames.Select(value => value.Buttons1));
+        WriteDeltaUInt64Column(writer, frames.Select(value => value.Buttons2));
+        WriteDeltaUInt32Column(writer, frames.Select(value => unchecked((uint)value.MouseDx)));
+        WriteDeltaUInt32Column(writer, frames.Select(value => unchecked((uint)value.MouseDy)));
+        WriteDeltaUInt32Column(writer, frames.Select(value => unchecked((uint)value.WeaponSelect)));
+        WriteDeltaUInt32Column(writer, frames.Select(value => value.Fields));
+        WriteDeltaByteColumn(writer, frames.Select(value => value.LeftHandDesired));
+        writer.Flush();
+        return output.ToArray();
+    }
+
+    private static void WriteDeltaUInt32Column(BinaryWriter writer, IEnumerable<uint> source)
+    {
+        using var values = source.GetEnumerator();
+        if (!values.MoveNext())
+            return;
+        var previous = values.Current;
+        writer.Write(previous);
+        while (values.MoveNext())
+        {
+            var current = values.Current;
+            var delta = unchecked((int)(current - previous));
+            WriteUleb128(writer, unchecked((uint)((delta << 1) ^ (delta >> 31))));
+            previous = current;
+        }
+    }
+
+    private static void WriteDeltaUInt64Column(BinaryWriter writer, IEnumerable<ulong> source)
+    {
+        using var values = source.GetEnumerator();
+        if (!values.MoveNext())
+            return;
+        var previous = values.Current;
+        writer.Write(previous);
+        while (values.MoveNext())
+        {
+            var current = values.Current;
+            var delta = unchecked((long)(current - previous));
+            WriteUleb128(writer, unchecked((ulong)((delta << 1) ^ (delta >> 63))));
+            previous = current;
+        }
+    }
+
+    private static void WriteDeltaByteColumn(BinaryWriter writer, IEnumerable<byte> source)
+    {
+        using var values = source.GetEnumerator();
+        if (!values.MoveNext())
+            return;
+        var previous = values.Current;
+        writer.Write(previous);
+        while (values.MoveNext())
+        {
+            var current = values.Current;
+            var delta = unchecked((sbyte)(current - previous));
+            WriteUleb128(writer, unchecked((uint)((delta << 1) ^ (delta >> 7))));
+            previous = current;
+        }
+    }
+
+    private static void WriteUleb128(BinaryWriter writer, uint value)
+    {
+        do
+        {
+            var next = (byte)(value & 0x7f);
+            value >>= 7;
+            writer.Write(value == 0 ? next : (byte)(next | 0x80));
+        } while (value != 0);
+    }
+
+    private static void WriteUleb128(BinaryWriter writer, ulong value)
+    {
+        do
+        {
+            var next = (byte)(value & 0x7f);
+            value >>= 7;
+            writer.Write(value == 0 ? next : (byte)(next | 0x80));
+        } while (value != 0);
     }
 
     private static byte[] Compress(byte[] bytes)

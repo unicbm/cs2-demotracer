@@ -634,7 +634,7 @@ configuration or require client-side code injection.
 
 ### `dtr_left_hand_desired <0|1>`
 
-Controls whether newly loaded `.dtr` v7 command frames keep
+Controls whether newly loaded `.dtr` v7+ command frames keep
 `left_hand_desired` writes.
 
 - `1`: preserve demo left-hand/right-hand desired state. This is the default

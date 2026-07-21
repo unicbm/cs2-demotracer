@@ -133,8 +133,8 @@ deliberate compatibility change, not an incidental package update.
 
 Current release compatibility:
 
-- `.dtr` writer: v7
-- `.dtr` reader: v3 through v7
+- `.dtr` writer: v8
+- `.dtr` reader: v3 through v8
 - Manifest ABI: 17
 - BotController native ABI: 16, minor 31 or newer
 - DemoTracer BotHider API: 1

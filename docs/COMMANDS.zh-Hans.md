@@ -557,7 +557,7 @@ replay 控制；最近一次成功 DTR 批次的 presentation 会继续保持。
 
 ### `dtr_left_hand_desired <0|1>`
 
-控制新加载的 `.dtr` v7 command frames 是否保留 `left_hand_desired` 写入。
+控制新加载的 `.dtr` v7+ command frames 是否保留 `left_hand_desired` 写入。
 
 - `1`：保留 demo 里的左/右手 desired 状态。这是默认值，也是最高保真度行为。
   默认 `handoff.viewmodel_continuity="round"` 时，活体 handoff 后会继续续约最后的

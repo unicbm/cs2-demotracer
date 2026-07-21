@@ -12,7 +12,7 @@
 ## Replay 模型
 
 - `.dtr` 是无损压缩的 BotController 兼容 replay 格式，并包含 demo 原始投掷物元数据、
-  按玩家记录的高保真事件、库存快照和 v7 command frame 输入证据。完整离线还原
+  按玩家记录的高保真事件、库存快照和 v7+ command frame 输入证据。完整离线还原
   usercmd 仍然是未来工作。
 - 如果加载了其他干预 native bot AI 的插件，可能出现预期外的 bot 购买或库存行为。
   DTR 本质上是 slot 绑定，不是武器绑定，所以可能出现这个 slot 的 bot 有主武器，

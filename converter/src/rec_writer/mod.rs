@@ -31,6 +31,7 @@ const SECTION_SUBTICKS: u32 = 5;
 const SECTION_COMMAND_FRAMES: u32 = 6;
 const SECTION_MOVEMENT_EXTRAS: u32 = 7;
 const SECTION_VERSION_V1: u32 = 1;
+const SECTION_VERSION_V2: u32 = 2;
 
 const MIB: u64 = 1024 * 1024;
 
@@ -183,7 +184,7 @@ pub fn write_rec<W: Write>(writer: &mut W, rec: &Cs2Rec) -> Result<()> {
     write_u32(writer, metadata_json_len)?;
     write_string(writer, &rec.header.map)?;
     write_string(writer, &rec.header.player_name)?;
-    write_v7_sections(writer, rec, &metadata_json)?;
+    write_sectioned_body(writer, rec, &metadata_json)?;
 
     Ok(())
 }
@@ -245,8 +246,9 @@ fn read_rec_bounded<R: Read>(reader: &mut ReadBudget<R>, limits: DtrReadLimits) 
     let player_name = read_bounded_string(reader, "player name string")?;
     if version >= 7 {
         let (ticks, projectiles, high_fidelity, subticks, command_frames, movement_extras) =
-            read_v7_sections(
+            read_sectioned_body(
                 reader,
+                version,
                 tick_count,
                 subtick_count,
                 projectile_count,
@@ -405,55 +407,70 @@ fn validate_optional_tick_aligned_count(name: &str, count: usize, tick_count: us
     Ok(())
 }
 
-fn write_v7_sections<W: Write>(writer: &mut W, rec: &Cs2Rec, metadata_json: &[u8]) -> Result<()> {
+fn write_sectioned_body<W: Write>(
+    writer: &mut W,
+    rec: &Cs2Rec,
+    metadata_json: &[u8],
+) -> Result<()> {
     let mut sections = Vec::new();
     sections.push((
         SECTION_SNAPSHOTS,
+        SECTION_VERSION_V2,
         if rec.ticks.is_empty() {
             0
         } else {
             rec.ticks.len() + 1
         },
-        build_snapshot_section(rec)?,
+        build_snapshot_section_v2(rec)?,
     ));
     sections.push((
         SECTION_TICK_METADATA,
+        SECTION_VERSION_V1,
         rec.ticks.len(),
         build_tick_metadata_section(rec)?,
     ));
     sections.push((
         SECTION_SUBTICKS,
+        SECTION_VERSION_V1,
         rec.subticks.len(),
         build_subtick_section(rec)?,
     ));
     if !rec.projectiles.is_empty() {
         sections.push((
             SECTION_PROJECTILES,
+            SECTION_VERSION_V1,
             rec.projectiles.len(),
             build_projectile_section(rec)?,
         ));
     }
     if !metadata_json.is_empty() {
-        sections.push((SECTION_HIGH_FIDELITY_JSON, 1, metadata_json.to_vec()));
+        sections.push((
+            SECTION_HIGH_FIDELITY_JSON,
+            SECTION_VERSION_V1,
+            1,
+            metadata_json.to_vec(),
+        ));
     }
     if !rec.command_frames.is_empty() {
         sections.push((
             SECTION_COMMAND_FRAMES,
+            SECTION_VERSION_V2,
             rec.command_frames.len(),
-            build_command_frame_section(rec)?,
+            build_command_frame_section_v2(rec)?,
         ));
     }
     if !rec.movement_extras.is_empty() {
         sections.push((
             SECTION_MOVEMENT_EXTRAS,
+            SECTION_VERSION_V1,
             rec.movement_extras.len(),
             build_movement_extra_section(rec)?,
         ));
     }
 
     write_u32(writer, checked_u32_count("section count", sections.len())?)?;
-    for (section_id, element_count, payload) in sections {
-        write_section(writer, section_id, element_count, &payload)?;
+    for (section_id, section_version, element_count, payload) in sections {
+        write_section(writer, section_id, section_version, element_count, &payload)?;
     }
     Ok(())
 }
@@ -461,12 +478,13 @@ fn write_v7_sections<W: Write>(writer: &mut W, rec: &Cs2Rec, metadata_json: &[u8
 fn write_section<W: Write>(
     writer: &mut W,
     section_id: u32,
+    section_version: u32,
     element_count: usize,
     payload: &[u8],
 ) -> Result<()> {
     let compressed = compress_body(payload)?;
     write_u32(writer, section_id)?;
-    write_u32(writer, SECTION_VERSION_V1)?;
+    write_u32(writer, section_version)?;
     write_u8(writer, CODEC_BROTLI)?;
     writer
         .write_all(&[0, 0, 0])
@@ -483,7 +501,17 @@ fn write_section<W: Write>(
         .map_err(|e| Error::InvalidRec(e.to_string()))
 }
 
-fn build_snapshot_section(rec: &Cs2Rec) -> Result<Vec<u8>> {
+fn build_tick_metadata_section(rec: &Cs2Rec) -> Result<Vec<u8>> {
+    let mut body = Vec::with_capacity(rec.ticks.len() * TICK_METADATA_BYTE_SIZE);
+    for tick in &rec.ticks {
+        write_i32(&mut body, tick.weapon_def_index)?;
+        write_u32(&mut body, tick.num_subtick)?;
+    }
+    Ok(body)
+}
+
+#[cfg(test)]
+fn build_snapshot_section_v1(rec: &Cs2Rec) -> Result<Vec<u8>> {
     let snapshot_count = if rec.ticks.is_empty() {
         0
     } else {
@@ -495,15 +523,6 @@ fn build_snapshot_section(rec: &Cs2Rec) -> Result<Vec<u8>> {
         for tick in &rec.ticks {
             write_snapshot(&mut body, &tick.post)?;
         }
-    }
-    Ok(body)
-}
-
-fn build_tick_metadata_section(rec: &Cs2Rec) -> Result<Vec<u8>> {
-    let mut body = Vec::with_capacity(rec.ticks.len() * TICK_METADATA_BYTE_SIZE);
-    for tick in &rec.ticks {
-        write_i32(&mut body, tick.weapon_def_index)?;
-        write_u32(&mut body, tick.num_subtick)?;
     }
     Ok(body)
 }
@@ -524,12 +543,283 @@ fn build_subtick_section(rec: &Cs2Rec) -> Result<Vec<u8>> {
     Ok(body)
 }
 
-fn build_command_frame_section(rec: &Cs2Rec) -> Result<Vec<u8>> {
+#[cfg(test)]
+fn build_command_frame_section_v1(rec: &Cs2Rec) -> Result<Vec<u8>> {
     let mut body = Vec::with_capacity(rec.command_frames.len() * COMMAND_FRAME_BYTE_SIZE);
     for frame in &rec.command_frames {
         write_command_frame(&mut body, frame)?;
     }
     Ok(body)
+}
+
+fn build_snapshot_section_v2(rec: &Cs2Rec) -> Result<Vec<u8>> {
+    let mut body = Vec::new();
+    write_delta_u32_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.origin[0].to_bits()),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.origin[1].to_bits()),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.origin[2].to_bits()),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.velocity[0].to_bits()),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.velocity[1].to_bits()),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.velocity[2].to_bits()),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.angles[0].to_bits()),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.angles[1].to_bits()),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.angles[2].to_bits()),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.entity_flags),
+    )?;
+    write_delta_u8_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.move_type),
+    )?;
+    write_delta_u64_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.buttons),
+    )?;
+    write_delta_u64_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.buttons1),
+    )?;
+    write_delta_u64_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.buttons2),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.duck_amount.to_bits()),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.duck_speed.to_bits()),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.ladder_normal[0].to_bits()),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.ladder_normal[1].to_bits()),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.ladder_normal[2].to_bits()),
+    )?;
+    write_delta_u8_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.ducked),
+    )?;
+    write_delta_u8_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.ducking),
+    )?;
+    write_delta_u8_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.desires_duck),
+    )?;
+    write_delta_u8_column(
+        &mut body,
+        snapshot_chain(rec).map(|snapshot| snapshot.actual_move_type),
+    )?;
+    Ok(body)
+}
+
+fn build_command_frame_section_v2(rec: &Cs2Rec) -> Result<Vec<u8>> {
+    let mut body = Vec::new();
+    write_delta_u32_column(
+        &mut body,
+        rec.command_frames
+            .iter()
+            .map(|frame| frame.forward_move.to_bits()),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        rec.command_frames
+            .iter()
+            .map(|frame| frame.left_move.to_bits()),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        rec.command_frames
+            .iter()
+            .map(|frame| frame.up_move.to_bits()),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        rec.command_frames.iter().map(|frame| frame.pitch.to_bits()),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        rec.command_frames.iter().map(|frame| frame.yaw.to_bits()),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        rec.command_frames.iter().map(|frame| frame.roll.to_bits()),
+    )?;
+    write_delta_u64_column(
+        &mut body,
+        rec.command_frames.iter().map(|frame| frame.buttons),
+    )?;
+    write_delta_u64_column(
+        &mut body,
+        rec.command_frames.iter().map(|frame| frame.buttons1),
+    )?;
+    write_delta_u64_column(
+        &mut body,
+        rec.command_frames.iter().map(|frame| frame.buttons2),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        rec.command_frames.iter().map(|frame| frame.mouse_dx as u32),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        rec.command_frames.iter().map(|frame| frame.mouse_dy as u32),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        rec.command_frames
+            .iter()
+            .map(|frame| frame.weapon_select as u32),
+    )?;
+    write_delta_u32_column(
+        &mut body,
+        rec.command_frames.iter().map(|frame| frame.fields),
+    )?;
+    write_delta_u8_column(
+        &mut body,
+        rec.command_frames
+            .iter()
+            .map(|frame| frame.left_hand_desired),
+    )?;
+    Ok(body)
+}
+
+fn snapshot_chain(rec: &Cs2Rec) -> impl Iterator<Item = &MovementSnapshot> {
+    rec.ticks
+        .first()
+        .map(|tick| &tick.pre)
+        .into_iter()
+        .chain(rec.ticks.iter().map(|tick| &tick.post))
+}
+
+fn write_delta_u32_column<W, I>(writer: &mut W, values: I) -> Result<()>
+where
+    W: Write,
+    I: IntoIterator<Item = u32>,
+{
+    let mut values = values.into_iter();
+    let Some(mut previous) = values.next() else {
+        return Ok(());
+    };
+    write_u32(writer, previous)?;
+    for current in values {
+        let delta = current.wrapping_sub(previous) as i32;
+        write_uleb128_u32(writer, zigzag_i32(delta))?;
+        previous = current;
+    }
+    Ok(())
+}
+
+fn write_delta_u64_column<W, I>(writer: &mut W, values: I) -> Result<()>
+where
+    W: Write,
+    I: IntoIterator<Item = u64>,
+{
+    let mut values = values.into_iter();
+    let Some(mut previous) = values.next() else {
+        return Ok(());
+    };
+    write_u64(writer, previous)?;
+    for current in values {
+        let delta = current.wrapping_sub(previous) as i64;
+        write_uleb128_u64(writer, zigzag_i64(delta))?;
+        previous = current;
+    }
+    Ok(())
+}
+
+fn write_delta_u8_column<W, I>(writer: &mut W, values: I) -> Result<()>
+where
+    W: Write,
+    I: IntoIterator<Item = u8>,
+{
+    let mut values = values.into_iter();
+    let Some(mut previous) = values.next() else {
+        return Ok(());
+    };
+    write_u8(writer, previous)?;
+    for current in values {
+        let delta = current.wrapping_sub(previous) as i8;
+        write_uleb128_u32(writer, zigzag_i8(delta) as u32)?;
+        previous = current;
+    }
+    Ok(())
+}
+
+fn zigzag_i8(value: i8) -> u8 {
+    ((value as u8) << 1) ^ ((value >> 7) as u8)
+}
+
+fn zigzag_i32(value: i32) -> u32 {
+    ((value as u32) << 1) ^ ((value >> 31) as u32)
+}
+
+fn zigzag_i64(value: i64) -> u64 {
+    ((value as u64) << 1) ^ ((value >> 63) as u64)
+}
+
+fn write_uleb128_u32<W: Write>(writer: &mut W, mut value: u32) -> Result<()> {
+    loop {
+        let mut byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value != 0 {
+            byte |= 0x80;
+        }
+        write_u8(writer, byte)?;
+        if value == 0 {
+            return Ok(());
+        }
+    }
+}
+
+fn write_uleb128_u64<W: Write>(writer: &mut W, mut value: u64) -> Result<()> {
+    loop {
+        let mut byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value != 0 {
+            byte |= 0x80;
+        }
+        write_u8(writer, byte)?;
+        if value == 0 {
+            return Ok(());
+        }
+    }
 }
 
 fn build_movement_extra_section(rec: &Cs2Rec) -> Result<Vec<u8>> {
@@ -649,8 +939,9 @@ type V7Sections = (
     Vec<ReplayMovementExtra>,
 );
 
-fn read_v7_sections<R: Read>(
+fn read_sectioned_body<R: Read>(
     reader: &mut ReadBudget<R>,
+    format_version: u32,
     tick_count: usize,
     subtick_count: usize,
     projectile_count: usize,
@@ -718,8 +1009,9 @@ fn read_v7_sections<R: Read>(
         match header.section_id {
             SECTION_SNAPSHOTS => {
                 reject_duplicate(snapshots.is_some(), "snapshots")?;
-                require_section_header_shape(
+                require_versioned_section_header_shape(
                     "snapshots",
+                    format_version,
                     header.section_version,
                     header.element_count,
                     snapshot_count,
@@ -773,8 +1065,9 @@ fn read_v7_sections<R: Read>(
             }
             SECTION_COMMAND_FRAMES => {
                 reject_duplicate(saw_command_frames, "command frames")?;
-                require_section_header_shape(
+                require_versioned_section_header_shape(
                     "command frames",
+                    format_version,
                     header.section_version,
                     header.element_count,
                     tick_count,
@@ -802,7 +1095,7 @@ fn read_v7_sections<R: Read>(
 
         if !matches!(header.codec, CODEC_NONE | CODEC_BROTLI) {
             return Err(Error::InvalidRec(format!(
-                "unsupported v7 section codec {}",
+                "unsupported section codec {}",
                 header.codec
             )));
         }
@@ -819,7 +1112,11 @@ fn read_v7_sections<R: Read>(
 
         match header.section_id {
             SECTION_SNAPSHOTS => {
-                snapshots = Some(read_snapshots_from_section(&body, snapshot_count)?);
+                snapshots = Some(read_snapshots_from_section(
+                    &body,
+                    snapshot_count,
+                    header.section_version,
+                )?);
             }
             SECTION_TICK_METADATA => {
                 tick_metadata = Some(read_tick_metadata_from_section(&body, tick_count)?);
@@ -837,7 +1134,8 @@ fn read_v7_sections<R: Read>(
                 saw_high_fidelity = true;
             }
             SECTION_COMMAND_FRAMES => {
-                command_frames = read_command_frames_from_section(&body, tick_count)?;
+                command_frames =
+                    read_command_frames_from_section(&body, tick_count, header.section_version)?;
                 saw_command_frames = true;
             }
             SECTION_MOVEMENT_EXTRAS => {
@@ -849,12 +1147,11 @@ fn read_v7_sections<R: Read>(
     }
 
     let snapshots = snapshots
-        .ok_or_else(|| Error::InvalidRec("missing required v7 section snapshots".to_string()))?;
-    let tick_metadata = tick_metadata.ok_or_else(|| {
-        Error::InvalidRec("missing required v7 section tick metadata".to_string())
-    })?;
+        .ok_or_else(|| Error::InvalidRec("missing required section snapshots".to_string()))?;
+    let tick_metadata = tick_metadata
+        .ok_or_else(|| Error::InvalidRec("missing required section tick metadata".to_string()))?;
     let subticks = subticks
-        .ok_or_else(|| Error::InvalidRec("missing required v7 section subticks".to_string()))?;
+        .ok_or_else(|| Error::InvalidRec("missing required section subticks".to_string()))?;
     let projectiles = projectiles.unwrap_or_default();
     if projectiles.len() != projectile_count {
         return Err(Error::InvalidRec(format!(
@@ -958,7 +1255,7 @@ fn decode_section_body(compressed: Vec<u8>, codec: u8, expected_len: usize) -> R
         }
         CODEC_BROTLI => decompress_body(&compressed, expected_len),
         _ => Err(Error::InvalidRec(format!(
-            "unsupported v7 section codec {codec}"
+            "unsupported section codec {codec}"
         ))),
     }
 }
@@ -989,14 +1286,66 @@ fn require_section_header_shape(
     Ok(())
 }
 
-fn reject_duplicate(duplicate: bool, name: &str) -> Result<()> {
-    if duplicate {
-        return Err(Error::InvalidRec(format!("duplicate v7 section {name}")));
+fn require_versioned_section_header_shape(
+    name: &str,
+    format_version: u32,
+    section_version: u32,
+    element_count: u32,
+    expected_elements: usize,
+    byte_len: u64,
+    v1_byte_len: usize,
+) -> Result<()> {
+    if u64::from(element_count) != expected_elements as u64 {
+        return Err(Error::InvalidRec(format!(
+            "{name} element count {element_count} != expected {expected_elements}"
+        )));
+    }
+    match (format_version, section_version) {
+        (7, SECTION_VERSION_V1) => {
+            if byte_len != v1_byte_len as u64 {
+                return Err(Error::InvalidRec(format!(
+                    "{name} byte length {byte_len} != expected {v1_byte_len}"
+                )));
+            }
+        }
+        (8, SECTION_VERSION_V2) => {
+            if expected_elements == 0 && byte_len != 0 {
+                return Err(Error::InvalidRec(format!(
+                    "empty {name} section has non-zero byte length {byte_len}"
+                )));
+            }
+        }
+        _ => {
+            return Err(Error::InvalidRec(format!(
+                "unsupported {name} section version {section_version} for .dtr v{format_version}"
+            )));
+        }
     }
     Ok(())
 }
 
-fn read_snapshots_from_section(body: &[u8], count: usize) -> Result<Vec<MovementSnapshot>> {
+fn reject_duplicate(duplicate: bool, name: &str) -> Result<()> {
+    if duplicate {
+        return Err(Error::InvalidRec(format!("duplicate section {name}")));
+    }
+    Ok(())
+}
+
+fn read_snapshots_from_section(
+    body: &[u8],
+    count: usize,
+    section_version: u32,
+) -> Result<Vec<MovementSnapshot>> {
+    match section_version {
+        SECTION_VERSION_V1 => read_snapshots_from_section_v1(body, count),
+        SECTION_VERSION_V2 => read_snapshots_from_section_v2(body, count),
+        _ => Err(Error::InvalidRec(format!(
+            "unsupported snapshots section version {section_version}"
+        ))),
+    }
+}
+
+fn read_snapshots_from_section_v1(body: &[u8], count: usize) -> Result<Vec<MovementSnapshot>> {
     let mut reader = Cursor::new(body);
     let mut snapshots = reserved_vec(count, "snapshot section elements")?;
     for _ in 0..count {
@@ -1036,7 +1385,24 @@ fn read_subticks_from_section(body: &[u8], count: usize) -> Result<Vec<SubtickMo
     Ok(subticks)
 }
 
-fn read_command_frames_from_section(body: &[u8], count: usize) -> Result<Vec<ReplayCommandFrame>> {
+fn read_command_frames_from_section(
+    body: &[u8],
+    count: usize,
+    section_version: u32,
+) -> Result<Vec<ReplayCommandFrame>> {
+    match section_version {
+        SECTION_VERSION_V1 => read_command_frames_from_section_v1(body, count),
+        SECTION_VERSION_V2 => read_command_frames_from_section_v2(body, count),
+        _ => Err(Error::InvalidRec(format!(
+            "unsupported command frames section version {section_version}"
+        ))),
+    }
+}
+
+fn read_command_frames_from_section_v1(
+    body: &[u8],
+    count: usize,
+) -> Result<Vec<ReplayCommandFrame>> {
     let mut reader = Cursor::new(body);
     let mut frames = reserved_vec(count, "command frame section elements")?;
     for _ in 0..count {
@@ -1044,6 +1410,270 @@ fn read_command_frames_from_section(body: &[u8], count: usize) -> Result<Vec<Rep
     }
     require_no_trailing(&reader, body, "command frames")?;
     Ok(frames)
+}
+
+fn read_snapshots_from_section_v2(body: &[u8], count: usize) -> Result<Vec<MovementSnapshot>> {
+    let mut reader = Cursor::new(body);
+    let mut snapshots = reserved_vec(count, "snapshot section elements")?;
+    snapshots.resize_with(count, MovementSnapshot::default);
+    read_delta_u32_column(&mut reader, count, "snapshot origin x", |index, value| {
+        snapshots[index].origin[0] = f32::from_bits(value);
+    })?;
+    read_delta_u32_column(&mut reader, count, "snapshot origin y", |index, value| {
+        snapshots[index].origin[1] = f32::from_bits(value);
+    })?;
+    read_delta_u32_column(&mut reader, count, "snapshot origin z", |index, value| {
+        snapshots[index].origin[2] = f32::from_bits(value);
+    })?;
+    read_delta_u32_column(&mut reader, count, "snapshot velocity x", |index, value| {
+        snapshots[index].velocity[0] = f32::from_bits(value);
+    })?;
+    read_delta_u32_column(&mut reader, count, "snapshot velocity y", |index, value| {
+        snapshots[index].velocity[1] = f32::from_bits(value);
+    })?;
+    read_delta_u32_column(&mut reader, count, "snapshot velocity z", |index, value| {
+        snapshots[index].velocity[2] = f32::from_bits(value);
+    })?;
+    read_delta_u32_column(&mut reader, count, "snapshot pitch", |index, value| {
+        snapshots[index].angles[0] = f32::from_bits(value);
+    })?;
+    read_delta_u32_column(&mut reader, count, "snapshot yaw", |index, value| {
+        snapshots[index].angles[1] = f32::from_bits(value);
+    })?;
+    read_delta_u32_column(&mut reader, count, "snapshot roll", |index, value| {
+        snapshots[index].angles[2] = f32::from_bits(value);
+    })?;
+    read_delta_u32_column(
+        &mut reader,
+        count,
+        "snapshot entity flags",
+        |index, value| snapshots[index].entity_flags = value,
+    )?;
+    read_delta_u8_column(&mut reader, count, "snapshot move type", |index, value| {
+        snapshots[index].move_type = value;
+    })?;
+    read_delta_u64_column(&mut reader, count, "snapshot buttons", |index, value| {
+        snapshots[index].buttons = value;
+    })?;
+    read_delta_u64_column(&mut reader, count, "snapshot buttons1", |index, value| {
+        snapshots[index].buttons1 = value;
+    })?;
+    read_delta_u64_column(&mut reader, count, "snapshot buttons2", |index, value| {
+        snapshots[index].buttons2 = value;
+    })?;
+    read_delta_u32_column(
+        &mut reader,
+        count,
+        "snapshot duck amount",
+        |index, value| snapshots[index].duck_amount = f32::from_bits(value),
+    )?;
+    read_delta_u32_column(&mut reader, count, "snapshot duck speed", |index, value| {
+        snapshots[index].duck_speed = f32::from_bits(value);
+    })?;
+    read_delta_u32_column(&mut reader, count, "snapshot ladder x", |index, value| {
+        snapshots[index].ladder_normal[0] = f32::from_bits(value);
+    })?;
+    read_delta_u32_column(&mut reader, count, "snapshot ladder y", |index, value| {
+        snapshots[index].ladder_normal[1] = f32::from_bits(value);
+    })?;
+    read_delta_u32_column(&mut reader, count, "snapshot ladder z", |index, value| {
+        snapshots[index].ladder_normal[2] = f32::from_bits(value);
+    })?;
+    read_delta_u8_column(&mut reader, count, "snapshot ducked", |index, value| {
+        snapshots[index].ducked = value;
+    })?;
+    read_delta_u8_column(&mut reader, count, "snapshot ducking", |index, value| {
+        snapshots[index].ducking = value;
+    })?;
+    read_delta_u8_column(
+        &mut reader,
+        count,
+        "snapshot desires duck",
+        |index, value| snapshots[index].desires_duck = value,
+    )?;
+    read_delta_u8_column(
+        &mut reader,
+        count,
+        "snapshot actual move type",
+        |index, value| snapshots[index].actual_move_type = value,
+    )?;
+    require_no_trailing(&reader, body, "snapshots")?;
+    Ok(snapshots)
+}
+
+fn read_command_frames_from_section_v2(
+    body: &[u8],
+    count: usize,
+) -> Result<Vec<ReplayCommandFrame>> {
+    let mut reader = Cursor::new(body);
+    let mut frames = reserved_vec(count, "command frame section elements")?;
+    frames.resize_with(count, ReplayCommandFrame::default);
+    read_delta_u32_column(
+        &mut reader,
+        count,
+        "command forward move",
+        |index, value| {
+            frames[index].forward_move = f32::from_bits(value);
+        },
+    )?;
+    read_delta_u32_column(&mut reader, count, "command left move", |index, value| {
+        frames[index].left_move = f32::from_bits(value);
+    })?;
+    read_delta_u32_column(&mut reader, count, "command up move", |index, value| {
+        frames[index].up_move = f32::from_bits(value);
+    })?;
+    read_delta_u32_column(&mut reader, count, "command pitch", |index, value| {
+        frames[index].pitch = f32::from_bits(value);
+    })?;
+    read_delta_u32_column(&mut reader, count, "command yaw", |index, value| {
+        frames[index].yaw = f32::from_bits(value);
+    })?;
+    read_delta_u32_column(&mut reader, count, "command roll", |index, value| {
+        frames[index].roll = f32::from_bits(value);
+    })?;
+    read_delta_u64_column(&mut reader, count, "command buttons", |index, value| {
+        frames[index].buttons = value;
+    })?;
+    read_delta_u64_column(&mut reader, count, "command buttons1", |index, value| {
+        frames[index].buttons1 = value;
+    })?;
+    read_delta_u64_column(&mut reader, count, "command buttons2", |index, value| {
+        frames[index].buttons2 = value;
+    })?;
+    read_delta_u32_column(&mut reader, count, "command mouse dx", |index, value| {
+        frames[index].mouse_dx = value as i32;
+    })?;
+    read_delta_u32_column(&mut reader, count, "command mouse dy", |index, value| {
+        frames[index].mouse_dy = value as i32;
+    })?;
+    read_delta_u32_column(
+        &mut reader,
+        count,
+        "command weapon select",
+        |index, value| frames[index].weapon_select = value as i32,
+    )?;
+    read_delta_u32_column(&mut reader, count, "command fields", |index, value| {
+        frames[index].fields = value;
+    })?;
+    read_delta_u8_column(
+        &mut reader,
+        count,
+        "command left hand desired",
+        |index, value| frames[index].left_hand_desired = value,
+    )?;
+    require_no_trailing(&reader, body, "command frames")?;
+    Ok(frames)
+}
+
+fn read_delta_u32_column<R, F>(reader: &mut R, count: usize, name: &str, mut set: F) -> Result<()>
+where
+    R: Read,
+    F: FnMut(usize, u32),
+{
+    if count == 0 {
+        return Ok(());
+    }
+    let mut previous = read_u32(reader)?;
+    set(0, previous);
+    for index in 1..count {
+        let delta = unzigzag_u32(read_uleb128_u32(reader, name)?) as u32;
+        let current = previous.wrapping_add(delta);
+        set(index, current);
+        previous = current;
+    }
+    Ok(())
+}
+
+fn read_delta_u64_column<R, F>(reader: &mut R, count: usize, name: &str, mut set: F) -> Result<()>
+where
+    R: Read,
+    F: FnMut(usize, u64),
+{
+    if count == 0 {
+        return Ok(());
+    }
+    let mut previous = read_u64(reader)?;
+    set(0, previous);
+    for index in 1..count {
+        let delta = unzigzag_u64(read_uleb128_u64(reader, name)?) as u64;
+        let current = previous.wrapping_add(delta);
+        set(index, current);
+        previous = current;
+    }
+    Ok(())
+}
+
+fn read_delta_u8_column<R, F>(reader: &mut R, count: usize, name: &str, mut set: F) -> Result<()>
+where
+    R: Read,
+    F: FnMut(usize, u8),
+{
+    if count == 0 {
+        return Ok(());
+    }
+    let mut previous = read_u8(reader)?;
+    set(0, previous);
+    for index in 1..count {
+        let encoded = read_uleb128_u32(reader, name)?;
+        if encoded > u8::MAX as u32 {
+            return Err(Error::InvalidRec(format!(
+                "{name} delta {encoded} exceeds u8"
+            )));
+        }
+        let delta = unzigzag_u8(encoded as u8) as u8;
+        let current = previous.wrapping_add(delta);
+        set(index, current);
+        previous = current;
+    }
+    Ok(())
+}
+
+fn unzigzag_u8(value: u8) -> i8 {
+    ((value >> 1) as i8) ^ -((value & 1) as i8)
+}
+
+fn unzigzag_u32(value: u32) -> i32 {
+    ((value >> 1) as i32) ^ -((value & 1) as i32)
+}
+
+fn unzigzag_u64(value: u64) -> i64 {
+    ((value >> 1) as i64) ^ -((value & 1) as i64)
+}
+
+fn read_uleb128_u32<R: Read>(reader: &mut R, name: &str) -> Result<u32> {
+    let mut value = 0_u32;
+    for index in 0..5 {
+        let byte = read_u8(reader)?;
+        if index == 4 && byte & 0xf0 != 0 {
+            return Err(Error::InvalidRec(format!("{name} varint overflows u32")));
+        }
+        value |= u32::from(byte & 0x7f) << (index * 7);
+        if byte & 0x80 == 0 {
+            if index > 0 && byte == 0 {
+                return Err(Error::InvalidRec(format!("{name} varint is not canonical")));
+            }
+            return Ok(value);
+        }
+    }
+    Err(Error::InvalidRec(format!("{name} varint is too long")))
+}
+
+fn read_uleb128_u64<R: Read>(reader: &mut R, name: &str) -> Result<u64> {
+    let mut value = 0_u64;
+    for index in 0..10 {
+        let byte = read_u8(reader)?;
+        if index == 9 && byte & 0xfe != 0 {
+            return Err(Error::InvalidRec(format!("{name} varint overflows u64")));
+        }
+        value |= u64::from(byte & 0x7f) << (index * 7);
+        if byte & 0x80 == 0 {
+            if index > 0 && byte == 0 {
+                return Err(Error::InvalidRec(format!("{name} varint is not canonical")));
+            }
+            return Ok(value);
+        }
+    }
+    Err(Error::InvalidRec(format!("{name} varint is too long")))
 }
 
 fn read_movement_extras_from_section(
@@ -1062,7 +1692,7 @@ fn read_movement_extras_from_section(
 fn require_no_trailing(reader: &Cursor<&[u8]>, body: &[u8], name: &str) -> Result<()> {
     if reader.position() != body.len() as u64 {
         return Err(Error::InvalidRec(format!(
-            "trailing bytes in v7 {name} section"
+            "trailing bytes in {name} section"
         )));
     }
     Ok(())
@@ -1285,6 +1915,7 @@ fn zeroed_vec(len: usize, name: &str) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
+#[cfg(test)]
 fn write_snapshot<W: Write>(writer: &mut W, snapshot: &MovementSnapshot) -> Result<()> {
     for value in snapshot.origin {
         write_f32(writer, value)?;
@@ -1389,6 +2020,7 @@ fn read_subtick<R: Read>(reader: &mut R) -> Result<SubtickMove> {
     })
 }
 
+#[cfg(test)]
 fn write_command_frame<W: Write>(writer: &mut W, frame: &ReplayCommandFrame) -> Result<()> {
     write_f32(writer, frame.forward_move)?;
     write_f32(writer, frame.left_move)?;
@@ -1762,6 +2394,65 @@ mod tests {
     }
 
     #[test]
+    fn rec_reader_keeps_v7_section_layout_readable() {
+        let rec = sample_rec();
+        let bytes = encoded_v7_rec(&rec);
+
+        let parsed = read_rec(&mut &bytes[..]).unwrap();
+
+        assert_eq!(parsed.header.version, 7);
+        assert_eq!(parsed.projectiles, rec.projectiles);
+        assert_eq!(parsed.high_fidelity, rec.high_fidelity);
+        assert_eq!(parsed.command_frames, rec.command_frames);
+        for (parsed_tick, tick) in parsed.ticks.iter().zip(&rec.ticks) {
+            assert!(snapshot_bit_eq(&parsed_tick.pre, &tick.pre));
+            assert!(snapshot_bit_eq(&parsed_tick.post, &tick.post));
+        }
+    }
+
+    #[test]
+    fn delta_columns_roundtrip_wrapping_bit_patterns() {
+        let values32 = [0, u32::MAX, 0x8000_0000, 1, 1, 0x7fff_ffff];
+        let values64 = [0, u64::MAX, 0x8000_0000_0000_0000, 1, 1];
+        let values8 = [0, u8::MAX, 0x80, 1, 1];
+        let mut body = Vec::new();
+        write_delta_u32_column(&mut body, values32).unwrap();
+        write_delta_u64_column(&mut body, values64).unwrap();
+        write_delta_u8_column(&mut body, values8).unwrap();
+        let mut reader = Cursor::new(body.as_slice());
+        let mut decoded32 = [0; 6];
+        let mut decoded64 = [0; 5];
+        let mut decoded8 = [0; 5];
+        read_delta_u32_column(&mut reader, decoded32.len(), "u32", |index, value| {
+            decoded32[index] = value;
+        })
+        .unwrap();
+        read_delta_u64_column(&mut reader, decoded64.len(), "u64", |index, value| {
+            decoded64[index] = value;
+        })
+        .unwrap();
+        read_delta_u8_column(&mut reader, decoded8.len(), "u8", |index, value| {
+            decoded8[index] = value;
+        })
+        .unwrap();
+
+        assert_eq!(decoded32, values32);
+        assert_eq!(decoded64, values64);
+        assert_eq!(decoded8, values8);
+        assert_eq!(reader.position(), body.len() as u64);
+    }
+
+    #[test]
+    fn delta_column_reader_rejects_overflowing_varint() {
+        let bytes = [0x80, 0x80, 0x80, 0x80, 0x10];
+        let error = read_uleb128_u32(&mut &bytes[..], "snapshot origin x").unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("snapshot origin x varint overflows u32"));
+    }
+
+    #[test]
     fn rec_v7_reader_skips_unknown_sections() {
         let mut bytes = encoded_sample_rec();
         let section_count_offset = v7_section_count_offset(&bytes);
@@ -1803,7 +2494,7 @@ mod tests {
 
         assert!(err
             .to_string()
-            .contains("missing required v7 section snapshots"));
+            .contains("missing required section snapshots"));
     }
 
     #[test]
@@ -1814,14 +2505,12 @@ mod tests {
             &mut bytes,
             SECTION_COMMAND_FRAMES,
             rec.command_frames.len(),
-            &build_command_frame_section(&rec).unwrap(),
+            &build_command_frame_section_v1(&rec).unwrap(),
         );
 
         let err = read_rec(&mut &bytes[..]).unwrap_err();
 
-        assert!(err
-            .to_string()
-            .contains("duplicate v7 section command frames"));
+        assert!(err.to_string().contains("duplicate section command frames"));
     }
 
     #[test]
@@ -1841,7 +2530,7 @@ mod tests {
 
         assert!(err
             .to_string()
-            .contains("duplicate v7 section movement extras"));
+            .contains("duplicate section movement extras"));
     }
 
     #[test]
@@ -2149,7 +2838,7 @@ mod tests {
     }
 
     #[test]
-    fn v7_known_section_shape_is_rejected_before_payload_read() {
+    fn v8_variable_section_length_is_enforced_during_decode() {
         let mut bytes = encoded_sample_rec();
         let first_section = v7_section_count_offset(&bytes) + 4;
         let uncompressed_len_offset = first_section + 20;
@@ -2160,7 +2849,7 @@ mod tests {
 
         assert!(err
             .to_string()
-            .contains("snapshots byte length 1 != expected"));
+            .contains("decompressed body exceeds expected length 1"));
     }
 
     #[test]
@@ -2388,6 +3077,83 @@ mod tests {
         bytes
     }
 
+    fn encoded_v7_rec(rec: &Cs2Rec) -> Vec<u8> {
+        let metadata_json = metadata_json_bytes(&rec.high_fidelity).unwrap();
+        let mut sections = vec![
+            (
+                SECTION_SNAPSHOTS,
+                if rec.ticks.is_empty() {
+                    0
+                } else {
+                    rec.ticks.len() + 1
+                },
+                build_snapshot_section_v1(rec).unwrap(),
+            ),
+            (
+                SECTION_TICK_METADATA,
+                rec.ticks.len(),
+                build_tick_metadata_section(rec).unwrap(),
+            ),
+            (
+                SECTION_SUBTICKS,
+                rec.subticks.len(),
+                build_subtick_section(rec).unwrap(),
+            ),
+        ];
+        if !rec.projectiles.is_empty() {
+            sections.push((
+                SECTION_PROJECTILES,
+                rec.projectiles.len(),
+                build_projectile_section(rec).unwrap(),
+            ));
+        }
+        if !metadata_json.is_empty() {
+            sections.push((SECTION_HIGH_FIDELITY_JSON, 1, metadata_json.clone()));
+        }
+        if !rec.command_frames.is_empty() {
+            sections.push((
+                SECTION_COMMAND_FRAMES,
+                rec.command_frames.len(),
+                build_command_frame_section_v1(rec).unwrap(),
+            ));
+        }
+        if !rec.movement_extras.is_empty() {
+            sections.push((
+                SECTION_MOVEMENT_EXTRAS,
+                rec.movement_extras.len(),
+                build_movement_extra_section(rec).unwrap(),
+            ));
+        }
+
+        let mut bytes = Vec::new();
+        bytes.write_all(MAGIC).unwrap();
+        write_u32(&mut bytes, 7).unwrap();
+        write_f32(&mut bytes, rec.header.tick_rate).unwrap();
+        write_u32(&mut bytes, rec.header.round).unwrap();
+        write_u8(&mut bytes, rec.header.side).unwrap();
+        write_u32(&mut bytes, rec.header.flags).unwrap();
+        write_u64(&mut bytes, rec.header.steam_id).unwrap();
+        write_u32(&mut bytes, rec.ticks.len() as u32).unwrap();
+        write_u32(&mut bytes, rec.subticks.len() as u32).unwrap();
+        write_u32(&mut bytes, rec.projectiles.len() as u32).unwrap();
+        write_u32(&mut bytes, rec.header.play_start_tick_index).unwrap();
+        write_u32(&mut bytes, metadata_json.len() as u32).unwrap();
+        write_string(&mut bytes, &rec.header.map).unwrap();
+        write_string(&mut bytes, &rec.header.player_name).unwrap();
+        write_u32(&mut bytes, sections.len() as u32).unwrap();
+        for (section_id, element_count, payload) in sections {
+            write_section(
+                &mut bytes,
+                section_id,
+                SECTION_VERSION_V1,
+                element_count,
+                &payload,
+            )
+            .unwrap();
+        }
+        bytes
+    }
+
     fn encoded_legacy_sample_rec() -> Vec<u8> {
         let rec = sample_rec();
         let metadata_json = metadata_json_bytes(&rec.high_fidelity).unwrap();
@@ -2513,7 +3279,14 @@ mod tests {
         );
         bytes[section_count_offset..section_count_offset + 4]
             .copy_from_slice(&(section_count + 1).to_le_bytes());
-        write_section(bytes, section_id, element_count, payload).unwrap();
+        write_section(
+            bytes,
+            section_id,
+            SECTION_VERSION_V1,
+            element_count,
+            payload,
+        )
+        .unwrap();
     }
 
     fn insert_unknown_v7_section(bytes: &mut Vec<u8>, uncompressed_len: u64, payload: &[u8]) {

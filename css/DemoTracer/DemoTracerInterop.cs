@@ -576,12 +576,12 @@ internal static partial class BotControllerNative
             {
                 if (!IsCompatible)
                 {
-                    LastLoadError = $"v7 replay requires BotController ABI {ExpectedAbiVersion}; {RuntimeSummary}";
+                    LastLoadError = $"v7+ replay requires BotController ABI {ExpectedAbiVersion}; {RuntimeSummary}";
                     return false;
                 }
                 if ((Capabilities & CapabilityExtendedReplay) == 0)
                 {
-                    LastLoadError = $"v7 replay requires extended replay capability; {RuntimeSummary}";
+                    LastLoadError = $"v7+ replay requires extended replay capability; {RuntimeSummary}";
                     return false;
                 }
 

@@ -13,7 +13,7 @@ or legacy CS:GO paths.
 - The public CLI is `cs2-demotracer`; the public server command prefix is
   `dtr_`.
 - The replay extension is `.dtr`. The binary magic is `CSDTRREC`; current
-  writer format is `.dtr` v7. Current manifest ABI is 17,
+  writer format is `.dtr` v8. Current manifest ABI is 17,
   BotController native ABI is 16, and DemoTracer companion API is 6. Do not
   change magic, ABI, API, or format layout without an explicit version decision
   and matching docs.
@@ -66,12 +66,14 @@ or legacy CS:GO paths.
   `output/<demo-id>/roundNN/t|ct/`, where `<demo-id>` is content-hashed.
 - Preserve replay state losslessly. Do not add interpolation, quantization, or
   precision-reducing compression unless the format is explicitly versioned.
-- `.dtr` v7 is the current writer format. Projectile metadata was
+- `.dtr` v8 is the current writer format. Projectile metadata was
   introduced in v4, v5 added `play_start_tick_index`/bounded freeze-time replay
   context, v6 added the high-fidelity metadata JSON blob, and v7 adds the
-  section container plus optional command-frame/movement-extra sections. Older
-  v3-v6 files remain readable; v3 files do not contain projectile events and
-  v3-v5 files do not contain high-fidelity metadata JSON.
+  section container plus optional command-frame/movement-extra sections. V8
+  stores snapshots and command frames as bit-exact columnar delta-varint
+  sections before Brotli compression. Older v3-v7 files remain readable; v3
+  files do not contain projectile events and v3-v5 files do not contain
+  high-fidelity metadata JSON.
 - Cosmetic/econ metadata is default-off and must stay explicit opt-in.
   `--export-cosmetics` requires the GSLT acknowledgement and export disclaimer
   flags; sticker export additionally requires `--export-stickers`. Do not add
