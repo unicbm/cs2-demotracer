@@ -3,10 +3,10 @@
   "product": "CS2 DemoTracer Playback Bundle",
   "platform": "windows-x64",
   "manifest_abi": 17,
-  "dtr_writer": 7,
+  "dtr_writer": 8,
   "dtr_reader": {
     "min": 3,
-    "max": 7
+    "max": 8
   },
   "bot_controller": {
     "abi_major": 16,

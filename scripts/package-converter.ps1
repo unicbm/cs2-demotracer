@@ -14,6 +14,7 @@ $converterRoot = Join-Path $repoRoot "converter"
 $converterReleaseRoot = Join-Path $converterRoot "target\release"
 $desktopRoot = Join-Path $repoRoot "desktop"
 $desktopReleaseRoot = Join-Path $desktopRoot "src-tauri\target\x86_64-pc-windows-msvc\release"
+$playbackContractPath = Join-Path $repoRoot "compatibility\playback-contract.v1.json"
 
 function Require-Path([string]$Path, [string]$Label) {
     if (-not (Test-Path -LiteralPath $Path)) {
@@ -44,6 +45,9 @@ function Copy-ConverterDocs([string]$StageRoot) {
     Copy-RequiredFile (Join-Path $repoRoot "docs\VOICE.zh-Hans.md") (Join-Path $StageRoot "docs\VOICE.zh-Hans.md")
     Copy-RequiredFile (Join-Path $repoRoot "LICENSE") (Join-Path $StageRoot "LICENSE")
 }
+
+Require-Path $playbackContractPath "playback compatibility contract"
+$playbackContract = Get-Content -LiteralPath $playbackContractPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
 function New-ConverterPackage([ValidateSet("cli", "gui")][string]$Kind) {
     $packageName = "cs2-demotracer-$Kind-v$Version-windows-x64"
@@ -76,8 +80,8 @@ git_commit: $gitCommit
 platform: windows-x64
 package: $Kind
 entrypoint: $executableName
-dtr_writer: 7
-manifest_abi: 17
+dtr_writer: $($playbackContract.dtr_writer)
+manifest_abi: $($playbackContract.manifest_abi)
 "@
     Set-Content -LiteralPath (Join-Path $stageRoot "VERSION.txt") -Value $versionText -Encoding UTF8
 

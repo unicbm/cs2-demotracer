@@ -342,7 +342,7 @@ platform: windows-x64
 bundled_botcontroller_abi: 16
 bundled_botcontroller_abi_minor: 31
 expected_demotracer_native_abi: 16
-dtr_reader: 3..7
+dtr_reader: $($playbackContract.dtr_reader.min)..$($playbackContract.dtr_reader.max)
 demotracer_api: 6
 demotracer_bothider_api: 1
 counterstrikesharp_target: net10.0
@@ -449,7 +449,7 @@ through CS2's native `say` / `say_team` path when `dtr_chat_auto on` is enabled
 - Required BotController native ABI: 16
 - Bundled BotController native ABI: 16
 - Bundled BotController native ABI minor: 31
-- Supported `.dtr` reader versions: 3..7
+- Supported `.dtr` reader versions: __DTR_READER_MIN__..__DTR_READER_MAX__
 - DemoTracer companion API: 6
 - DemoTracer BotHider API: 1
 - CounterStrikeSharp plugin target: .NET 10
@@ -491,6 +491,8 @@ Optional:
   to the demo agent model when `dtr_cosmetics agents` is enabled.
 '@
 $readme = $readme.Replace("__VERSION__", $Version)
+$readme = $readme.Replace("__DTR_READER_MIN__", [string]$playbackContract.dtr_reader.min)
+$readme = $readme.Replace("__DTR_READER_MAX__", [string]$playbackContract.dtr_reader.max)
 Set-Content -LiteralPath (Join-Path $stageRoot "README.md") -Value $readme -Encoding UTF8
 
 if (-not $IncludeSymbols) {
