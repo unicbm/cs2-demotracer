@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "node --test src/librarySession.test.ts",
     "check": "tsc --noEmit --pretty false && tsc --noEmit --pretty false -p tsconfig.node.json",
     "build": "tsc --noEmit --pretty false && tsc --noEmit --pretty false -p tsconfig.node.json && vite build",
     "tauri": "tauri",

@@ -1915,8 +1915,9 @@ public sealed partial class DemoTracerPlugin
         CCSPlayerPawn pawn,
         ReplayAgentCosmetic cosmetic)
     {
+        var slot = player.Slot;
         if (!_cosmeticAgentsEnabled ||
-            !IsReplaySlotStillSafe(player.Slot) ||
+            !IsReplaySlotStillSafe(slot) ||
             NormalizeAgentModelPath(cosmetic.ModelPath) is not { } modelPath)
         {
             return false;
@@ -1925,8 +1926,8 @@ public sealed partial class DemoTracerPlugin
         try
         {
             ApplyAgentModel(pawn, modelPath);
-            ScheduleCosmeticNextFrame(() => ApplyAgentModelForSlot(player.Slot, modelPath));
-            AddTimer(0.20f, () => ApplyAgentModelForSlot(player.Slot, modelPath), TimerFlags.STOP_ON_MAPCHANGE);
+            ScheduleCosmeticNextFrame(() => ApplyAgentModelForSlot(slot, modelPath));
+            AddTimer(0.20f, () => ApplyAgentModelForSlot(slot, modelPath), TimerFlags.STOP_ON_MAPCHANGE);
             return true;
         }
         catch (Exception ex)
@@ -2160,11 +2161,12 @@ public sealed partial class DemoTracerPlugin
 
     private bool TryClearKnifeCosmetic(CCSPlayerController player, CBasePlayerWeapon knife)
     {
+        var slot = player.Slot;
         try
         {
             ClearKnifeEconItem(player, knife);
-            AddTimer(0.10f, () => ClearKnifeCosmeticForSlot(player.Slot), TimerFlags.STOP_ON_MAPCHANGE);
-            AddTimer(0.25f, () => ClearKnifeCosmeticForSlot(player.Slot), TimerFlags.STOP_ON_MAPCHANGE);
+            AddTimer(0.10f, () => ClearKnifeCosmeticForSlot(slot), TimerFlags.STOP_ON_MAPCHANGE);
+            AddTimer(0.25f, () => ClearKnifeCosmeticForSlot(slot), TimerFlags.STOP_ON_MAPCHANGE);
             return true;
         }
         catch (Exception ex)

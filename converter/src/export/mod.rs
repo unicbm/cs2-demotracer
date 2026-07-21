@@ -2,9 +2,9 @@ use crate::analysis::quality::{analyze_demo, AnalysisOptions};
 use crate::demo_id::output_demo_id;
 use crate::inspect_link::{item_inspect, weapon_inspect};
 use crate::model::{
-    public_demo_path, ConversionManifest, ConvertedFile, ConvertedRound, EconomyClass,
-    HighFidelityMetadata, ManifestAvatarOverride, ParsedAvatarOverride, ParsedDemo, ParsedEconItem,
-    ParsedGameEvent, ParsedInventoryWeaponAttribute, ParsedInventoryWeaponCosmetic,
+    public_demo_path, ConversionManifest, ConvertedFile, ConvertedRound, DemoAnalysis,
+    EconomyClass, HighFidelityMetadata, ManifestAvatarOverride, ParsedAvatarOverride, ParsedDemo,
+    ParsedEconItem, ParsedGameEvent, ParsedInventoryWeaponAttribute, ParsedInventoryWeaponCosmetic,
     ParsedPlayerTick, ParsedProjectile, ParsedWeaponSticker, ReplayAgentCosmetic,
     ReplayChatMessage, ReplayCosmetics, ReplayHifiEvent, ReplayHifiEventKind,
     ReplayInventoryItemCount, ReplayInventorySnapshot, ReplayItemCosmetic, ReplayPlayerScoreboard,
@@ -29,6 +29,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 pub const DEFAULT_FREEZE_PREROLL_SECONDS: f32 = 10.0;
+const STEAM_ID64_BASE: u64 = 76_561_197_960_265_728;
 const KEYCHAIN_SLOT_0_ID_ATTR: u32 = 299;
 const KEYCHAIN_SLOT_0_OFFSET_X_ATTR: u32 = 300;
 const KEYCHAIN_SLOT_0_OFFSET_Y_ATTR: u32 = 301;
@@ -187,7 +188,7 @@ pub fn export_demo_to_memory(
     parsed: &ParsedDemo,
     options: &ConvertMemoryOptions,
 ) -> Result<MemoryConversionReport> {
-    export_demo_to_memory_inner(parsed, options, None)
+    export_demo_to_memory_inner(parsed, options, None, None)
 }
 
 pub fn export_demo_to_memory_with_progress<F>(
@@ -198,17 +199,24 @@ pub fn export_demo_to_memory_with_progress<F>(
 where
     F: FnMut(ConversionProgress),
 {
-    export_demo_to_memory_inner(parsed, options, Some(&mut progress))
+    export_demo_to_memory_inner(parsed, options, None, Some(&mut progress))
 }
 
 fn export_demo_to_memory_inner(
     parsed: &ParsedDemo,
     options: &ConvertMemoryOptions,
+    preanalyzed: Option<&DemoAnalysis>,
     mut progress: Option<&mut dyn FnMut(ConversionProgress)>,
 ) -> Result<MemoryConversionReport> {
     validate_freeze_preroll_seconds(options.freeze_preroll_seconds)?;
-    emit_conversion_progress(&mut progress, ConversionProgress::AnalysisStarted);
-    let analysis = analyze_demo(parsed, options.analysis);
+    let owned_analysis;
+    let analysis = if let Some(analysis) = preanalyzed {
+        analysis
+    } else {
+        emit_conversion_progress(&mut progress, ConversionProgress::AnalysisStarted);
+        owned_analysis = analyze_demo(parsed, options.analysis);
+        &owned_analysis
+    };
     let output_stem = output_demo_id(
         &parsed.stem,
         &parsed.demo_sha256,
@@ -637,12 +645,24 @@ where
     F: FnMut(ConversionProgress),
 {
     let mut progress_ref = Some(&mut progress as &mut dyn FnMut(ConversionProgress));
-    let memory =
-        export_demo_to_memory_inner(parsed, &ConvertMemoryOptions::from(options), progress_ref)?;
+    let memory = export_demo_to_memory_inner(
+        parsed,
+        &ConvertMemoryOptions::from(options),
+        None,
+        progress_ref,
+    )?;
     fs::create_dir_all(root).map_err(|e| io_error(root, e))?;
     progress_ref = Some(&mut progress as &mut dyn FnMut(ConversionProgress));
+    write_memory_conversion(memory, root, &mut progress_ref)
+}
+
+fn write_memory_conversion(
+    memory: MemoryConversionReport,
+    root: &Path,
+    progress: &mut Option<&mut dyn FnMut(ConversionProgress)>,
+) -> Result<ConversionReport> {
     emit_conversion_progress(
-        &mut progress_ref,
+        progress,
         ConversionProgress::ArtifactsWritingStarted {
             root: root.display().to_string(),
             artifacts: memory.artifacts.len(),
@@ -656,7 +676,7 @@ where
         }
         fs::write(&path, &artifact.bytes).map_err(|e| io_error(&path, e))?;
         emit_conversion_progress(
-            &mut progress_ref,
+            progress,
             ConversionProgress::ArtifactWritten {
                 path: artifact.path.clone(),
                 kind: artifact.kind.clone(),
@@ -671,7 +691,7 @@ where
         manifest: memory.manifest,
     };
     emit_conversion_progress(
-        &mut progress_ref,
+        progress,
         ConversionProgress::Finished {
             root: report.root.display().to_string(),
             manifest_path: report.manifest_path.display().to_string(),
@@ -679,6 +699,32 @@ where
         },
     );
     Ok(report)
+}
+
+/// Exports a demo using an analysis snapshot that was already validated by the
+/// caller. The snapshot must have been produced from `parsed` with
+/// `options.analysis`; desktop workflows use this to keep round validation and
+/// export on one immutable analysis result.
+pub fn export_demo_to_root_with_analysis_and_progress<F>(
+    parsed: &ParsedDemo,
+    analysis: &DemoAnalysis,
+    options: &ConvertOptions,
+    root: &Path,
+    mut progress: F,
+) -> Result<ConversionReport>
+where
+    F: FnMut(ConversionProgress),
+{
+    let mut progress_ref = Some(&mut progress as &mut dyn FnMut(ConversionProgress));
+    let memory = export_demo_to_memory_inner(
+        parsed,
+        &ConvertMemoryOptions::from(options),
+        Some(analysis),
+        progress_ref,
+    )?;
+    fs::create_dir_all(root).map_err(|e| io_error(root, e))?;
+    progress_ref = Some(&mut progress as &mut dyn FnMut(ConversionProgress));
+    write_memory_conversion(memory, root, &mut progress_ref)
 }
 
 fn emit_conversion_progress(
@@ -2036,15 +2082,17 @@ fn replay_active_cosmetics(
 
         let raw_def = row.item_def_idx;
         if is_exact_knife_cosmetic_def_index(raw_def) {
-            if let Some(spec) = cosmetic_paint_spec(
-                row.active_weapon_paint_kit,
-                row.active_weapon_paint_seed,
-                row.active_weapon_paint_wear,
-            ) {
-                knife_specs.insert((raw_def, spec));
-            }
-            if let Some(name) = active_cosmetic_custom_name(row) {
-                knife_custom_names.insert((raw_def, name));
+            if active_cosmetic_owned_by(row) {
+                if let Some(spec) = cosmetic_paint_spec(
+                    row.active_weapon_paint_kit,
+                    row.active_weapon_paint_seed,
+                    row.active_weapon_paint_wear,
+                ) {
+                    knife_specs.insert((raw_def, spec));
+                }
+                if let Some(name) = active_cosmetic_custom_name(row) {
+                    knife_custom_names.insert((raw_def, name));
+                }
             }
         } else {
             let def = normalize_weapon_def_index(raw_def);
@@ -2247,7 +2295,7 @@ fn inventory_weapon_cosmetics_for_row(
     let weapon_stickers_missing = BTreeSet::new();
     let weapon_charms_missing = BTreeSet::new();
 
-    for item in &row.inventory_weapon_cosmetics {
+    for item in row.inventory_weapon_cosmetics.iter() {
         let def = normalize_weapon_def_index(item.item_def_index);
         if !is_weapon_cosmetic_def_index(def) {
             continue;
@@ -2427,6 +2475,17 @@ fn has_trusted_active_weapon_cosmetic_identity(row: &ParsedPlayerTick) -> bool {
         || row
             .active_weapon_item_account_id
             .is_some_and(|value| value > 1)
+}
+
+fn active_cosmetic_owned_by(row: &ParsedPlayerTick) -> bool {
+    let account_id = row
+        .steam_id
+        .checked_sub(STEAM_ID64_BASE)
+        .and_then(|value| u32::try_from(value).ok());
+    row.active_weapon_item_account_id
+        .zip(account_id)
+        .is_some_and(|(actual, expected)| actual == expected)
+        || row.active_weapon_original_owner_steam_id == Some(row.steam_id)
 }
 
 fn active_cosmetic_custom_name(row: &ParsedPlayerTick) -> Option<String> {
@@ -3290,6 +3349,7 @@ mod tests {
             ParsedPlayerTick {
                 item_def_idx: 508,
                 inventory_as_ids: vec![7, 61],
+                active_weapon_original_owner_steam_id: Some(76561198000000001),
                 active_weapon_paint_kit: Some(38),
                 active_weapon_paint_seed: Some(321),
                 active_weapon_paint_wear: Some(0.01),
@@ -3506,7 +3566,7 @@ mod tests {
             ParsedPlayerTick {
                 item_def_idx: 16,
                 inventory_as_ids: vec![16, 61],
-                inventory_weapon_cosmetics: vec![weapon],
+                inventory_weapon_cosmetics: vec![weapon].into(),
                 active_weapon_paint_kit: Some(309),
                 active_weapon_paint_seed: Some(7),
                 active_weapon_paint_wear: Some(0.4),
@@ -4162,7 +4222,8 @@ mod tests {
                         sticker(0, 225, 0.0, 0.0, 0.0),
                         sticker(3, 7891, 0.0, -0.1, 0.2),
                     ],
-                )],
+                )]
+                .into(),
                 active_weapon_paint_kit: Some(309),
                 active_weapon_paint_seed: Some(7),
                 active_weapon_paint_wear: Some(0.4),
@@ -4220,7 +4281,8 @@ mod tests {
             ParsedPlayerTick {
                 item_def_idx: 61,
                 inventory_as_ids: vec![16, 61],
-                inventory_weapon_cosmetics: vec![stattrak_without_counter, stattrak_with_counter],
+                inventory_weapon_cosmetics: vec![stattrak_without_counter, stattrak_with_counter]
+                    .into(),
                 ..sample_row(164)
             },
         ];
@@ -4257,7 +4319,8 @@ mod tests {
                 0.000_518_145_2,
                 Some("Dove1e"),
                 vec![sticker(0, 225, 0.0, 0.0, 0.0)],
-            )],
+            )]
+            .into(),
             ..sample_row(100)
         };
         let later = ParsedPlayerTick {
@@ -4268,7 +4331,8 @@ mod tests {
                 0.032_685_65,
                 None,
                 vec![sticker(0, 60, 0.0, 0.0, 0.0)],
-            )],
+            )]
+            .into(),
             ..sample_row(164)
         };
         let rows = vec![&early, &later];
@@ -4296,7 +4360,8 @@ mod tests {
                 0.067_470_92,
                 None,
                 Vec::new(),
-            )],
+            )]
+            .into(),
             ..sample_row(100)
         };
         let live_start = ParsedPlayerTick {
@@ -4309,7 +4374,8 @@ mod tests {
                 0.099,
                 None,
                 Vec::new(),
-            )],
+            )]
+            .into(),
             ..sample_row(164)
         };
         let rows = vec![&freeze_purchase, &live_start];
@@ -4335,7 +4401,8 @@ mod tests {
                 0.0,
                 None,
                 Vec::new(),
-            )],
+            )]
+            .into(),
             active_weapon_paint_kit: Some(339),
             active_weapon_paint_seed: Some(24),
             active_weapon_paint_wear: Some(0.055_136_383),
@@ -4363,7 +4430,7 @@ mod tests {
             steam_id: 76561198422853814,
             item_def_idx: 61,
             inventory_as_ids: vec![61],
-            inventory_weapon_cosmetics: vec![weak_inventory_false_positive],
+            inventory_weapon_cosmetics: vec![weak_inventory_false_positive].into(),
             ..sample_row(164)
         };
         let rows = vec![&row];
@@ -5193,7 +5260,8 @@ mod tests {
                 None,
                 Vec::new(),
                 attributes,
-            )],
+            )]
+            .into(),
             ..sample_row(tick)
         }
     }
@@ -5292,6 +5360,7 @@ mod tests {
     fn active_weapon_identity(mut row: ParsedPlayerTick) -> ParsedPlayerTick {
         row.active_weapon_item_account_id = Some(29164525);
         row.active_weapon_item_id = Some((8_u64 << 32) | 9);
+        row.active_weapon_original_owner_steam_id = Some(row.steam_id);
         row
     }
 
@@ -5398,7 +5467,7 @@ mod tests {
             usercmd_left_hand_desired: None,
             item_def_idx: 7,
             inventory_as_ids: vec![7],
-            inventory_weapon_cosmetics: Vec::new(),
+            inventory_weapon_cosmetics: Vec::new().into(),
             music_kit_id: None,
             scoreboard_flair: None,
             agent_item_def_index: None,

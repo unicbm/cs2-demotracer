@@ -202,11 +202,12 @@ namespace BotController
         {
             if (services && tg::kServices_Buttons > 0)
             {
-                auto *sv = reinterpret_cast<char *>(services);
-                uint64_t buttons =
-                    *reinterpret_cast<uint64_t *>(sv + tg::kServices_Buttons);
-                buttons = ApplyUsercmdMovementButtons(buttons, intent);
-                *reinterpret_cast<uint64_t *>(sv + tg::kServices_Buttons) = buttons;
+                uint64_t buttons = 0;
+                if (SafeRead(services, tg::kServices_Buttons, buttons))
+                {
+                    buttons = ApplyUsercmdMovementButtons(buttons, intent);
+                    WriteField(services, tg::kServices_Buttons, buttons);
+                }
             }
 
             if (!moveData)
@@ -219,10 +220,9 @@ namespace BotController
             float leftMove = 0.0f;
             float sideMove = 0.0f;
             IntentToMoveAxes(intent, forwardMove, leftMove, sideMove);
-            auto *m = reinterpret_cast<char *>(moveData);
-            *reinterpret_cast<float *>(m + tg::kMove_ForwardMove) = forwardMove;
-            *reinterpret_cast<float *>(m + tg::kMove_SideMove) = sideMove;
-            *reinterpret_cast<float *>(m + tg::kMove_UpMove) = 0.0f;
+            WriteField(moveData, tg::kMove_ForwardMove, forwardMove);
+            WriteField(moveData, tg::kMove_SideMove, sideMove);
+            WriteField(moveData, tg::kMove_UpMove, 0.0f);
         }
 
         static void ApplyUsercmdMovementIntentToCommand(
@@ -349,6 +349,21 @@ namespace BotController
         {
             if (!ValidSlotIndex(slot))
                 return false;
+            g_slotPawns[slot].store(nullptr, std::memory_order_release);
+            if (!pawn)
+                return false;
+
+            void *identity = nullptr;
+            uint32_t handle = 0;
+            if (!SafeRead(pawn, tg::kEnt_Identity, identity) || !identity ||
+                !SafeRead(identity, tg::kEntIdentity_EHandle, handle) ||
+                handle == 0u || handle == 0xFFFFFFFFu || handle == 0xFFFFFFFEu)
+                return false;
+
+            int ownerSlot = ControllerSlotForPawn(pawn);
+            if (ownerSlot >= 0 && ownerSlot != slot)
+                return false;
+
             g_slotPawns[slot].store(pawn, std::memory_order_release);
             return true;
         }
@@ -364,7 +379,7 @@ namespace BotController
             if (!services)
                 return nullptr;
             void *pawn = nullptr;
-            return ReadField(services, tg::kServices_Pawn, pawn) ? pawn : nullptr;
+            return SafeRead(services, tg::kServices_Pawn, pawn) ? pawn : nullptr;
         }
 
         static bool PawnOwnsServices(void *pawn, void *services)
@@ -372,7 +387,7 @@ namespace BotController
             if (!pawn || !services)
                 return false;
             void *liveServices = nullptr;
-            return ReadField(pawn, tg::kPawn_MovementServices, liveServices) &&
+            return SafeRead(pawn, tg::kPawn_MovementServices, liveServices) &&
                    liveServices == services;
         }
 
@@ -385,7 +400,8 @@ namespace BotController
                     return registered;
             }
 
-            return ServicesToPawnField(services);
+            void *fieldPawn = ServicesToPawnField(services);
+            return PawnOwnsServices(fieldPawn, services) ? fieldPawn : nullptr;
         }
 
         static int RegisteredSlotForServices(void *services)
@@ -405,10 +421,10 @@ namespace BotController
         static int ServicesToSlot(void *services)
         {
             void *pawn = ServicesToPawnField(services);
-            if (!pawn)
-                return RegisteredSlotForServices(services);
+            if (!PawnOwnsServices(pawn, services))
+                pawn = nullptr;
 
-            int slot = ControllerSlotForPawn(pawn);
+            int slot = pawn ? ControllerSlotForPawn(pawn) : -1;
             return slot >= 0 ? slot : RegisteredSlotForServices(services);
         }
 
@@ -420,7 +436,7 @@ namespace BotController
             if (!pawn)
                 return nullptr;
             void *ws = nullptr;
-            return ReadField(pawn, tg::kPawn_WeaponServices, ws) ? ws : nullptr;
+            return SafeRead(pawn, tg::kPawn_WeaponServices, ws) ? ws : nullptr;
         }
 
         static float NormalizeDeg(float a)
@@ -445,7 +461,7 @@ namespace BotController
             if (!controller || offset < 0)
                 return false;
             uint8_t value = 0;
-            return ReadField(controller, offset, value) && value != 0;
+            return SafeRead(controller, offset, value) && value != 0;
         }
 
         static bool ReplayActiveAndSafe(int slot)
@@ -724,8 +740,8 @@ namespace BotController
                 return;
             if (!services)
                 return;
-            void **vt = *reinterpret_cast<void ***>(services);
-            if (!vt)
+            void **vt = nullptr;
+            if (!SafeRead(services, 0, vt) || !vt)
                 return;
             bool expected = false;
             if (!g_vtHooksTried.compare_exchange_strong(
@@ -734,7 +750,10 @@ namespace BotController
                     std::memory_order_acquire))
                 return;
 
-            g_addrFinishMove = vt[tg::kVtIdx_FinishMove];
+            if (!SafeRead(vt,
+                          tg::kVtIdx_FinishMove * static_cast<int>(sizeof(void *)),
+                          g_addrFinishMove))
+                g_addrFinishMove = nullptr;
             if (g_addrFinishMove &&
                 g_hookFinishMove.Create(g_addrFinishMove,
                                         reinterpret_cast<void *>(&HookedFinishMove),
@@ -742,7 +761,10 @@ namespace BotController
                 g_hookFinishMove.Enable();
 
             // PlayerRunCommand (subtick record/re-inject)
-            g_addrPlayerRunCommand = vt[tg::kVtIdx_PlayerRunCommand];
+            if (!SafeRead(vt,
+                          tg::kVtIdx_PlayerRunCommand * static_cast<int>(sizeof(void *)),
+                          g_addrPlayerRunCommand))
+                g_addrPlayerRunCommand = nullptr;
             if (g_addrPlayerRunCommand &&
                 g_hookPlayerRunCommand.Create(g_addrPlayerRunCommand,
                                               reinterpret_cast<void *>(&HookedPlayerRunCommand),

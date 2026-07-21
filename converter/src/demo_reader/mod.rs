@@ -397,9 +397,12 @@ mod demoparser_impl {
     use parser::second_pass::collect_data::ProjectileRecord;
     use parser::second_pass::game_events::GameEvent;
     use parser::second_pass::parser_settings::create_huffman_lookup_table;
-    use parser::second_pass::variants::{PropColumn, VarVec, Variant};
+    use parser::second_pass::variants::{
+        InventoryWeaponCosmetic as ParserInventoryWeaponCosmetic, PropColumn, VarVec, Variant,
+    };
     use rayon::prelude::*;
     use std::collections::{BTreeMap, BTreeSet};
+    use std::sync::Arc;
 
     const COSMETIC_PLAYER_PROPS: &[&str] = &[
         "inventory_weapon_cosmetics",
@@ -568,6 +571,14 @@ mod demoparser_impl {
     struct SingleThreadedOverlay {
         columns: AHashMap<&'static str, PropColumn>,
     }
+
+    type ParsedInventoryCache = AHashMap<
+        (usize, usize),
+        (
+            Arc<[ParserInventoryWeaponCosmetic]>,
+            Arc<[ParsedInventoryWeaponCosmetic]>,
+        ),
+    >;
 
     impl SingleThreadedOverlay {
         fn get(&self, friendly_name: &'static str) -> Option<&PropColumn> {
@@ -775,14 +786,6 @@ mod demoparser_impl {
                 .map(|output| (output, None));
         }
 
-        let Some(ducked_real) = wanted_real_prop(&settings, DUCKED_PROP) else {
-            return parse_demo_once(bytes, settings, ParsingMode::Normal)
-                .map(|output| (output, None));
-        };
-        let Some(ducking_real) = wanted_real_prop(&settings, DUCKING_PROP) else {
-            return parse_demo_once(bytes, settings, ParsingMode::Normal)
-                .map(|output| (output, None));
-        };
         let Some(entity_id_real) = wanted_real_prop(&settings, ENTITY_ID_PROP) else {
             return parse_demo_once(bytes, settings, ParsingMode::Normal)
                 .map(|output| (output, None));
@@ -791,7 +794,7 @@ mod demoparser_impl {
             return parse_demo_once(bytes, settings, ParsingMode::Normal)
                 .map(|output| (output, None));
         };
-        let Some(mut supplemental_real_props) = SINGLE_THREADED_OVERLAY_PROPS
+        let Some(overlay_real_props) = SINGLE_THREADED_OVERLAY_PROPS
             .iter()
             .map(|friendly_name| wanted_real_prop(&settings, friendly_name))
             .collect::<Option<Vec<_>>>()
@@ -799,6 +802,7 @@ mod demoparser_impl {
             return parse_demo_once(bytes, settings, ParsingMode::Normal)
                 .map(|output| (output, None));
         };
+        let mut supplemental_real_props = overlay_real_props.clone();
         supplemental_real_props.push(entity_id_real);
         supplemental_real_props.push(round_real);
 
@@ -831,7 +835,7 @@ mod demoparser_impl {
         let mut primary_settings = settings.clone();
         primary_settings
             .wanted_player_props
-            .retain(|prop| prop != &ducked_real && prop != &ducking_real);
+            .retain(|prop| !overlay_real_props.contains(prop));
         if !check_multithreadability(&primary_settings.wanted_player_props) {
             return parse_demo_once(bytes, settings, ParsingMode::Normal)
                 .map(|output| (output, None));
@@ -1122,6 +1126,7 @@ mod demoparser_impl {
         }
         row_order.sort_by_key(|(_, round, tick, steam_id)| (*round, *tick, *steam_id));
 
+        let mut parsed_inventory_cache = ParsedInventoryCache::default();
         let row_materialization = row_order
             .into_iter()
             .map(|(idx, round, tick, steam_id)| {
@@ -1130,8 +1135,12 @@ mod demoparser_impl {
                     round,
                     tick,
                     steam_id,
-                    take_inventory_weapon_cosmetics(&mut inventory_weapon_cosmetics_column, idx)
-                        .unwrap_or_default(),
+                    take_inventory_weapon_cosmetics(
+                        &mut inventory_weapon_cosmetics_column,
+                        idx,
+                        &mut parsed_inventory_cache,
+                    )
+                    .unwrap_or_default(),
                     take_weapon_stickers(&mut weapon_stickers_column, idx).unwrap_or_default(),
                 )
             })
@@ -2258,18 +2267,24 @@ mod demoparser_impl {
     fn take_inventory_weapon_cosmetics(
         column: &mut Option<PropColumn>,
         idx: usize,
-    ) -> Option<Vec<ParsedInventoryWeaponCosmetic>> {
+        cache: &mut ParsedInventoryCache,
+    ) -> Option<Arc<[ParsedInventoryWeaponCosmetic]>> {
         let weapons = match column.as_mut()?.data.as_mut()? {
             VarVec::InventoryWeaponCosmetics(v) => std::mem::take(v.get_mut(idx)?),
             _ => return None,
         };
+        let cache_key = (weapons.as_ptr() as usize, weapons.len());
+        if let Some((cached_source, cached_parsed)) = cache.get(&cache_key) {
+            debug_assert!(Arc::ptr_eq(cached_source, &weapons));
+            return Some(Arc::clone(cached_parsed));
+        }
         let parsed = weapons
-            .into_iter()
+            .iter()
             .filter_map(|weapon| {
                 let item_def_index = i32::try_from(weapon.item_def_index).ok()?;
                 let stickers = weapon
                     .stickers
-                    .into_iter()
+                    .iter()
                     .filter_map(|sticker| {
                         let slot = u8::try_from(sticker.slot).ok()?;
                         if slot > 4
@@ -2307,19 +2322,23 @@ mod demoparser_impl {
                     stattrak_counter: weapon.stattrak_counter,
                     attributes: weapon
                         .attributes
-                        .into_iter()
+                        .iter()
                         .map(|attribute| ParsedInventoryWeaponAttribute {
                             definition_index: attribute.definition_index,
                             raw_value: attribute.raw_value,
                             raw_value_bits: attribute.raw_value_bits,
                         })
                         .collect(),
-                    custom_name: weapon.custom_name.and_then(normalize_custom_name),
+                    custom_name: weapon.custom_name.clone().and_then(normalize_custom_name),
                     stickers,
                 })
             })
-            .collect::<Vec<_>>();
-        (!parsed.is_empty()).then_some(parsed)
+            .collect::<Arc<[_]>>();
+        if parsed.is_empty() {
+            return None;
+        }
+        cache.insert(cache_key, (weapons, Arc::clone(&parsed)));
+        Some(parsed)
     }
 
     fn get_scoreboard_flair(

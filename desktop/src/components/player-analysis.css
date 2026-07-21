@@ -172,7 +172,14 @@
   white-space: nowrap;
 }
 
-.player-analysis-team-list > button span {
+.player-analysis-index-identity {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.player-analysis-team-list > button > span:last-child {
   color: var(--text-secondary);
   font-family: var(--mono);
   font-size: 14px;
@@ -180,7 +187,7 @@
   white-space: nowrap;
 }
 
-.player-analysis-team-list > button.is-selected span {
+.player-analysis-team-list > button.is-selected > span:last-child {
   color: var(--text-secondary);
 }
 
@@ -195,12 +202,19 @@
 }
 
 .player-analysis-heading {
+  display: flex;
+  align-items: center;
   max-width: 850px;
   padding-bottom: 18px;
+  gap: 16px;
   border-bottom: 1px solid var(--divider-strong);
 }
 
-.player-analysis-heading > span {
+.player-analysis-heading > div {
+  min-width: 0;
+}
+
+.player-analysis-heading > div > span {
   display: block;
   overflow: hidden;
   color: var(--trace);
@@ -220,6 +234,17 @@
   line-height: 1.16;
 }
 
+.player-analysis-heading p {
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-analysis-empty .player-analysis-heading { display: block; }
+
 .player-analysis-dossier {
   min-width: 0;
   padding-top: 24px;
@@ -234,8 +259,18 @@
 
 .player-analysis-dossier .player-setup-grid {
   display: grid;
-  grid-template-columns: minmax(300px, 5fr) minmax(380px, 7fr);
+  grid-template-columns: minmax(220px, 0.72fr) minmax(420px, 1.28fr);
   gap: 24px 28px;
+}
+
+.player-analysis-dossier .player-setup-grid.is-commands-only {
+  grid-template-columns: 1fr;
+}
+
+.player-configuration-commands {
+  display: grid;
+  align-content: start;
+  gap: 22px;
 }
 
 .player-analysis-dossier .roster-profile-line {
@@ -246,8 +281,7 @@
 }
 
 .player-analysis-dossier .roster-profile-facts small,
-.player-analysis-dossier .roster-command-list small,
-.player-analysis-dossier .roster-cosmetic-card summary small {
+.player-analysis-dossier .roster-command-list small {
   font-size: 14px;
 }
 
@@ -311,8 +345,8 @@
 }
 
 .player-analysis-dossier .roster-cosmetic-list {
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 11px;
 }
 
 .player-analysis-dossier .roster-command-list > li {
@@ -410,25 +444,14 @@
   border-radius: 3px;
 }
 
-.player-analysis-dossier .roster-cosmetic-card > summary strong {
-  overflow: visible;
-  overflow-wrap: anywhere;
+.player-analysis-dossier .roster-cosmetic-card .roster-cosmetic-title strong {
   font-size: 15px;
-  line-height: 21px;
-  text-overflow: clip;
-  white-space: normal;
+  line-height: 20px;
 }
 
-.player-analysis-dossier .roster-cosmetic-details {
-  padding: 12px;
-  gap: 12px;
-}
-
-.player-analysis-dossier .roster-cosmetic-details dt,
-.player-analysis-dossier .roster-cosmetic-details dd,
-.player-analysis-dossier .roster-attachments h5,
-.player-analysis-dossier .roster-attachments strong {
-  font-size: 14px;
+.player-analysis-dossier .roster-cosmetic-card .roster-cosmetic-title small {
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .cosmetic-viewer-scrim {
@@ -492,14 +515,13 @@
 .cosmetic-viewer-dialog iframe {
   width: 100%;
   height: 100%;
+  color-scheme: light;
   background: #171d2c;
   border: 0;
 }
 
 @media (max-width: 1280px) {
-  .player-analysis-dossier .player-setup-grid {
-    grid-template-columns: 1fr;
-  }
+  .player-analysis-dossier .roster-cosmetic-list { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 @media (max-width: 900px) {
@@ -536,6 +558,9 @@
   .player-analysis-main {
     padding-top: 28px;
   }
+
+  .player-analysis-dossier .player-setup-grid { grid-template-columns: minmax(200px, 0.8fr) minmax(320px, 1.2fr); }
+  .player-analysis-dossier .roster-cosmetic-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (max-width: 620px) {
@@ -587,9 +612,6 @@
     grid-template-columns: 1fr;
   }
 
-  .player-analysis-dossier .roster-cosmetic-list,
-  .player-analysis-dossier .roster-cosmetic-details dl {
-    grid-template-columns: 1fr;
-  }
+  .player-analysis-dossier .roster-cosmetic-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
 }

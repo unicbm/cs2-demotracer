@@ -1,6 +1,7 @@
 // Cross-platform sig scanning + gamedata.json loader
 
 #include "sig_scan.h"
+#include "ccsbot_slot.h"
 
 #if defined(_WIN32)
 #include <Windows.h>
@@ -276,8 +277,8 @@ namespace BotController::Sig
     {
         if (!interfacePtr)
             return {};
-        void *vtable = *reinterpret_cast<void **>(interfacePtr);
-        if (!vtable)
+        void *vtable = nullptr;
+        if (!SafeRead(interfacePtr, 0, vtable) || !vtable)
             return {};
 
 #if defined(_WIN32)

@@ -1,7 +1,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { AppChrome } from "./components/AppChrome";
 import { AppSidebar } from "./components/AppSidebar";
 import { ArchiveWorkspace } from "./components/ArchiveWorkspace";
@@ -20,13 +20,12 @@ import { ExportInspector } from "./components/ExportInspector";
 import { FaqWorkspace } from "./components/FaqWorkspace";
 import { LibraryWorkspace, type LibrarySort } from "./components/LibraryWorkspace";
 import type { PlaybackPresetOptions } from "./components/PlaybackCommandBuilder";
-import { playerSelectionKey, type PlayerSelection } from "./components/PlayerRoster";
+import { playerSelectionKey } from "./components/PlayerRoster";
 import { RoundWorkspace } from "./components/RoundWorkspace";
 import { SettingsWorkspace } from "./components/SettingsWorkspace";
 import {
   AnalysisFailedView,
   AnalysisProgressView,
-  type CommandMode,
   ConversionProgressView,
   type CopyTarget,
   OpeningArchiveView,
@@ -46,6 +45,14 @@ import {
   uniqueLibraryRoots,
   withExportRoot,
 } from "./library";
+import {
+  EMPTY_LIBRARY_WORKSPACE,
+  LIBRARY_SESSION_STORAGE_KEY,
+  libraryWorkspaceReducer,
+  readStoredLibrarySession,
+  writeStoredLibrarySession,
+  type StoredLibrarySession,
+} from "./librarySession";
 import type {
   AnalysisResult,
   BatchEvent,
@@ -80,7 +87,6 @@ import type {
   TaskEvent,
   TaskPhase,
   Theme,
-  WorkspaceSection,
 } from "./types";
 
 const DEFAULT_SETTINGS: ConverterSettings = {
@@ -107,6 +113,8 @@ const DEFAULT_LOCAL_ENVIRONMENT: LocalEnvironmentSettings = {
 const BATCH_PREFERENCES_STORAGE_KEY = "demotracer.batch-preferences.v1";
 const COSMETIC_CONSENT_STORAGE_KEY = "demotracer.cosmetic-consent.v1";
 const ESTIMATED_ZSTD_EXPANSION = 4;
+
+const INITIAL_LIBRARY_SESSION = readStoredLibrarySession(localStorage);
 
 interface StoredBatchPreferences {
   folderPath: string;
@@ -209,6 +217,16 @@ const DEFAULT_PLAYBACK_PRESET: PlaybackPresetOptions = {
   avatar: false,
   voice: true,
   playoff: false,
+  projectileAlignment: "inherit",
+  crosshairAlignment: "inherit",
+  leftHandAlignment: "inherit",
+  matchPresentation: "inherit",
+  allowPartial: "inherit",
+  handoffMode: "inherit",
+  handoffScope: "slot",
+  threat360: "inherit",
+  threat360Range: 420,
+  threat360Los: true,
 };
 
 function emptyProgress(): ProgressState {
@@ -279,17 +297,40 @@ function storedPlaybackPreset(): PlaybackPresetOptions {
   try {
     const saved = JSON.parse(localStorage.getItem("demotracer.playback-preset.v1") ?? "null") as Partial<PlaybackPresetOptions> | null;
     if (!saved || typeof saved !== "object") return { ...DEFAULT_PLAYBACK_PRESET };
-    const read = (key: keyof PlaybackPresetOptions) =>
+    const readBoolean = (key: "weapons" | "cosmetics" | "steamIdentity" | "avatar" | "voice" | "playoff" | "threat360Los") =>
       typeof saved[key] === "boolean" ? saved[key] : DEFAULT_PLAYBACK_PRESET[key];
-    const cosmetics = read("cosmetics");
-    const avatar = read("avatar");
+    const readToggle = (key: "projectileAlignment" | "crosshairAlignment" | "leftHandAlignment" | "allowPartial" | "threat360") =>
+      saved[key] === "inherit" || saved[key] === "on" || saved[key] === "off"
+        ? saved[key]
+        : DEFAULT_PLAYBACK_PRESET[key];
+    const cosmetics = readBoolean("cosmetics");
+    const avatar = readBoolean("avatar");
     return {
-      weapons: read("weapons") || cosmetics,
+      weapons: readBoolean("weapons") || cosmetics,
       cosmetics,
-      steamIdentity: read("steamIdentity") || avatar,
+      steamIdentity: readBoolean("steamIdentity") || avatar,
       avatar,
-      voice: read("voice"),
-      playoff: read("playoff"),
+      voice: readBoolean("voice"),
+      playoff: readBoolean("playoff"),
+      projectileAlignment: readToggle("projectileAlignment"),
+      crosshairAlignment: readToggle("crosshairAlignment"),
+      leftHandAlignment: readToggle("leftHandAlignment"),
+      matchPresentation: saved.matchPresentation === "inherit" || saved.matchPresentation === "off" || saved.matchPresentation === "scoreboard"
+        ? saved.matchPresentation
+        : DEFAULT_PLAYBACK_PRESET.matchPresentation,
+      allowPartial: readToggle("allowPartial"),
+      handoffMode: ["inherit", "off", "death", "contact", "death_or_contact", "death_contact_c4"].includes(saved.handoffMode ?? "")
+        ? saved.handoffMode as PlaybackPresetOptions["handoffMode"]
+        : DEFAULT_PLAYBACK_PRESET.handoffMode,
+      handoffScope: saved.handoffScope === "all" ? "all" : "slot",
+      threat360: readToggle("threat360"),
+      threat360Range: typeof saved.threat360Range === "number"
+        && Number.isFinite(saved.threat360Range)
+        && saved.threat360Range >= 150
+        && saved.threat360Range <= 800
+        ? saved.threat360Range
+        : DEFAULT_PLAYBACK_PRESET.threat360Range,
+      threat360Los: readBoolean("threat360Los"),
     };
   } catch {
     return { ...DEFAULT_PLAYBACK_PRESET };
@@ -464,7 +505,20 @@ function App() {
   const [language, setLanguage] = useState<Language>(storedLanguage);
   const [theme, setTheme] = useState<Theme>(storedTheme);
   const [phase, setPhase] = useState<Phase>("idle");
-  const [activeSection, setActiveSection] = useState<WorkspaceSection>("library");
+  const [singleTask, setSingleTask] = useState<"analysis" | "conversion" | null>(null);
+  const [activeTaskSourcePath, setActiveTaskSourcePath] = useState("");
+  const [libraryWorkspace, dispatchLibraryWorkspace] = useReducer(
+    libraryWorkspaceReducer,
+    EMPTY_LIBRARY_WORKSPACE,
+  );
+  const {
+    activeSection,
+    archive,
+    archivePath,
+    selectedRound: selectedArchiveRound,
+    selectedPlayer,
+    commandMode,
+  } = libraryWorkspace;
   const [sourcePath, setSourcePath] = useState("");
   const [outputDir, setOutputDir] = useState(INITIAL_LIBRARY_PREFERENCES.exportRoot);
   const [libraryPreferences, setLibraryPreferences] = useState(INITIAL_LIBRARY_PREFERENCES);
@@ -477,6 +531,7 @@ function App() {
   const [libraryNotice, setLibraryNotice] = useState("");
   const [libraryQuery, setLibraryQuery] = useState("");
   const [libraryMap, setLibraryMap] = useState("");
+  const [libraryPlatform, setLibraryPlatform] = useState("");
   const [librarySort, setLibrarySort] = useState<LibrarySort>("recent");
   const [batchFolderPath, setBatchFolderPath] = useState(() => storedBatchPreferences().folderPath);
   const [batchScanning, setBatchScanning] = useState(false);
@@ -512,10 +567,6 @@ function App() {
   const [savingServerConfig, setSavingServerConfig] = useState(false);
   const [progress, setProgress] = useState<ProgressState>(emptyProgress);
   const [result, setResult] = useState<ConversionSummary | null>(null);
-  const [archive, setArchive] = useState<ManifestArchive | null>(null);
-  const [archivePath, setArchivePath] = useState("");
-  const [selectedArchiveRound, setSelectedArchiveRound] = useState<number | null>(null);
-  const [selectedPlayer, setSelectedPlayer] = useState<PlayerSelection | null>(null);
   const [conversionWarnings, setConversionWarnings] = useState<string[]>([]);
   const [analysisError, setAnalysisError] = useState("");
   const [validationError, setValidationError] = useState("");
@@ -527,10 +578,12 @@ function App() {
   const [dragActive, setDragActive] = useState(false);
   const [cosmeticPhrase, setCosmeticPhrase] = useState("");
   const [copiedTarget, setCopiedTarget] = useState<CopyTarget | null>(null);
-  const [commandMode, setCommandMode] = useState<CommandMode>("sequence");
   const [liveMessage, setLiveMessage] = useState("");
 
   const taskTokenRef = useRef(0);
+  const manifestReadTokenRef = useRef(0);
+  const libraryRestoreRef = useRef<StoredLibrarySession | null>(INITIAL_LIBRARY_SESSION);
+  const libraryRestoreStartedRef = useRef(false);
   const manifestCacheRef = useRef(new Map<string, ManifestArchive>());
   const libraryScanTokenRef = useRef(0);
   const taskWarningsRef = useRef<string[]>([]);
@@ -542,6 +595,7 @@ function App() {
   const batchStopPendingRef = useRef(false);
   const batchCancelGenerationRef = useRef(-1);
   const taskSoundContextRef = useRef<AudioContext | null>(null);
+  const startupServerConfigPathRef = useRef(localEnvironment.cs2Path.trim());
   const soundNotificationsRef = useRef(localEnvironment.soundNotifications);
   const retryButtonRef = useRef<HTMLButtonElement | null>(null);
   const resultHeadingRef = useRef<HTMLHeadingElement | null>(null);
@@ -556,11 +610,11 @@ function App() {
   const numberFormat = useMemo(() => new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en-US"), [language]);
   const isRepairing = repairingLibrary || Boolean(repairingManifest);
   const isMaintainingLibrary = isRepairing || importingArchives;
-  const isBusy = phase === "analyzing" || phase === "converting" || phase === "openingArchive" || isMaintainingLibrary || batchInvocationActive;
-  isBusyRef.current = phase === "analyzing" || phase === "converting" || isMaintainingLibrary || batchInvocationActive;
+  const isBusy = singleTask !== null || phase === "openingArchive" || isMaintainingLibrary || batchInvocationActive;
+  isBusyRef.current = singleTask !== null || isMaintainingLibrary || batchInvocationActive;
   const inspectorDocked = useMediaQuery("(min-width: 1080px)");
   const inspectorVisible = selectedPlayer === null && (inspectorDocked || inspectorSheetOpen);
-  const elapsedSeconds = useElapsed(phase === "analyzing");
+  const elapsedSeconds = useElapsed(singleTask === "analysis");
   const sourceFileName = analysis?.fileName || fileName(sourcePath);
   const themeTitle = theme === "system" ? words.systemTheme : theme === "light" ? words.lightTheme : words.darkTheme;
   soundNotificationsRef.current = localEnvironment.soundNotifications;
@@ -776,6 +830,34 @@ function App() {
   }, [localEnvironment]);
 
   useEffect(() => {
+    if (!archivePath || !archive) return;
+    writeStoredLibrarySession(localStorage, {
+      manifestPath: archivePath,
+      selectedRound: selectedArchiveRound,
+      selectedPlayer,
+      commandMode,
+    });
+  }, [archive, archivePath, commandMode, selectedArchiveRound, selectedPlayer]);
+
+  useEffect(() => {
+    const cs2Path = startupServerConfigPathRef.current;
+    if (!cs2Path || !("__TAURI_INTERNALS__" in window)) return;
+    let disposed = false;
+    setLoadingServerConfig(true);
+    void invoke<ServerConfigDocument>("load_server_config", { cs2Path }).then((document) => {
+      if (disposed) return;
+      setServerConfigDocument(document);
+      setServerConfigDraft(document.normalizedJson || document.json);
+      setServerConfigValidation(document.validation);
+    }).catch(() => {
+      // Startup probing is silent; the Settings page still exposes an explicit retry.
+    }).finally(() => {
+      if (!disposed) setLoadingServerConfig(false);
+    });
+    return () => { disposed = true; };
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem(BATCH_PREFERENCES_STORAGE_KEY, JSON.stringify({
       folderPath: batchFolderPath,
       concurrency: batchConcurrency,
@@ -982,6 +1064,8 @@ function App() {
 
     primeTaskSound();
     const token = ++taskTokenRef.current;
+    localStorage.removeItem(LIBRARY_SESSION_STORAGE_KEY);
+    libraryRestoreRef.current = null;
     const maxRoundSeconds = settings.maxRoundSeconds;
     analyzedMaxRoundSecondsRef.current = maxRoundSeconds;
     setGlobalError(null);
@@ -990,17 +1074,15 @@ function App() {
     setSourcePath(path);
     setAnalysis(null);
     setResult(null);
-    setArchive(null);
-    setArchivePath("");
-    setSelectedArchiveRound(null);
-    setSelectedPlayer(null);
+    dispatchLibraryWorkspace({ type: "clear" });
     setOutputRoot("");
     setSelectedRounds(new Set());
     setInspectorSheetOpen(false);
     setCosmeticPhrase("");
     setSettings((current) => ({ ...current, includeSuspicious: false }));
     setProgress({ ...emptyProgress(), phase: "parsing" });
-    setActiveSection("library");
+    setSingleTask("analysis");
+    setActiveTaskSourcePath(path);
     setPhase("analyzing");
     taskWarningsRef.current = [];
 
@@ -1019,21 +1101,26 @@ function App() {
       setSourcePath(next.sourcePath);
       setDemoSourceIndex((current) => rememberDemoSource(current, next.demoSha256, next.sourcePath));
       setAnalysis(next);
+      dispatchLibraryWorkspace({ type: "clear" });
+      localStorage.removeItem(LIBRARY_SESSION_STORAGE_KEY);
       setSelectedRounds(new Set(next.rounds.filter((round) => round.selectedByDefault).map((round) => round.round)));
       setOutputDir((current) => current || libraryRoot);
       setPhase("selecting");
+      setSingleTask(null);
       playTaskSound("success");
     } catch (reason) {
       if (token !== taskTokenRef.current) return;
       const error = parseCommandError(reason);
+      dispatchLibraryWorkspace({ type: "clear" });
+      localStorage.removeItem(LIBRARY_SESSION_STORAGE_KEY);
       setAnalysisError(error.message);
       setPhase("analysisFailed");
+      setSingleTask(null);
       playTaskSound("failure");
     }
   }, [absorbEvent, libraryRoot, playTaskSound, primeTaskSound, settings.maxRoundSeconds, words.invalidDemo]);
 
   const runManifest = useCallback(async (path: string) => {
-    if (isBusyRef.current) return;
     if (!path.toLowerCase().endsWith(".json")) {
       setGlobalError({ code: "invalid_manifest_path", message: words.invalidManifest, path });
       return;
@@ -1041,17 +1128,17 @@ function App() {
 
     const returnPhase = phase;
     const returnSection = activeSection;
-    const token = ++taskTokenRef.current;
+    const restoringSavedSession = libraryRestoreRef.current?.manifestPath.toLocaleLowerCase() === path.toLocaleLowerCase();
+    const token = ++manifestReadTokenRef.current;
     const cacheKey = normalizedDiagnosticPath(path);
     const cached = manifestCacheRef.current.get(cacheKey);
     const showArchive = (next: ManifestArchive) => {
-      const availableRounds = next.rounds.filter((round) => round.available);
-      const firstAvailableRound = availableRounds[0];
-      setArchive(next);
-      setArchivePath(next.manifestPath);
+      const restored = libraryRestoreRef.current?.manifestPath.toLocaleLowerCase() === next.manifestPath.toLocaleLowerCase()
+        ? libraryRestoreRef.current
+        : null;
+      dispatchLibraryWorkspace({ type: "open", archive: next, restored });
       setSourcePath(next.sourcePath ?? "");
-      setSelectedArchiveRound(firstAvailableRound?.round ?? null);
-      setCommandMode(availableRounds.length > 1 && (firstAvailableRound?.sequenceLength ?? 0) > 0 ? "sequence" : "round");
+      libraryRestoreRef.current = null;
       setAnalysis(null);
       setResult(null);
       setOutputRoot(next.root);
@@ -1059,10 +1146,9 @@ function App() {
       setPhase("archive");
     };
     setGlobalError(null);
-    setArchivePath(path);
-    setSelectedPlayer(null);
+    dispatchLibraryWorkspace({ type: "opening", path });
     setInspectorSheetOpen(false);
-    setActiveSection("library");
+    dispatchLibraryWorkspace({ type: "navigate", section: "library" });
     if (cached) {
       showArchive(cached);
       return;
@@ -1070,17 +1156,29 @@ function App() {
     setPhase("openingArchive");
     try {
       const next = await invoke<ManifestArchive>("read_manifest", { path });
-      if (token !== taskTokenRef.current) return;
+      if (token !== manifestReadTokenRef.current) return;
       manifestCacheRef.current.set(cacheKey, next);
       manifestCacheRef.current.set(normalizedDiagnosticPath(next.manifestPath), next);
       showArchive(next);
     } catch (reason) {
-      if (token !== taskTokenRef.current) return;
-      setGlobalError(parseCommandError(reason));
+      if (token !== manifestReadTokenRef.current) return;
+      if (restoringSavedSession) {
+        libraryRestoreRef.current = null;
+        localStorage.removeItem(LIBRARY_SESSION_STORAGE_KEY);
+      } else {
+        setGlobalError(parseCommandError(reason));
+      }
       setPhase(returnPhase === "openingArchive" ? "idle" : returnPhase);
-      setActiveSection(returnSection);
+      dispatchLibraryWorkspace({ type: "navigate", section: returnSection });
     }
   }, [activeSection, phase, words.invalidManifest]);
+
+  useEffect(() => {
+    const saved = libraryRestoreRef.current;
+    if (!saved || libraryRestoreStartedRef.current || !("__TAURI_INTERNALS__" in window)) return;
+    libraryRestoreStartedRef.current = true;
+    void runManifest(saved.manifestPath);
+  }, [runManifest]);
 
   const scanLibrary = useCallback(async (roots: string[]) => {
     const paths = uniqueLibraryRoots(roots);
@@ -1287,7 +1385,7 @@ function App() {
   }
 
   async function startBatchImport(candidateIds: string[]) {
-    if (batchInvocationActive || candidateIds.length === 0) return;
+    if (singleTask || batchInvocationActive || candidateIds.length === 0) return;
     if (settings.exportCosmetics && !cosmeticConsentAccepted) {
       requestCosmeticExport();
       return;
@@ -1712,9 +1810,10 @@ function App() {
       setRepairingManifest(selectedArchive.manifestPath);
       const resolvedSource = await resolveManifestDemoSource(selectedArchive);
       if (!resolvedSource) return;
-      setArchive((current) => current?.manifestPath === selectedArchive.manifestPath
-        ? { ...current, sourcePath: resolvedSource }
-        : current);
+      dispatchLibraryWorkspace({
+        type: "replaceArchive",
+        archive: { ...selectedArchive, sourcePath: resolvedSource },
+      });
       setSourcePath(resolvedSource);
       setRepairingManifest("");
       await runAnalysis(resolvedSource, selectedArchive.demoSha256);
@@ -2165,6 +2264,8 @@ function App() {
     setInspectorSheetOpen(false);
     setResult(null);
     setProgress(emptyProgress());
+    setSingleTask("conversion");
+    setActiveTaskSourcePath(sourcePath);
     setPhase("converting");
 
     const events = new Channel<TaskEvent>();
@@ -2195,7 +2296,10 @@ function App() {
       manifestCacheRef.current.delete(normalizedDiagnosticPath(summary.manifestPath));
       setOutputRoot(summary.root);
       setConversionWarnings(taskWarningsRef.current);
-      setCommandMode(summary.rounds.length > 1 ? "sequence" : "round");
+      dispatchLibraryWorkspace({
+        type: "setCommandMode",
+        mode: summary.rounds.length > 1 ? "sequence" : "round",
+      });
       setProgress((current) => ({ ...current, phase: "complete" }));
       setLibraryPreferences((current) => ({
         exportRoot: destination,
@@ -2219,6 +2323,8 @@ function App() {
         setPhase("selecting");
       }
       playTaskSound("failure");
+    } finally {
+      if (token === taskTokenRef.current) setSingleTask(null);
     }
   }
 
@@ -2226,6 +2332,26 @@ function App() {
     if (!path) return;
     try {
       await invoke("open_output", { request: { path } });
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
+    }
+  }
+
+  async function revealPath(path: string) {
+    if (!path) return;
+    try {
+      await invoke("reveal_output", { request: { path } });
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
+    }
+  }
+
+  async function reparseLibraryEntry(entry: DemoLibraryEntry) {
+    if (isBusy) return;
+    try {
+      setGlobalError(null);
+      const resolvedSource = await resolveManifestDemoSource(entry);
+      if (resolvedSource) await runAnalysis(resolvedSource, entry.demoSha256);
     } catch (reason) {
       setGlobalError(parseCommandError(reason));
     }
@@ -2268,7 +2394,7 @@ function App() {
 
   function closePlayerAnalysis() {
     const selectionKey = selectedPlayer ? playerSelectionKey(selectedPlayer) : null;
-    setSelectedPlayer(null);
+    dispatchLibraryWorkspace({ type: "selectPlayer", player: null });
     if (!selectionKey) return;
     window.requestAnimationFrame(() => {
       const trigger = [...document.querySelectorAll<HTMLButtonElement>("[data-player-key]")]
@@ -2278,17 +2404,25 @@ function App() {
   }
 
   function resetSession() {
+    if (singleTask) {
+      ++manifestReadTokenRef.current;
+      dispatchLibraryWorkspace({ type: "clear" });
+      setSourcePath(activeTaskSourcePath);
+      setPhase(singleTask === "analysis" ? "analyzing" : "converting");
+      return;
+    }
     ++taskTokenRef.current;
-    setActiveSection("library");
+    ++manifestReadTokenRef.current;
+    localStorage.removeItem(LIBRARY_SESSION_STORAGE_KEY);
+    libraryRestoreRef.current = null;
+    dispatchLibraryWorkspace({ type: "clear" });
+    setSingleTask(null);
+    setActiveTaskSourcePath("");
     setPhase("idle");
     setSourcePath("");
     setOutputRoot("");
     setAnalysis(null);
     setResult(null);
-    setArchive(null);
-    setArchivePath("");
-    setSelectedArchiveRound(null);
-    setSelectedPlayer(null);
     setSelectedRounds(new Set());
     setProgress(emptyProgress());
     setAnalysisError("");
@@ -2334,7 +2468,7 @@ function App() {
           setInspectorSheetOpen(true);
         }}
         onConvert={() => void beginConvert()}
-        onSelectPlayer={setSelectedPlayer}
+        onSelectPlayer={(player) => dispatchLibraryWorkspace({ type: "selectPlayer", player })}
         onClosePlayer={closePlayerAnalysis}
         onCopy={(value, target) => void copyText(value, target)}
         onOpenExternal={(url) => void openExternal(url)}
@@ -2362,7 +2496,6 @@ function App() {
         language={language}
         theme={theme}
         themeTitle={themeTitle}
-        phase={phase}
         sourcePath={sourcePath}
         sourceFileName={sourceFileName}
         analysis={analysis}
@@ -2377,11 +2510,12 @@ function App() {
         <AppSidebar
           words={words}
           activeSection={activeSection}
-          busy={isBusy}
-          onLibrary={resetSession}
-          onBatch={() => setActiveSection("batch")}
-          onSettings={() => setActiveSection("settings")}
-          onFaq={() => setActiveSection("faq")}
+          onLibrary={() => {
+            dispatchLibraryWorkspace({ type: "navigate", section: "library" });
+          }}
+          onBatch={() => dispatchLibraryWorkspace({ type: "navigate", section: "batch" })}
+          onSettings={() => dispatchLibraryWorkspace({ type: "navigate", section: "settings" })}
+          onFaq={() => dispatchLibraryWorkspace({ type: "navigate", section: "faq" })}
         />
         <main className="app-workspace">
         {globalError ? (
@@ -2389,6 +2523,14 @@ function App() {
             <AlertIcon size={17} />
             <div><strong>{words.errorTitle}</strong><span>{globalError.message}</span></div>
             <button className="icon-button" type="button" onClick={() => setGlobalError(null)} aria-label={words.dismiss}><CloseIcon size={15} /></button>
+          </div>
+        ) : null}
+
+        {singleTask && !(activeSection === "library" && (phase === "analyzing" || phase === "converting")) ? (
+          <div className="background-task-strip" role="status" aria-live="polite">
+            <i aria-hidden="true" />
+            <strong>{singleTask === "conversion" ? words.conversionTitle : words.analyzingTitle}</strong>
+            <code title={activeTaskSourcePath}>{fileName(activeTaskSourcePath)}</code>
           </div>
         ) : null}
 
@@ -2405,6 +2547,7 @@ function App() {
             selectedCandidateIds={batchSelectedIds}
             concurrency={batchConcurrency}
             runState={currentBatchRunState}
+            startDisabled={singleTask !== null}
             canResume={canResumeBatch}
             jobs={batchJobs}
             eta={batchEta}
@@ -2480,6 +2623,7 @@ function App() {
             onRemoveArchiveRoot={removeLibraryRoot}
             onAddDemoRoot={() => void addDemoRoot()}
             onRemoveDemoRoot={removeDemoRoot}
+            onOpenPath={(path) => void openPath(path)}
             onEnvironmentChange={(patch) => setLocalEnvironment((current) => ({ ...current, ...patch }))}
             onConverterChange={updateSettings}
             onRequestCosmetics={requestCosmeticExport}
@@ -2495,15 +2639,19 @@ function App() {
             roots={libraryRoots}
             scan={libraryScan}
             loading={libraryLoading}
+            taskBusy={singleTask !== null || batchInvocationActive}
+            archiveOpenDisabled={singleTask === "conversion"}
             repairingManifest={repairingManifest}
             repairingLibrary={repairingLibrary}
             importingArchives={importingArchives}
             notice={libraryNotice}
             query={libraryQuery}
             mapFilter={libraryMap}
+            platformFilter={libraryPlatform}
             sort={librarySort}
             onQueryChange={setLibraryQuery}
             onMapFilterChange={setLibraryMap}
+            onPlatformFilterChange={setLibraryPlatform}
             onSortChange={setLibrarySort}
             onAddRoot={() => void addLibraryRoot()}
             onRemoveRoot={removeLibraryRoot}
@@ -2514,6 +2662,9 @@ function App() {
             onConvert={() => void chooseDemo()}
             onOpenEntry={(entry: DemoLibraryEntry) => void runManifest(entry.manifestPath)}
             onRepairEntry={(entry: DemoLibraryEntry) => void repairArchiveMetadata(entry)}
+            onRevealManifest={(entry: DemoLibraryEntry) => void revealPath(entry.manifestPath)}
+            onRevealDemo={(entry: DemoLibraryEntry) => void revealPath(entry.sourcePath || entry.demoPath)}
+            onReparseEntry={(entry: DemoLibraryEntry) => void reparseLibraryEntry(entry)}
           />
         ) : null}
         {phase === "openingArchive" ? <OpeningArchiveView words={words} manifestName={fileName(archivePath)} /> : null}
@@ -2529,17 +2680,18 @@ function App() {
             copiedTarget={copiedTarget}
             selectedPlayer={selectedPlayer}
             onSelectRound={(round) => {
-              setSelectedArchiveRound(round);
-              if (archive.rounds.find((item) => item.round === round)?.sequenceLength === 0) {
-                setCommandMode("round");
-              }
+              dispatchLibraryWorkspace({
+                type: "selectRound",
+                round,
+                forceRoundMode: archive.rounds.find((item) => item.round === round)?.sequenceLength === 0,
+              });
             }}
-            onCommandModeChange={setCommandMode}
+            onCommandModeChange={(mode) => dispatchLibraryWorkspace({ type: "setCommandMode", mode })}
             onPlaybackPresetChange={(patch) => setPlaybackPreset((current) => ({ ...current, ...patch }))}
             onCopy={(value, target) => void copyText(value, target)}
             onOpenExternal={(url) => void openExternal(url)}
             onOpenFolder={() => void openPath(archive.root)}
-            onSelectPlayer={setSelectedPlayer}
+            onSelectPlayer={(player) => dispatchLibraryWorkspace({ type: "selectPlayer", player })}
             onClosePlayer={closePlayerAnalysis}
             onReconvert={() => void reconvertArchive(archive)}
             onChooseManifest={() => void chooseManifest()}

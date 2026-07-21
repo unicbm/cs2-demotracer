@@ -23,6 +23,119 @@
   background: color-mix(in srgb, var(--surface-raised) 94%, transparent);
 }
 
+.analysis-scoreboard {
+  overflow: hidden;
+  background: var(--surface-raised);
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+}
+
+.analysis-scoreboard > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 45px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.analysis-scoreboard > header h2 { font-size: 15px; font-weight: 720; }
+.analysis-scoreboard > header > span { color: var(--text-tertiary); font-size: 11.5px; }
+
+.analysis-scoreboard-columns,
+.analysis-player-stat-row {
+  display: grid;
+  align-items: center;
+  column-gap: 10px;
+}
+
+.analysis-scoreboard-columns {
+  min-height: 28px;
+  padding: 0 14px;
+  color: var(--text-tertiary);
+  background: var(--surface-subtle);
+  border-bottom: 1px solid var(--divider);
+  font-size: 10.5px;
+  font-weight: 650;
+}
+
+.analysis-scoreboard-columns > span:not(:first-child) { text-align: right; }
+.analysis-scoreboard-teams { display: grid; }
+.analysis-team-block { --team-color: var(--trace); min-width: 0; }
+.analysis-team-block.is-team-b { --team-color: var(--accent); }
+.analysis-team-block + .analysis-team-block { border-top: 1px solid var(--divider-strong); }
+
+.analysis-team-heading {
+  display: flex;
+  align-items: baseline;
+  min-height: 34px;
+  padding: 7px 14px 6px 11px;
+  gap: 8px;
+  background: color-mix(in srgb, var(--team-color) 6%, var(--surface-muted));
+  border-left: 3px solid var(--team-color);
+}
+
+.analysis-team-heading strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.analysis-team-heading em { color: var(--text-tertiary); font-size: 9.5px; font-style: normal; font-weight: 650; }
+.analysis-team-heading span { color: var(--text-tertiary); font-size: 10.5px; }
+.analysis-team-heading b { margin-left: auto; color: var(--text-primary); font: 700 16px var(--mono); }
+.analysis-team-block > ul { margin: 0; padding: 0; list-style: none; }
+.analysis-team-block > ul > li + li { border-top: 1px solid color-mix(in srgb, var(--divider) 72%, transparent); }
+
+.analysis-player-stat-row {
+  width: 100%;
+  min-height: 52px;
+  padding: 5px 14px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font: 12.5px var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  cursor: pointer;
+  transition: background 110ms ease-out, box-shadow 110ms ease-out;
+}
+
+.analysis-player-stat-row:hover,
+.analysis-player-stat-row:focus-visible {
+  background: color-mix(in srgb, var(--team-color) 6%, var(--surface-raised));
+  box-shadow: inset 3px 0 var(--team-color);
+  outline: 0;
+}
+
+.analysis-player-identity {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  text-align: left;
+}
+
+.analysis-player-identity .steam-player-name-row > strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-family: "Noto Sans SC Local", "Segoe UI Variable", sans-serif;
+  font-size: 13.5px;
+  font-weight: 680;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analysis-player-identity .steam-player-labels > code {
+  margin-top: 1px;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analysis-stat-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.analysis-stat-value.is-kda,
+.analysis-stat-value.is-score { color: var(--text-primary); font-weight: 700; }
+.analysis-stat-value.is-adr,
+.analysis-stat-value.is-kd { color: color-mix(in srgb, var(--text-primary) 88%, var(--team-color)); }
+
 @media (max-width: 860px) {
   .analysis-overview {
     padding-inline: 12px;
@@ -31,4 +144,13 @@
   .analysis-match-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .analysis-scoreboard > header,
+  .analysis-scoreboard-columns,
+  .analysis-player-stat-row { padding-inline: 10px; }
+
+  .analysis-scoreboard-columns,
+  .analysis-player-stat-row { column-gap: 7px; }
+
+  .analysis-player-identity code { font-size: 9px; }
 }

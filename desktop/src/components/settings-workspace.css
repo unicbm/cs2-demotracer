@@ -517,6 +517,33 @@
 .diagnostic-mode strong { color: var(--text-secondary); font-weight: 650; text-align: right; }
 .diagnostic-mode strong.is-verified { color: var(--success); }
 
+.diagnostic-detail-bundle {
+  margin-top: 10px;
+  background: color-mix(in srgb, var(--surface-raised) 97%, transparent);
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+}
+
+.diagnostic-detail-bundle > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  min-height: 58px;
+  padding: 10px 14px;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.diagnostic-detail-bundle > summary::-webkit-details-marker { display: none; }
+.diagnostic-detail-bundle > summary > span { display: grid; gap: 2px; }
+.diagnostic-detail-bundle > summary strong { font-size: 12px; }
+.diagnostic-detail-bundle > summary small { color: var(--text-tertiary); font-size: 9.5px; }
+.diagnostic-detail-bundle > summary b { color: var(--text-secondary); font-size: 9.5px; font-weight: 600; }
+.diagnostic-detail-bundle > summary svg { color: var(--text-tertiary); transition: transform 150ms ease-out; }
+.diagnostic-detail-bundle[open] > summary svg { transform: rotate(180deg); }
+.diagnostic-detail-content { padding: 0 10px 10px; border-top: 1px solid var(--divider); }
+
 .diagnostic-conflicts .settings-card-heading {
   background: color-mix(in srgb, var(--warning-soft) 42%, transparent);
 }
@@ -689,6 +716,8 @@
 }
 
 .primary-path-readout {
+  display: flex;
+  align-items: center;
   margin: 12px 14px 14px;
   padding: 9px 10px;
   overflow: hidden;
@@ -699,6 +728,8 @@
 }
 
 .primary-path-readout code {
+  flex: 1;
+  min-width: 0;
   display: block;
   overflow: hidden;
   font-size: var(--type-mono);
@@ -710,7 +741,7 @@
 
 .settings-path-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   align-items: center;
   min-height: 47px;
   padding: 7px 11px 7px 14px;
@@ -718,6 +749,61 @@
   color: var(--text-tertiary);
   border-bottom: 1px solid var(--divider);
 }
+
+.settings-select-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(145px, auto);
+  align-items: center;
+  min-height: 62px;
+  padding: 9px 14px;
+  gap: 18px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.settings-select-line > span { display: grid; min-width: 0; }
+.settings-select-line strong { font-size: 11px; font-weight: 650; }
+.settings-select-line small { margin-top: 2px; color: var(--text-tertiary); font-size: 9.5px; line-height: 14px; }
+.settings-select-line select {
+  min-width: 145px;
+  height: 32px;
+  padding: 0 28px 0 9px;
+  color: var(--text-secondary);
+  background: var(--workspace);
+  border: 1px solid var(--divider-strong);
+  border-radius: 5px;
+  font-size: 10.5px;
+}
+
+.playback-settings-advanced { border-top: 1px solid var(--divider); }
+.playback-settings-advanced > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 62px;
+  padding: 10px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+.playback-settings-advanced > summary::-webkit-details-marker { display: none; }
+.playback-settings-advanced > summary > span { display: grid; }
+.playback-settings-advanced > summary strong { font-size: 11.5px; }
+.playback-settings-advanced > summary small { margin-top: 2px; color: var(--text-tertiary); font-size: 9.5px; }
+.playback-settings-advanced > summary svg { color: var(--text-tertiary); transition: transform 150ms ease-out; }
+.playback-settings-advanced[open] > summary svg { transform: rotate(180deg); }
+.playback-settings-advanced-body { border-top: 1px solid var(--divider); background: color-mix(in srgb, var(--surface-subtle) 44%, transparent); }
+.settings-advanced-inline {
+  display: flex;
+  align-items: center;
+  min-height: 54px;
+  padding: 8px 14px;
+  gap: 24px;
+}
+.settings-advanced-inline label { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 10px; }
+.settings-advanced-inline label:first-child { display: grid; grid-template-columns: minmax(0, 1fr) auto; min-width: 260px; }
+.settings-advanced-inline label:first-child > span { display: grid; }
+.settings-advanced-inline small { color: var(--text-tertiary); font-size: 9px; }
+.settings-advanced-inline input[type="number"] { width: 84px; height: 32px; padding: 0 8px; background: var(--workspace); border: 1px solid var(--divider-strong); border-radius: 5px; }
+.settings-advanced-inline input[type="checkbox"] { accent-color: var(--trace); }
 
 .settings-path-row:last-child { border-bottom: 0; }
 .settings-path-row code { overflow: hidden; color: var(--text-secondary); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
@@ -859,10 +945,7 @@
 
 .server-config-pane { min-width: 0; }
 
-.server-config-editor-card {
-  display: grid;
-  gap: 12px;
-}
+.server-config-editor-card { display: grid; gap: 12px; }
 
 .server-config-path {
   display: block;
@@ -888,6 +971,51 @@
   font: 12.5px/1.6 "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
   tab-size: 2;
 }
+
+.server-config-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+  min-height: 470px;
+  gap: 10px;
+}
+
+.server-config-workbench .server-config-editor { min-height: 470px; height: 100%; }
+
+.server-config-guide {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  max-height: 620px;
+  overflow: hidden;
+  background: var(--workspace);
+  border: 1px solid var(--divider-strong);
+  border-radius: 8px;
+}
+
+.server-config-guide > header { display: grid; padding: 11px; gap: 9px; border-bottom: 1px solid var(--divider); }
+.server-config-guide > header > div { display: grid; gap: 2px; }
+.server-config-guide > header strong { font-size: 11.5px; }
+.server-config-guide > header small { color: var(--text-tertiary); font-size: 9px; line-height: 14px; }
+.server-config-guide > header label { display: flex; align-items: center; height: 30px; padding: 0 8px; gap: 6px; color: var(--text-tertiary); background: var(--surface-raised); border: 1px solid var(--divider); border-radius: 5px; }
+.server-config-guide > header input { width: 100%; min-width: 0; padding: 0; background: transparent; border: 0; outline: 0; font-size: 10px; }
+.server-config-guide-groups { min-height: 0; overflow: auto; }
+.server-config-guide-groups > details { border-bottom: 1px solid var(--divider); }
+.server-config-guide-groups > details > summary { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; min-height: 38px; padding: 6px 10px; gap: 8px; cursor: pointer; list-style: none; }
+.server-config-guide-groups > details > summary::-webkit-details-marker { display: none; }
+.server-config-guide-groups > details > summary strong { font-size: 10px; }
+.server-config-guide-groups > details > summary span { color: var(--text-tertiary); font: 9px var(--mono); }
+.server-config-guide-groups > details > summary svg { color: var(--text-tertiary); transition: transform 150ms ease-out; }
+.server-config-guide-groups > details[open] > summary svg { transform: rotate(180deg); }
+.server-config-guide-groups ul { margin: 0; padding: 0; list-style: none; }
+.server-config-guide-groups li { padding: 9px 10px; border-top: 1px solid var(--divider); }
+.server-config-guide-groups li > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.server-config-guide-groups li > div code { color: var(--trace); font-size: 9.5px; font-weight: 650; }
+.server-config-guide-groups li > div span { color: var(--text-tertiary); font-size: 8px; text-transform: uppercase; }
+.server-config-guide-groups li p { margin-top: 4px; color: var(--text-secondary); font-size: 9px; line-height: 14px; }
+.server-config-guide-groups li > small { display: grid; margin-top: 5px; gap: 2px; color: var(--text-tertiary); font-size: 8px; }
+.server-config-guide-groups li > small span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.server-config-guide-groups li > small code { color: var(--text-secondary); font-size: 8px; }
+.server-config-guide-groups > p { padding: 18px 12px; color: var(--text-tertiary); font-size: 10px; text-align: center; }
 
 .server-config-editor:focus {
   outline: 2px solid color-mix(in srgb, var(--trace) 44%, transparent);

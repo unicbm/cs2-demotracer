@@ -1017,7 +1017,7 @@ mod tests {
     }
 
     #[test]
-    fn previous_analysis_revision_is_stale_and_cannot_override_manifest() {
+    fn previous_analysis_revision_keeps_compatible_archive_metadata() {
         let directory = TestDirectory::new("old-analysis-revision");
         let manifest_path = directory.write_manifest("output/match", &valid_manifest());
         let archive_root = manifest_path.parent().unwrap();
@@ -1028,7 +1028,7 @@ mod tests {
                 "analysisRevision": crate::archive_info::DEMO_INFO_ANALYSIS_REVISION - 1,
                 "demoId": "match-a1b2c3d4",
                 "demoSha256": "a1b2c3d4",
-                "displayName": "Wrong old score",
+                "displayName": "Compatible old score",
                 "sourceFileName": "match.dem",
                 "sourceFilePath": "C:\\Demos\\match.dem",
                 "sourceFileDateIsApproximate": false,
@@ -1059,10 +1059,10 @@ mod tests {
 
         let scan = scan_demo_library_for(directory.path.to_str().unwrap()).unwrap();
         let entry = &scan.entries[0];
-        assert_eq!(entry.metadata_status, "stale");
+        assert_eq!(entry.metadata_status, "current");
         assert_eq!(entry.source_path.as_deref(), Some(r"C:\Demos\match.dem"));
-        assert_eq!(entry.score.as_ref().unwrap().status, "snapshot");
-        assert_ne!(entry.display_name.as_deref(), Some("Wrong old score"));
+        assert_eq!(entry.score.as_ref().unwrap().status, "final");
+        assert_eq!(entry.display_name.as_deref(), Some("Compatible old score"));
     }
 
     #[test]

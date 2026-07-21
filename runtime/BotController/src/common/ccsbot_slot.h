@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstring>
 #include <type_traits>
 
 namespace BotController
@@ -27,14 +28,18 @@ namespace BotController
     SlotResolution ResolveSlotFromBotOrContext(void *botOrContext);
     int CCSBotContextToSlot(void *botOrContext);
 
-    bool TryReadMemory(void *base, int offset, void *out, size_t size);
+    bool TryReadMemory(const void *base, int offset, void *out, size_t size);
     bool TryWriteMemory(void *base, int offset, const void *value, size_t size);
 
     template <typename T>
-    bool ReadField(void *base, int offset, T &out)
+    bool SafeRead(const void *base, int offset, T &out)
     {
         static_assert(std::is_trivially_copyable_v<T>);
-        return TryReadMemory(base, offset, &out, sizeof(T));
+        alignas(T) std::byte value[sizeof(T)]{};
+        if (!TryReadMemory(base, offset, value, sizeof(T)))
+            return false;
+        std::memcpy(&out, value, sizeof(T));
+        return true;
     }
 
     template <typename T>

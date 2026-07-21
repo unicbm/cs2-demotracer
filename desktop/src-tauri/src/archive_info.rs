@@ -14,6 +14,10 @@ pub(crate) const DEMO_INFO_FILE_NAME: &str = "demo-info.json";
 pub(crate) const DEMO_SOURCE_FILE_NAME: &str = "demo-source.json";
 pub(crate) const DEMO_INFO_SCHEMA_VERSION: u32 = 1;
 pub(crate) const DEMO_INFO_ANALYSIS_REVISION: u32 = 4;
+const MIN_COMPATIBLE_ANALYSIS_REVISION: u32 = 2;
+const CORE_ANALYSIS_SECTION_REVISION: u32 = 1;
+const PLAYER_EVIDENCE_SECTION_REVISION: u32 = 1;
+const COSMETIC_EVIDENCE_SECTION_REVISION: u32 = 1;
 const MAX_DEMO_INFO_BYTES: u64 = 1024 * 1024;
 const MAX_DEMO_SOURCE_BYTES: u64 = 64 * 1024;
 
@@ -24,6 +28,8 @@ static NEXT_INFO_NONCE: AtomicU64 = AtomicU64::new(1);
 pub(crate) struct DemoArchiveInfo {
     pub schema_version: u32,
     pub analysis_revision: u32,
+    #[serde(default)]
+    pub analysis_sections: DemoInfoAnalysisSections,
     pub demo_id: String,
     pub demo_sha256: String,
     pub display_name: String,
@@ -60,6 +66,14 @@ pub(crate) struct DemoArchiveInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conversion: Option<DemoInfoConversion>,
     pub generated_by: DemoInfoGenerator,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DemoInfoAnalysisSections {
+    pub core: u32,
+    pub player_evidence: u32,
+    pub cosmetic_evidence: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -129,6 +143,11 @@ impl DemoArchiveInfo {
         Self {
             schema_version: DEMO_INFO_SCHEMA_VERSION,
             analysis_revision: DEMO_INFO_ANALYSIS_REVISION,
+            analysis_sections: DemoInfoAnalysisSections {
+                core: CORE_ANALYSIS_SECTION_REVISION,
+                player_evidence: PLAYER_EVIDENCE_SECTION_REVISION,
+                cosmetic_evidence: COSMETIC_EVIDENCE_SECTION_REVISION,
+            },
             demo_id: demo_id.into(),
             demo_sha256: parsed.demo_sha256.clone(),
             display_name: archive_display_name(parsed, browser),
@@ -345,13 +364,20 @@ pub(crate) fn read_demo_info(root: &Path, expected_sha256: &str) -> DemoInfoRead
         DemoInfoFileRead::Invalid => return DemoInfoRead::Invalid,
     };
     if info.schema_version != DEMO_INFO_SCHEMA_VERSION
-        || info.analysis_revision != DEMO_INFO_ANALYSIS_REVISION
+        || !has_compatible_core_analysis(&info)
         || expected_sha256.is_empty()
         || !info.demo_sha256.eq_ignore_ascii_case(expected_sha256)
     {
         return DemoInfoRead::Stale;
     }
     DemoInfoRead::Current(info)
+}
+
+fn has_compatible_core_analysis(info: &DemoArchiveInfo) -> bool {
+    info.analysis_sections.core == CORE_ANALYSIS_SECTION_REVISION
+        || (info.analysis_sections.core == 0
+            && (MIN_COMPATIBLE_ANALYSIS_REVISION..=DEMO_INFO_ANALYSIS_REVISION)
+                .contains(&info.analysis_revision))
 }
 
 /// Reads local provenance even when the analysis payload is stale. The full
@@ -680,6 +706,15 @@ mod tests {
         );
 
         assert_eq!(info.source_file_path.as_deref(), source.to_str());
+        assert!(has_compatible_core_analysis(&info));
+
+        let mut legacy = info.clone();
+        legacy.analysis_sections = DemoInfoAnalysisSections::default();
+        legacy.analysis_revision = DEMO_INFO_ANALYSIS_REVISION - 1;
+        assert!(has_compatible_core_analysis(&legacy));
+
+        legacy.analysis_revision = DEMO_INFO_ANALYSIS_REVISION + 1;
+        assert!(!has_compatible_core_analysis(&legacy));
     }
 
     #[test]

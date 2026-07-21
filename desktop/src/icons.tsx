@@ -16,12 +16,25 @@ const base = (size: number): SVGProps<SVGSVGElement> => ({
 
 export function TraceMark({ size = 34, ...props }: IconProps) {
   return (
-    <svg {...base(size)} viewBox="0 0 36 36" {...props}>
-      <path d="M4.5 24.7C8.9 24.7 8.6 11.2 13 11.2s4.1 13.5 8.5 13.5 4.1-13.5 8.5-13.5" />
-      <circle cx="4.5" cy="24.7" r="2.1" fill="currentColor" stroke="none" />
-      <circle cx="13" cy="11.2" r="2.1" fill="currentColor" stroke="none" />
-      <circle cx="21.5" cy="24.7" r="2.1" fill="currentColor" stroke="none" />
-      <circle cx="30" cy="11.2" r="2.1" fill="currentColor" stroke="none" />
+    <svg {...base(size)} viewBox="0 0 1024 1024" {...props}>
+      <rect x="40" y="40" width="944" height="944" rx="220" fill="#19201c" stroke="none" />
+      <path
+        d="M178 630C290 630 282 367 401 367S505 660 624 660 729 394 846 394"
+        fill="none"
+        stroke="#70e3b5"
+        strokeWidth="64"
+        strokeLinecap="round"
+      />
+      <g
+        fill="#171c19"
+        stroke="#86f0c5"
+        strokeWidth="32"
+      >
+        <circle cx="178" cy="630" r="42" />
+        <circle cx="401" cy="367" r="42" />
+        <circle cx="624" cy="660" r="42" />
+        <circle cx="846" cy="394" r="42" />
+      </g>
     </svg>
   );
 }

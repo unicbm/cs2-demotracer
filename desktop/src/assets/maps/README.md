@@ -1,6 +1,8 @@
-# Map atmosphere artwork
+# CS2 map thumbnails
 
-These lightweight scene backgrounds were created for CS2 DemoTracer. They are
-original AI-assisted environment artwork, not screenshots or assets copied from
-Counter-Strike 2, FACEIT, or CS2 Insight. Map names are used only by the GUI to
-select a matching visual theme.
+These files are downscaled WebP copies of the in-game map thumbnails distributed
+with Counter-Strike 2. The source PNG files are exposed by
+[`MurkyYT/cs2-map-icons`](https://github.com/MurkyYT/cs2-map-icons), which
+automatically extracts `panorama/images/map_icons/1080p` from the current Valve
+game depot. Counter-Strike 2 and the source artwork are property of Valve
+Corporation.

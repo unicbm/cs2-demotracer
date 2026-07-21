@@ -3,6 +3,7 @@ mod batch;
 mod catalog;
 mod diagnostics;
 mod server_config;
+mod steam_profile;
 
 use batch::{
     cancel_batch_import, choose_demo_batch_dir, list_batch_imports, read_batch_import,
@@ -22,7 +23,7 @@ use cs2_demotracer::demo_series::{
 };
 use cs2_demotracer::dtr::read_rec_file;
 use cs2_demotracer::export::{
-    export_demo_to_root_with_progress, ConversionArtifactKind, ConversionProgress,
+    export_demo_to_root_with_analysis_and_progress, ConversionArtifactKind, ConversionProgress,
     ConversionReport, ConvertOptions, DEFAULT_FREEZE_PREROLL_SECONDS,
 };
 use cs2_demotracer::model::{
@@ -41,6 +42,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
+use steam_profile::SteamProfileDto;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
@@ -53,6 +55,13 @@ const MIN_SUPPORTED_MANIFEST_ABI: i32 = 12;
 const MIN_SUPPORTED_DTR_FORMAT_VERSION: u32 = 3;
 const OUTPUT_COMPLETION_MARKER: &str = ".demotracer-complete";
 const OUTPUT_COMPLETION_MARKER_CONTENT: &[u8] = b"CS2 DemoTracer output completed successfully.\n";
+const INTERACTIVE_ANALYSIS_READ_OPTIONS: ReadDemoOptions = ReadDemoOptions {
+    // Single-demo conversion reuses this ParsedDemo. Collect optional export
+    // evidence here so enabling voice or cosmetics never produces a silent,
+    // incomplete export without reparsing the demo.
+    collect_voice: true,
+    collect_cosmetics: true,
+};
 
 static NEXT_STAGING_NONCE: AtomicU64 = AtomicU64::new(1);
 static BATCH_CONVERSION_LOCK: Mutex<()> = Mutex::new(());
@@ -888,6 +897,7 @@ struct CachedDemo {
     parsed: Arc<ParsedDemo>,
     analysis: DemoAnalysis,
     browser: BrowserDemoAnalysis,
+    analysis_options: AnalysisOptions,
     archive_id: String,
     source_modified_at_ms: Option<u64>,
     source_size_bytes: Option<u64>,
@@ -1095,26 +1105,19 @@ async fn analyze_demo(
 
     let worker_source = source.clone();
     let worker_events = events.clone();
+    let analysis_options = AnalysisOptions {
+        max_round_seconds: request.max_round_seconds,
+        ..AnalysisOptions::default()
+    };
     let parsed_result = tauri::async_runtime::spawn_blocking(move || {
         if worker_source.paths().any(is_zstd_demo_path) {
             emit_phase(&worker_events, TaskPhase::Decompressing);
         }
         emit_phase(&worker_events, TaskPhase::Parsing);
-        let parsed = read_demo_source_with_options(
-            &worker_source,
-            ReadDemoOptions {
-                collect_voice: true,
-                collect_cosmetics: true,
-            },
-        )?;
+        let parsed =
+            read_demo_source_with_options(&worker_source, INTERACTIVE_ANALYSIS_READ_OPTIONS)?;
         emit_phase(&worker_events, TaskPhase::Analyzing);
-        let analysis = analyze_browser_demo(
-            &parsed,
-            AnalysisOptions {
-                max_round_seconds: request.max_round_seconds,
-                ..AnalysisOptions::default()
-            },
-        );
+        let analysis = analyze_browser_demo(&parsed, analysis_options);
         Ok::<_, cs2_demotracer::Error>((Arc::new(parsed), analysis))
     })
     .await
@@ -1150,6 +1153,7 @@ async fn analyze_demo(
         parsed,
         analysis: browser_analysis.analysis.clone(),
         browser: browser_analysis,
+        analysis_options,
         archive_id: output_demo_id,
         source_modified_at_ms,
         source_size_bytes,
@@ -1166,7 +1170,6 @@ async fn convert_demo(
 ) -> CommandResult<ConversionSummaryDto> {
     let _busy = state.acquire_busy()?;
     let cached = state.cached_demo(&request.analysis_id)?;
-
     let prepared = prepare_conversion(&request, &cached)?;
 
     let worker_events = events.clone();
@@ -1275,6 +1278,23 @@ async fn open_output(request: OpenOutputRequest) -> CommandResult<()> {
 }
 
 #[tauri::command]
+async fn reveal_output(request: OpenOutputRequest) -> CommandResult<()> {
+    let path = PathBuf::from(request.path.trim());
+    if !path.is_file() {
+        return Err(CommandErrorDto::at_path(
+            "output_not_found",
+            "The file does not exist.",
+            &path,
+        ));
+    }
+    let worker_path = path.clone();
+    tauri::async_runtime::spawn_blocking(move || reveal_file_path(&worker_path))
+        .await
+        .map_err(|error| CommandErrorDto::new("reveal_output_worker_failed", error.to_string()))?
+        .map_err(|error| CommandErrorDto::at_path("reveal_output_failed", error.to_string(), &path))
+}
+
+#[tauri::command]
 async fn open_external(request: OpenExternalRequest) -> CommandResult<()> {
     let url = validate_external_url(&request.url)?;
     let worker_url = url.clone();
@@ -1282,6 +1302,16 @@ async fn open_external(request: OpenExternalRequest) -> CommandResult<()> {
         .await
         .map_err(|error| CommandErrorDto::new("open_external_worker_failed", error.to_string()))?
         .map_err(|error| CommandErrorDto::new("open_external_failed", error.to_string()))
+}
+
+#[tauri::command]
+async fn load_steam_profiles(app: AppHandle, steam_ids: Vec<String>) -> Vec<SteamProfileDto> {
+    let local_data_root = app.path().app_local_data_dir().ok();
+    tauri::async_runtime::spawn_blocking(move || {
+        steam_profile::resolve_profiles(local_data_root, steam_ids)
+    })
+    .await
+    .unwrap_or_default()
 }
 
 fn validate_external_url(value: &str) -> CommandResult<String> {
@@ -3315,6 +3345,12 @@ fn prepare_conversion_with_cosmetics(
     cosmetics: CosmeticFlags,
 ) -> CommandResult<PreparedConversion> {
     validate_max_round_seconds(request.max_round_seconds)?;
+    if request.max_round_seconds.to_bits() != cached.analysis_options.max_round_seconds.to_bits() {
+        return Err(CommandErrorDto::new(
+            "analysis_options_changed",
+            "Round analysis settings changed. Analyze the demo again before converting.",
+        ));
+    }
     if !request.freeze_preroll_seconds.is_finite()
         || !(0.0..=MAX_FREEZE_PREROLL_SECONDS).contains(&request.freeze_preroll_seconds)
     {
@@ -3347,10 +3383,7 @@ fn prepare_conversion_with_cosmetics(
         export_cosmetics: cosmetics.cosmetics,
         export_stickers: cosmetics.stickers,
         export_charms: cosmetics.charms,
-        analysis: AnalysisOptions {
-            max_round_seconds: request.max_round_seconds,
-            ..AnalysisOptions::default()
-        },
+        analysis: cached.analysis_options,
     };
     Ok(PreparedConversion {
         output_dir: resolved.output_dir,
@@ -3802,8 +3835,9 @@ fn run_conversion_with_sink(
             emit_phase_to_sink(&events, TaskPhase::Exporting);
             let progress_events = events.clone();
             let progress_final_root = final_root.clone();
-            let report = export_demo_to_root_with_progress(
+            let report = export_demo_to_root_with_analysis_and_progress(
                 &cached.parsed,
+                &cached.analysis,
                 &prepared.options,
                 staging_root,
                 move |progress| {
@@ -3987,6 +4021,10 @@ fn process_batch_demo(
         parsed: Arc::new(parsed),
         analysis: browser.analysis.clone(),
         browser,
+        analysis_options: AnalysisOptions {
+            max_round_seconds: request.settings.max_round_seconds,
+            ..AnalysisOptions::default()
+        },
         archive_id,
         source_modified_at_ms: source_metadata.and_then(source_metadata_modified_at_ms),
         source_size_bytes: source_metadata.map(|metadata| metadata.size_bytes),
@@ -4830,6 +4868,29 @@ fn open_folder_path(path: &Path) -> std::io::Result<()> {
     }
 }
 
+fn reveal_file_path(path: &Path) -> std::io::Result<()> {
+    #[cfg(windows)]
+    {
+        Command::new("explorer.exe")
+            .arg(format!("/select,{}", path.display()))
+            .spawn()?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open").arg("-R").arg(path).spawn()?;
+        return Ok(());
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let parent = path.parent().unwrap_or(path);
+        Command::new("xdg-open").arg(parent).spawn()?;
+        Ok(())
+    }
+}
+
 fn open_external_url(url: &str) -> std::io::Result<()> {
     #[cfg(windows)]
     {
@@ -4887,7 +4948,9 @@ pub fn run() {
             import_archives,
             convert_demo,
             open_output,
-            open_external
+            reveal_output,
+            open_external,
+            load_steam_profiles
         ])
         .run(tauri::generate_context!())
         .expect("failed to run CS2 DemoTracer desktop app");
@@ -4900,6 +4963,12 @@ mod tests {
         ConversionManifest, ConvertedRound, EconomyClass, ReplayCosmetics, ReplayItemCosmetic,
         ReplayLoadout, ReplayWeaponCharm, ReplayWeaponCosmetic, ReplayWeaponSticker, TeamEconomy,
     };
+
+    #[test]
+    fn interactive_analysis_keeps_optional_export_evidence() {
+        assert!(INTERACTIVE_ANALYSIS_READ_OPTIONS.collect_voice);
+        assert!(INTERACTIVE_ANALYSIS_READ_OPTIONS.collect_cosmetics);
+    }
 
     #[test]
     fn external_urls_are_limited_to_exact_steam_targets() {
@@ -5287,6 +5356,7 @@ mod tests {
             parsed,
             analysis: analysis(),
             browser,
+            analysis_options: AnalysisOptions::default(),
             archive_id: archive_id.clone(),
             source_modified_at_ms: None,
             source_size_bytes: None,
@@ -5376,6 +5446,7 @@ mod tests {
             parsed,
             analysis: analysis(),
             browser,
+            analysis_options: AnalysisOptions::default(),
             archive_id: archive_id.clone(),
             source_modified_at_ms: None,
             source_size_bytes: None,
@@ -5806,6 +5877,43 @@ mod tests {
     }
 
     #[test]
+    fn conversion_rejects_analysis_option_drift() {
+        let parsed = Arc::new(ParsedDemo {
+            stem: "match".to_string(),
+            demo_sha256: "ab".repeat(32),
+            map: "de_mirage".to_string(),
+            ..ParsedDemo::default()
+        });
+        let analysis_options = AnalysisOptions::default();
+        let browser = analyze_browser_demo(&parsed, analysis_options);
+        let cached = CachedDemo {
+            analysis_id: "analysis-options".to_string(),
+            parsed,
+            analysis: browser.analysis.clone(),
+            browser,
+            analysis_options,
+            archive_id: "match-aabbccddeeff".to_string(),
+            source_modified_at_ms: None,
+            source_size_bytes: None,
+        };
+        let mut changed = request();
+        changed.max_round_seconds += 1.0;
+
+        let error = prepare_conversion_with_cosmetics(
+            &changed,
+            &cached,
+            CosmeticFlags {
+                cosmetics: false,
+                stickers: false,
+                charms: false,
+            },
+        )
+        .err()
+        .expect("analysis option drift must fail");
+        assert_eq!(error.code, "analysis_options_changed");
+    }
+
+    #[test]
     fn cosmetics_require_exact_confirmation_phrase() {
         let mut request = request();
         request.export_cosmetics = true;
@@ -6084,7 +6192,7 @@ mod tests {
 
         assert!(matches!(
             archive_info::read_demo_info(&temp.path, &"aa".repeat(32)),
-            archive_info::DemoInfoRead::Stale
+            archive_info::DemoInfoRead::Current(_)
         ));
         assert!(conversion.voice);
         assert!(conversion.cosmetics);

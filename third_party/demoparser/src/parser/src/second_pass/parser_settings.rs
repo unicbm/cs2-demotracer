@@ -13,7 +13,7 @@ use crate::second_pass::game_events::GameEvent;
 use crate::second_pass::other_netmessages::Class;
 use crate::second_pass::parser::SecondPassOutput;
 use crate::second_pass::path_ops::FieldPath;
-use crate::second_pass::variants::{InventoryWeaponCosmetic, PropColumn};
+use crate::second_pass::variants::{InventoryWeaponCosmetic, PropColumn, Variant};
 use ahash::AHashMap;
 use ahash::AHashSet;
 use ahash::HashMap;
@@ -24,6 +24,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::env;
+use std::sync::Arc;
 const HUF_LOOKUPTABLE_MAXVALUE: u32 = (1 << 17) - 1;
 const DEFAULT_MAX_ENTITY_ID: usize = 1024;
 
@@ -42,8 +43,12 @@ pub struct SecondPassParser<'a> {
     pub serializers: AHashMap<String, Serializer, RandomState>,
     pub cls_bits: Option<u32>,
     pub entities: Vec<Option<Entity>>,
-    pub weapon_cosmetic_cache:
-        RefCell<AHashMap<i32, (u64, Option<InventoryWeaponCosmetic>)>>,
+    pub weapon_cosmetic_cache: RefCell<AHashMap<i32, (u64, Option<InventoryWeaponCosmetic>)>>,
+    pub player_inventory_cosmetic_cache: RefCell<AHashMap<i32, (Vec<(i32, u32, u64)>, Arc<[InventoryWeaponCosmetic]>)>>,
+    pub stable_owned_weapon_cosmetic_cache:
+        RefCell<AHashMap<(u64, u32, u32), InventoryWeaponCosmetic>>,
+    pub stable_agent_skin_cache: RefCell<AHashMap<(u64, u32), String>>,
+    pub glove_attribute_cache: RefCell<AHashMap<i32, ((u32, u64), [Option<Variant>; 3])>>,
     pub tick: i32,
     pub players: BTreeMap<i32, PlayerMetaData>,
     pub teams: Teams,
@@ -211,6 +216,10 @@ impl<'a> SecondPassParser<'a> {
             cls_by_id: &first_pass_output.cls_by_id,
             entities: vec![None; DEFAULT_MAX_ENTITY_ID],
             weapon_cosmetic_cache: RefCell::new(AHashMap::default()),
+            player_inventory_cosmetic_cache: RefCell::new(AHashMap::default()),
+            stable_owned_weapon_cosmetic_cache: RefCell::new(AHashMap::default()),
+            stable_agent_skin_cache: RefCell::new(AHashMap::default()),
+            glove_attribute_cache: RefCell::new(AHashMap::default()),
             cls_bits: None,
             tick: -99999,
             players: BTreeMap::default(),

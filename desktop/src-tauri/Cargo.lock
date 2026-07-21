@@ -693,11 +693,13 @@ name = "cs2-demotracer-gui"
 version = "0.8.0"
 dependencies = [
  "cs2-demotracer",
+ "quick-xml",
  "rfd",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2956,6 +2958,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdcc8dd4e2f670d309a5f0e83fe36dfdc05af317008fea29144da1a2ac858e5e"
 dependencies = [
  "memchr",
+ "serde",
 ]
 
 [[package]]

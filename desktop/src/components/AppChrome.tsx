@@ -1,7 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
 import {
-  CheckIcon,
   CloseIcon,
   MaximizeIcon,
   MinimizeIcon,
@@ -11,14 +10,13 @@ import {
   TraceMark,
 } from "../icons";
 import type { TextDictionary } from "../i18n";
-import type { AnalysisResult, Language, Phase, Theme } from "../types";
+import type { AnalysisResult, Language, Theme } from "../types";
 
 interface AppChromeProps {
   words: TextDictionary;
   language: Language;
   theme: Theme;
   themeTitle: string;
-  phase: Phase;
   sourcePath: string;
   sourceFileName: string;
   analysis: AnalysisResult | null;
@@ -29,18 +27,11 @@ interface AppChromeProps {
   onRequestClose: () => void;
 }
 
-function workflowIndex(phase: Phase): number {
-  if (phase === "selecting") return 1;
-  if (phase === "converting" || phase === "validationFailed" || phase === "complete") return 2;
-  return 0;
-}
-
 export function AppChrome({
   words,
   language,
   theme,
   themeTitle,
-  phase,
   sourcePath,
   sourceFileName,
   analysis,
@@ -50,7 +41,6 @@ export function AppChrome({
   onChangeDemo,
   onRequestClose,
 }: AppChromeProps) {
-  const activeStep = workflowIndex(phase);
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
@@ -131,19 +121,6 @@ export function AppChrome({
             </div>
             <span className="source-path" title={sourcePath} aria-label={`${words.source}: ${sourcePath}`}>{sourcePath}</span>
           </div>
-
-          <nav className="workflow-indicator" aria-label={words.workflowLabel}>
-            {words.steps.map((step, index) => {
-              const done = index < activeStep || phase === "complete";
-              const active = index === activeStep && phase !== "complete";
-              return (
-                <span className={`${done ? "done" : ""} ${active ? "active" : ""}`} key={step} aria-current={active ? "step" : undefined}>
-                  <i aria-hidden="true">{done ? <CheckIcon size={12} /> : index + 1}</i>
-                  <b>{step}</b>
-                </span>
-              );
-            })}
-          </nav>
 
           <button className="quiet-button change-demo-button" type="button" disabled={busy} onClick={onChangeDemo}>
             {words.changeDemo}

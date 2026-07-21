@@ -1,11 +1,12 @@
-import { useEffect, useRef } from "react";
-import { ArrowIcon, CloseIcon, FolderIcon, LibraryIcon, PlusIcon, RefreshIcon, SearchIcon, TraceMark } from "../icons";
+import { type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from "react";
+import { ArrowIcon, CloseIcon, FolderIcon, LibraryIcon, PlusIcon, RefreshIcon, ReplayIcon, SearchIcon, TraceMark } from "../icons";
 import type { TextDictionary } from "../i18n";
 import type { DemoLibraryEntry, DemoLibraryScan, Language, LibraryPlayerSummary } from "../types";
 import { displayMap, MapArtwork, mapArtworkStyle } from "./MapArtwork";
+import { ContextMenu, type ContextMenuState } from "./ContextMenu";
 import "./library-workspace.css";
 
-export type LibrarySort = "recent" | "map";
+export type LibrarySort = "recent" | "map" | "platform";
 
 interface LibraryWorkspaceProps {
   words: TextDictionary;
@@ -14,15 +15,19 @@ interface LibraryWorkspaceProps {
   roots: string[];
   scan: DemoLibraryScan | null;
   loading: boolean;
+  taskBusy: boolean;
+  archiveOpenDisabled: boolean;
   repairingManifest: string;
   repairingLibrary: boolean;
   importingArchives: boolean;
   notice: string;
   query: string;
   mapFilter: string;
+  platformFilter: string;
   sort: LibrarySort;
   onQueryChange: (value: string) => void;
   onMapFilterChange: (value: string) => void;
+  onPlatformFilterChange: (value: string) => void;
   onSortChange: (value: LibrarySort) => void;
   onAddRoot: () => void;
   onRemoveRoot: (root: string) => void;
@@ -33,19 +38,21 @@ interface LibraryWorkspaceProps {
   onConvert: () => void;
   onOpenEntry: (entry: DemoLibraryEntry) => void;
   onRepairEntry: (entry: DemoLibraryEntry) => void;
+  onRevealManifest: (entry: DemoLibraryEntry) => void;
+  onRevealDemo: (entry: DemoLibraryEntry) => void;
+  onReparseEntry: (entry: DemoLibraryEntry) => void;
 }
 
-function fileName(path: string): string {
-  return path.split(/[\\/]/).filter(Boolean).at(-1) || path;
-}
-
-function formatDate(value: number, language: Language): string {
-  if (!Number.isFinite(value) || value <= 0) return "—";
-  return new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-US", {
+function formatDateParts(value: number, language: Language): { date: string; time: string; iso?: string } {
+  if (!Number.isFinite(value) || value <= 0) return { date: "—", time: "" };
+  const locale = language === "zh" ? "zh-CN" : "en-US";
+  const date = new Intl.DateTimeFormat(locale, {
     year: "numeric",
     month: "short",
     day: "numeric",
   }).format(new Date(value));
+  const time = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+  return { date, time, iso: new Date(value).toISOString() };
 }
 
 function formatDuration(value: number | null | undefined): string | null {
@@ -115,23 +122,51 @@ function teamNameForIdentity(players: LibraryPlayerSummary[], team: "a" | "b"): 
   return [...counts.values()].sort((left, right) => right.count - left.count)[0]?.name ?? null;
 }
 
-function LibraryCard({
+function playerNamesForIdentity(
+  players: LibraryPlayerSummary[],
+  team: "a" | "b",
+  identity: string | null,
+): string[] {
+  const direct = players.filter((player) => player.team?.toLowerCase() === team);
+  const matching = direct.length > 0
+    ? direct
+    : identity
+      ? players.filter((player) => player.teamName && sameTeamName(player.teamName, identity))
+      : [];
+  const names = new Map<string, string>();
+  for (const player of matching) {
+    const name = player.name.trim();
+    if (name) names.set(name.toLocaleLowerCase(), name);
+  }
+  return [...names.values()];
+}
+
+function LibraryRow({
   entry,
   words,
   language,
   onOpen,
   onRepair,
+  onRevealManifest,
+  onRevealDemo,
+  onReparse,
   repairing,
   disabled,
+  taskBusy,
 }: {
   entry: DemoLibraryEntry;
   words: TextDictionary;
   language: Language;
   onOpen: () => void;
   onRepair: () => void;
+  onRevealManifest: () => void;
+  onRevealDemo: () => void;
+  onReparse: () => void;
   repairing: boolean;
   disabled: boolean;
+  taskBusy: boolean;
 }) {
+  const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const scoreFirstIdentity = cleanTeamName(entry.score?.teamA.name);
   const scoreSecondIdentity = cleanTeamName(entry.score?.teamB.name);
   const firstIdentity = scoreFirstIdentity
@@ -144,103 +179,111 @@ function LibraryCard({
     && (!firstIdentity || !sameTeamName(name, firstIdentity))) ?? null;
   const firstName = firstIdentity || words.teamA;
   const secondName = secondIdentity || words.teamB;
+  const firstPlayers = playerNamesForIdentity(entry.players, "a", firstIdentity);
+  const secondPlayers = playerNamesForIdentity(entry.players, "b", secondIdentity);
   const duration = formatDuration(entry.durationSeconds);
+  const demoDate = formatDateParts(entry.sourceModifiedAtMs ?? 0, language);
+  const sourceName = entry.demoSource ? platformName(entry.demoSource.name) : words.unknownPlatform;
   const scoreStatus = entry.score?.status || (entry.scoreIsSnapshot ? "snapshot" : "final");
   const needsMetadata = entry.metadataStatus !== "current";
   const needsSourceLink = !entry.sourcePath || entry.sourceAvailable === false;
   const needsRepair = needsMetadata || needsSourceLink;
   const repairLabel = needsMetadata ? words.repairMetadata : words.linkSourceDemo;
-  const repairHelp = needsMetadata ? words.repairMetadataHelp : words.linkSourceDemoHelp;
   const scoreTitle = scoreStatus === "snapshot"
     ? words.archiveScoreSnapshot
     : scoreStatus === "completed"
       ? words.completedScore
       : undefined;
 
-  return (
-    <article className="library-card" style={mapArtworkStyle(entry.map)}>
-      <header className="library-card-hero">
-        <MapArtwork map={entry.map} className="library-map-artwork" />
-        <div className="library-map-label">
-          <div className="library-map-copy">
-            <strong>{displayMap(entry.map)}</strong>
-            <small title={entry.demoPath || entry.demoId}>{entry.displayName || fileName(entry.demoPath) || entry.demoId}</small>
-          </div>
-        </div>
-        <div
-          className={`library-score ${scoreStatus !== "final" ? "is-snapshot" : ""}`}
-          aria-label={entry.score && scoreStatus !== "snapshot"
-            ? `${firstName} ${entry.score.teamA.score} : ${entry.score.teamB.score} ${secondName}`
-            : needsMetadata ? words.metadataNeedsRefresh : words.scoreUnavailable}
-          title={scoreTitle}
-        >
-          {entry.score && scoreStatus !== "snapshot" ? (
-            <>{scoreStatus === "snapshot" ? <i>≈</i> : scoreStatus === "completed" ? <i>·</i> : null}<strong>{entry.score.teamA.score}</strong><span>:</span><strong>{entry.score.teamB.score}</strong></>
-          ) : <span>{needsMetadata ? words.metadataNeedsRefresh : words.scoreUnavailable}</span>}
-        </div>
-        <div className="library-card-date">
-          <div>
-            <span>{words.demoFileTime}</span>
-            <time dateTime={entry.sourceModifiedAtMs && entry.sourceModifiedAtMs > 0 ? new Date(entry.sourceModifiedAtMs).toISOString() : undefined}>
-              {formatDate(entry.sourceModifiedAtMs ?? 0, language)}
-            </time>
-          </div>
-        </div>
-      </header>
+  const activate = () => {
+    if (!disabled) onOpen();
+  };
+  const openMenu = (event: ReactMouseEvent) => {
+    event.preventDefault();
+    setMenu({
+      x: event.clientX,
+      y: event.clientY,
+      label: words.archiveContextMenu,
+      items: [
+        { label: words.openArchive, icon: <ReplayIcon size={15} />, disabled, onSelect: onOpen },
+        { label: words.openManifestLocation, icon: <FolderIcon size={15} />, onSelect: onRevealManifest },
+        { label: words.openDemoLocation, icon: <FolderIcon size={15} />, disabled: needsSourceLink, onSelect: onRevealDemo },
+        { label: words.reparseDemo, icon: <RefreshIcon size={15} />, dividerBefore: true, disabled: disabled || taskBusy, onSelect: onReparse },
+        ...(needsRepair ? [{ label: repairLabel, icon: <RefreshIcon size={15} />, disabled: repairing || disabled || taskBusy, onSelect: onRepair }] : []),
+      ],
+    });
+  };
 
-      <div className="library-card-summary">
-        <div className="library-matchup" aria-label={`${firstName} vs ${secondName}`}>
+  return (
+    <>
+    <article
+      className="library-row"
+      style={mapArtworkStyle(entry.map)}
+      tabIndex={disabled ? -1 : 0}
+      role="button"
+      aria-disabled={disabled}
+      onClick={activate}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        activate();
+      }}
+      onContextMenu={openMenu}
+    >
+      <div className="library-row-date" title={entry.serverName ? `${words.demoServerName}: ${entry.serverName}` : undefined}>
+        <time dateTime={demoDate.iso}>
+          <strong>{demoDate.date}</strong>
+          <small>
+            <span>{demoDate.time || words.timeUnknown}</span>
+            {entry.demoSource ? <b>{sourceName}</b> : null}
+          </small>
+        </time>
+      </div>
+      <div className="library-row-match" aria-label={`${firstName} vs ${secondName}`}>
+        <div className="library-row-team">
           <strong title={firstName}>{firstName}</strong>
-          <span>vs</span>
-          <strong title={secondName}>{secondName}</strong>
+          {firstPlayers.length > 0 ? <small title={firstPlayers.join(" · ")}>{firstPlayers.join(" · ")}</small> : null}
         </div>
-        <div className="library-card-facts">
-          {entry.demoSource ? (
-            <span
-              className="source-pill"
-              title={entry.serverName ? `${words.demoServerName}: ${entry.serverName}` : undefined}
-            >
-              {entry.demoSource.evidence === "fileName" ? words.possibleSource : words.demoSource}: {platformName(entry.demoSource.name)}
-            </span>
-          ) : null}
-          <span>{words.archiveRoundsShort.replace("{count}", String(entry.rounds))}</span>
-          {duration ? <span title={words.demoDuration}>{duration}</span> : null}
-          {entry.compatibility !== "current" ? (
-            <span className={`compatibility-pill is-${entry.compatibility}`}>{compatibilityLabel(entry, words)}</span>
-          ) : null}
+        <span>vs</span>
+        <div className="library-row-team is-opponent">
+          <strong title={secondName}>{secondName}</strong>
+          {secondPlayers.length > 0 ? <small title={secondPlayers.join(" · ")}>{secondPlayers.join(" · ")}</small> : null}
         </div>
       </div>
+      <div
+        className="library-row-score"
+        aria-label={entry.score && scoreStatus !== "snapshot" ? `${entry.score.teamA.score} : ${entry.score.teamB.score}` : words.scoreUnavailable}
+        title={scoreTitle}
+      >
+        <span className="library-row-score-numbers">
+          {entry.score && scoreStatus !== "snapshot"
+            ? <><strong>{entry.score.teamA.score}</strong><i>:</i><strong>{entry.score.teamB.score}</strong></>
+            : <span>— : —</span>}
+        </span>
+        <small>
+          <span>{words.archiveRoundsShort.replace("{count}", String(entry.rounds))}</span>
+          {duration ? <span>{duration}</span> : null}
+        </small>
+        {entry.compatibility !== "current" ? <em className={`is-${entry.compatibility}`}>{compatibilityLabel(entry, words)}</em> : null}
+        {needsRepair ? <em>{repairLabel}</em> : null}
+      </div>
+      <div className="library-row-map">
+        <MapArtwork map={entry.map} className="library-row-map-artwork" />
+        <strong>{displayMap(entry.map)}</strong>
+      </div>
+      <ArrowIcon className="library-row-arrow" size={14} />
 
-      <footer className="library-card-footer">
-        <div className="library-card-actions">
-          {needsRepair ? (
-            <button
-              className="library-repair-button"
-              type="button"
-              onClick={onRepair}
-              disabled={repairing || disabled}
-              title={repairHelp}
-              aria-label={`${repairLabel}: ${repairHelp}`}
-            >
-              <RefreshIcon size={14} />{repairing
-                ? needsMetadata ? words.repairingMetadata : words.linkingSourceDemo
-                : repairLabel}
-            </button>
-          ) : null}
-          <button className="library-open-button" type="button" onClick={onOpen} disabled={disabled}>
-            {words.preparePlayback}<ArrowIcon size={15} />
-          </button>
-        </div>
-      </footer>
     </article>
+    {menu ? <ContextMenu menu={menu} onClose={() => setMenu(null)} /> : null}
+    </>
   );
 }
 
 function LibrarySkeleton() {
   return (
-    <div className="library-grid" aria-hidden="true">
+    <div className="library-list" aria-hidden="true">
       {[0, 1, 2, 3].map((index) => (
-        <div className="library-card library-card-skeleton" key={index}>
+        <div className="library-row library-card-skeleton" key={index}>
           <div /><span /><span /><span />
         </div>
       ))}
@@ -255,15 +298,19 @@ export function LibraryWorkspace({
   roots,
   scan,
   loading,
+  taskBusy,
+  archiveOpenDisabled,
   repairingManifest,
   repairingLibrary,
   importingArchives,
   notice,
   query,
   mapFilter,
+  platformFilter,
   sort,
   onQueryChange,
   onMapFilterChange,
+  onPlatformFilterChange,
   onSortChange,
   onAddRoot,
   onRemoveRoot,
@@ -274,6 +321,9 @@ export function LibraryWorkspace({
   onConvert,
   onOpenEntry,
   onRepairEntry,
+  onRevealManifest,
+  onRevealDemo,
+  onReparseEntry,
 }: LibraryWorkspaceProps) {
   const rootsMenuRef = useRef<HTMLDetailsElement | null>(null);
   useEffect(() => {
@@ -300,6 +350,8 @@ export function LibraryWorkspace({
   };
   const maps = [...new Set((scan?.entries ?? []).map((entry) => entry.map).filter(Boolean))]
     .sort((left, right) => left.localeCompare(right));
+  const platforms = [...new Set((scan?.entries ?? []).map((entry) => entry.demoSource?.name).filter((value): value is string => Boolean(value)))]
+    .sort((left, right) => left.localeCompare(right));
   const normalizedQuery = query.trim().toLowerCase();
   const isScanning = loading || scan === null;
   const maintenanceBusy = repairingLibrary || importingArchives || Boolean(repairingManifest);
@@ -309,9 +361,14 @@ export function LibraryWorkspace({
   const entries = (scan?.entries ?? [])
     .filter((entry) => !normalizedQuery || entrySearchText(entry).includes(normalizedQuery))
     .filter((entry) => !mapFilter || entry.map === mapFilter)
-    .sort((left, right) => sort === "map"
-      ? left.map.localeCompare(right.map) || right.modifiedAtMs - left.modifiedAtMs
-      : right.modifiedAtMs - left.modifiedAtMs);
+    .filter((entry) => !platformFilter || entry.demoSource?.name === platformFilter)
+    .sort((left, right) => {
+      const leftDate = left.sourceModifiedAtMs ?? left.modifiedAtMs;
+      const rightDate = right.sourceModifiedAtMs ?? right.modifiedAtMs;
+      if (sort === "map") return left.map.localeCompare(right.map) || rightDate - leftDate;
+      if (sort === "platform") return (left.demoSource?.name ?? "").localeCompare(right.demoSource?.name ?? "") || rightDate - leftDate;
+      return rightDate - leftDate;
+    });
 
   return (
     <section className="library-workspace" aria-labelledby="library-title">
@@ -322,7 +379,7 @@ export function LibraryWorkspace({
           <p>{words.librarySubtitle}</p>
         </div>
         <div className="library-primary-actions">
-          <button className="primary-button" type="button" onClick={onConvert} disabled={maintenanceBusy}><PlusIcon size={16} />{words.convertDemo}</button>
+          <button className="primary-button" type="button" onClick={onConvert} disabled={maintenanceBusy || taskBusy}><PlusIcon size={16} />{words.convertDemo}</button>
         </div>
       </header>
 
@@ -415,9 +472,15 @@ export function LibraryWorkspace({
               {maps.map((map) => <option value={map} key={map}>{displayMap(map)}</option>)}
             </select>
 
+            <select value={platformFilter} onChange={(event) => onPlatformFilterChange(event.target.value)} aria-label={words.demoSource}>
+              <option value="">{words.allPlatforms}</option>
+              {platforms.map((platform) => <option value={platform} key={platform}>{platformName(platform)}</option>)}
+            </select>
+
             <select value={sort} onChange={(event) => onSortChange(event.target.value as LibrarySort)} aria-label={words.recentFirst}>
               <option value="recent">{words.recentFirst}</option>
               <option value="map">{words.mapOrder}</option>
+              <option value="platform">{words.platformOrder}</option>
             </select>
 
             <button className="icon-button library-refresh" type="button" disabled={loading || maintenanceBusy} onClick={onRefresh} aria-label={words.scanLibrary} title={words.scanLibrary}>
@@ -437,17 +500,21 @@ export function LibraryWorkspace({
           </div>
 
           {isScanning ? <LibrarySkeleton /> : entries.length > 0 ? (
-            <div className="library-grid">
+            <div className="library-list">
               {entries.map((entry) => (
-                <LibraryCard
+                <LibraryRow
                   key={entry.manifestPath}
                   entry={entry}
                   words={words}
                   language={language}
                   onOpen={() => onOpenEntry(entry)}
                   onRepair={() => onRepairEntry(entry)}
+                  onRevealManifest={() => onRevealManifest(entry)}
+                  onRevealDemo={() => onRevealDemo(entry)}
+                  onReparse={() => onReparseEntry(entry)}
                   repairing={repairingManifest === entry.manifestPath}
-                  disabled={maintenanceBusy}
+                  disabled={maintenanceBusy || archiveOpenDisabled}
+                  taskBusy={taskBusy}
                 />
               ))}
             </div>

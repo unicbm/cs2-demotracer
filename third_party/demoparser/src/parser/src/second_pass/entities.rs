@@ -1,4 +1,8 @@
 use crate::first_pass::prop_controller::ITEM_PURCHASE_DEF_IDX;
+use crate::first_pass::prop_controller::GLOVE_ATTRIBUTE_DEF_INDEX_ID;
+use crate::first_pass::prop_controller::GLOVE_PAINT_ID;
+use crate::first_pass::prop_controller::WEAPON_ATTRIBUTE_DEF_INDEX_ID;
+use crate::first_pass::prop_controller::WEAPON_SKIN_ID;
 use crate::first_pass::prop_controller::is_grenade_or_weapon;
 use crate::first_pass::read_bits::Bitreader;
 use crate::first_pass::read_bits::DemoParserError;
@@ -10,6 +14,7 @@ use crate::first_pass::sendtables::FieldInfo;
 use crate::second_pass::game_events::GameEventInfo;
 use crate::second_pass::other_netmessages::Class;
 use crate::second_pass::parser_settings::SecondPassParser;
+use crate::second_pass::parser_settings::SpecialIDs;
 use crate::second_pass::path_ops::*;
 use crate::second_pass::variants::Variant;
 use ahash::AHashMap;
@@ -24,9 +29,10 @@ const HUFFMAN_CODE_MAXLEN: u32 = 17;
 pub struct Entity {
     pub cls_id: u32,
     pub entity_id: i32,
+    pub serial: u32,
     pub props: AHashMap<u32, Variant>,
     pub entity_type: EntityType,
-    pub revision: u64,
+    pub cosmetic_revision: u64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -50,6 +56,33 @@ enum EntityCmd {
     Delete,
     CreateAndUpdate,
     Update,
+}
+
+fn is_cosmetic_prop(prop_id: u32, special_ids: &SpecialIDs) -> bool {
+    const ECON_ATTRIBUTE_SLOTS: u32 = 64;
+
+    (WEAPON_SKIN_ID..WEAPON_SKIN_ID + ECON_ATTRIBUTE_SLOTS).contains(&prop_id)
+        || (WEAPON_ATTRIBUTE_DEF_INDEX_ID
+            ..WEAPON_ATTRIBUTE_DEF_INDEX_ID + ECON_ATTRIBUTE_SLOTS)
+            .contains(&prop_id)
+        || (GLOVE_PAINT_ID..GLOVE_PAINT_ID + ECON_ATTRIBUTE_SLOTS).contains(&prop_id)
+        || (GLOVE_ATTRIBUTE_DEF_INDEX_ID
+            ..GLOVE_ATTRIBUTE_DEF_INDEX_ID + ECON_ATTRIBUTE_SLOTS)
+            .contains(&prop_id)
+        || [
+            special_ids.item_def,
+            special_ids.item_id_high,
+            special_ids.item_id_low,
+            special_ids.item_account_id,
+            special_ids.orig_own_low,
+            special_ids.orig_own_high,
+            special_ids.entity_quality,
+            special_ids.fallback_stattrak,
+            special_ids.custom_name,
+        ]
+        .into_iter()
+        .flatten()
+        .any(|id| id == prop_id)
 }
 
 impl<'a> SecondPassParser<'a> {
@@ -81,6 +114,7 @@ impl<'a> SecondPassParser<'a> {
                     self.projectiles.remove(&entity_id);
                     self.projectile_record_indices.remove(&entity_id);
                     self.weapon_cosmetic_cache.get_mut().remove(&entity_id);
+                    self.glove_attribute_cache.get_mut().remove(&entity_id);
                     if let Some(entry) = self.entities.get_mut(entity_id as usize) {
                         *entry = None;
                     }
@@ -283,7 +317,10 @@ impl<'a> SecondPassParser<'a> {
                 );
             }
 
-            SecondPassParser::insert_field(entity, result, field_info);
+            let updates_cosmetics = field_info
+                .map(|fi| is_cosmetic_prop(fi.prop_id, &self.prop_controller.special_ids))
+                .unwrap_or(false);
+            SecondPassParser::insert_field(entity, result, field_info, updates_cosmetics);
         }
         Ok(n_updates)
     }
@@ -305,11 +342,18 @@ impl<'a> SecondPassParser<'a> {
         }
     }
 
-    pub fn insert_field(entity: &mut Entity, result: Variant, field_info: Option<FieldInfo>) {
+    pub fn insert_field(
+        entity: &mut Entity,
+        result: Variant,
+        field_info: Option<FieldInfo>,
+        updates_cosmetics: bool,
+    ) {
         if let Some(fi) = field_info {
             if fi.should_parse {
                 entity.props.insert(fi.prop_id, result);
-                entity.revision = entity.revision.wrapping_add(1);
+                if updates_cosmetics {
+                    entity.cosmetic_revision = entity.cosmetic_revision.wrapping_add(1);
+                }
             }
         }
     }
@@ -341,7 +385,7 @@ impl<'a> SecondPassParser<'a> {
         let cls_bits = (self.cls_by_id.len() as f32).log2().ceil() as u32;
         let cls_id: u32 = bitreader.read_nbits(cls_bits)?;
         // Both of these are not used. Don't think they are interesting for the parser
-        let _serial = bitreader.read_nbits(NSERIALBITS)?;
+        let serial = bitreader.read_nbits(NSERIALBITS)?;
         let _unknown = bitreader.read_varint();
         let entity_type = self.check_entity_type(&cls_id)?;
         match entity_type {
@@ -355,11 +399,13 @@ impl<'a> SecondPassParser<'a> {
         let entity = Entity {
             entity_id: *entity_id,
             cls_id,
+            serial,
             props: AHashMap::with_capacity(0),
             entity_type,
-            revision: 0,
+            cosmetic_revision: 0,
         };
         self.weapon_cosmetic_cache.get_mut().remove(entity_id);
+        self.glove_attribute_cache.get_mut().remove(entity_id);
         if self.entities.len() as i32 <= *entity_id {
             // if corrupt, this can cause oom allocations
             if *entity_id > 100000 {
@@ -400,6 +446,36 @@ impl<'a> SecondPassParser<'a> {
             return Ok(EntityType::Projectile);
         }
         return Ok(EntityType::Normal);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cosmetic_revision_tracks_only_fields_used_by_the_cosmetic_snapshot() {
+        let mut special_ids = SpecialIDs::new();
+        special_ids.item_def = Some(42);
+        special_ids.custom_name = Some(43);
+
+        assert!(is_cosmetic_prop(42, &special_ids));
+        assert!(is_cosmetic_prop(43, &special_ids));
+        assert!(is_cosmetic_prop(WEAPON_SKIN_ID, &special_ids));
+        assert!(is_cosmetic_prop(
+            WEAPON_ATTRIBUTE_DEF_INDEX_ID + 63,
+            &special_ids
+        ));
+        assert!(!is_cosmetic_prop(
+            WEAPON_ATTRIBUTE_DEF_INDEX_ID + 64,
+            &special_ids
+        ));
+        assert!(is_cosmetic_prop(GLOVE_PAINT_ID + 63, &special_ids));
+        assert!(is_cosmetic_prop(
+            GLOVE_ATTRIBUTE_DEF_INDEX_ID + 63,
+            &special_ids
+        ));
+        assert!(!is_cosmetic_prop(44, &special_ids));
     }
 }
 

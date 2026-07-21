@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
+use std::sync::Arc;
 
 pub const DEMOTRACER_ABI: i32 = 17;
 pub const DTR_FORMAT_VERSION: u32 = 7;
@@ -644,7 +645,7 @@ pub struct ParsedPlayerTick {
     pub usercmd_left_hand_desired: Option<bool>,
     pub item_def_idx: i32,
     pub inventory_as_ids: Vec<i32>,
-    pub inventory_weapon_cosmetics: Vec<ParsedInventoryWeaponCosmetic>,
+    pub inventory_weapon_cosmetics: Arc<[ParsedInventoryWeaponCosmetic]>,
     pub music_kit_id: Option<u32>,
     pub scoreboard_flair: Option<ParsedScoreboardFlair>,
     pub agent_item_def_index: Option<u32>,

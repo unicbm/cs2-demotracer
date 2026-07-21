@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AlertIcon,
   CheckIcon,
+  ChevronIcon,
   FolderIcon,
   LibraryIcon,
   RefreshIcon,
@@ -23,7 +24,13 @@ import type {
   ServerConfigDocument,
   ServerConfigValidation,
 } from "../types";
-import type { PlaybackPresetOptions } from "./PlaybackCommandBuilder";
+import { SERVER_CONFIG_GUIDE, type ServerConfigGuideGroup } from "../serverConfigGuide";
+import type {
+  PlaybackHandoffMode,
+  PlaybackMatchOverride,
+  PlaybackPresetOptions,
+  PlaybackToggleOverride,
+} from "./PlaybackCommandBuilder";
 import "./settings-workspace.css";
 
 type SettingsSection = "environment" | "paths" | "export" | "playback" | "serverConfig";
@@ -61,6 +68,7 @@ interface SettingsWorkspaceProps {
   onRemoveArchiveRoot: (root: string) => void;
   onAddDemoRoot: () => void;
   onRemoveDemoRoot: (root: string) => void;
+  onOpenPath: (path: string) => void;
   onEnvironmentChange: (patch: Partial<LocalEnvironmentSettings>) => void;
   onConverterChange: (patch: Partial<ConverterSettings>) => void;
   onRequestCosmetics: () => void;
@@ -175,17 +183,42 @@ function SettingLine({
   );
 }
 
+function SettingSelectLine({
+  title,
+  description,
+  value,
+  children,
+  onChange,
+}: {
+  title: string;
+  description: string;
+  value: string;
+  children: ReactNode;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="settings-select-line">
+      <span><strong>{title}</strong><small>{description}</small></span>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>{children}</select>
+    </label>
+  );
+}
+
 function PathRow({
   path,
   badge,
   removeLabel,
+  openLabel,
   removable,
+  onOpen,
   onRemove,
 }: {
   path: string;
   badge?: string;
   removeLabel: string;
+  openLabel: string;
   removable: boolean;
+  onOpen: () => void;
   onRemove: () => void;
 }) {
   return (
@@ -193,6 +226,7 @@ function PathRow({
       <FolderIcon size={16} />
       <code title={path}>{path}</code>
       {badge ? <span>{badge}</span> : null}
+      <button className="text-button" type="button" onClick={onOpen}>{openLabel}</button>
       {removable ? (
         <button className="text-button" type="button" onClick={onRemove}>{removeLabel}</button>
       ) : null}
@@ -233,12 +267,15 @@ export function SettingsWorkspace({
   onRemoveArchiveRoot,
   onAddDemoRoot,
   onRemoveDemoRoot,
+  onOpenPath,
   onEnvironmentChange,
   onConverterChange,
   onRequestCosmetics,
   onPlaybackChange,
 }: SettingsWorkspaceProps) {
   const [section, setSection] = useState<SettingsSection>("environment");
+  const [serverGuideQuery, setServerGuideQuery] = useState("");
+  const autoLoadedConfigPath = useRef("");
   const reportCopy = report ? overallCopy(words, report.overall) : null;
   const formattedCheckTime = useMemo(() => {
     if (!report) return "";
@@ -248,6 +285,34 @@ export function SettingsWorkspace({
     }).format(new Date(report.checkedAtMs));
   }, [language, report]);
   const defaultRootKey = exportRoot.replace(/\\/g, "/").toLocaleLowerCase();
+  const normalizedGuideQuery = serverGuideQuery.trim().toLocaleLowerCase();
+  const serverGuideGroups = useMemo(() => {
+    const groups = new Map<ServerConfigGuideGroup, Array<(typeof SERVER_CONFIG_GUIDE)[number]>>();
+    for (const field of SERVER_CONFIG_GUIDE) {
+      const searchText = `${field.path} ${field.description[language]} ${field.accepted?.join(" ") ?? ""}`.toLocaleLowerCase();
+      if (normalizedGuideQuery && !searchText.includes(normalizedGuideQuery)) continue;
+      const fields = groups.get(field.group) ?? [];
+      fields.push(field);
+      groups.set(field.group, fields);
+    }
+    return groups;
+  }, [language, normalizedGuideQuery]);
+
+  useEffect(() => {
+    const path = environment.cs2Path.trim();
+    if (section !== "serverConfig" || !path || serverConfigDocument || loadingServerConfig) return;
+    if (autoLoadedConfigPath.current === path) return;
+    autoLoadedConfigPath.current = path;
+    onLoadServerConfig();
+  }, [environment.cs2Path, loadingServerConfig, onLoadServerConfig, section, serverConfigDocument]);
+
+  const serverGuideGroupLabel = (group: ServerConfigGuideGroup): string => {
+    if (group === "general") return words.serverConfigGroupGeneral;
+    if (group === "handoff") return words.serverConfigGroupHandoff;
+    if (group === "fidelity") return words.serverConfigGroupFidelity;
+    if (group === "match") return words.serverConfigGroupMatch;
+    return words.serverConfigGroupCosmetics;
+  };
 
   const environmentView = (
     <div className="settings-pane settings-environment-pane">
@@ -361,6 +426,18 @@ export function SettingsWorkspace({
             </div>
           </section>
 
+          <details className="diagnostic-detail-bundle">
+            <summary>
+              <span>
+                <strong>{words.environmentDetails}</strong>
+                <small>{words.environmentDetailsHelp}</small>
+              </span>
+              <b>{words.environmentDetailCount
+                .replace("{checks}", String(report.checks.length))
+                .replace("{plugins}", String(report.plugins.length))}</b>
+              <ChevronIcon size={15} />
+            </summary>
+            <div className="diagnostic-detail-content">
           <section className="settings-card install-receipt" aria-labelledby="install-receipt-title">
             <div className="settings-card-heading">
               <div>
@@ -488,6 +565,8 @@ export function SettingsWorkspace({
               </div>
             ) : <p className="settings-empty-list">{words.noCssPluginsFound}</p>}
           </section>
+            </div>
+          </details>
         </>
       )}
     </div>
@@ -513,7 +592,10 @@ export function SettingsWorkspace({
             <FolderIcon size={15} />{words.changeFolder}
           </button>
         </div>
-        <div className="primary-path-readout"><code>{exportRoot || words.notSelected}</code></div>
+        <div className="primary-path-readout">
+          <code>{exportRoot || words.notSelected}</code>
+          {exportRoot ? <button className="text-button" type="button" onClick={() => onOpenPath(exportRoot)}>{words.openFolder}</button> : null}
+        </div>
       </section>
 
       <section className="settings-card" aria-labelledby="archive-roots-title">
@@ -533,10 +615,12 @@ export function SettingsWorkspace({
               <PathRow
                 key={root}
                 path={root}
-                badge={isDefault ? words.defaultExport : undefined}
-                removeLabel={words.removeFolder}
-                removable={!isDefault}
-                onRemove={() => onRemoveArchiveRoot(root)}
+                 badge={isDefault ? words.defaultExport : undefined}
+                 removeLabel={words.removeFolder}
+                 openLabel={words.openFolder}
+                 removable={!isDefault}
+                 onOpen={() => onOpenPath(root)}
+                 onRemove={() => onRemoveArchiveRoot(root)}
               />
             );
           })}
@@ -556,7 +640,7 @@ export function SettingsWorkspace({
         {environment.demoRoots.length > 0 ? (
           <div className="settings-path-list">
             {environment.demoRoots.map((root) => (
-              <PathRow key={root} path={root} removeLabel={words.removeFolder} removable onRemove={() => onRemoveDemoRoot(root)} />
+              <PathRow key={root} path={root} removeLabel={words.removeFolder} openLabel={words.openFolder} removable onOpen={() => onOpenPath(root)} onRemove={() => onRemoveDemoRoot(root)} />
             ))}
           </div>
         ) : <p className="settings-empty-list">{words.noDemoDirectories}</p>}
@@ -724,6 +808,64 @@ export function SettingsWorkspace({
           onChange={(avatar) => onPlaybackChange(avatar ? { avatar: true, steamIdentity: true } : { avatar: false })}
         />
         <SettingLine title={words.playoffBeta} description={words.playoffHelp} checked={playback.playoff} onChange={(playoff) => onPlaybackChange({ playoff })} />
+        <details className="playback-settings-advanced">
+          <summary>
+            <span><strong>{words.playbackAdvancedOverrides}</strong><small>{words.playbackAdvancedOverridesHelp}</small></span>
+            <ChevronIcon size={15} />
+          </summary>
+          <div className="playback-settings-advanced-body">
+            <SettingSelectLine title={words.projectileAlignment} description={words.projectileAlignmentHelp} value={playback.projectileAlignment} onChange={(value) => onPlaybackChange({ projectileAlignment: value as PlaybackToggleOverride })}>
+              <option value="inherit">{words.useServerConfig}</option><option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
+            </SettingSelectLine>
+            <SettingSelectLine title={words.crosshairAlignment} description={words.crosshairAlignmentHelp} value={playback.crosshairAlignment} onChange={(value) => onPlaybackChange({ crosshairAlignment: value as PlaybackToggleOverride })}>
+              <option value="inherit">{words.useServerConfig}</option><option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
+            </SettingSelectLine>
+            <SettingSelectLine title={words.leftHandAlignment} description={words.leftHandAlignmentHelp} value={playback.leftHandAlignment} onChange={(value) => onPlaybackChange({ leftHandAlignment: value as PlaybackToggleOverride })}>
+              <option value="inherit">{words.useServerConfig}</option><option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
+            </SettingSelectLine>
+            <SettingSelectLine title={words.matchPresentation} description={words.matchPresentationHelp} value={playback.matchPresentation} onChange={(value) => onPlaybackChange({ matchPresentation: value as PlaybackMatchOverride })}>
+              <option value="inherit">{words.useServerConfig}</option><option value="off">{words.disabled}</option><option value="scoreboard">{words.scoreboardSync}</option>
+            </SettingSelectLine>
+            <SettingSelectLine title={words.partialReplay} description={words.partialReplayHelp} value={playback.allowPartial} onChange={(value) => onPlaybackChange({ allowPartial: value as PlaybackToggleOverride })}>
+              <option value="inherit">{words.useServerConfig}</option><option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
+            </SettingSelectLine>
+            <SettingSelectLine title={words.handoffMode} description={words.handoffModeHelp} value={playback.handoffMode} onChange={(value) => onPlaybackChange({ handoffMode: value as PlaybackHandoffMode })}>
+              <option value="inherit">{words.useServerConfig}</option>
+              <option value="death_contact_c4">{words.handoffDeathContactC4}</option>
+              <option value="death_or_contact">{words.handoffDeathOrContact}</option>
+              <option value="death">{words.handoffDeath}</option>
+              <option value="contact">{words.handoffContact}</option>
+              <option value="off">{words.disabled}</option>
+            </SettingSelectLine>
+            {playback.handoffMode !== "inherit" ? (
+              <SettingSelectLine title={words.handoffScope} description={words.handoffScopeHelp} value={playback.handoffScope} onChange={(value) => onPlaybackChange({ handoffScope: value as "slot" | "all" })}>
+                <option value="slot">{words.handoffScopeSlot}</option><option value="all">{words.handoffScopeAll}</option>
+              </SettingSelectLine>
+            ) : null}
+            <SettingSelectLine title={words.threat360} description={words.threat360Help} value={playback.threat360} onChange={(value) => onPlaybackChange({ threat360: value as PlaybackToggleOverride })}>
+              <option value="inherit">{words.useServerConfig}</option><option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
+            </SettingSelectLine>
+            {playback.threat360 !== "inherit" ? (
+              <div className="settings-advanced-inline">
+                <label>
+                  <span><strong>{words.threat360Range}</strong><small>150–800</small></span>
+                  <input
+                    type="number"
+                    min={150}
+                    max={800}
+                    step={10}
+                    value={playback.threat360Range}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (Number.isFinite(value) && value >= 150 && value <= 800) onPlaybackChange({ threat360Range: value });
+                    }}
+                  />
+                </label>
+                <label><input type="checkbox" checked={playback.threat360Los} onChange={(event) => onPlaybackChange({ threat360Los: event.target.checked })} />{words.threat360RequireLos}</label>
+              </div>
+            ) : null}
+          </div>
+        </details>
       </section>
 
       <p className="settings-footnote">{words.playbackDefaultsFootnote}</p>
@@ -779,13 +921,44 @@ export function SettingsWorkspace({
               </span>
             </div>
             <code className="server-config-path">{serverConfigDocument.configPath}</code>
-            <textarea
-              className="server-config-editor"
-              value={serverConfigDraft}
-              spellCheck={false}
-              aria-label={words.serverConfigEditor}
-              onChange={(event) => onServerConfigDraftChange(event.target.value)}
-            />
+            <div className="server-config-workbench">
+              <textarea
+                className="server-config-editor"
+                value={serverConfigDraft}
+                spellCheck={false}
+                aria-label={words.serverConfigEditor}
+                onChange={(event) => onServerConfigDraftChange(event.target.value)}
+              />
+              <aside className="server-config-guide" aria-label={words.serverConfigFieldReference}>
+                <header>
+                  <div><strong>{words.serverConfigFieldReference}</strong><small>{words.serverConfigFieldReferenceHelp}</small></div>
+                  <label>
+                    <SearchIcon size={14} />
+                    <input value={serverGuideQuery} onChange={(event) => setServerGuideQuery(event.target.value)} placeholder={words.serverConfigSearchFields} />
+                  </label>
+                </header>
+                <div className="server-config-guide-groups">
+                  {[...serverGuideGroups.entries()].map(([group, fields]) => (
+                    <details key={group} open={Boolean(normalizedGuideQuery) || group === "general"}>
+                      <summary><strong>{serverGuideGroupLabel(group)}</strong><span>{fields.length}</span><ChevronIcon size={13} /></summary>
+                      <ul>
+                        {fields.map((field) => (
+                          <li key={field.path}>
+                            <div><code>{field.path}</code><span>{field.type === "boolean" ? words.serverConfigTypeBoolean : field.type === "number" ? words.serverConfigTypeNumber : words.serverConfigTypeEnum}</span></div>
+                            <p>{field.description[language]}</p>
+                            <small>
+                              {field.accepted?.length ? <span>{words.serverConfigAllowed}: <code>{field.accepted.join(" · ")}</code></span> : <span>{words.serverConfigAllowed}: <code>true · false · null</code></span>}
+                              {field.defaultValue !== undefined ? <span>{words.serverConfigDefault}: <code>{field.defaultValue}</code></span> : null}
+                            </small>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  ))}
+                  {serverGuideGroups.size === 0 ? <p>{words.serverConfigNoMatchingFields}</p> : null}
+                </div>
+              </aside>
+            </div>
           </section>
 
           {effectiveServerValidation ? (

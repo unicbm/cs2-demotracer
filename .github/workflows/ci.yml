@@ -53,6 +53,10 @@ jobs:
         working-directory: desktop
         run: npm.cmd run check
 
+      - name: Test desktop frontend state
+        working-directory: desktop
+        run: npm.cmd test
+
       - name: Build desktop frontend
         working-directory: desktop
         run: npm.cmd run build

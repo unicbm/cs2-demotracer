@@ -78,6 +78,13 @@ export interface DemoSource {
   evidence: "serverName" | "fileName" | string;
 }
 
+export interface SteamProfile {
+  steamId: string;
+  personaName: string;
+  avatarUrl: string;
+  profileUrl: string;
+}
+
 export interface AnalysisPlayerSummary {
   name: string;
   steamId: string;

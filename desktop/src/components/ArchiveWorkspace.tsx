@@ -5,6 +5,7 @@ import { displayMap, MapArtwork, mapArtworkStyle } from "./MapArtwork";
 import { PlaybackCommandBuilder, type PlaybackPresetOptions } from "./PlaybackCommandBuilder";
 import { PlayerAnalysisWorkspace, type PlayerAnalysisTeam } from "./PlayerAnalysisWorkspace";
 import { RosterTeam, type PlayerSelection } from "./PlayerRoster";
+import { useSteamProfiles } from "./SteamProfile";
 import type { CommandMode, CopyTarget } from "./TaskViews";
 import "./archive-workspace.css";
 
@@ -233,9 +234,15 @@ export function ArchiveWorkspace({
   const teamARoster = rosterPlayers.filter((player) => playerMatchIdentity(player, teamAName, teamBName) === "a");
   const teamBRoster = rosterPlayers.filter((player) => playerMatchIdentity(player, teamAName, teamBName) === "b");
   const unassignedRoster = rosterPlayers.filter((player) => playerMatchIdentity(player, teamAName, teamBName) === null);
+  const explicitMatchTeams = new Set(rosterPlayers.map((player) => player.matchTeam?.trim().toLowerCase()));
+  const hasStartingSideEvidence = explicitMatchTeams.has("a") && explicitMatchTeams.has("b");
+  const steamProfiles = useSteamProfiles(rosterPlayers.map((player) => player.steamId));
+  const matchRounds = archive.score
+    ? archive.score.teamA.score + archive.score.teamB.score
+    : null;
   const playerTeams: PlayerAnalysisTeam[] = [
-    { id: "a", name: teamAName, players: teamARoster },
-    { id: "b", name: teamBName, players: teamBRoster },
+    { id: "a", name: teamAName, players: teamARoster, startSideLabel: hasStartingSideEvidence ? words.startsAsT : undefined },
+    { id: "b", name: teamBName, players: teamBRoster, startSideLabel: hasStartingSideEvidence ? words.startsAsCt : undefined },
     ...(unassignedRoster.length > 0 ? [{ id: "unknown", name: words.unassignedPlayers, players: unassignedRoster }] : []),
   ];
 
@@ -245,6 +252,7 @@ export function ArchiveWorkspace({
         words={words}
         language={language}
         teams={playerTeams}
+        steamProfiles={steamProfiles}
         selectedPlayer={selectedPlayer}
         copiedTarget={copiedTarget}
         onSelectPlayer={onSelectPlayer}
@@ -282,14 +290,20 @@ export function ArchiveWorkspace({
         </div>
         <div className="archive-match-summary">
           <div className={`archive-scoreboard is-${archive.score?.status || "unknown"}`}>
-            <strong title={teamAName}>{teamAName}</strong>
-            <div aria-label={archive.score ? `${teamAName} ${archive.score.teamA.score} : ${archive.score.teamB.score} ${teamBName}` : words.scoreUnavailable}>
+            <div className="archive-score-team is-team-a">
+              <strong title={teamAName}>{teamAName}</strong>
+              {hasStartingSideEvidence ? <small>{words.startsAsT}</small> : null}
+            </div>
+            <div className="archive-scoreline" aria-label={archive.score ? `${teamAName} ${archive.score.teamA.score} : ${archive.score.teamB.score} ${teamBName}` : words.scoreUnavailable}>
               <span className="archive-score-numbers">
                 {archive.score ? <><b>{archive.score.teamA.score}</b><i>:</i><b>{archive.score.teamB.score}</b></> : <em>— : —</em>}
               </span>
               {archive.score?.status === "completed" ? <small>{words.scoreAtDemoEnd}</small> : null}
             </div>
-            <strong title={teamBName}>{teamBName}</strong>
+            <div className="archive-score-team is-team-b">
+              <strong title={teamBName}>{teamBName}</strong>
+              {hasStartingSideEvidence ? <small>{words.startsAsCt}</small> : null}
+            </div>
           </div>
           <dl className="archive-match-facts">
             <div><dt>{words.demoSource}</dt><dd>{archive.demoSource ? platformName(archive.demoSource.name) : "—"}</dd></div>
@@ -311,10 +325,10 @@ export function ArchiveWorkspace({
             <ChevronIcon size={15} />
           </summary>
           <div className="archive-roster-grid">
-            <RosterTeam teamId="a" name={teamAName} players={teamARoster} words={words} countLabel={words.rosterPlayerCount} onSelectPlayer={onSelectPlayer} onOpenExternal={onOpenExternal} />
-            <RosterTeam teamId="b" name={teamBName} players={teamBRoster} words={words} countLabel={words.rosterPlayerCount} className="is-team-b" onSelectPlayer={onSelectPlayer} onOpenExternal={onOpenExternal} />
+            <RosterTeam teamId="a" name={teamAName} players={teamARoster} words={words} countLabel={words.rosterPlayerCount} matchRounds={matchRounds} startSideLabel={hasStartingSideEvidence ? words.startsAsT : undefined} steamProfiles={steamProfiles} onSelectPlayer={onSelectPlayer} onOpenExternal={onOpenExternal} />
+            <RosterTeam teamId="b" name={teamBName} players={teamBRoster} words={words} countLabel={words.rosterPlayerCount} matchRounds={matchRounds} className="is-team-b" startSideLabel={hasStartingSideEvidence ? words.startsAsCt : undefined} steamProfiles={steamProfiles} onSelectPlayer={onSelectPlayer} onOpenExternal={onOpenExternal} />
             {unassignedRoster.length > 0 ? (
-              <RosterTeam teamId="unknown" name={words.unassignedPlayers} players={unassignedRoster} words={words} countLabel={words.rosterPlayerCount} className="is-unassigned" onSelectPlayer={onSelectPlayer} onOpenExternal={onOpenExternal} />
+              <RosterTeam teamId="unknown" name={words.unassignedPlayers} players={unassignedRoster} words={words} countLabel={words.rosterPlayerCount} matchRounds={matchRounds} className="is-unassigned" steamProfiles={steamProfiles} onSelectPlayer={onSelectPlayer} onOpenExternal={onOpenExternal} />
             ) : null}
           </div>
         </details>
@@ -323,12 +337,8 @@ export function ArchiveWorkspace({
       <div className="archive-split-view">
         <section className="archive-round-pane" aria-labelledby="archive-round-list-title">
           <header className="archive-pane-heading">
-            <div>
-              <span>{words.roundSelectionStep}</span>
-              <h2 id="archive-round-list-title">{words.choosePlaybackStart}</h2>
-              <p>{words.archiveRoundHint}</p>
-            </div>
-            <strong>{playableRounds.length}</strong>
+            <h2 id="archive-round-list-title">{words.choosePlaybackStart}</h2>
+            <strong>{words.archiveRoundsShort.replace("{count}", String(playableRounds.length))}</strong>
           </header>
 
           <div className="archive-round-list" aria-label={words.choosePlaybackStart}>
@@ -346,9 +356,7 @@ export function ArchiveWorkspace({
                 ? words.playbackStart
                 : continuation
                   ? words.inPlaybackRange
-                  : round.available
-                    ? words.selectRoundAction
-                    : words.unavailable;
+                  : round.available ? "" : words.unavailable;
 
               return (
                 <button
@@ -374,7 +382,7 @@ export function ArchiveWorkspace({
                     {incomplete ? <small className="is-warning">{words.partialRoutes.replace("{count}", String(round.files)).replace("{total}", String(expectedPlayers))}</small> : null}
                   </span>
                   <strong className="archive-round-state">
-                    {active ? <CheckIcon size={13} /> : null}{state}
+                    {active ? <CheckIcon size={13} /> : null}{state || null}
                   </strong>
                 </button>
               );
@@ -391,19 +399,17 @@ export function ArchiveWorkspace({
         <aside className="archive-playback-pane" aria-label={words.playDemoCommand}>
           {result && selected ? (
             <>
-              <div className="archive-playback-context" role="status" aria-live="polite">
-                <span>{words.currentPlayback}</span>
+              <header className="archive-playback-context" role="status" aria-live="polite">
+                <span>{words.playbackStart}</span>
                 <strong>{words.startFromRound.replace("{round}", String(selected.round))}</strong>
                 <p>
                   {effectiveCommandMode === "sequence"
-                    ? words.sequenceIncludes
-                      .replace("{round}", String(selected.round))
-                      .replace("{count}", String(sequenceCount))
+                    ? `${words.sequenceMode} · ${words.archiveRoundsShort.replace("{count}", String(sequenceCount))}`
                     : sequenceDisabled
                       ? words.sequenceUnavailable
-                      : words.singleRoundSelected.replace("{round}", String(selected.round))}
+                      : words.roundMode}
                 </p>
-              </div>
+              </header>
 
               <PlaybackCommandBuilder
                 words={words}

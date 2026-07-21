@@ -169,27 +169,22 @@ namespace BotController
         {
             if (!services)
                 return false;
-            auto *sv = reinterpret_cast<char *>(services);
             void *pawn = InputInjector::ResolveReplayPawn(slot, services);
             if (!pawn)
                 return false;
 
-            auto *p = reinterpret_cast<char *>(pawn);
-            if (!CanWriteMemory(p + tg::kEnt_MoveType, sizeof(uint8_t)) ||
-                !CanWriteMemory(p + tg::kEnt_ActualMoveType, sizeof(uint8_t)) ||
-                !CanWriteMemory(sv + tg::kServices_LadderNormal, sizeof(float) * 3))
+            uint8_t moveType = 0;
+            uint8_t actualMoveType = 0;
+            std::array<float, 3> ladderNormal{};
+            if (!SafeRead(pawn, tg::kEnt_MoveType, moveType) ||
+                !SafeRead(pawn, tg::kEnt_ActualMoveType, actualMoveType) ||
+                !SafeRead(services, tg::kServices_LadderNormal, ladderNormal))
                 return false;
 
-            const uint8_t moveType =
-                *reinterpret_cast<uint8_t *>(p + tg::kEnt_MoveType);
-            const uint8_t actualMoveType =
-                *reinterpret_cast<uint8_t *>(p + tg::kEnt_ActualMoveType);
             return moveType == kMoveTypeLadder ||
                    actualMoveType == kMoveTypeLadder ||
-                   HasLadderNormalResidue(
-                       *reinterpret_cast<float *>(sv + tg::kServices_LadderNormal + 0),
-                       *reinterpret_cast<float *>(sv + tg::kServices_LadderNormal + 4),
-                       *reinterpret_cast<float *>(sv + tg::kServices_LadderNormal + 8));
+                   HasLadderNormalResidue(ladderNormal[0], ladderNormal[1],
+                                          ladderNormal[2]);
         }
 
         static void ClearReplayStopJumpResidue(int slot)
@@ -198,16 +193,18 @@ namespace BotController
             if (!services)
                 return;
 
-            auto *sv = reinterpret_cast<char *>(services);
-            if (!CanWriteMemory(sv + tg::kServices_Buttons, sizeof(uint64_t)) ||
-                !CanWriteMemory(sv + tg::kServices_Buttons1, sizeof(uint64_t)) ||
-                !CanWriteMemory(sv + tg::kServices_Buttons2, sizeof(uint64_t)))
+            uint64_t buttons = 0;
+            uint64_t buttons1 = 0;
+            uint64_t buttons2 = 0;
+            if (!SafeRead(services, tg::kServices_Buttons, buttons) ||
+                !SafeRead(services, tg::kServices_Buttons1, buttons1) ||
+                !SafeRead(services, tg::kServices_Buttons2, buttons2))
                 return;
 
             constexpr uint64_t kJumpButton = 1ull << 1;
-            *reinterpret_cast<uint64_t *>(sv + tg::kServices_Buttons) &= ~kJumpButton;
-            *reinterpret_cast<uint64_t *>(sv + tg::kServices_Buttons1) &= ~kJumpButton;
-            *reinterpret_cast<uint64_t *>(sv + tg::kServices_Buttons2) &= ~kJumpButton;
+            WriteField(services, tg::kServices_Buttons, buttons & ~kJumpButton);
+            WriteField(services, tg::kServices_Buttons1, buttons1 & ~kJumpButton);
+            WriteField(services, tg::kServices_Buttons2, buttons2 & ~kJumpButton);
         }
 
         static void ClearReplayStopMovementResidue(int slot, ReplayState &p)
@@ -240,7 +237,9 @@ namespace BotController
             *reinterpret_cast<float *>(pp + tg::kEnt_AbsVelocity + 0) = 0.0f;
             *reinterpret_cast<float *>(pp + tg::kEnt_AbsVelocity + 4) = 0.0f;
             *reinterpret_cast<float *>(pp + tg::kEnt_AbsVelocity + 8) = 0.0f;
-            uint32_t flags = *reinterpret_cast<uint32_t *>(pp + tg::kEnt_Flags);
+            uint32_t flags = 0;
+            if (!SafeRead(pawn, tg::kEnt_Flags, flags))
+                return;
             flags &= ~tg::kFL_Ducking;
             *reinterpret_cast<uint32_t *>(pp + tg::kEnt_Flags) = flags;
 
@@ -570,10 +569,10 @@ namespace BotController
             if (tg::kEnt_BodyComponent > 0 && tg::kBody_SceneNode >= 0)
             {
                 void *body = nullptr;
-                if (ReadField(entity, tg::kEnt_BodyComponent, body) && body)
+                if (SafeRead(entity, tg::kEnt_BodyComponent, body) && body)
                 {
                     void *node = nullptr;
-                    if (ReadField(body, tg::kBody_SceneNode, node) && node)
+                    if (SafeRead(body, tg::kBody_SceneNode, node) && node)
                         return node;
                 }
             }
@@ -581,7 +580,7 @@ namespace BotController
             if (tg::kEnt_GameSceneNode > 0)
             {
                 void *node = nullptr;
-                if (ReadField(entity, tg::kEnt_GameSceneNode, node))
+                if (SafeRead(entity, tg::kEnt_GameSceneNode, node))
                     return node;
             }
 #else
@@ -632,45 +631,51 @@ namespace BotController
         {
             if (!services)
                 return false;
-            auto *s = reinterpret_cast<char *>(services);
             void *pawn = InputInjector::ResolveReplayPawn(slot, services);
             if (!pawn)
                 return false;
-            auto *p = reinterpret_cast<char *>(pawn);
 
-            out.velX = *reinterpret_cast<float *>(p + tg::kEnt_AbsVelocity + 0);
-            out.velY = *reinterpret_cast<float *>(p + tg::kEnt_AbsVelocity + 4);
-            out.velZ = *reinterpret_cast<float *>(p + tg::kEnt_AbsVelocity + 8);
-            out.entityFlags = *reinterpret_cast<uint32_t *>(p + tg::kEnt_Flags);
-            out.moveType = *reinterpret_cast<uint8_t *>(p + tg::kEnt_MoveType);
-            out.actualMoveType = *reinterpret_cast<uint8_t *>(p + tg::kEnt_ActualMoveType);
-            out.buttons = *reinterpret_cast<uint64_t *>(s + tg::kServices_Buttons);
-            out.buttons1 = *reinterpret_cast<uint64_t *>(s + tg::kServices_Buttons1);
-            out.buttons2 = *reinterpret_cast<uint64_t *>(s + tg::kServices_Buttons2);
+            MovementSnapshot value = out;
+            std::array<float, 3> velocity{};
+            std::array<float, 3> ladderNormal{};
+            std::array<float, 3> viewAngles{};
+            if (!SafeRead(pawn, tg::kEnt_AbsVelocity, velocity) ||
+                !SafeRead(pawn, tg::kEnt_Flags, value.entityFlags) ||
+                !SafeRead(pawn, tg::kEnt_MoveType, value.moveType) ||
+                !SafeRead(pawn, tg::kEnt_ActualMoveType, value.actualMoveType) ||
+                !SafeRead(services, tg::kServices_Buttons, value.buttons) ||
+                !SafeRead(services, tg::kServices_Buttons1, value.buttons1) ||
+                !SafeRead(services, tg::kServices_Buttons2, value.buttons2) ||
+                !SafeRead(services, tg::kServices_DuckAmount, value.duckAmount) ||
+                !SafeRead(services, tg::kServices_DuckSpeed, value.duckSpeed) ||
+                !SafeRead(services, tg::kServices_LadderNormal, ladderNormal) ||
+                !SafeRead(services, tg::kServices_Ducked, value.ducked) ||
+                !SafeRead(services, tg::kServices_Ducking, value.ducking) ||
+                !SafeRead(services, tg::kServices_DesiresDuck, value.desiresDuck) ||
+                !SafeRead(pawn, tg::kPawn_ViewAngle, viewAngles))
+                return false;
 
-            // duck/ladder state (drives crouch + ladder anim on replay)
-            out.duckAmount = *reinterpret_cast<float *>(s + tg::kServices_DuckAmount);
-            out.duckSpeed = *reinterpret_cast<float *>(s + tg::kServices_DuckSpeed);
-            out.ladderNormalX = *reinterpret_cast<float *>(s + tg::kServices_LadderNormal + 0);
-            out.ladderNormalY = *reinterpret_cast<float *>(s + tg::kServices_LadderNormal + 4);
-            out.ladderNormalZ = *reinterpret_cast<float *>(s + tg::kServices_LadderNormal + 8);
-            out.ducked = *reinterpret_cast<uint8_t *>(s + tg::kServices_Ducked);
-            out.ducking = *reinterpret_cast<uint8_t *>(s + tg::kServices_Ducking);
-            out.desiresDuck = *reinterpret_cast<uint8_t *>(s + tg::kServices_DesiresDuck);
+            value.velX = velocity[0];
+            value.velY = velocity[1];
+            value.velZ = velocity[2];
+            value.ladderNormalX = ladderNormal[0];
+            value.ladderNormalY = ladderNormal[1];
+            value.ladderNormalZ = ladderNormal[2];
+            value.pitch = viewAngles[0];
+            value.yaw = viewAngles[1];
+            value.roll = viewAngles[2];
 
-            // view angles from pawn v_angle
-            out.pitch = *reinterpret_cast<float *>(p + tg::kPawn_ViewAngle + 0);
-            out.yaw = *reinterpret_cast<float *>(p + tg::kPawn_ViewAngle + 4);
-            out.roll = *reinterpret_cast<float *>(p + tg::kPawn_ViewAngle + 8);
-
-            void *node = ResolveSceneNode(p);
+            void *node = ResolveSceneNode(reinterpret_cast<char *>(pawn));
             if (node)
             {
-                auto *n = reinterpret_cast<char *>(node);
-                out.originX = *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 0);
-                out.originY = *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 4);
-                out.originZ = *reinterpret_cast<float *>(n + tg::kNode_AbsOrigin + 8);
+                std::array<float, 3> origin{};
+                if (!SafeRead(node, tg::kNode_AbsOrigin, origin))
+                    return false;
+                value.originX = origin[0];
+                value.originY = origin[1];
+                value.originZ = origin[2];
             }
+            out = value;
             return true;
         }
 
@@ -824,10 +829,12 @@ namespace BotController
 
             if (cmd)
             {
-                auto *m = reinterpret_cast<char *>(cmd);
-                post.originX = *reinterpret_cast<float *>(m + tg::kMove_AbsOrigin + 0);
-                post.originY = *reinterpret_cast<float *>(m + tg::kMove_AbsOrigin + 4);
-                post.originZ = *reinterpret_cast<float *>(m + tg::kMove_AbsOrigin + 8);
+                std::array<float, 3> origin{};
+                if (!SafeRead(cmd, tg::kMove_AbsOrigin, origin))
+                    return;
+                post.originX = origin[0];
+                post.originY = origin[1];
+                post.originZ = origin[2];
             }
 
             // Active weapon def for this tick.
@@ -1630,10 +1637,10 @@ namespace BotController
             ServerViewVectorCandidate sdk{};
             sdk.layout = "sdk";
             sdk.sizePtr = reinterpret_cast<int *>(vec + 0x00);
-            sdk.size = *sdk.sizePtr;
-            sdk.elements = *reinterpret_cast<char **>(vec + 0x08);
-            sdk.alloc = *reinterpret_cast<int *>(vec + 0x10);
-            if (PlausibleServerViewVector(sdk))
+            if (SafeRead(vec, 0x00, sdk.size) &&
+                SafeRead(vec, 0x08, sdk.elements) &&
+                SafeRead(vec, 0x10, sdk.alloc) &&
+                PlausibleServerViewVector(sdk))
             {
                 out = sdk;
                 return true;
@@ -1642,11 +1649,11 @@ namespace BotController
             // Older Source-style vectors put memory first and size later.
             ServerViewVectorCandidate legacy{};
             legacy.layout = "legacy";
-            legacy.elements = *reinterpret_cast<char **>(vec + 0x00);
-            legacy.alloc = *reinterpret_cast<int *>(vec + 0x08);
             legacy.sizePtr = reinterpret_cast<int *>(vec + 0x10);
-            legacy.size = *legacy.sizePtr;
-            if (PlausibleServerViewVector(legacy))
+            if (SafeRead(vec, 0x00, legacy.elements) &&
+                SafeRead(vec, 0x08, legacy.alloc) &&
+                SafeRead(vec, 0x10, legacy.size) &&
+                PlausibleServerViewVector(legacy))
             {
                 out = legacy;
                 return true;
@@ -1968,7 +1975,9 @@ namespace BotController
                     *reinterpret_cast<uint8_t *>(pp + tg::kEnt_MoveType) = t->post.moveType;
                     *reinterpret_cast<uint8_t *>(pp + tg::kEnt_ActualMoveType) = t->post.actualMoveType;
                     // Merge ground + ducking bits from the recording, keep the rest live.
-                    uint32_t live = *reinterpret_cast<uint32_t *>(pp + tg::kEnt_Flags);
+                    uint32_t live = 0;
+                    if (!SafeRead(pawn, tg::kEnt_Flags, live))
+                        return;
                     uint32_t mask = tg::kFL_OnGround | tg::kFL_Ducking;
                     live = (live & ~mask) | (t->post.entityFlags & mask);
                     *reinterpret_cast<uint32_t *>(pp + tg::kEnt_Flags) = live;

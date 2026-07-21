@@ -6,7 +6,6 @@ import "./app-sidebar.css";
 export function AppSidebar({
   words,
   activeSection,
-  busy,
   onLibrary,
   onBatch,
   onSettings,
@@ -14,7 +13,6 @@ export function AppSidebar({
 }: {
   words: TextDictionary;
   activeSection: WorkspaceSection;
-  busy: boolean;
   onLibrary: () => void;
   onBatch: () => void;
   onSettings: () => void;
@@ -31,7 +29,6 @@ export function AppSidebar({
           className={libraryActive ? "is-active" : ""}
           type="button"
           onClick={onLibrary}
-          disabled={busy}
           aria-current={libraryActive ? "page" : undefined}
           title={words.navLibrary}
         >
@@ -42,7 +39,6 @@ export function AppSidebar({
           className={batchActive ? "is-active" : ""}
           type="button"
           onClick={onBatch}
-          disabled={busy}
           aria-current={batchActive ? "page" : undefined}
           title={words.navBatch}
         >
@@ -53,7 +49,6 @@ export function AppSidebar({
           className={settingsActive ? "is-active" : ""}
           type="button"
           onClick={onSettings}
-          disabled={busy}
           aria-current={settingsActive ? "page" : undefined}
           title={words.navSettings}
         >
@@ -64,7 +59,6 @@ export function AppSidebar({
           className={faqActive ? "is-active" : ""}
           type="button"
           onClick={onFaq}
-          disabled={busy}
           aria-current={faqActive ? "page" : undefined}
           title={words.navFaq}
         >

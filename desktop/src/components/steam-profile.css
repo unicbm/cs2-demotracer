@@ -1,0 +1,65 @@
+.steam-player-identity {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.steam-avatar {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--text-secondary) 78%, var(--trace));
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--trace) 12%, var(--surface-muted)), var(--surface-subtle));
+  border: 1px solid color-mix(in srgb, var(--divider-strong) 82%, var(--trace));
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1;
+}
+
+.steam-avatar.is-compact { width: 27px; height: 27px; font-size: 10px; }
+.steam-avatar.is-large { width: 62px; height: 62px; font-size: 22px; }
+
+.steam-avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.steam-player-labels {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.steam-player-name-row {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 6px;
+}
+
+.steam-player-name-row > strong,
+.steam-player-name-row > small,
+.steam-player-labels > code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.steam-player-name-row > strong { min-width: 0; }
+
+.steam-player-name-row > small {
+  flex: 0 1 auto;
+  color: var(--accent);
+  font-size: 9.5px;
+  font-weight: 600;
+}

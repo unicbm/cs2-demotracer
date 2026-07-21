@@ -320,7 +320,7 @@ mod tests {
             usercmd_left_hand_desired: Some(true),
             item_def_idx: weapon,
             inventory_as_ids: Vec::new(),
-            inventory_weapon_cosmetics: Vec::new(),
+            inventory_weapon_cosmetics: Vec::new().into(),
             music_kit_id: None,
             scoreboard_flair: None,
             agent_item_def_index: None,

@@ -2,7 +2,7 @@ use crate::model::ParsedPlayerTick;
 use crate::model::{public_demo_path, DemoAnalysis, ParsedDemo, RoundStatus, RoundSummary};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AnalysisOptions {
     pub min_round_seconds: f32,
     pub max_round_seconds: f32,
@@ -451,7 +451,7 @@ mod tests {
             usercmd_left_hand_desired: None,
             item_def_idx: -1,
             inventory_as_ids: Vec::new(),
-            inventory_weapon_cosmetics: Vec::new(),
+            inventory_weapon_cosmetics: Vec::new().into(),
             music_kit_id: None,
             scoreboard_flair: None,
             agent_item_def_index: None,

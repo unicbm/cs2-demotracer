@@ -6,6 +6,7 @@ import { AnalysisOverview, analysisRoster } from "./AnalysisOverview";
 import { PlayerAnalysisWorkspace, type PlayerAnalysisTeam } from "./PlayerAnalysisWorkspace";
 import type { PlayerSelection } from "./PlayerRoster";
 import { RoundTable, type RoundTableLabels } from "./RoundTable";
+import { useSteamProfiles } from "./SteamProfile";
 import type { CopyTarget } from "./TaskViews";
 
 interface RoundWorkspaceProps {
@@ -86,9 +87,11 @@ export function RoundWorkspace({
     .replace("{suspicious}", formatNumber(suspiciousCount));
   const canConvert = selectedRounds.size > 0 && Boolean(outputDir);
   const roster = analysisRoster(analysis, words);
+  const hasStartingSideEvidence = roster.teamA.length > 0 && roster.teamB.length > 0;
+  const steamProfiles = useSteamProfiles(analysis.players.map((player) => player.steamId));
   const playerTeams: PlayerAnalysisTeam[] = [
-    { id: "a", name: roster.teamAName, players: roster.teamA },
-    { id: "b", name: roster.teamBName, players: roster.teamB },
+    { id: "a", name: roster.teamAName, players: roster.teamA, startSideLabel: hasStartingSideEvidence ? words.startsAsT : undefined },
+    { id: "b", name: roster.teamBName, players: roster.teamB, startSideLabel: hasStartingSideEvidence ? words.startsAsCt : undefined },
     ...(roster.unassigned.length > 0 ? [{ id: "unknown", name: words.unassignedPlayers, players: roster.unassigned }] : []),
   ];
 
@@ -98,6 +101,7 @@ export function RoundWorkspace({
         words={words}
         language={language}
         teams={playerTeams}
+        steamProfiles={steamProfiles}
         selectedPlayer={selectedPlayer}
         copiedTarget={copiedTarget}
         onSelectPlayer={onSelectPlayer}
@@ -113,6 +117,7 @@ export function RoundWorkspace({
       <AnalysisOverview
         analysis={analysis}
         words={words}
+        steamProfiles={steamProfiles}
         onSelectPlayer={onSelectPlayer}
         onOpenExternal={onOpenExternal}
       />

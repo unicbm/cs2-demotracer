@@ -1,8 +1,8 @@
 use crate::export::{inventory_item_cosmetic_evidence, valid_music_kit_id};
 use crate::inspect_link::item_inspect;
 use crate::model::{
-    ParsedDemo, ParsedEconItem, ParsedInventoryWeaponCosmetic, ParsedPlayerTick,
-    ReplayItemCosmetic, ReplayWeaponCharm, ReplayWeaponSticker,
+    ParsedDemo, ParsedInventoryWeaponCosmetic, ParsedPlayerTick, ReplayItemCosmetic,
+    ReplayWeaponCharm, ReplayWeaponSticker,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -190,7 +190,6 @@ impl ViewmodelKey {
 #[derive(Clone)]
 struct ObservedInventoryItem {
     item: ParsedInventoryWeaponCosmetic,
-    completeness: usize,
     sides: BTreeSet<u8>,
 }
 
@@ -209,15 +208,10 @@ struct ItemSpec {
     custom_name: Option<String>,
 }
 
-#[derive(Clone, Default)]
-struct ObservedItemSpec {
-    sides: BTreeSet<u8>,
-}
-
 #[derive(Clone)]
 struct ObservedAgent {
+    item_def_index: u32,
     name: String,
-    sides: BTreeSet<u8>,
 }
 
 #[derive(Clone, Copy)]
@@ -232,11 +226,11 @@ struct EvidenceAccumulator {
     rounds: BTreeSet<u32>,
     crosshair_codes: BTreeSet<String>,
     viewmodels: BTreeSet<ViewmodelKey>,
-    inventory_items: BTreeMap<InventoryItemIdentity, ObservedInventoryItem>,
-    knives: BTreeMap<ItemSpec, ObservedItemSpec>,
-    gloves: BTreeMap<ItemSpec, ObservedItemSpec>,
-    agents: BTreeMap<u32, ObservedAgent>,
-    music_kit_ids: BTreeSet<u32>,
+    inventory_items: BTreeMap<(u8, i32), ParsedInventoryWeaponCosmetic>,
+    knives: BTreeMap<u8, ItemSpec>,
+    gloves: BTreeMap<u8, ItemSpec>,
+    agents: BTreeMap<u8, ObservedAgent>,
+    music_kit_id: Option<u32>,
     stats: Option<StatsSnapshot>,
 }
 
@@ -255,8 +249,10 @@ pub(super) fn summarize_player_details(
         let accumulator = accumulators.entry(row.steam_id).or_default();
         accumulator.rounds.insert(row.round);
         update_stats(accumulator, row);
-        if let Some(music_kit_id) = row.music_kit_id.filter(|value| valid_music_kit_id(*value)) {
-            accumulator.music_kit_ids.insert(music_kit_id);
+        if accumulator.music_kit_id.is_none() {
+            accumulator.music_kit_id = row
+                .music_kit_id
+                .filter(|value| *value != 1 && valid_music_kit_id(*value));
         }
         if !row.is_alive {
             continue;
@@ -276,45 +272,26 @@ pub(super) fn summarize_player_details(
         }
 
         let side = row.team_num;
-        for item in &row.inventory_weapon_cosmetics {
+        for item in row.inventory_weapon_cosmetics.iter() {
             if !inventory_item_owned_by(item, row.steam_id) {
                 continue;
             }
-            let key = inventory_item_identity(item);
-            let completeness = inventory_item_completeness(item);
-            let observed =
-                accumulator
-                    .inventory_items
-                    .entry(key)
-                    .or_insert_with(|| ObservedInventoryItem {
-                        item: item.clone(),
-                        completeness,
-                        sides: BTreeSet::new(),
-                    });
-            if completeness > observed.completeness {
-                observed.item = item.clone();
-                observed.completeness = completeness;
+            let slot = (side, item.item_def_index);
+            if accumulator.inventory_items.contains_key(&slot) {
+                continue;
             }
-            observed.sides.insert(side);
+            if inventory_item_cosmetic_evidence(item).is_some() {
+                accumulator.inventory_items.insert(slot, item.clone());
+            }
         }
 
         if is_exact_knife(row.item_def_idx) && active_item_owned_by(row) {
             if let Some(spec) = active_item_spec(row) {
-                accumulator
-                    .knives
-                    .entry(spec)
-                    .or_default()
-                    .sides
-                    .insert(side);
+                remember_stable_side_item(&mut accumulator.knives, side, spec);
             }
         }
         if let Some(spec) = glove_spec(row) {
-            accumulator
-                .gloves
-                .entry(spec)
-                .or_default()
-                .sides
-                .insert(side);
+            remember_stable_side_item(&mut accumulator.gloves, side, spec);
         }
         if let (Some(item_def_index), Some(name)) = (
             row.agent_item_def_index.filter(|value| *value != 0),
@@ -325,25 +302,11 @@ pub(super) fn summarize_player_details(
         ) {
             accumulator
                 .agents
-                .entry(item_def_index)
+                .entry(side)
                 .or_insert_with(|| ObservedAgent {
+                    item_def_index,
                     name: name.to_string(),
-                    sides: BTreeSet::new(),
-                })
-                .sides
-                .insert(side);
-        }
-    }
-
-    for item in &parsed.econ_items {
-        let Some(steam_id) = item.steam_id else {
-            continue;
-        };
-        let Some(spec) = econ_glove_spec(item) else {
-            continue;
-        };
-        if let Some(accumulator) = accumulators.get_mut(&steam_id) {
-            accumulator.gloves.entry(spec).or_default();
+                });
         }
     }
 
@@ -389,7 +352,7 @@ fn finish_details(
         .unwrap_or_default();
     let mut cosmetics = Vec::new();
 
-    for observed in accumulator.inventory_items.into_values() {
+    for observed in stable_inventory_items_by_identity(accumulator.inventory_items).into_values() {
         let Some(cosmetic) = inventory_item_cosmetic_evidence(&observed.item) else {
             continue;
         };
@@ -428,7 +391,7 @@ fn finish_details(
     }
 
     for (kind, items) in [("knife", accumulator.knives), ("glove", accumulator.gloves)] {
-        for (spec, observed) in items {
+        for (spec, sides) in stable_items_by_spec(items) {
             let mut cosmetic = ReplayItemCosmetic {
                 item_def_index: Some(spec.item_def_index),
                 paint_kit: spec.paint_kit,
@@ -442,7 +405,7 @@ fn finish_details(
                 cosmetic_names(parsed, steam_id, spec.item_def_index, spec.paint_kit);
             cosmetics.push(BrowserCosmeticEvidence {
                 kind: kind.to_string(),
-                side: summarized_side(&observed.sides),
+                side: summarized_side(&sides),
                 item_def_index: Some(spec.item_def_index),
                 item_name: item_name.or_else(|| weapon_display_name(spec.item_def_index)),
                 paint_kit: Some(spec.paint_kit),
@@ -463,12 +426,12 @@ fn finish_details(
         }
     }
 
-    for (item_def_index, agent) in accumulator.agents {
+    for ((item_def_index, name), sides) in stable_agents_by_spec(accumulator.agents) {
         cosmetics.push(BrowserCosmeticEvidence {
             kind: "agent".to_string(),
-            side: summarized_side(&agent.sides),
+            side: summarized_side(&sides),
             item_def_index: i32::try_from(item_def_index).ok(),
-            item_name: Some(agent.name),
+            item_name: Some(name),
             paint_kit: None,
             finish_name: None,
             seed: None,
@@ -519,7 +482,7 @@ fn finish_details(
             .map(ViewmodelKey::into_evidence)
             .collect(),
         cosmetics,
-        music_kit_ids: accumulator.music_kit_ids.into_iter().collect(),
+        music_kit_ids: accumulator.music_kit_id.into_iter().collect(),
     }
 }
 
@@ -576,13 +539,12 @@ fn inventory_item_identity(item: &ParsedInventoryWeaponCosmetic) -> InventoryIte
         return InventoryItemIdentity::ItemId(item_id);
     }
     let mut key = format!(
-        "spec:{}:{}:{}:{}:{:?}:{:?}:{:?}:{:?}:{:?}",
+        "spec:{}:{}:{}:{}:{:?}:{:?}:{:?}:{:?}",
         item.item_def_index,
         item.paint_kit,
         item.paint_seed,
         item.paint_wear.to_bits(),
         item.entity_quality,
-        item.stattrak_counter,
         item.original_owner_xuid,
         item.item_account_id,
         item.custom_name
@@ -601,6 +563,9 @@ fn inventory_item_identity(item: &ParsedInventoryWeaponCosmetic) -> InventoryIte
         );
     }
     for attribute in &item.attributes {
+        if attribute.definition_index == 80 {
+            continue;
+        }
         let _ = write!(
             key,
             "|a:{}:{}",
@@ -610,14 +575,35 @@ fn inventory_item_identity(item: &ParsedInventoryWeaponCosmetic) -> InventoryIte
     InventoryItemIdentity::Spec(key)
 }
 
-fn inventory_item_completeness(item: &ParsedInventoryWeaponCosmetic) -> usize {
-    item.stickers.len()
-        + item.attributes.len()
-        + usize::from(item.custom_name.is_some())
-        + usize::from(item.original_owner_xuid.is_some())
-        + usize::from(item.item_account_id.is_some())
-        + usize::from(item.entity_quality.is_some())
-        + usize::from(item.stattrak_counter.is_some())
+fn stable_inventory_items_by_identity(
+    items: BTreeMap<(u8, i32), ParsedInventoryWeaponCosmetic>,
+) -> BTreeMap<InventoryItemIdentity, ObservedInventoryItem> {
+    let mut by_identity = BTreeMap::<InventoryItemIdentity, ObservedInventoryItem>::new();
+    for ((side, _), item) in items {
+        let identity = inventory_item_identity(&item);
+        by_identity
+            .entry(identity)
+            .or_insert_with(|| ObservedInventoryItem {
+                item,
+                sides: BTreeSet::new(),
+            })
+            .sides
+            .insert(side);
+    }
+    by_identity
+}
+
+fn stable_agents_by_spec(
+    agents: BTreeMap<u8, ObservedAgent>,
+) -> BTreeMap<(u32, String), BTreeSet<u8>> {
+    let mut by_spec = BTreeMap::<(u32, String), BTreeSet<u8>>::new();
+    for (side, agent) in agents {
+        by_spec
+            .entry((agent.item_def_index, agent.name))
+            .or_default()
+            .insert(side);
+    }
+    by_spec
 }
 
 fn active_item_spec(row: &ParsedPlayerTick) -> Option<ItemSpec> {
@@ -654,23 +640,30 @@ fn glove_spec(row: &ParsedPlayerTick) -> Option<ItemSpec> {
     })
 }
 
-fn econ_glove_spec(item: &ParsedEconItem) -> Option<ItemSpec> {
-    let item_def_index = i32::try_from(item.item_def_index?).ok()?;
-    if !is_glove(item_def_index) {
-        return None;
+fn remember_stable_side_item(items: &mut BTreeMap<u8, ItemSpec>, side: u8, candidate: ItemSpec) {
+    match items.entry(side) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(candidate);
+        }
+        std::collections::btree_map::Entry::Occupied(mut entry) => {
+            let current = entry.get();
+            let same_item = current.item_def_index == candidate.item_def_index
+                && current.paint_kit == candidate.paint_kit
+                && current.seed == candidate.seed
+                && current.wear_bits == candidate.wear_bits;
+            if same_item && current.custom_name.is_none() && candidate.custom_name.is_some() {
+                entry.insert(candidate);
+            }
+        }
     }
-    let paint_kit = item.paint_kit.filter(|value| *value != 0)?;
-    let seed = item.paint_seed?;
-    let wear = item
-        .paint_wear
-        .filter(|value| value.is_finite() && (0.0..=1.0).contains(value))?;
-    Some(ItemSpec {
-        item_def_index,
-        paint_kit,
-        seed,
-        wear_bits: normalized_f32_bits(wear),
-        custom_name: None,
-    })
+}
+
+fn stable_items_by_spec(items: BTreeMap<u8, ItemSpec>) -> BTreeMap<ItemSpec, BTreeSet<u8>> {
+    let mut by_spec = BTreeMap::<ItemSpec, BTreeSet<u8>>::new();
+    for (side, spec) in items {
+        by_spec.entry(spec).or_default().insert(side);
+    }
+    by_spec
 }
 
 fn cosmetic_names(
@@ -835,7 +828,7 @@ fn weapon_display_name(def: i32) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::ParsedWeaponSticker;
+    use crate::model::{ParsedEconItem, ParsedWeaponSticker};
 
     fn inventory_item(account_id: u32, item_id: u32) -> ParsedInventoryWeaponCosmetic {
         ParsedInventoryWeaponCosmetic {
@@ -888,7 +881,7 @@ mod tests {
             scoreboard_headshot_kills: Some(if tick == 100 { 2 } else { 3 }),
             scoreboard_damage: Some(if tick == 100 { 800 } else { 1_250 }),
             music_kit_id: Some(42),
-            inventory_weapon_cosmetics,
+            inventory_weapon_cosmetics: inventory_weapon_cosmetics.into(),
             ..ParsedPlayerTick::default()
         }
     }
@@ -899,10 +892,13 @@ mod tests {
         let steam_id = STEAM_ID64_BASE + u64::from(account_id);
         let owned = inventory_item(account_id, 7);
         let picked_up = inventory_item(account_id + 1, 8);
+        let mut ignored_replacement = inventory_item(account_id, 9);
+        ignored_replacement.paint_kit = 309;
         let parsed = ParsedDemo {
             rows: vec![
                 player_row(steam_id, 100, 2, vec![owned.clone(), picked_up]),
                 player_row(steam_id, 200, 3, vec![owned]),
+                player_row(steam_id, 300, 2, vec![ignored_replacement]),
             ],
             econ_items: vec![ParsedEconItem {
                 steam_id: Some(steam_id),
@@ -969,6 +965,109 @@ mod tests {
     }
 
     #[test]
+    fn keeps_one_owned_knife_and_glove_per_side() {
+        let account_id = 123;
+        let steam_id = STEAM_ID64_BASE + u64::from(account_id);
+        let mut t_side = player_row(steam_id, 100, 2, Vec::new());
+        t_side.item_def_idx = 515;
+        t_side.active_weapon_item_account_id = Some(account_id);
+        t_side.active_weapon_paint_kit = Some(568);
+        t_side.active_weapon_paint_seed = Some(142);
+        t_side.active_weapon_paint_wear = Some(0.01);
+        t_side.glove_item_def_index = Some(5032);
+        t_side.glove_paint_kit = Some(10036);
+        t_side.glove_paint_seed = Some(23);
+        t_side.glove_paint_wear = Some(0.13);
+
+        let mut ignored_t_replacement = t_side.clone();
+        ignored_t_replacement.tick = 200;
+        ignored_t_replacement.item_def_idx = 508;
+        ignored_t_replacement.active_weapon_paint_kit = Some(38);
+        ignored_t_replacement.glove_item_def_index = Some(5034);
+        ignored_t_replacement.glove_paint_kit = Some(10033);
+
+        let mut ct_side = player_row(steam_id, 300, 3, Vec::new());
+        ct_side.item_def_idx = 507;
+        ct_side.active_weapon_item_account_id = Some(account_id);
+        ct_side.active_weapon_paint_kit = Some(12);
+        ct_side.active_weapon_paint_seed = Some(7);
+        ct_side.active_weapon_paint_wear = Some(0.2);
+        ct_side.glove_item_def_index = Some(5034);
+        ct_side.glove_paint_kit = Some(10033);
+        ct_side.glove_paint_seed = Some(260);
+        ct_side.glove_paint_wear = Some(0.2);
+
+        let parsed = ParsedDemo {
+            rows: vec![t_side, ignored_t_replacement, ct_side],
+            ..ParsedDemo::default()
+        };
+        let details = summarize_player_details(&parsed, None, Some(1))
+            .remove(&steam_id)
+            .expect("player evidence");
+        let equipment = details
+            .cosmetics
+            .iter()
+            .filter(|cosmetic| matches!(cosmetic.kind.as_str(), "knife" | "glove"))
+            .map(|cosmetic| {
+                (
+                    cosmetic.kind.as_str(),
+                    cosmetic.side.as_deref(),
+                    cosmetic.item_def_index,
+                    cosmetic.paint_kit,
+                )
+            })
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(
+            equipment,
+            BTreeSet::from([
+                ("knife", Some("t"), Some(515), Some(568)),
+                ("knife", Some("ct"), Some(507), Some(12)),
+                ("glove", Some("t"), Some(5032), Some(10036)),
+                ("glove", Some("ct"), Some(5034), Some(10033)),
+            ])
+        );
+    }
+
+    #[test]
+    fn omits_the_default_valve_music_kit_from_player_evidence() {
+        let steam_id = STEAM_ID64_BASE + 123;
+        let mut row = player_row(steam_id, 100, 2, Vec::new());
+        row.music_kit_id = Some(1);
+        let parsed = ParsedDemo {
+            rows: vec![row],
+            ..ParsedDemo::default()
+        };
+
+        let details = summarize_player_details(&parsed, None, Some(1))
+            .remove(&steam_id)
+            .expect("player evidence");
+
+        assert!(details.music_kit_ids.is_empty());
+    }
+
+    #[test]
+    fn keeps_only_the_first_non_default_music_kit_evidence() {
+        let steam_id = STEAM_ID64_BASE + 123;
+        let mut default_row = player_row(steam_id, 100, 2, Vec::new());
+        default_row.music_kit_id = Some(1);
+        let mut first_custom_row = player_row(steam_id, 200, 2, Vec::new());
+        first_custom_row.music_kit_id = Some(42);
+        let mut ignored_later_row = player_row(steam_id, 300, 3, Vec::new());
+        ignored_later_row.music_kit_id = Some(43);
+        let parsed = ParsedDemo {
+            rows: vec![default_row, first_custom_row, ignored_later_row],
+            ..ParsedDemo::default()
+        };
+
+        let details = summarize_player_details(&parsed, None, Some(1))
+            .remove(&steam_id)
+            .expect("player evidence");
+
+        assert_eq!(details.music_kit_ids, [42]);
+    }
+
+    #[test]
     fn ignores_map_based_default_agents_but_keeps_real_agent_evidence() {
         let steam_id = STEAM_ID64_BASE + 123;
         let mut default_t = player_row(steam_id, 100, 2, Vec::new());
@@ -980,8 +1079,11 @@ mod tests {
         let mut real_agent = player_row(steam_id, 300, 3, Vec::new());
         real_agent.agent_item_def_index = Some(4713);
         real_agent.agent_skin = Some("customplayer_ctm_swat_variantg".to_string());
+        let mut ignored_replacement = player_row(steam_id, 400, 3, Vec::new());
+        ignored_replacement.agent_item_def_index = Some(4749);
+        ignored_replacement.agent_skin = Some("customplayer_ctm_sas_variantf".to_string());
         let parsed = ParsedDemo {
-            rows: vec![default_t, default_ct, real_agent],
+            rows: vec![default_t, default_ct, real_agent, ignored_replacement],
             ..ParsedDemo::default()
         };
 

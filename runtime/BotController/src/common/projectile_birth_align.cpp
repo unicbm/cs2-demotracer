@@ -1,5 +1,6 @@
 #include "projectile_birth_align.h"
 
+#include "ccsbot_slot.h"
 #include "version_targets.h"
 
 #include <algorithm>
@@ -83,11 +84,15 @@ namespace BotController::ProjectileBirthAlign
             if (targets::kEnt_BodyComponent > 0 && targets::kBody_SceneNode >= 0 &&
                 CanWriteMemory(entity + targets::kEnt_BodyComponent, sizeof(void *)))
             {
-                auto *body = *reinterpret_cast<char **>(entity + targets::kEnt_BodyComponent);
+                char *body = nullptr;
+                if (!SafeRead(entity, targets::kEnt_BodyComponent, body))
+                    return nullptr;
                 if (body &&
                     CanWriteMemory(body + targets::kBody_SceneNode, sizeof(void *)))
                 {
-                    auto *node = *reinterpret_cast<char **>(body + targets::kBody_SceneNode);
+                    char *node = nullptr;
+                    if (!SafeRead(body, targets::kBody_SceneNode, node))
+                        return nullptr;
                     if (node)
                         return node;
                 }
@@ -96,7 +101,8 @@ namespace BotController::ProjectileBirthAlign
             if (targets::kEnt_GameSceneNode > 0 &&
                 CanWriteMemory(entity + targets::kEnt_GameSceneNode, sizeof(void *)))
             {
-                return *reinterpret_cast<char **>(entity + targets::kEnt_GameSceneNode);
+                char *node = nullptr;
+                return SafeRead(entity, targets::kEnt_GameSceneNode, node) ? node : nullptr;
             }
             return nullptr;
         }

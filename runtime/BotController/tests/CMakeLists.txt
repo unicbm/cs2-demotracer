@@ -25,6 +25,19 @@ endif()
 add_test(NAME BotControllerReplaySubtickTests
     COMMAND BotControllerReplaySubtickTests)
 
+add_executable(BotControllerSafeReadTests
+    safe_read_tests.cpp)
+target_include_directories(BotControllerSafeReadTests PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/../src/common")
+if(MSVC)
+    target_compile_options(BotControllerSafeReadTests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(BotControllerSafeReadTests PRIVATE
+        -Wall -Wextra -Wpedantic)
+endif()
+add_test(NAME BotControllerSafeReadTests
+    COMMAND BotControllerSafeReadTests)
+
 option(BOTCONTROLLER_BUILD_FUZZER
     "Build the libFuzzer target for the production replay ABI validator" OFF)
 if(BOTCONTROLLER_BUILD_FUZZER)

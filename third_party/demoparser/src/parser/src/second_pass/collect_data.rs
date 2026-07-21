@@ -17,6 +17,7 @@ use csgoproto::maps::PAINTKITS;
 use csgoproto::maps::STICKER_ID_TO_NAME;
 use csgoproto::maps::WEAPINDICIES;
 use std::fmt;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PropType {
@@ -41,6 +42,7 @@ const IS_AIRBORNE_CONST: u32 = 0xFFFFFF;
 const ECON_ATTR_SET_ITEM_TEXTURE_PREFAB: u32 = 6;
 const ECON_ATTR_SET_ITEM_TEXTURE_SEED: u32 = 7;
 const ECON_ATTR_SET_ITEM_TEXTURE_WEAR: u32 = 8;
+const STEAM_ID64_BASE: u64 = 76_561_197_960_265_728;
 
 #[derive(Debug, Clone)]
 pub struct ProjectileRecord {
@@ -942,13 +944,27 @@ impl<'a> SecondPassParser<'a> {
         return Ok(Variant::U32(0));
     }
     pub fn find_agent_skin(&self, player: &PlayerMetaData) -> Result<Variant, PropCollectionError> {
+        let cache_key = player.steamid.zip(player.team_num);
+        if let Some(key) = cache_key {
+            if let Some(agent) = self.stable_agent_skin_cache.borrow().get(&key) {
+                return Ok(Variant::String(agent.clone()));
+            }
+        }
         let id = match self.prop_controller.special_ids.agent_skin_idx {
             Some(i) => i,
             None => return Err(PropCollectionError::AgentSpecialIdNotSet),
         };
         match self.get_controller_prop(&id, player) {
             Ok(Variant::U32(agent_id)) => match AGENTSMAP.get(&agent_id) {
-                Some(agent) => return Ok(Variant::String(agent.to_string())),
+                Some(agent) => {
+                    let agent = agent.to_string();
+                    if let Some(key) = cache_key.filter(|_| !is_map_based_default_agent(&agent)) {
+                        self.stable_agent_skin_cache
+                            .borrow_mut()
+                            .insert(key, agent.clone());
+                    }
+                    return Ok(Variant::String(agent));
+                }
                 None => return Err(PropCollectionError::AgentIdNotFound),
             },
             Ok(_) => return Err(PropCollectionError::AgentIncorrectVariant),
@@ -1176,12 +1192,11 @@ impl<'a> SecondPassParser<'a> {
         Ok(Variant::U32Vec(names))
     }
     pub fn find_my_inventory_weapon_cosmetics(&self, entity_id: &i32) -> Result<Variant, PropCollectionError> {
-        let mut cosmetics = vec![];
         let mut unique_eids = vec![];
 
         match self.find_is_alive(entity_id) {
             Ok(Variant::Bool(true)) => {}
-            _ => return Ok(Variant::InventoryWeaponCosmetics(vec![])),
+            _ => return Ok(Variant::InventoryWeaponCosmetics(Arc::from([]))),
         };
         let inventory_max_len = match self.get_prop_from_ent(&(MY_WEAPONS_OFFSET as u32), entity_id) {
             Ok(Variant::U32(p)) => p,
@@ -1198,12 +1213,107 @@ impl<'a> SecondPassParser<'a> {
                 continue;
             }
             unique_eids.push(eid);
+        }
 
-            if let Some(cosmetic) = self.cached_weapon_cosmetic(&eid) {
-                cosmetics.push(cosmetic);
+        let signature = unique_eids
+            .iter()
+            .map(|eid| {
+                let entity = self
+                    .entities
+                    .get(*eid as usize)
+                    .and_then(Option::as_ref);
+                let serial = entity.map(|entity| entity.serial).unwrap_or(u32::MAX);
+                let revision = entity
+                    .map(|entity| entity.cosmetic_revision)
+                    .unwrap_or(u64::MAX);
+                (*eid, serial, revision)
+            })
+            .collect::<Vec<_>>();
+        {
+            let cache = self.player_inventory_cosmetic_cache.borrow();
+            if let Some((cached_signature, cached)) = cache.get(entity_id) {
+                if *cached_signature == signature {
+                    return Ok(Variant::InventoryWeaponCosmetics(Arc::clone(cached)));
+                }
             }
         }
+
+        let cosmetics = unique_eids
+            .into_iter()
+            .filter_map(|eid| self.cached_inventory_weapon_cosmetic(entity_id, &eid))
+            .collect::<Arc<[_]>>();
+        self.player_inventory_cosmetic_cache
+            .borrow_mut()
+            .insert(*entity_id, (signature, Arc::clone(&cosmetics)));
         Ok(Variant::InventoryWeaponCosmetics(cosmetics))
+    }
+
+    fn cached_inventory_weapon_cosmetic(
+        &self,
+        player_entity_id: &i32,
+        weapon_entity_id: &i32,
+    ) -> Option<InventoryWeaponCosmetic> {
+        let slot_key = self.owned_weapon_slot_key(player_entity_id, weapon_entity_id);
+        if let Some(key) = slot_key {
+            if let Some(cached) = self.stable_owned_weapon_cosmetic_cache.borrow().get(&key) {
+                let mut cosmetic = cached.clone();
+                cosmetic.item_id_high = self.weapon_prop_u32(
+                    self.prop_controller.special_ids.item_id_high,
+                    weapon_entity_id,
+                );
+                cosmetic.item_id_low = self.weapon_prop_u32(
+                    self.prop_controller.special_ids.item_id_low,
+                    weapon_entity_id,
+                );
+                cosmetic.item_account_id = self.weapon_prop_u32(
+                    self.prop_controller.special_ids.item_account_id,
+                    weapon_entity_id,
+                );
+                cosmetic.original_owner_xuid = self.weapon_original_owner_from_eid(weapon_entity_id);
+                cosmetic.stattrak_counter = self.weapon_stattrak_counter(weapon_entity_id);
+                return Some(cosmetic);
+            }
+        }
+
+        let cosmetic = self.cached_weapon_cosmetic(weapon_entity_id)?;
+        if let Some(key) = slot_key {
+            if cosmetic.paint_kit != 0
+                && cosmetic.paint_wear.is_finite()
+                && (0.0..=1.0).contains(&cosmetic.paint_wear)
+            {
+                self.stable_owned_weapon_cosmetic_cache
+                    .borrow_mut()
+                    .insert(key, cosmetic.clone());
+            }
+        }
+        Some(cosmetic)
+    }
+
+    fn owned_weapon_slot_key(
+        &self,
+        player_entity_id: &i32,
+        weapon_entity_id: &i32,
+    ) -> Option<(u64, u32, u32)> {
+        let player = self.players.get(player_entity_id)?;
+        let steam_id = player.steamid?;
+        let team_num = player.team_num.filter(|team| matches!(team, 2 | 3))?;
+        let item_def_id = self.prop_controller.special_ids.item_def?;
+        let item_def_index = self
+            .get_prop_from_ent(&item_def_id, weapon_entity_id)
+            .ok()
+            .and_then(variant_to_nonnegative_u32)?;
+        let item_account_id = self.weapon_prop_u32(
+            self.prop_controller.special_ids.item_account_id,
+            weapon_entity_id,
+        );
+        let original_owner_xuid = self.weapon_original_owner_from_eid(weapon_entity_id);
+        stable_owned_weapon_slot_key(
+            steam_id,
+            team_num,
+            item_def_index,
+            item_account_id,
+            original_owner_xuid,
+        )
     }
 
     fn cached_weapon_cosmetic(&self, weapon_entity_id: &i32) -> Option<InventoryWeaponCosmetic> {
@@ -1211,7 +1321,7 @@ impl<'a> SecondPassParser<'a> {
             .entities
             .get(*weapon_entity_id as usize)?
             .as_ref()?
-            .revision;
+            .cosmetic_revision;
         {
             let cache = self.weapon_cosmetic_cache.borrow();
             if let Some((cached_revision, cached)) = cache.get(weapon_entity_id) {
@@ -1277,18 +1387,7 @@ impl<'a> SecondPassParser<'a> {
                 }
                 _ => None,
             });
-        let stattrak_counter = self
-            .prop_controller
-            .special_ids
-            .fallback_stattrak
-            .and_then(|stattrak_id| match self.get_prop_from_ent(&stattrak_id, weapon_entity_id) {
-                Ok(Variant::I32(value)) => Some(value),
-                Ok(Variant::U32(value)) => i32::try_from(value).ok(),
-                Ok(Variant::F32(value)) if value.is_finite() && value.fract() == 0.0 => {
-                    Some(value as i32)
-                }
-                _ => None,
-            });
+        let stattrak_counter = self.weapon_stattrak_counter(weapon_entity_id);
         let (attributes, stickers) =
             self.find_weapon_econ_attributes_and_stickers(weapon_entity_id);
         let custom_name = self
@@ -1518,6 +1617,39 @@ impl<'a> SecondPassParser<'a> {
             .and_then(variant_to_nonnegative_u32)
     }
 
+    fn weapon_stattrak_counter(&self, weapon_entity_id: &i32) -> Option<i32> {
+        let fallback = self.prop_controller
+            .special_ids
+            .fallback_stattrak
+            .and_then(|stattrak_id| match self.get_prop_from_ent(&stattrak_id, weapon_entity_id) {
+                Ok(Variant::I32(value)) => Some(value),
+                Ok(Variant::U32(value)) => i32::try_from(value).ok(),
+                Ok(Variant::F32(value)) if value.is_finite() && value.fract() == 0.0 => {
+                    Some(value as i32)
+                }
+                _ => None,
+            });
+        if fallback.is_some() {
+            return fallback;
+        }
+        for idx in 0..64 {
+            let definition_index = self
+                .get_prop_from_ent(&(WEAPON_ATTRIBUTE_DEF_INDEX_ID + idx), weapon_entity_id)
+                .ok()
+                .and_then(variant_to_nonnegative_u32);
+            if definition_index != Some(80) {
+                continue;
+            }
+            let raw_value = self
+                .get_prop_from_ent(&(WEAPON_SKIN_ID + idx), weapon_entity_id)
+                .ok()
+                .and_then(econ_attribute_raw_value)
+                .map(|(_, raw_value_bits)| raw_value_bits)?;
+            return i32::try_from(raw_value).ok();
+        }
+        None
+    }
+
     fn weapon_original_owner_from_eid(&self, weapon_entity_id: &i32) -> Option<u64> {
         let low = self.weapon_prop_u32(self.prop_controller.special_ids.orig_own_low, weapon_entity_id)?;
         let high = self.weapon_prop_u32(self.prop_controller.special_ids.orig_own_high, weapon_entity_id)?;
@@ -1643,25 +1775,61 @@ impl<'a> SecondPassParser<'a> {
         player_entid: &i32,
         definition_index: u32,
     ) -> Result<Variant, PropCollectionError> {
+        let value_index = match definition_index {
+            ECON_ATTR_SET_ITEM_TEXTURE_PREFAB => 0,
+            ECON_ATTR_SET_ITEM_TEXTURE_SEED => 1,
+            ECON_ATTR_SET_ITEM_TEXTURE_WEAR => 2,
+            _ => return Err(PropCollectionError::GetPropFromEntPropNotFound),
+        };
+        let entity = self
+            .entities
+            .get(*player_entid as usize)
+            .and_then(Option::as_ref)
+            .ok_or(PropCollectionError::GetPropFromEntEntityNotFound)?;
+        let signature = (entity.serial, entity.cosmetic_revision);
+        if let Some((cached_signature, values)) =
+            self.glove_attribute_cache.borrow().get(player_entid)
+        {
+            if *cached_signature == signature {
+                return values[value_index]
+                    .clone()
+                    .ok_or(PropCollectionError::GetPropFromEntPropNotFound);
+            }
+        }
+
+        let mut values: [Option<Variant>; 3] = Default::default();
         for idx in 0..64 {
             let Ok(current_definition_index) =
                 self.get_prop_from_ent(&(GLOVE_ATTRIBUTE_DEF_INDEX_ID + idx), player_entid)
             else {
                 continue;
             };
-            if variant_to_nonnegative_u32(current_definition_index) != Some(definition_index) {
-                continue;
+            let target = match variant_to_nonnegative_u32(current_definition_index) {
+                Some(ECON_ATTR_SET_ITEM_TEXTURE_PREFAB) => 0,
+                Some(ECON_ATTR_SET_ITEM_TEXTURE_SEED) => 1,
+                Some(ECON_ATTR_SET_ITEM_TEXTURE_WEAR) => 2,
+                _ => continue,
+            };
+            if values[target].is_none() {
+                values[target] = self
+                    .get_prop_from_ent(&(GLOVE_PAINT_ID + idx), player_entid)
+                    .ok();
             }
-            return self.get_prop_from_ent(&(GLOVE_PAINT_ID + idx), player_entid);
         }
 
-        let legacy_id = match definition_index {
-            ECON_ATTR_SET_ITEM_TEXTURE_PREFAB => GLOVE_PAINT_ID,
-            ECON_ATTR_SET_ITEM_TEXTURE_SEED => GLOVE_PAINT_SEED,
-            ECON_ATTR_SET_ITEM_TEXTURE_WEAR => GLOVE_PAINT_FLOAT,
-            _ => return Err(PropCollectionError::GetPropFromEntPropNotFound),
-        };
-        self.get_prop_from_ent(&legacy_id, player_entid)
+        for (index, legacy_id) in [GLOVE_PAINT_ID, GLOVE_PAINT_SEED, GLOVE_PAINT_FLOAT]
+            .into_iter()
+            .enumerate()
+        {
+            if values[index].is_none() {
+                values[index] = self.get_prop_from_ent(&legacy_id, player_entid).ok();
+            }
+        }
+        let result = values[value_index].clone();
+        self.glove_attribute_cache
+            .borrow_mut()
+            .insert(*player_entid, (signature, values));
+        result.ok_or(PropCollectionError::GetPropFromEntPropNotFound)
     }
 
     pub fn find_weapon_prop(&self, prop: &u32, player_entid: &i32) -> Result<Variant, PropCollectionError> {
@@ -1824,6 +1992,13 @@ fn econ_attribute_raw_value(value: Variant) -> Option<(f32, u32)> {
     }
 }
 
+fn is_map_based_default_agent(agent: &str) -> bool {
+    matches!(
+        agent,
+        "customplayer_t_map_based" | "customplayer_ct_map_based"
+    )
+}
+
 fn variant_to_nonnegative_u32(value: Variant) -> Option<u32> {
     match value {
         Variant::U32(value) => Some(value),
@@ -1835,9 +2010,57 @@ fn variant_to_nonnegative_u32(value: Variant) -> Option<u32> {
     }
 }
 
+fn stable_owned_weapon_slot_key(
+    steam_id: u64,
+    team_num: u32,
+    item_def_index: u32,
+    item_account_id: Option<u32>,
+    original_owner_xuid: Option<u64>,
+) -> Option<(u64, u32, u32)> {
+    let expected_account_id = steam_id
+        .checked_sub(STEAM_ID64_BASE)
+        .and_then(|value| u32::try_from(value).ok());
+    let owned = item_account_id
+        .zip(expected_account_id)
+        .is_some_and(|(actual, expected)| actual == expected)
+        || original_owner_xuid == Some(steam_id);
+    owned.then_some((steam_id, team_num, item_def_index))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{stickers_from_attributes, StickerAttribute};
+    use super::{
+        is_map_based_default_agent, stable_owned_weapon_slot_key, stickers_from_attributes,
+        StickerAttribute, STEAM_ID64_BASE,
+    };
+
+    #[test]
+    fn map_based_player_models_are_not_stable_agent_evidence() {
+        assert!(is_map_based_default_agent("customplayer_t_map_based"));
+        assert!(is_map_based_default_agent("customplayer_ct_map_based"));
+        assert!(!is_map_based_default_agent(
+            "customplayer_ctm_swat_variantg"
+        ));
+    }
+
+    #[test]
+    fn stable_weapon_slots_require_matching_ownership_and_keep_sides_separate() {
+        let account_id = 123;
+        let steam_id = STEAM_ID64_BASE + u64::from(account_id);
+
+        assert_eq!(
+            stable_owned_weapon_slot_key(steam_id, 2, 7, Some(account_id), None),
+            Some((steam_id, 2, 7))
+        );
+        assert_eq!(
+            stable_owned_weapon_slot_key(steam_id, 3, 7, None, Some(steam_id)),
+            Some((steam_id, 3, 7))
+        );
+        assert_eq!(
+            stable_owned_weapon_slot_key(steam_id, 2, 7, Some(account_id + 1), None),
+            None
+        );
+    }
 
     #[test]
     fn sticker_layers_keep_transform_state_with_matching_id_layer() {

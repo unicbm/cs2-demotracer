@@ -1,0 +1,65 @@
+.context-menu {
+  position: fixed;
+  z-index: 180;
+  width: max-content;
+  min-width: 204px;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 5px;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--surface-raised) 96%, transparent);
+  border: 1px solid var(--divider-strong);
+  border-radius: 7px;
+  box-shadow: 0 16px 42px color-mix(in srgb, #080b10 28%, transparent);
+  backdrop-filter: blur(18px) saturate(1.08);
+}
+
+.context-menu > div.has-divider {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--divider);
+}
+
+.context-menu button {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  width: 100%;
+  min-height: 34px;
+  padding: 5px 9px;
+  gap: 8px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  text-align: left;
+}
+
+.context-menu button:hover:not(:disabled),
+.context-menu button:focus-visible {
+  color: var(--text-primary);
+  background: var(--surface-muted);
+  outline: 0;
+}
+
+.context-menu button:disabled {
+  color: var(--text-disabled);
+}
+
+.context-menu button > span {
+  display: grid;
+  color: var(--text-tertiary);
+  place-items: center;
+}
+
+.context-menu button:hover:not(:disabled) > span,
+.context-menu button:focus-visible > span {
+  color: var(--trace);
+}
+
+.context-menu button strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

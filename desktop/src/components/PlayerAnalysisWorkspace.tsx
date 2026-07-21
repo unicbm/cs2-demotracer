@@ -9,6 +9,7 @@ import {
   type RosterPlayer,
 } from "./PlayerRoster";
 import type { CopyTarget } from "./TaskViews";
+import { currentSteamAlias, SteamAvatar, type SteamProfileMap } from "./SteamProfile";
 import "./archive-workspace.css";
 import "./player-analysis.css";
 
@@ -16,12 +17,14 @@ export interface PlayerAnalysisTeam {
   id: string;
   name: string;
   players: RosterPlayer[];
+  startSideLabel?: string;
 }
 
 interface PlayerAnalysisWorkspaceProps {
   words: TextDictionary;
   language: Language;
   teams: PlayerAnalysisTeam[];
+  steamProfiles: SteamProfileMap;
   selectedPlayer: PlayerSelection;
   copiedTarget: CopyTarget | null;
   onSelectPlayer: (selection: PlayerSelection) => void;
@@ -41,6 +44,7 @@ export function PlayerAnalysisWorkspace({
   words,
   language,
   teams,
+  steamProfiles,
   selectedPlayer,
   copiedTarget,
   onSelectPlayer,
@@ -86,6 +90,8 @@ export function PlayerAnalysisWorkspace({
   }
 
   const { player, team } = selectedEntry;
+  const steamProfile = steamProfiles.get(player.steamId);
+  const steamAlias = currentSteamAlias(steamProfile, player.name);
 
   return (
     <section className="player-analysis-workspace" aria-labelledby="player-analysis-title">
@@ -143,7 +149,10 @@ export function PlayerAnalysisWorkspace({
                           onClick={() => onSelectPlayer(selection)}
                           key={entryKey}
                         >
-                          <strong title={teamPlayer.name}>{teamPlayer.name}</strong>
+                          <span className="player-analysis-index-identity">
+                            <SteamAvatar profile={steamProfiles.get(teamPlayer.steamId)} fallbackName={teamPlayer.name} size="compact" />
+                            <strong title={teamPlayer.name}>{teamPlayer.name}</strong>
+                          </span>
                           {kda ? <span aria-label={`${words.kda} ${kda}`}>{kda}</span> : null}
                         </button>
                       );
@@ -156,8 +165,12 @@ export function PlayerAnalysisWorkspace({
 
           <article className="player-analysis-main" aria-labelledby="player-analysis-title">
             <header className="player-analysis-heading">
-              <span>{team.name}</span>
-              <h1 id="player-analysis-title" ref={headingRef} tabIndex={-1}>{player.name}</h1>
+              <SteamAvatar profile={steamProfile} fallbackName={player.name} size="large" />
+              <div>
+                <span>{team.name}{team.startSideLabel ? ` · ${team.startSideLabel}` : ""}</span>
+                <h1 id="player-analysis-title" ref={headingRef} tabIndex={-1}>{player.name}</h1>
+                {steamAlias ? <p>Steam · {steamAlias}</p> : null}
+              </div>
             </header>
 
             <div className="player-analysis-dossier">

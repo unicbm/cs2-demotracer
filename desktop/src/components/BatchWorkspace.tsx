@@ -82,6 +82,7 @@ export interface BatchWorkspaceProps {
   selectedCandidateIds: readonly string[];
   concurrency: BatchConcurrency;
   runState: BatchRunState;
+  startDisabled: boolean;
   canResume: boolean;
   jobs: readonly BatchJobItem[];
   eta?: BatchEtaState | null;
@@ -395,6 +396,7 @@ export function BatchWorkspace({
   selectedCandidateIds,
   concurrency,
   runState,
+  startDisabled,
   canResume,
   jobs,
   eta,
@@ -688,7 +690,7 @@ export function BatchWorkspace({
               ) : canResume ? (
                 <button className="secondary-button" type="button" onClick={onResume}><ReplayIcon size={15} />{copy.resume}</button>
               ) : (
-                <button className="primary-button" type="button" disabled={selected.size === 0 || scanning} onClick={() => onStart([...selected])}>
+                <button className="primary-button" type="button" disabled={startDisabled || selected.size === 0 || scanning} onClick={() => onStart([...selected])}>
                   {copy.start.replace("{count}", String(selected.size))}<ArrowIcon size={15} />
                 </button>
               )}
