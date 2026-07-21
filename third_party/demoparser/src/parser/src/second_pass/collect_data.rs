@@ -9,7 +9,7 @@ use crate::first_pass::read_bits::DemoParserError;
 use crate::maps::BUTTONMAP;
 use crate::maps::PLAYER_COLOR;
 use crate::second_pass::entities::EntityType;
-use crate::second_pass::parser_settings::SecondPassParser;
+use crate::second_pass::parser_settings::{PlayerInventorySnapshot, SecondPassParser};
 use crate::second_pass::variants::PropColumn;
 use crate::second_pass::variants::VarVec;
 use csgoproto::maps::AGENTSMAP;
@@ -918,6 +918,12 @@ impl<'a> SecondPassParser<'a> {
     }
 
     pub fn find_stickers(&self, weapon_entity_id: &i32) -> Result<Variant, PropCollectionError> {
+        if let Some(cosmetic) = self.cached_weapon_cosmetic(weapon_entity_id) {
+            return Ok(Variant::Stickers(cosmetic.stickers.clone()));
+        }
+
+        // Preserve the legacy partial-evidence behavior for malformed weapon
+        // entities that expose attributes without a usable item definition.
         let mut attributes = Vec::new();
         for idx in 0..64 {
             let Ok(Variant::U32(definition_index)) = self.get_prop_from_ent(&(WEAPON_ATTRIBUTE_DEF_INDEX_ID + idx), weapon_entity_id) else {
@@ -1155,97 +1161,154 @@ impl<'a> SecondPassParser<'a> {
         Ok(Variant::StringVec(names))
     }
     pub fn find_my_inventory_as_ids(&self, entity_id: &i32) -> Result<Variant, PropCollectionError> {
-        let mut names = vec![];
-        let mut unique_eids = vec![];
-
-        match self.find_is_alive(entity_id) {
-            Ok(Variant::Bool(true)) => {}
-            _ => return Ok(Variant::U32Vec(vec![])),
-        };
-        let inventory_max_len = match self.get_prop_from_ent(&(MY_WEAPONS_OFFSET as u32), entity_id) {
-            Ok(Variant::U32(p)) => p,
-            _ => return Err(PropCollectionError::InventoryMaxNotFound),
-        };
-
-        for i in 1..inventory_max_len + 1 {
-            let prop_id = MY_WEAPONS_OFFSET + i;
-            match self.get_prop_from_ent(&(prop_id as u32), entity_id) {
-                Err(_e) => {}
-                Ok(Variant::U32(x)) => {
-                    let eid = demo_network_ehandle_index(x);
-                    // Sometimes multiple references to same eid?
-                    if unique_eids.contains(&eid) {
-                        continue;
-                    }
-                    unique_eids.push(eid);
-                    if let Some(item_def_id) = &self.prop_controller.special_ids.item_def {
-                        let res = match self.get_prop_from_ent(item_def_id, &eid) {
-                            Err(_e) => continue,
-                            Ok(def) => def,
-                        };
-                        self.insert_equipment_id(&mut names, res, entity_id);
-                    }
-                }
-                _ => {}
-            }
-        }
-        Ok(Variant::U32Vec(names))
+        let snapshot = self.player_inventory_snapshot(entity_id, false)?;
+        Ok(Variant::U32Vec(snapshot.ids))
     }
     pub fn find_my_inventory_weapon_cosmetics(&self, entity_id: &i32) -> Result<Variant, PropCollectionError> {
-        let mut unique_eids = vec![];
+        let snapshot = self.player_inventory_snapshot(entity_id, true)?;
+        let cosmetics = snapshot.cosmetics.unwrap_or_else(|| Arc::from([]));
+        Ok(Variant::InventoryWeaponCosmetics(cosmetics))
+    }
 
-        match self.find_is_alive(entity_id) {
-            Ok(Variant::Bool(true)) => {}
-            _ => return Ok(Variant::InventoryWeaponCosmetics(Arc::from([]))),
-        };
+    fn player_inventory_snapshot(
+        &self,
+        entity_id: &i32,
+        include_cosmetics: bool,
+    ) -> Result<PlayerInventorySnapshot, PropCollectionError> {
+        if let Some(mut snapshot) = self
+            .player_inventory_snapshot_cache
+            .borrow()
+            .get(entity_id)
+            .filter(|snapshot| snapshot.generation == self.inventory_generation)
+            .cloned()
+        {
+            if include_cosmetics && snapshot.cosmetics.is_none() {
+                snapshot.cosmetics = Some(self.collect_inventory_cosmetics(
+                    entity_id,
+                    &snapshot.weapon_eids,
+                ));
+                self.player_inventory_snapshot_cache
+                    .borrow_mut()
+                    .insert(*entity_id, snapshot.clone());
+            }
+            return Ok(snapshot);
+        }
+
+        if !matches!(self.find_is_alive(entity_id), Ok(Variant::Bool(true))) {
+            let snapshot = PlayerInventorySnapshot {
+                generation: self.inventory_generation,
+                player_signature: self.inventory_player_signature(entity_id),
+                weapon_eids: Vec::new(),
+                weapon_signature: Vec::new(),
+                ids: Vec::new(),
+                cosmetics: include_cosmetics.then(|| Arc::from([])),
+            };
+            self.player_inventory_snapshot_cache
+                .borrow_mut()
+                .insert(*entity_id, snapshot.clone());
+            return Ok(snapshot);
+        }
+
         let inventory_max_len = match self.get_prop_from_ent(&(MY_WEAPONS_OFFSET as u32), entity_id) {
-            Ok(Variant::U32(p)) => p,
+            Ok(Variant::U32(value)) => value,
             _ => return Err(PropCollectionError::InventoryMaxNotFound),
         };
-
-        for i in 1..inventory_max_len + 1 {
-            let prop_id = MY_WEAPONS_OFFSET + i;
+        let mut weapon_eids = Vec::new();
+        for index in 1..=inventory_max_len {
+            let prop_id = MY_WEAPONS_OFFSET + index;
             let eid = match self.get_prop_from_ent(&(prop_id as u32), entity_id) {
                 Ok(Variant::U32(handle)) => demo_network_ehandle_index(handle),
                 _ => continue,
             };
-            if unique_eids.contains(&eid) {
-                continue;
+            if !weapon_eids.contains(&eid) {
+                weapon_eids.push(eid);
             }
-            unique_eids.push(eid);
         }
 
-        let signature = unique_eids
+        let weapon_signature = weapon_eids
             .iter()
             .map(|eid| {
-                let entity = self
-                    .entities
-                    .get(*eid as usize)
-                    .and_then(Option::as_ref);
-                let serial = entity.map(|entity| entity.serial).unwrap_or(u32::MAX);
-                let revision = entity
-                    .map(|entity| entity.cosmetic_revision)
-                    .unwrap_or(u64::MAX);
-                (*eid, serial, revision)
+                let entity = self.entities.get(*eid as usize).and_then(Option::as_ref);
+                (
+                    *eid,
+                    entity.map(|entity| entity.serial).unwrap_or(u32::MAX),
+                    entity
+                        .map(|entity| entity.cosmetic_revision)
+                        .unwrap_or(u64::MAX),
+                )
             })
             .collect::<Vec<_>>();
-        {
-            let cache = self.player_inventory_cosmetic_cache.borrow();
-            if let Some((cached_signature, cached)) = cache.get(entity_id) {
-                if *cached_signature == signature {
-                    return Ok(Variant::InventoryWeaponCosmetics(Arc::clone(cached)));
+        let player_signature = self.inventory_player_signature(entity_id);
+        let mut ids = Vec::new();
+        if let Some(item_def_id) = self.prop_controller.special_ids.item_def {
+            for eid in &weapon_eids {
+                if let Ok(item_def) = self.get_prop_from_ent(&item_def_id, eid) {
+                    self.insert_equipment_id(&mut ids, item_def, entity_id);
                 }
             }
         }
 
-        let cosmetics = unique_eids
-            .into_iter()
-            .filter_map(|eid| self.cached_inventory_weapon_cosmetic(entity_id, &eid))
-            .collect::<Arc<[_]>>();
-        self.player_inventory_cosmetic_cache
+        let reusable_cosmetics = self
+            .player_inventory_snapshot_cache
+            .borrow()
+            .get(entity_id)
+            .filter(|snapshot| {
+                inventory_cosmetics_are_reusable(
+                    snapshot.player_signature,
+                    &snapshot.weapon_signature,
+                    player_signature,
+                    &weapon_signature,
+                )
+            })
+            .and_then(|snapshot| snapshot.cosmetics.as_ref().map(Arc::clone));
+        let cosmetics = if include_cosmetics {
+            reusable_cosmetics.or_else(|| {
+                Some(self.collect_inventory_cosmetics(entity_id, &weapon_eids))
+            })
+        } else {
+            reusable_cosmetics
+        };
+        let snapshot = PlayerInventorySnapshot {
+            generation: self.inventory_generation,
+            player_signature,
+            weapon_eids,
+            weapon_signature,
+            ids,
+            cosmetics,
+        };
+        self.player_inventory_snapshot_cache
             .borrow_mut()
-            .insert(*entity_id, (signature, Arc::clone(&cosmetics)));
-        Ok(Variant::InventoryWeaponCosmetics(cosmetics))
+            .insert(*entity_id, snapshot.clone());
+        Ok(snapshot)
+    }
+
+    fn inventory_player_signature(
+        &self,
+        player_entity_id: &i32,
+    ) -> (u32, Option<u64>, Option<u32>) {
+        let serial = self
+            .entities
+            .get(*player_entity_id as usize)
+            .and_then(Option::as_ref)
+            .map(|entity| entity.serial)
+            .unwrap_or(u32::MAX);
+        let player = self.players.get(player_entity_id);
+        (
+            serial,
+            player.and_then(|player| player.steamid),
+            player.and_then(|player| player.team_num),
+        )
+    }
+
+    fn collect_inventory_cosmetics(
+        &self,
+        player_entity_id: &i32,
+        weapon_eids: &[i32],
+    ) -> Arc<[InventoryWeaponCosmetic]> {
+        weapon_eids
+            .iter()
+            .filter_map(|eid| self.cached_inventory_weapon_cosmetic(player_entity_id, eid))
+            .collect()
     }
 
     fn cached_inventory_weapon_cosmetic(
@@ -1253,88 +1316,71 @@ impl<'a> SecondPassParser<'a> {
         player_entity_id: &i32,
         weapon_entity_id: &i32,
     ) -> Option<InventoryWeaponCosmetic> {
-        let slot_key = self.owned_weapon_slot_key(player_entity_id, weapon_entity_id);
+        let current = self.cached_weapon_cosmetic(weapon_entity_id)?;
+        let slot_key = self.owned_weapon_slot_key(player_entity_id, &current);
         if let Some(key) = slot_key {
             if let Some(cached) = self.stable_owned_weapon_cosmetic_cache.borrow().get(&key) {
-                let mut cosmetic = cached.clone();
-                cosmetic.item_id_high = self.weapon_prop_u32(
-                    self.prop_controller.special_ids.item_id_high,
-                    weapon_entity_id,
-                );
-                cosmetic.item_id_low = self.weapon_prop_u32(
-                    self.prop_controller.special_ids.item_id_low,
-                    weapon_entity_id,
-                );
-                cosmetic.item_account_id = self.weapon_prop_u32(
-                    self.prop_controller.special_ids.item_account_id,
-                    weapon_entity_id,
-                );
-                cosmetic.original_owner_xuid = self.weapon_original_owner_from_eid(weapon_entity_id);
-                cosmetic.stattrak_counter = self.weapon_stattrak_counter(weapon_entity_id);
-                return Some(cosmetic);
+                return Some(refresh_owned_weapon_dynamic_fields(cached, &current));
             }
         }
 
-        let cosmetic = self.cached_weapon_cosmetic(weapon_entity_id)?;
         if let Some(key) = slot_key {
-            if cosmetic.paint_kit != 0
-                && cosmetic.paint_wear.is_finite()
-                && (0.0..=1.0).contains(&cosmetic.paint_wear)
+            if current.paint_kit != 0
+                && current.paint_wear.is_finite()
+                && (0.0..=1.0).contains(&current.paint_wear)
             {
                 self.stable_owned_weapon_cosmetic_cache
                     .borrow_mut()
-                    .insert(key, cosmetic.clone());
+                    .insert(key, current.as_ref().clone());
             }
         }
-        Some(cosmetic)
+        Some(current.as_ref().clone())
     }
 
     fn owned_weapon_slot_key(
         &self,
         player_entity_id: &i32,
-        weapon_entity_id: &i32,
+        cosmetic: &InventoryWeaponCosmetic,
     ) -> Option<(u64, u32, u32)> {
         let player = self.players.get(player_entity_id)?;
         let steam_id = player.steamid?;
         let team_num = player.team_num.filter(|team| matches!(team, 2 | 3))?;
-        let item_def_id = self.prop_controller.special_ids.item_def?;
-        let item_def_index = self
-            .get_prop_from_ent(&item_def_id, weapon_entity_id)
-            .ok()
-            .and_then(variant_to_nonnegative_u32)?;
-        let item_account_id = self.weapon_prop_u32(
-            self.prop_controller.special_ids.item_account_id,
-            weapon_entity_id,
-        );
-        let original_owner_xuid = self.weapon_original_owner_from_eid(weapon_entity_id);
         stable_owned_weapon_slot_key(
             steam_id,
             team_num,
-            item_def_index,
-            item_account_id,
-            original_owner_xuid,
+            cosmetic.item_def_index,
+            cosmetic.item_account_id,
+            cosmetic.original_owner_xuid,
         )
     }
 
-    fn cached_weapon_cosmetic(&self, weapon_entity_id: &i32) -> Option<InventoryWeaponCosmetic> {
-        let revision = self
+    fn cached_weapon_cosmetic(
+        &self,
+        weapon_entity_id: &i32,
+    ) -> Option<Arc<InventoryWeaponCosmetic>> {
+        let signature = self
             .entities
             .get(*weapon_entity_id as usize)?
-            .as_ref()?
-            .cosmetic_revision;
+            .as_ref()
+            .map(|entity| (entity.serial, entity.cosmetic_revision))?;
         {
-            let cache = self.weapon_cosmetic_cache.borrow();
-            if let Some((cached_revision, cached)) = cache.get(weapon_entity_id) {
-                if *cached_revision == revision {
-                    return cached.clone();
+            let cache = self.weapon_econ_snapshot_cache.borrow();
+            if let Some((cached_signature, cached)) = cache.get(weapon_entity_id) {
+                if *cached_signature == signature {
+                    return cached.as_ref().map(Arc::clone);
                 }
             }
         }
 
-        let cosmetic = self.collect_weapon_cosmetic(weapon_entity_id);
-        self.weapon_cosmetic_cache
+        let cosmetic = self
+            .collect_weapon_cosmetic(weapon_entity_id)
+            .map(Arc::new);
+        self.weapon_econ_snapshot_cache
             .borrow_mut()
-            .insert(*weapon_entity_id, (revision, cosmetic.clone()));
+            .insert(
+                *weapon_entity_id,
+                (signature, cosmetic.as_ref().map(Arc::clone)),
+            );
         cosmetic
     }
 
@@ -1387,9 +1433,10 @@ impl<'a> SecondPassParser<'a> {
                 }
                 _ => None,
             });
-        let stattrak_counter = self.weapon_stattrak_counter(weapon_entity_id);
         let (attributes, stickers) =
             self.find_weapon_econ_attributes_and_stickers(weapon_entity_id);
+        let stattrak_counter =
+            self.weapon_stattrak_counter(weapon_entity_id, &attributes);
         let custom_name = self
             .prop_controller
             .special_ids
@@ -1617,7 +1664,11 @@ impl<'a> SecondPassParser<'a> {
             .and_then(variant_to_nonnegative_u32)
     }
 
-    fn weapon_stattrak_counter(&self, weapon_entity_id: &i32) -> Option<i32> {
+    fn weapon_stattrak_counter(
+        &self,
+        weapon_entity_id: &i32,
+        attributes: &[InventoryWeaponAttribute],
+    ) -> Option<i32> {
         let fallback = self.prop_controller
             .special_ids
             .fallback_stattrak
@@ -1632,22 +1683,10 @@ impl<'a> SecondPassParser<'a> {
         if fallback.is_some() {
             return fallback;
         }
-        for idx in 0..64 {
-            let definition_index = self
-                .get_prop_from_ent(&(WEAPON_ATTRIBUTE_DEF_INDEX_ID + idx), weapon_entity_id)
-                .ok()
-                .and_then(variant_to_nonnegative_u32);
-            if definition_index != Some(80) {
-                continue;
-            }
-            let raw_value = self
-                .get_prop_from_ent(&(WEAPON_SKIN_ID + idx), weapon_entity_id)
-                .ok()
-                .and_then(econ_attribute_raw_value)
-                .map(|(_, raw_value_bits)| raw_value_bits)?;
-            return i32::try_from(raw_value).ok();
-        }
-        None
+        attributes
+            .iter()
+            .find(|attribute| attribute.definition_index == 80)
+            .and_then(|attribute| i32::try_from(attribute.raw_value_bits).ok())
     }
 
     fn weapon_original_owner_from_eid(&self, weapon_entity_id: &i32) -> Option<u64> {
@@ -2027,12 +2066,37 @@ fn stable_owned_weapon_slot_key(
     owned.then_some((steam_id, team_num, item_def_index))
 }
 
+fn inventory_cosmetics_are_reusable(
+    cached_player_signature: (u32, Option<u64>, Option<u32>),
+    cached_weapon_signature: &[(i32, u32, u64)],
+    current_player_signature: (u32, Option<u64>, Option<u32>),
+    current_weapon_signature: &[(i32, u32, u64)],
+) -> bool {
+    cached_player_signature == current_player_signature
+        && cached_weapon_signature == current_weapon_signature
+}
+
+fn refresh_owned_weapon_dynamic_fields(
+    stable: &InventoryWeaponCosmetic,
+    current: &InventoryWeaponCosmetic,
+) -> InventoryWeaponCosmetic {
+    let mut cosmetic = stable.clone();
+    cosmetic.item_id_high = current.item_id_high;
+    cosmetic.item_id_low = current.item_id_low;
+    cosmetic.item_account_id = current.item_account_id;
+    cosmetic.original_owner_xuid = current.original_owner_xuid;
+    cosmetic.stattrak_counter = current.stattrak_counter;
+    cosmetic
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        is_map_based_default_agent, stable_owned_weapon_slot_key, stickers_from_attributes,
-        StickerAttribute, STEAM_ID64_BASE,
+        inventory_cosmetics_are_reusable, is_map_based_default_agent,
+        refresh_owned_weapon_dynamic_fields, stable_owned_weapon_slot_key,
+        stickers_from_attributes, StickerAttribute, STEAM_ID64_BASE,
     };
+    use crate::second_pass::variants::InventoryWeaponCosmetic;
 
     #[test]
     fn map_based_player_models_are_not_stable_agent_evidence() {
@@ -2060,6 +2124,45 @@ mod tests {
             stable_owned_weapon_slot_key(steam_id, 2, 7, Some(account_id + 1), None),
             None
         );
+    }
+
+    #[test]
+    fn inventory_snapshot_reuse_requires_same_player_side_and_weapon_revisions() {
+        let player = (12, Some(76561198000000001), Some(2));
+        let weapons = [(41, 3, 8), (42, 1, 5)];
+        assert!(inventory_cosmetics_are_reusable(
+            player,
+            &weapons,
+            player,
+            &weapons,
+        ));
+        assert!(!inventory_cosmetics_are_reusable(
+            player,
+            &weapons,
+            (12, Some(76561198000000001), Some(3)),
+            &weapons,
+        ));
+        assert!(!inventory_cosmetics_are_reusable(
+            player,
+            &weapons,
+            player,
+            &[(41, 3, 9), (42, 1, 5)],
+        ));
+    }
+
+    #[test]
+    fn stable_weapon_snapshot_refreshes_only_dynamic_identity_fields() {
+        let stable = cosmetic(7, 600, 0.01, 1, 10);
+        let current = cosmetic(7, 999, 0.42, 2, 25);
+        let refreshed = refresh_owned_weapon_dynamic_fields(&stable, &current);
+
+        assert_eq!(refreshed.paint_kit, stable.paint_kit);
+        assert_eq!(refreshed.paint_wear.to_bits(), stable.paint_wear.to_bits());
+        assert_eq!(refreshed.custom_name, stable.custom_name);
+        assert_eq!(refreshed.item_id_low, current.item_id_low);
+        assert_eq!(refreshed.item_account_id, current.item_account_id);
+        assert_eq!(refreshed.original_owner_xuid, current.original_owner_xuid);
+        assert_eq!(refreshed.stattrak_counter, current.stattrak_counter);
     }
 
     #[test]
@@ -2130,6 +2233,30 @@ mod tests {
         StickerAttribute {
             definition_index,
             raw_value,
+        }
+    }
+
+    fn cosmetic(
+        item_def_index: u32,
+        paint_kit: u32,
+        paint_wear: f32,
+        identity: u32,
+        stattrak_counter: i32,
+    ) -> InventoryWeaponCosmetic {
+        InventoryWeaponCosmetic {
+            item_def_index,
+            item_id_high: Some(identity + 100),
+            item_id_low: Some(identity),
+            item_account_id: Some(identity + 200),
+            original_owner_xuid: Some(76561198000000000 + u64::from(identity)),
+            paint_kit,
+            paint_seed: 17,
+            paint_wear,
+            entity_quality: Some(3),
+            stattrak_counter: Some(stattrak_counter),
+            attributes: Vec::new(),
+            custom_name: Some("stable".to_string()),
+            stickers: Vec::new(),
         }
     }
 }

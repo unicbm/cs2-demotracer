@@ -5,6 +5,7 @@ use crate::first_pass::read_bits::DemoParserError;
 use crate::first_pass::sendtables::Serializer;
 use crate::first_pass::stringtables::StringTable;
 use crate::first_pass::stringtables::UserInfo;
+use crate::parse_demo::DecodePlan;
 use crate::second_pass::collect_data::ProjectileRecord;
 use crate::second_pass::decoder::QfMapper;
 use crate::second_pass::entities::Entity;
@@ -43,8 +44,10 @@ pub struct SecondPassParser<'a> {
     pub serializers: AHashMap<String, Serializer, RandomState>,
     pub cls_bits: Option<u32>,
     pub entities: Vec<Option<Entity>>,
-    pub weapon_cosmetic_cache: RefCell<AHashMap<i32, (u64, Option<InventoryWeaponCosmetic>)>>,
-    pub player_inventory_cosmetic_cache: RefCell<AHashMap<i32, (Vec<(i32, u32, u64)>, Arc<[InventoryWeaponCosmetic]>)>>,
+    pub weapon_econ_snapshot_cache:
+        RefCell<AHashMap<i32, ((u32, u64), Option<Arc<InventoryWeaponCosmetic>>)>>,
+    pub player_inventory_snapshot_cache: RefCell<AHashMap<i32, PlayerInventorySnapshot>>,
+    pub inventory_generation: u64,
     pub stable_owned_weapon_cosmetic_cache:
         RefCell<AHashMap<(u64, u32, u32), InventoryWeaponCosmetic>>,
     pub stable_agent_skin_cache: RefCell<AHashMap<(u64, u32), String>>,
@@ -87,6 +90,7 @@ pub struct SecondPassParser<'a> {
     pub last_tick: i32,
     pub parse_usercmd: bool,
     pub list_props: bool,
+    pub decode_plan: DecodePlan,
 }
 #[derive(Debug, Clone)]
 pub struct Teams {
@@ -131,6 +135,16 @@ pub struct EconItem {
     pub item_name: Option<String>,
     pub skin_name: Option<String>,
 }
+
+#[derive(Debug, Clone)]
+pub struct PlayerInventorySnapshot {
+    pub generation: u64,
+    pub player_signature: (u32, Option<u64>, Option<u32>),
+    pub weapon_eids: Vec<i32>,
+    pub weapon_signature: Vec<(i32, u32, u64)>,
+    pub ids: Vec<u32>,
+    pub cosmetics: Option<Arc<[InventoryWeaponCosmetic]>>,
+}
 #[derive(Debug, Clone)]
 pub struct PlayerEndMetaData {
     pub steamid: Option<u64>,
@@ -174,6 +188,7 @@ impl<'a> SecondPassParser<'a> {
         offset: usize,
         parse_all_packets: bool,
         start_end_offset: Option<StartEndOffset>,
+        decode_plan: DecodePlan,
     ) -> Result<Self, DemoParserError> {
         first_pass_output
             .settings
@@ -215,8 +230,9 @@ impl<'a> SecondPassParser<'a> {
             ge_list: first_pass_output.ge_list,
             cls_by_id: &first_pass_output.cls_by_id,
             entities: vec![None; DEFAULT_MAX_ENTITY_ID],
-            weapon_cosmetic_cache: RefCell::new(AHashMap::default()),
-            player_inventory_cosmetic_cache: RefCell::new(AHashMap::default()),
+            weapon_econ_snapshot_cache: RefCell::new(AHashMap::default()),
+            player_inventory_snapshot_cache: RefCell::new(AHashMap::default()),
+            inventory_generation: 0,
             stable_owned_weapon_cosmetic_cache: RefCell::new(AHashMap::default()),
             stable_agent_skin_cache: RefCell::new(AHashMap::default()),
             glove_attribute_cache: RefCell::new(AHashMap::default()),
@@ -245,6 +261,7 @@ impl<'a> SecondPassParser<'a> {
             huffman_lookup_table: &first_pass_output.settings.huffman_lookup_table,
             header: HashMap::default(),
             list_props: first_pass_output.list_props,
+            decode_plan,
         })
     }
 }

@@ -393,7 +393,7 @@ mod demoparser_impl {
     };
     use parser::first_pass::prop_controller::{PropInfo, ENTITY_ID_ID, STEAMID_ID, TICK_ID};
     use parser::first_pass::read_bits::DemoParserError;
-    use parser::parse_demo::{DemoOutput, Parser, ParsingMode};
+    use parser::parse_demo::{DecodePlan, DemoOutput, Parser, ParsingMode};
     use parser::second_pass::collect_data::ProjectileRecord;
     use parser::second_pass::game_events::GameEvent;
     use parser::second_pass::parser_settings::create_huffman_lookup_table;
@@ -816,10 +816,11 @@ mod demoparser_impl {
         supplemental_settings.collect_projectile_records = false;
         supplemental_settings.parse_grenades = false;
 
-        let supplemental_output = match parse_demo_once(
+        let supplemental_output = match parse_demo_once_with_decode_plan(
             bytes,
             supplemental_settings,
             ParsingMode::ForceSingleThreaded,
+            DecodePlan::PLAYER_ROWS_ONLY,
         ) {
             Ok(output) => output,
             Err(_) => {
@@ -871,7 +872,16 @@ mod demoparser_impl {
         settings: ParserInputs<'a>,
         mode: ParsingMode,
     ) -> std::result::Result<DemoOutput, DemoParserError> {
-        Parser::new(settings, mode).parse_demo(bytes)
+        parse_demo_once_with_decode_plan(bytes, settings, mode, DecodePlan::FULL)
+    }
+
+    fn parse_demo_once_with_decode_plan<'a>(
+        bytes: &[u8],
+        settings: ParserInputs<'a>,
+        mode: ParsingMode,
+        decode_plan: DecodePlan,
+    ) -> std::result::Result<DemoOutput, DemoParserError> {
+        Parser::new_with_decode_plan(settings, mode, decode_plan).parse_demo(bytes)
     }
 
     pub fn read_demo(path: &Path) -> Result<ParsedDemo> {

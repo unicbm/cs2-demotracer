@@ -23,6 +23,33 @@ use std::time::Duration;
 
 pub const HEADER_ENDS_AT_BYTE: usize = 16;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecodePlan {
+    pub game_events: bool,
+    pub voice_data: bool,
+    pub item_drops: bool,
+    pub end_of_match: bool,
+}
+
+impl DecodePlan {
+    pub const FULL: Self = Self {
+        game_events: true,
+        voice_data: true,
+        item_drops: true,
+        end_of_match: true,
+    };
+
+    /// Packet entities, string tables, server metadata, net ticks, and usercmds
+    /// remain enabled. Only side-channel outputs that cannot contribute to the
+    /// strict player-row overlay are skipped.
+    pub const PLAYER_ROWS_ONLY: Self = Self {
+        game_events: false,
+        voice_data: false,
+        item_drops: false,
+        end_of_match: false,
+    };
+}
+
 #[derive(Debug)]
 pub struct DemoOutput {
     pub df: AHashMap<u32, PropColumn>,
@@ -49,6 +76,7 @@ pub struct DemoOutput {
 pub struct Parser<'a> {
     input: ParserInputs<'a>,
     pub parsing_mode: ParsingMode,
+    decode_plan: DecodePlan,
 }
 #[derive(PartialEq)]
 pub enum ParsingMode {
@@ -59,9 +87,18 @@ pub enum ParsingMode {
 
 impl<'a> Parser<'a> {
     pub fn new(input: ParserInputs<'a>, parsing_mode: ParsingMode) -> Self {
+        Self::new_with_decode_plan(input, parsing_mode, DecodePlan::FULL)
+    }
+
+    pub fn new_with_decode_plan(
+        input: ParserInputs<'a>,
+        parsing_mode: ParsingMode,
+        decode_plan: DecodePlan,
+    ) -> Self {
         Parser {
-            input: input,
-            parsing_mode: parsing_mode,
+            input,
+            parsing_mode,
+            decode_plan,
         }
     }
     pub fn parse_demo(&mut self, demo_bytes: &[u8]) -> Result<DemoOutput, DemoParserError> {
@@ -79,11 +116,18 @@ impl<'a> Parser<'a> {
     }
 
     fn second_pass_multi_threaded(&self, outer_bytes: &[u8], first_pass_output: FirstPassOutput) -> Result<DemoOutput, DemoParserError> {
+        let decode_plan = self.decode_plan;
         let second_pass_outputs: Vec<Result<SecondPassOutput, DemoParserError>> = first_pass_output
             .fullpacket_offsets
             .par_iter()
             .map(|offset| {
-                let mut parser = SecondPassParser::new(first_pass_output.clone(), *offset, false, None)?;
+                let mut parser = SecondPassParser::new(
+                    first_pass_output.clone(),
+                    *offset,
+                    false,
+                    None,
+                    decode_plan,
+                )?;
                 parser.start(outer_bytes)?;
                 Ok(parser.create_output())
             })
@@ -127,7 +171,13 @@ impl<'a> Parser<'a> {
         events.extend(ids.values().map(|x| x.clone()));
     }
     fn second_pass_single_threaded(&self, outer_bytes: &[u8], first_pass_output: FirstPassOutput) -> Result<DemoOutput, DemoParserError> {
-        let mut parser = SecondPassParser::new(first_pass_output.clone(), 16, true, None)?;
+        let mut parser = SecondPassParser::new(
+            first_pass_output.clone(),
+            16,
+            true,
+            None,
+            self.decode_plan,
+        )?;
         parser.start(outer_bytes)?;
         let second_pass_output = parser.create_output();
         let mut outputs = self.combine_outputs(&mut vec![second_pass_output], first_pass_output);
@@ -144,6 +194,7 @@ impl<'a> Parser<'a> {
         first_pass_output: FirstPassOutput,
         reciever: Receiver<StartEndOffset>,
     ) -> Result<DemoOutput, DemoParserError> {
+        let decode_plan = self.decode_plan;
         thread::scope(|s| {
             let mut handles = vec![];
             let mut channel_threading_was_ok = true;
@@ -159,7 +210,13 @@ impl<'a> Parser<'a> {
                     }
                     let my_first_out = first_pass_output.clone();
                     handles.push(s.spawn(move || {
-                        let mut parser = SecondPassParser::new(my_first_out, start_end_offset.start, false, Some(start_end_offset))?;
+                        let mut parser = SecondPassParser::new(
+                            my_first_out,
+                            start_end_offset.start,
+                            false,
+                            Some(start_end_offset),
+                            decode_plan,
+                        )?;
                         parser.start(outer_bytes)?;
                         Ok(parser.create_output())
                     }));
@@ -194,11 +251,18 @@ impl<'a> Parser<'a> {
         })
     }
     fn second_pass_multi_threaded_no_channels(&self, outer_bytes: &[u8], first_pass_output: FirstPassOutput) -> Result<DemoOutput, DemoParserError> {
+        let decode_plan = self.decode_plan;
         let second_pass_outputs: Vec<Result<SecondPassOutput, DemoParserError>> = first_pass_output
             .fullpacket_offsets
             .par_iter()
             .map(|offset| {
-                let mut parser = SecondPassParser::new(first_pass_output.clone(), *offset, false, None)?;
+                let mut parser = SecondPassParser::new(
+                    first_pass_output.clone(),
+                    *offset,
+                    false,
+                    None,
+                    decode_plan,
+                )?;
                 parser.start(outer_bytes)?;
                 Ok(parser.create_output())
             })
@@ -493,5 +557,23 @@ impl SellBackHelper {
             }
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod decode_plan_tests {
+    use super::DecodePlan;
+
+    #[test]
+    fn player_row_plan_disables_only_discarded_side_channels() {
+        assert!(DecodePlan::FULL.game_events);
+        assert!(DecodePlan::FULL.voice_data);
+        assert!(DecodePlan::FULL.item_drops);
+        assert!(DecodePlan::FULL.end_of_match);
+
+        assert!(!DecodePlan::PLAYER_ROWS_ONLY.game_events);
+        assert!(!DecodePlan::PLAYER_ROWS_ONLY.voice_data);
+        assert!(!DecodePlan::PLAYER_ROWS_ONLY.item_drops);
+        assert!(!DecodePlan::PLAYER_ROWS_ONLY.end_of_match);
     }
 }

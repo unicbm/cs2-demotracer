@@ -90,6 +90,7 @@ impl<'a> SecondPassParser<'a> {
         if !self.parse_entities {
             return Ok(());
         }
+        self.inventory_generation = self.inventory_generation.wrapping_add(1);
         let msg = match CsvcMsgPacketEntities::decode(bytes) {
             Err(_) => return Err(DemoParserError::MalformedMessage),
             Ok(msg) => msg,
@@ -113,7 +114,7 @@ impl<'a> SecondPassParser<'a> {
                 EntityCmd::Delete => {
                     self.projectiles.remove(&entity_id);
                     self.projectile_record_indices.remove(&entity_id);
-                    self.weapon_cosmetic_cache.get_mut().remove(&entity_id);
+                    self.weapon_econ_snapshot_cache.get_mut().remove(&entity_id);
                     self.glove_attribute_cache.get_mut().remove(&entity_id);
                     if let Some(entry) = self.entities.get_mut(entity_id as usize) {
                         *entry = None;
@@ -404,7 +405,7 @@ impl<'a> SecondPassParser<'a> {
             entity_type,
             cosmetic_revision: 0,
         };
-        self.weapon_cosmetic_cache.get_mut().remove(entity_id);
+        self.weapon_econ_snapshot_cache.get_mut().remove(entity_id);
         self.glove_attribute_cache.get_mut().remove(entity_id);
         if self.entities.len() as i32 <= *entity_id {
             // if corrupt, this can cause oom allocations
