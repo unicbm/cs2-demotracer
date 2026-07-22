@@ -1,7 +1,7 @@
 import type { TextDictionary } from "../i18n";
 import type { AnalysisPlayerSummary, AnalysisResult } from "../types";
 import { displayMap, MapArtwork } from "./MapArtwork";
-import { hasSteamProfile, steamProfileUrl, type PlayerSelection } from "./PlayerRoster";
+import type { PlayerSelection } from "./PlayerRoster";
 import { SteamPlayerIdentity, type SteamProfileMap } from "./SteamProfile";
 import "./analysis-overview.css";
 import "./archive-workspace.css";
@@ -82,7 +82,6 @@ function playerMetrics(player: AnalysisPlayerSummary, matchRounds: number | null
     kills,
     deaths,
     assists,
-    score: player.score,
     adr: damage !== null && damage !== undefined && validRounds !== null ? (damage / validRounds).toFixed(1) : null,
     kd: kills !== null && kills !== undefined && deaths !== null && deaths !== undefined && deaths > 0 ? (kills / deaths).toFixed(2) : null,
     kr: kills !== null && kills !== undefined && validRounds !== null ? (kills / validRounds).toFixed(2) : null,
@@ -96,7 +95,7 @@ function playerMetrics(player: AnalysisPlayerSummary, matchRounds: number | null
 type PlayerMetrics = ReturnType<typeof playerMetrics>;
 
 interface AnalysisMetricColumn {
-  key: "kda" | "adr" | "kd" | "kr" | "hs" | "mvps" | "score";
+  key: "kda" | "adr" | "kd" | "kr" | "hs" | "mvps";
   label: string;
   width: string;
   value: (metrics: PlayerMetrics) => string | null;
@@ -125,7 +124,6 @@ function analysisMetricColumns(players: AnalysisPlayerSummary[], words: TextDict
     { key: "kr", label: "KPR", width: "minmax(45px, .55fr)", value: (values) => metricValue(values.kr) },
     { key: "hs", label: "HS%", width: "minmax(70px, .75fr)", value: (values) => metricValue(values.hs) },
     { key: "mvps", label: "MVP", width: "minmax(44px, .5fr)", value: (values) => metricValue(values.mvps) },
-    { key: "score", label: words.scoreColumn, width: "minmax(48px, .55fr)", value: (values) => metricValue(values.score) },
   ];
   return columns.filter((column) => metrics.some((values) => column.value(values) !== null));
 }
@@ -141,7 +139,6 @@ function AnalysisTeamRows({
   steamProfiles,
   words,
   onSelectPlayer,
-  onOpenExternal,
 }: {
   teamId: string;
   name: string;
@@ -153,7 +150,6 @@ function AnalysisTeamRows({
   steamProfiles: SteamProfileMap;
   words: TextDictionary;
   onSelectPlayer: (selection: PlayerSelection) => void;
-  onOpenExternal: (url: string) => void;
 }) {
   const gridTemplateColumns = `minmax(190px, 1.8fr) ${columns.map((column) => column.width).join(" ")}`;
   return (
@@ -168,20 +164,14 @@ function AnalysisTeamRows({
         {players.map((player, playerIndex) => {
           const metrics = playerMetrics(player, matchRounds);
           const selection = { teamId, playerIndex };
-          const profileAvailable = hasSteamProfile(player.steamId);
           return (
             <li key={`${player.steamId}:${playerIndex}`}>
               <button
                 className="analysis-player-stat-row"
                 type="button"
                 style={{ gridTemplateColumns }}
-                title={profileAvailable ? words.rosterPlayerHint : words.playerAnalysis}
+                title={words.rosterPlayerHint}
                 onClick={() => onSelectPlayer(selection)}
-                onContextMenu={(event) => {
-                  if (!profileAvailable) return;
-                  event.preventDefault();
-                  onOpenExternal(steamProfileUrl(player.steamId));
-                }}
               >
                 <SteamPlayerIdentity
                   className="analysis-player-identity"
@@ -208,13 +198,11 @@ export function AnalysisOverview({
   words,
   steamProfiles,
   onSelectPlayer,
-  onOpenExternal,
 }: {
   analysis: AnalysisResult;
   words: TextDictionary;
   steamProfiles: SteamProfileMap;
   onSelectPlayer: (selection: PlayerSelection) => void;
-  onOpenExternal: (url: string) => void;
 }) {
   const { teamAName, teamBName, sortedPlayers, teamA, teamB, unassigned } = analysisRoster(analysis, words);
   const matchRounds = analysis.score
@@ -269,9 +257,9 @@ export function AnalysisOverview({
             {metricColumns.map((column) => <span key={column.key}>{column.label}</span>)}
           </div>
           <div className="analysis-scoreboard-teams">
-            <AnalysisTeamRows teamId="a" name={teamAName} score={analysis.score?.teamA.score} players={teamA} columns={metricColumns} matchRounds={matchRounds} startSideLabel={hasStartingSideEvidence ? words.startsAsT : undefined} steamProfiles={steamProfiles} words={words} onSelectPlayer={onSelectPlayer} onOpenExternal={onOpenExternal} />
-            <AnalysisTeamRows teamId="b" name={teamBName} score={analysis.score?.teamB.score} players={teamB} columns={metricColumns} matchRounds={matchRounds} startSideLabel={hasStartingSideEvidence ? words.startsAsCt : undefined} steamProfiles={steamProfiles} words={words} onSelectPlayer={onSelectPlayer} onOpenExternal={onOpenExternal} />
-            {unassigned.length > 0 ? <AnalysisTeamRows teamId="unknown" name={words.unassignedPlayers} players={unassigned} columns={metricColumns} matchRounds={matchRounds} steamProfiles={steamProfiles} words={words} onSelectPlayer={onSelectPlayer} onOpenExternal={onOpenExternal} /> : null}
+            <AnalysisTeamRows teamId="a" name={teamAName} score={analysis.score?.teamA.score} players={teamA} columns={metricColumns} matchRounds={matchRounds} startSideLabel={hasStartingSideEvidence ? words.startsAsT : undefined} steamProfiles={steamProfiles} words={words} onSelectPlayer={onSelectPlayer} />
+            <AnalysisTeamRows teamId="b" name={teamBName} score={analysis.score?.teamB.score} players={teamB} columns={metricColumns} matchRounds={matchRounds} startSideLabel={hasStartingSideEvidence ? words.startsAsCt : undefined} steamProfiles={steamProfiles} words={words} onSelectPlayer={onSelectPlayer} />
+            {unassigned.length > 0 ? <AnalysisTeamRows teamId="unknown" name={words.unassignedPlayers} players={unassigned} columns={metricColumns} matchRounds={matchRounds} steamProfiles={steamProfiles} words={words} onSelectPlayer={onSelectPlayer} /> : null}
           </div>
         </section>
       ) : null}

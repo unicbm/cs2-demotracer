@@ -325,10 +325,10 @@ export function ArchiveWorkspace({
             <ChevronIcon size={15} />
           </summary>
           <div className="archive-roster-grid">
-            <RosterTeam teamId="a" name={teamAName} players={teamARoster} words={words} countLabel={words.rosterPlayerCount} matchRounds={matchRounds} startSideLabel={hasStartingSideEvidence ? words.startsAsT : undefined} steamProfiles={steamProfiles} onSelectPlayer={onSelectPlayer} onOpenExternal={onOpenExternal} />
-            <RosterTeam teamId="b" name={teamBName} players={teamBRoster} words={words} countLabel={words.rosterPlayerCount} matchRounds={matchRounds} className="is-team-b" startSideLabel={hasStartingSideEvidence ? words.startsAsCt : undefined} steamProfiles={steamProfiles} onSelectPlayer={onSelectPlayer} onOpenExternal={onOpenExternal} />
+            <RosterTeam teamId="a" name={teamAName} players={teamARoster} words={words} countLabel={words.rosterPlayerCount} matchRounds={matchRounds} startSideLabel={hasStartingSideEvidence ? words.startsAsT : undefined} steamProfiles={steamProfiles} onSelectPlayer={onSelectPlayer} />
+            <RosterTeam teamId="b" name={teamBName} players={teamBRoster} words={words} countLabel={words.rosterPlayerCount} matchRounds={matchRounds} className="is-team-b" startSideLabel={hasStartingSideEvidence ? words.startsAsCt : undefined} steamProfiles={steamProfiles} onSelectPlayer={onSelectPlayer} />
             {unassignedRoster.length > 0 ? (
-              <RosterTeam teamId="unknown" name={words.unassignedPlayers} players={unassignedRoster} words={words} countLabel={words.rosterPlayerCount} matchRounds={matchRounds} className="is-unassigned" steamProfiles={steamProfiles} onSelectPlayer={onSelectPlayer} onOpenExternal={onOpenExternal} />
+              <RosterTeam teamId="unknown" name={words.unassignedPlayers} players={unassignedRoster} words={words} countLabel={words.rosterPlayerCount} matchRounds={matchRounds} className="is-unassigned" steamProfiles={steamProfiles} onSelectPlayer={onSelectPlayer} />
             ) : null}
           </div>
         </details>

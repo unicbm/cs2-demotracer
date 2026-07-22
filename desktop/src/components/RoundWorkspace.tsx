@@ -119,7 +119,6 @@ export function RoundWorkspace({
         words={words}
         steamProfiles={steamProfiles}
         onSelectPlayer={onSelectPlayer}
-        onOpenExternal={onOpenExternal}
       />
       <div className="round-toolbar">
         <strong className="round-summary">{summary}</strong>

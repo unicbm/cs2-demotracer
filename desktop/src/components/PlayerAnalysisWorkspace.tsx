@@ -1,10 +1,12 @@
-import { useEffect, useRef } from "react";
-import { ArrowIcon } from "../icons";
+import { useEffect, useRef, useState } from "react";
+import { ArrowIcon, CheckIcon, CopyIcon, ExternalLinkIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
 import type { Language } from "../types";
 import {
   PlayerDossier,
+  hasSteamProfile,
   playerSelectionKey,
+  steamProfileUrl,
   type PlayerSelection,
   type RosterPlayer,
 } from "./PlayerRoster";
@@ -40,6 +42,26 @@ function playerKda(player: RosterPlayer): string | null {
     : null;
 }
 
+type PlayerAnalysisView = "overview" | "configuration" | "cosmetics";
+
+function playerMetricCards(player: RosterPlayer) {
+  const hasValue = (value: number | null | undefined): value is number => value !== null && value !== undefined;
+  const rounds = player.details?.statsRounds;
+  const validRounds = hasValue(rounds) && rounds > 0 ? rounds : null;
+  const headshots = player.details?.headshotKills;
+  const totalDamage = player.details?.totalDamage;
+  return [
+    { key: "kills", label: "K", value: hasValue(player.kills) ? String(player.kills) : null },
+    { key: "deaths", label: "D", value: hasValue(player.deaths) ? String(player.deaths) : null },
+    { key: "assists", label: "A", value: hasValue(player.assists) ? String(player.assists) : null },
+    { key: "adr", label: "ADR", value: hasValue(totalDamage) && validRounds !== null ? (totalDamage / validRounds).toFixed(1) : null },
+    { key: "kd", label: "KD", value: hasValue(player.kills) && hasValue(player.deaths) && player.deaths > 0 ? (player.kills / player.deaths).toFixed(2) : null },
+    { key: "kpr", label: "KPR", value: hasValue(player.kills) && validRounds !== null ? (player.kills / validRounds).toFixed(2) : null },
+    { key: "hs", label: "HS%", value: hasValue(player.kills) && player.kills > 0 && hasValue(headshots) && headshots <= player.kills ? `${(headshots / player.kills * 100).toFixed(1)}%` : null },
+    { key: "mvps", label: "MVP", value: hasValue(player.mvps) ? String(player.mvps) : null },
+  ].filter((metric): metric is { key: string; label: string; value: string } => metric.value !== null);
+}
+
 export function PlayerAnalysisWorkspace({
   words,
   language,
@@ -59,9 +81,11 @@ export function PlayerAnalysisWorkspace({
   const selectedKey = playerSelectionKey(selectedPlayer);
   const selectedEntry = entries.find((entry) => entry.key === selectedKey);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const [view, setView] = useState<PlayerAnalysisView>("overview");
 
   useEffect(() => {
     headingRef.current?.focus();
+    setView("overview");
   }, [selectedEntry?.key, selectedKey]);
 
   if (!selectedEntry) {
@@ -92,17 +116,25 @@ export function PlayerAnalysisWorkspace({
   const { player, team } = selectedEntry;
   const steamProfile = steamProfiles.get(player.steamId);
   const steamAlias = currentSteamAlias(steamProfile, player.name);
+  const steamProfileAvailable = hasSteamProfile(player.steamId);
+  const metrics = playerMetricCards(player);
+  const steamCopyTarget = `player:${selectedEntry.key}:steam:0` as CopyTarget;
+  const tabs: Array<{ id: PlayerAnalysisView; label: string }> = [
+    { id: "overview", label: words.playerOverviewTab },
+    { id: "configuration", label: words.playerConfigurationTab },
+    { id: "cosmetics", label: words.playerCosmeticsTab },
+  ];
 
   return (
-    <section className="player-analysis-workspace" aria-labelledby="player-analysis-title">
+    <section className={`player-analysis-workspace is-team-${team.id}`} aria-labelledby="player-analysis-title">
       <header className="player-analysis-toolbar">
         <button className="player-analysis-back" type="button" onClick={onBack}>
           <ArrowIcon size={16} />
           <span>{words.backToMatch}</span>
         </button>
         <div>
-          <span>{words.playerAnalysis}</span>
-          <strong title={player.name}>{player.name}</strong>
+          <span>{words.matchRoster}</span>
+          <strong>{words.playerAnalysis}</strong>
         </div>
       </header>
 
@@ -133,7 +165,7 @@ export function PlayerAnalysisWorkspace({
             </header>
             <nav aria-label={words.choosePlayer}>
               {teams.map((team) => (
-                <section className="player-analysis-team" aria-labelledby={`player-analysis-team-${team.id}`} key={team.id}>
+                <section className={`player-analysis-team is-team-${team.id}`} aria-labelledby={`player-analysis-team-${team.id}`} key={team.id}>
                   <h3 id={`player-analysis-team-${team.id}`}>{team.name}</h3>
                   <div className="player-analysis-team-list">
                     {team.players.map((teamPlayer, playerIndex) => {
@@ -165,26 +197,72 @@ export function PlayerAnalysisWorkspace({
 
           <article className="player-analysis-main" aria-labelledby="player-analysis-title">
             <header className="player-analysis-heading">
-              <SteamAvatar profile={steamProfile} fallbackName={player.name} size="large" />
-              <div>
-                <span>{team.name}{team.startSideLabel ? ` · ${team.startSideLabel}` : ""}</span>
-                <h1 id="player-analysis-title" ref={headingRef} tabIndex={-1}>{player.name}</h1>
-                {steamAlias ? <p>Steam · {steamAlias}</p> : null}
+              <div className="player-analysis-heading-identity">
+                <SteamAvatar profile={steamProfile} fallbackName={player.name} size="large" />
+                <div>
+                  <span>{team.name}{team.startSideLabel ? ` · ${team.startSideLabel}` : ""}</span>
+                  <h1 id="player-analysis-title" ref={headingRef} tabIndex={-1}>{player.name}</h1>
+                  <p>{steamAlias ? `Steam · ${steamAlias}` : "Steam"}<code>{player.steamId || "—"}</code></p>
+                </div>
               </div>
+              {steamProfileAvailable ? (
+                <div className="player-analysis-heading-actions">
+                  <button type="button" onClick={() => onCopy(player.steamId, steamCopyTarget)}>
+                    {copiedTarget === steamCopyTarget ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
+                    {copiedTarget === steamCopyTarget ? words.copied : words.copySteamId}
+                  </button>
+                  <button type="button" onClick={() => onOpenExternal(steamProfileUrl(player.steamId))}>
+                    <ExternalLinkIcon size={15} />{words.openSteamProfile}
+                  </button>
+                </div>
+              ) : null}
             </header>
 
-            <div className="player-analysis-dossier">
-              <PlayerDossier
-                key={selectedEntry.key}
-                playerKey={selectedEntry.key}
-                player={player}
-                language={language}
-                words={words}
-                copiedTarget={copiedTarget}
-                onCopy={onCopy}
-                onOpenExternal={onOpenExternal}
-              />
-            </div>
+            <nav className="player-analysis-tabs" aria-label={words.playerAnalysisSections}>
+              {tabs.map((tab) => (
+                <button
+                  className={view === tab.id ? "is-selected" : ""}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === tab.id}
+                  onClick={() => setView(tab.id)}
+                  key={tab.id}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+
+            {view === "overview" ? (
+              <section className="player-analysis-overview-panel" aria-labelledby="player-match-data-title">
+                <header>
+                  <h2 id="player-match-data-title">{words.playerMatchData}</h2>
+                  <span>{player.details?.statsRounds ? `${player.details.statsRounds} ${words.roundsUnit}` : team.name}</span>
+                </header>
+                <div className="player-analysis-metrics">
+                  {metrics.map((metric) => (
+                    <div className={`is-${metric.key}`} key={metric.key}>
+                      <span>{metric.label}</span>
+                      <strong>{metric.value}</strong>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : (
+              <div className="player-analysis-dossier">
+                <PlayerDossier
+                  key={`${selectedEntry.key}:${view}`}
+                  playerKey={selectedEntry.key}
+                  player={player}
+                  language={language}
+                  words={words}
+                  copiedTarget={copiedTarget}
+                  onCopy={onCopy}
+                  onOpenExternal={onOpenExternal}
+                  view={view}
+                />
+              </div>
+            )}
           </article>
         </div>
       </div>

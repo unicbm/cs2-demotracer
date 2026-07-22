@@ -48,7 +48,6 @@ interface RosterTeamProps<T extends RosterPlayer> {
   startSideLabel?: string;
   steamProfiles?: SteamProfileMap;
   onSelectPlayer: (selection: PlayerSelection) => void;
-  onOpenExternal: (url: string) => void;
 }
 
 export function steamProfileUrl(steamId: string): string {
@@ -564,6 +563,7 @@ export function PlayerDossier({
   copiedTarget,
   onCopy,
   onOpenExternal,
+  view = "all",
 }: {
   playerKey: string;
   player: RosterPlayer;
@@ -572,6 +572,7 @@ export function PlayerDossier({
   copiedTarget: CopyTarget | null;
   onCopy: (value: string, target: CopyTarget) => void;
   onOpenExternal: (url: string) => void;
+  view?: "all" | "configuration" | "cosmetics";
 }) {
   const [viewer, setViewer] = useState<{ title: string; url: string } | null>(null);
   const details = player.details;
@@ -584,9 +585,12 @@ export function PlayerDossier({
   ));
   const evidenceCount = cosmetics.length + musicKitIds.length;
   const steamProfileAvailable = hasSteamProfile(player.steamId);
+  const showProfile = view === "all";
+  const showConfiguration = view === "all" || view === "configuration";
+  const showCosmetics = view === "all" || view === "cosmetics";
   return (
     <div className="player-dossier">
-      <div className="roster-profile-line">
+      {showProfile ? <div className="roster-profile-line">
         <div className="roster-profile-facts">
           <span><small>{words.steamId}</small><code>{player.steamId || "—"}</code></span>
           {metrics.kd ? <span className="roster-profile-stat"><small>{words.kd}</small><strong>{metrics.kd}</strong></span> : null}
@@ -610,9 +614,9 @@ export function PlayerDossier({
             </>
           ) : null}
         </div>
-      </div>
+      </div> : null}
 
-      {crosshairCodes.length > 0 ? (
+      {showConfiguration && crosshairCodes.length > 0 ? (
         <CrosshairEvidence
           key={playerKey}
           codes={crosshairCodes}
@@ -622,7 +626,7 @@ export function PlayerDossier({
           copiedTarget={copiedTarget}
           onCopy={onCopy}
         />
-      ) : viewmodels.length > 0 ? (
+      ) : showConfiguration && viewmodels.length > 0 ? (
         <div className="player-setup-grid is-commands-only">
           <div className="player-configuration-commands">
             <section className="roster-evidence-section player-viewmodel-section">
@@ -638,9 +642,9 @@ export function PlayerDossier({
             </section>
           </div>
         </div>
-      ) : null}
+      ) : showConfiguration ? <p className="roster-evidence-empty">{words.playerConfigurationEmpty}</p> : null}
 
-      <section className="roster-evidence-section roster-cosmetics">
+      {showCosmetics ? <section className="roster-evidence-section roster-cosmetics">
         <header>
           <strong>{words.cosmeticEvidence}{words.cosmeticEvidenceCount.replace("{count}", String(evidenceCount))}</strong>
         </header>
@@ -664,7 +668,7 @@ export function PlayerDossier({
             ))}
           </div>
         ) : <p className="roster-evidence-empty">{words.cosmeticEvidenceEmpty}</p>}
-      </section>
+      </section> : null}
 
       {viewer ? <CosmeticViewerDialog title={viewer.title} url={viewer.url} words={words} onClose={() => setViewer(null)} /> : null}
 
@@ -672,7 +676,7 @@ export function PlayerDossier({
   );
 }
 
-type RosterStatKey = "kda" | "adr" | "kd" | "kpr" | "hs" | "mvps" | "score";
+type RosterStatKey = "kda" | "adr" | "kd" | "kpr" | "hs" | "mvps";
 
 export function RosterTeam<T extends RosterPlayer>({
   teamId,
@@ -685,7 +689,6 @@ export function RosterTeam<T extends RosterPlayer>({
   startSideLabel,
   steamProfiles,
   onSelectPlayer,
-  onOpenExternal,
 }: RosterTeamProps<T>) {
   const hasValue = (value: number | null | undefined): value is number => value !== null && value !== undefined;
   const stat = (value: number | null | undefined) => hasValue(value) ? String(value) : "—";
@@ -714,7 +717,6 @@ export function RosterTeam<T extends RosterPlayer>({
         ? `${(headshots / kills * 100).toFixed(1)}% · ${headshots}`
         : null,
       mvps: hasValue(player.mvps) ? String(player.mvps) : null,
-      score: hasValue(player.score) ? String(player.score) : null,
     };
   });
   const allColumns: Array<{ key: RosterStatKey; label: string; width: string }> = [
@@ -724,7 +726,6 @@ export function RosterTeam<T extends RosterPlayer>({
     { key: "kpr", label: "KPR", width: "minmax(40px, .5fr)" },
     { key: "hs", label: "HS%", width: "minmax(60px, .72fr)" },
     { key: "mvps", label: "MVP", width: "minmax(34px, .42fr)" },
-    { key: "score", label: words.scoreColumn, width: "minmax(36px, .46fr)" },
   ];
   const columns = allColumns.filter((column) => playerStats.some((values) => values[column.key] !== null));
   const gridTemplateColumns = `minmax(160px, 1.45fr) ${columns.map((column) => column.width).join(" ")} 12px`;
@@ -746,7 +747,6 @@ export function RosterTeam<T extends RosterPlayer>({
         {players.map((player, playerIndex) => {
           const selection = { teamId, playerIndex };
           const selectionKey = playerSelectionKey(selection);
-          const steamProfileAvailable = hasSteamProfile(player.steamId);
           const values = playerStats[playerIndex];
           return (
             <li className="roster-player" key={selectionKey}>
@@ -755,13 +755,8 @@ export function RosterTeam<T extends RosterPlayer>({
                 type="button"
                 data-player-key={selectionKey}
                 style={{ gridTemplateColumns }}
-                title={steamProfileAvailable ? words.rosterPlayerHint : words.playerAnalysis}
+                title={words.rosterPlayerHint}
                 onClick={() => onSelectPlayer(selection)}
-                onContextMenu={(event) => {
-                  if (!steamProfileAvailable) return;
-                  event.preventDefault();
-                  onOpenExternal(steamProfileUrl(player.steamId));
-                }}
               >
                 <SteamPlayerIdentity
                   className="roster-player-identity"

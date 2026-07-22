@@ -61,8 +61,9 @@
 
 .analysis-scoreboard-columns > span:not(:first-child) { text-align: right; }
 .analysis-scoreboard-teams { display: grid; }
-.analysis-team-block { --team-color: var(--trace); min-width: 0; }
-.analysis-team-block.is-team-b { --team-color: var(--accent); }
+.analysis-team-block { --team-color: #d2a525; min-width: 0; }
+.analysis-team-block.is-team-b { --team-color: #3b9fd5; }
+.analysis-team-block.is-team-unknown { --team-color: var(--text-tertiary); }
 .analysis-team-block + .analysis-team-block { border-top: 1px solid var(--divider-strong); }
 
 .analysis-team-heading {
@@ -90,7 +91,8 @@
   background: transparent;
   border: 0;
   border-radius: 0;
-  font: 12.5px var(--mono);
+  font-family: "Noto Sans SC Local", "Segoe UI Variable", sans-serif;
+  font-size: 12.5px;
   font-variant-numeric: tabular-nums;
   text-align: right;
   cursor: pointer;
@@ -131,8 +133,7 @@
 }
 
 .analysis-stat-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.analysis-stat-value.is-kda,
-.analysis-stat-value.is-score { color: var(--text-primary); font-weight: 700; }
+.analysis-stat-value.is-kda { color: var(--text-primary); font-weight: 700; }
 .analysis-stat-value.is-adr,
 .analysis-stat-value.is-kd { color: color-mix(in srgb, var(--text-primary) 88%, var(--team-color)); }
 
