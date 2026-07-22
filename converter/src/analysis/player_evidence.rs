@@ -1,4 +1,7 @@
-use crate::export::{inventory_item_cosmetic_evidence, valid_music_kit_id};
+use crate::export::{
+    glove_econ_seed_index, inventory_item_cosmetic_evidence, matching_econ_glove_seed,
+    valid_music_kit_id, EconGloveSeedIndex,
+};
 use crate::inspect_link::item_inspect;
 use crate::model::{
     ParsedDemo, ParsedInventoryWeaponCosmetic, ParsedPlayerTick, ReplayItemCosmetic,
@@ -208,6 +211,14 @@ struct ItemSpec {
     custom_name: Option<String>,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct GloveSpec {
+    item_def_index: i32,
+    paint_kit: u32,
+    seed: Option<u32>,
+    wear_bits: u32,
+}
+
 #[derive(Clone)]
 struct ObservedAgent {
     item_def_index: u32,
@@ -228,7 +239,7 @@ struct EvidenceAccumulator {
     viewmodels: BTreeSet<ViewmodelKey>,
     inventory_items: BTreeMap<(u8, i32), ParsedInventoryWeaponCosmetic>,
     knives: BTreeMap<u8, ItemSpec>,
-    gloves: BTreeMap<u8, ItemSpec>,
+    gloves: BTreeMap<u8, GloveSpec>,
     agents: BTreeMap<u8, ObservedAgent>,
     music_kit_id: Option<u32>,
     stats: Option<StatsSnapshot>,
@@ -239,6 +250,7 @@ pub(super) fn summarize_player_details(
     match_window: Option<(i32, i32)>,
     stats_rounds: Option<u32>,
 ) -> BTreeMap<u64, BrowserPlayerDetails> {
+    let mut econ_glove_seeds = None;
     let mut accumulators = BTreeMap::<u64, EvidenceAccumulator>::new();
     for row in parsed.rows.iter().filter(|row| {
         row.steam_id != 0
@@ -290,9 +302,13 @@ pub(super) fn summarize_player_details(
                 remember_stable_side_item(&mut accumulator.knives, side, spec);
             }
         }
-        if let Some(spec) = glove_spec(row) {
-            remember_stable_side_item(&mut accumulator.gloves, side, spec);
-        }
+        observe_glove(
+            &mut accumulator.gloves,
+            side,
+            row,
+            parsed,
+            &mut econ_glove_seeds,
+        );
         if let (Some(item_def_index), Some(name)) = (
             row.agent_item_def_index.filter(|value| *value != 0),
             row.agent_skin
@@ -390,40 +406,75 @@ fn finish_details(
         });
     }
 
-    for (kind, items) in [("knife", accumulator.knives), ("glove", accumulator.gloves)] {
-        for (spec, sides) in stable_items_by_spec(items) {
-            let mut cosmetic = ReplayItemCosmetic {
+    for (spec, sides) in stable_items_by_spec(accumulator.knives) {
+        let mut cosmetic = ReplayItemCosmetic {
+            item_def_index: Some(spec.item_def_index),
+            paint_kit: spec.paint_kit,
+            seed: spec.seed,
+            wear: f32::from_bits(spec.wear_bits),
+            custom_name: spec.custom_name,
+            inspect: None,
+        };
+        cosmetic.inspect = item_inspect(&cosmetic, Some(6));
+        let (item_name, finish_name) =
+            cosmetic_names(parsed, steam_id, spec.item_def_index, spec.paint_kit);
+        cosmetics.push(BrowserCosmeticEvidence {
+            kind: "knife".to_string(),
+            side: summarized_side(&sides),
+            item_def_index: Some(spec.item_def_index),
+            item_name: item_name.or_else(|| weapon_display_name(spec.item_def_index)),
+            paint_kit: Some(spec.paint_kit),
+            finish_name,
+            seed: Some(spec.seed),
+            wear: Some(f32::from_bits(spec.wear_bits)),
+            quality: None,
+            stattrak_counter: None,
+            original_owner_steam_id: None,
+            item_account_id: None,
+            item_id: None,
+            custom_name: cosmetic.custom_name,
+            stickers: Vec::new(),
+            charms: Vec::new(),
+            inspect_command: cosmetic.inspect.as_ref().map(|value| value.command.clone()),
+            inspect_url: cosmetic.inspect.and_then(|value| value.steam_url),
+        });
+    }
+
+    for (spec, sides) in stable_gloves_by_spec(accumulator.gloves) {
+        let wear = f32::from_bits(spec.wear_bits);
+        let inspect = spec.seed.and_then(|seed| {
+            let cosmetic = ReplayItemCosmetic {
                 item_def_index: Some(spec.item_def_index),
                 paint_kit: spec.paint_kit,
-                seed: spec.seed,
-                wear: f32::from_bits(spec.wear_bits),
-                custom_name: spec.custom_name,
+                seed,
+                wear,
+                custom_name: None,
                 inspect: None,
             };
-            cosmetic.inspect = item_inspect(&cosmetic, Some(6));
-            let (item_name, finish_name) =
-                cosmetic_names(parsed, steam_id, spec.item_def_index, spec.paint_kit);
-            cosmetics.push(BrowserCosmeticEvidence {
-                kind: kind.to_string(),
-                side: summarized_side(&sides),
-                item_def_index: Some(spec.item_def_index),
-                item_name: item_name.or_else(|| weapon_display_name(spec.item_def_index)),
-                paint_kit: Some(spec.paint_kit),
-                finish_name,
-                seed: Some(spec.seed),
-                wear: Some(f32::from_bits(spec.wear_bits)),
-                quality: None,
-                stattrak_counter: None,
-                original_owner_steam_id: None,
-                item_account_id: None,
-                item_id: None,
-                custom_name: cosmetic.custom_name,
-                stickers: Vec::new(),
-                charms: Vec::new(),
-                inspect_command: cosmetic.inspect.as_ref().map(|value| value.command.clone()),
-                inspect_url: cosmetic.inspect.and_then(|value| value.steam_url),
-            });
-        }
+            item_inspect(&cosmetic, Some(6))
+        });
+        let (item_name, finish_name) =
+            cosmetic_names(parsed, steam_id, spec.item_def_index, spec.paint_kit);
+        cosmetics.push(BrowserCosmeticEvidence {
+            kind: "glove".to_string(),
+            side: summarized_side(&sides),
+            item_def_index: Some(spec.item_def_index),
+            item_name: item_name.or_else(|| weapon_display_name(spec.item_def_index)),
+            paint_kit: Some(spec.paint_kit),
+            finish_name,
+            seed: spec.seed,
+            wear: Some(wear),
+            quality: None,
+            stattrak_counter: None,
+            original_owner_steam_id: None,
+            item_account_id: None,
+            item_id: None,
+            custom_name: None,
+            stickers: Vec::new(),
+            charms: Vec::new(),
+            inspect_command: inspect.as_ref().map(|value| value.command.clone()),
+            inspect_url: inspect.and_then(|value| value.steam_url),
+        });
     }
 
     for ((item_def_index, name), sides) in stable_agents_by_spec(accumulator.agents) {
@@ -624,20 +675,58 @@ fn active_item_spec(row: &ParsedPlayerTick) -> Option<ItemSpec> {
     })
 }
 
-fn glove_spec(row: &ParsedPlayerTick) -> Option<ItemSpec> {
+fn glove_spec(row: &ParsedPlayerTick) -> Option<GloveSpec> {
     let item_def_index = row.glove_item_def_index.filter(|value| is_glove(*value))?;
     let paint_kit = row.glove_paint_kit.filter(|value| *value != 0)?;
-    let seed = row.glove_paint_seed?;
     let wear = row
         .glove_paint_wear
         .filter(|value| value.is_finite() && (0.0..=1.0).contains(value))?;
-    Some(ItemSpec {
+    Some(GloveSpec {
         item_def_index,
         paint_kit,
-        seed,
+        seed: row.glove_paint_seed,
         wear_bits: normalized_f32_bits(wear),
-        custom_name: None,
     })
+}
+
+fn observe_glove(
+    gloves: &mut BTreeMap<u8, GloveSpec>,
+    side: u8,
+    row: &ParsedPlayerTick,
+    parsed: &ParsedDemo,
+    econ_glove_seeds: &mut Option<EconGloveSeedIndex>,
+) {
+    if gloves.get(&side).is_some_and(|spec| spec.seed.is_some()) {
+        return;
+    }
+    let Some(mut candidate) = glove_spec(row) else {
+        return;
+    };
+    if candidate.seed.is_none() {
+        let seeds = econ_glove_seeds.get_or_insert_with(|| glove_econ_seed_index(parsed));
+        candidate.seed = matching_econ_glove_seed(
+            seeds.get(&row.steam_id),
+            candidate.item_def_index,
+            candidate.paint_kit,
+            candidate.wear_bits,
+        );
+    }
+    match gloves.entry(side) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(candidate);
+        }
+        std::collections::btree_map::Entry::Occupied(mut entry) => {
+            let current = entry.get_mut();
+            if current.seed.is_none()
+                && candidate.seed.is_some()
+                && current.item_def_index == candidate.item_def_index
+                && current.paint_kit == candidate.paint_kit
+                && current.wear_bits == candidate.wear_bits
+            {
+                current.seed = candidate.seed;
+            }
+        }
+    }
 }
 
 fn remember_stable_side_item(items: &mut BTreeMap<u8, ItemSpec>, side: u8, candidate: ItemSpec) {
@@ -660,6 +749,14 @@ fn remember_stable_side_item(items: &mut BTreeMap<u8, ItemSpec>, side: u8, candi
 
 fn stable_items_by_spec(items: BTreeMap<u8, ItemSpec>) -> BTreeMap<ItemSpec, BTreeSet<u8>> {
     let mut by_spec = BTreeMap::<ItemSpec, BTreeSet<u8>>::new();
+    for (side, spec) in items {
+        by_spec.entry(spec).or_default().insert(side);
+    }
+    by_spec
+}
+
+fn stable_gloves_by_spec(items: BTreeMap<u8, GloveSpec>) -> BTreeMap<GloveSpec, BTreeSet<u8>> {
+    let mut by_spec = BTreeMap::<GloveSpec, BTreeSet<u8>>::new();
     for (side, spec) in items {
         by_spec.entry(spec).or_default().insert(side);
     }
@@ -1027,6 +1124,85 @@ mod tests {
                 ("glove", Some("ct"), Some(5034), Some(10033)),
             ])
         );
+    }
+
+    #[test]
+    fn keeps_glove_evidence_when_the_live_seed_is_missing() {
+        let steam_id = STEAM_ID64_BASE + 123;
+        let mut row = player_row(steam_id, 100, 2, Vec::new());
+        row.glove_item_def_index = Some(5030);
+        row.glove_paint_kit = Some(10038);
+        row.glove_paint_seed = None;
+        row.glove_paint_wear = Some(0.106_909_76);
+        let parsed = ParsedDemo {
+            rows: vec![row],
+            ..ParsedDemo::default()
+        };
+
+        let details = summarize_player_details(&parsed, None, Some(1))
+            .remove(&steam_id)
+            .expect("player evidence");
+        let glove = details
+            .cosmetics
+            .iter()
+            .find(|cosmetic| cosmetic.kind == "glove")
+            .expect("glove evidence");
+
+        assert_eq!(glove.item_def_index, Some(5030));
+        assert_eq!(glove.paint_kit, Some(10038));
+        assert_eq!(glove.seed, None);
+        assert_eq!(glove.wear, Some(0.106_909_76));
+        assert!(glove.inspect_command.is_none());
+        assert!(glove.inspect_url.is_none());
+        assert!(glove.custom_name.is_none());
+    }
+
+    #[test]
+    fn fills_a_missing_live_glove_seed_only_from_an_exact_econ_match() {
+        let steam_id = STEAM_ID64_BASE + 123;
+        let wear = 0.106_909_76_f32;
+        let mut row = player_row(steam_id, 100, 2, Vec::new());
+        row.glove_item_def_index = Some(5030);
+        row.glove_paint_kit = Some(10038);
+        row.glove_paint_seed = None;
+        row.glove_paint_wear = Some(wear);
+        let mut parsed = ParsedDemo {
+            rows: vec![row],
+            econ_items: vec![ParsedEconItem {
+                steam_id: Some(steam_id),
+                item_def_index: Some(5030),
+                paint_kit: Some(10038),
+                paint_seed: Some(724),
+                paint_wear_raw: Some(wear.to_bits()),
+                paint_wear: Some(wear),
+                ..ParsedEconItem::default()
+            }],
+            ..ParsedDemo::default()
+        };
+
+        let details = summarize_player_details(&parsed, None, Some(1))
+            .remove(&steam_id)
+            .expect("player evidence");
+        let glove = details
+            .cosmetics
+            .iter()
+            .find(|cosmetic| cosmetic.kind == "glove")
+            .expect("glove evidence");
+        assert_eq!(glove.seed, Some(724));
+        assert!(glove.inspect_command.is_some());
+
+        parsed.econ_items[0].paint_wear_raw = Some(0.2_f32.to_bits());
+        parsed.econ_items[0].paint_wear = Some(0.2);
+        let details = summarize_player_details(&parsed, None, Some(1))
+            .remove(&steam_id)
+            .expect("player evidence");
+        let glove = details
+            .cosmetics
+            .iter()
+            .find(|cosmetic| cosmetic.kind == "glove")
+            .expect("glove evidence");
+        assert_eq!(glove.seed, None);
+        assert!(glove.inspect_command.is_none());
     }
 
     #[test]

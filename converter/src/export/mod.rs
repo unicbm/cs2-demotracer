@@ -258,8 +258,8 @@ fn export_demo_to_memory_inner(
         parsed.map,
         parsed.tick_rate
     ));
-    let econ_gloves = if options.export_cosmetics {
-        glove_econ_cosmetics_by_player(parsed)
+    let econ_glove_seeds = if options.export_cosmetics {
+        glove_econ_seed_index(parsed)
     } else {
         BTreeMap::new()
     };
@@ -429,7 +429,7 @@ fn export_demo_to_memory_inner(
                             &player_rows,
                             cosmetic_player_rows,
                             rec.header.play_start_tick_index,
-                            econ_gloves.get(&steam_id),
+                            econ_glove_seeds.get(&steam_id),
                             options.export_stickers,
                             options.export_charms,
                         )
@@ -1867,18 +1867,16 @@ fn replay_cosmetics_at(
     rows: &[&ParsedPlayerTick],
     cosmetic_rows: &[&ParsedPlayerTick],
     play_start_tick_index: u32,
-    econ_glove: Option<&ReplayItemCosmetic>,
+    econ_glove_seeds: Option<&EconGloveSeedMap>,
     export_stickers: bool,
     export_charms: bool,
 ) -> Option<ReplayCosmetics> {
     let play_start = (play_start_tick_index as usize).min(rows.len().saturating_sub(1));
     let active_rows = rows.get(play_start..).unwrap_or(rows);
-    let mut cosmetics = replay_active_cosmetics(active_rows, export_stickers).unwrap_or_default();
+    let mut cosmetics =
+        replay_active_cosmetics(active_rows, econ_glove_seeds, export_stickers).unwrap_or_default();
     if let Some(agent) = replay_agent_cosmetic(rows) {
         cosmetics.agent = Some(agent);
-    }
-    if let Some(glove) = econ_glove {
-        cosmetics.glove = Some(glove.clone());
     }
     if let Some(weapons) = live_start_inventory_weapon_cosmetics(
         rows,
@@ -1998,48 +1996,56 @@ fn agent_model_path_from_name(name: &str) -> Option<String> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct EconGloveSpec {
+pub(crate) struct EconGloveKey {
     item_def_index: i32,
     paint_kit: u32,
-    seed: u32,
     wear_bits: u32,
 }
 
-fn glove_econ_cosmetics_by_player(parsed: &ParsedDemo) -> BTreeMap<u64, ReplayItemCosmetic> {
-    let mut specs_by_player: BTreeMap<u64, BTreeSet<EconGloveSpec>> = BTreeMap::new();
+pub(crate) type EconGloveSeedMap = BTreeMap<EconGloveKey, Option<u32>>;
+pub(crate) type EconGloveSeedIndex = BTreeMap<u64, EconGloveSeedMap>;
+
+pub(crate) fn glove_econ_seed_index(parsed: &ParsedDemo) -> EconGloveSeedIndex {
+    let mut seeds_by_player = EconGloveSeedIndex::new();
     for item in &parsed.econ_items {
         let Some(steam_id) = item.steam_id else {
             continue;
         };
-        let Some(spec) = econ_glove_spec(item) else {
+        let Some((key, seed)) = econ_glove_seed(item) else {
             continue;
         };
-        specs_by_player.entry(steam_id).or_default().insert(spec);
-    }
-
-    specs_by_player
-        .into_iter()
-        .filter_map(|(steam_id, specs)| {
-            if specs.len() != 1 {
-                return None;
+        let seeds = seeds_by_player.entry(steam_id).or_default();
+        match seeds.entry(key) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(Some(seed));
             }
-            let spec = *specs.iter().next()?;
-            Some((
-                steam_id,
-                ReplayItemCosmetic {
-                    item_def_index: Some(spec.item_def_index),
-                    paint_kit: spec.paint_kit,
-                    seed: spec.seed,
-                    wear: f32::from_bits(spec.wear_bits),
-                    custom_name: None,
-                    inspect: None,
-                },
-            ))
-        })
-        .collect()
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                if entry.get().is_some_and(|current| current != seed) {
+                    entry.insert(None);
+                }
+            }
+        }
+    }
+    seeds_by_player
 }
 
-fn econ_glove_spec(item: &ParsedEconItem) -> Option<EconGloveSpec> {
+pub(crate) fn matching_econ_glove_seed(
+    seeds: Option<&EconGloveSeedMap>,
+    item_def_index: i32,
+    paint_kit: u32,
+    wear_bits: u32,
+) -> Option<u32> {
+    seeds?
+        .get(&EconGloveKey {
+            item_def_index,
+            paint_kit,
+            wear_bits,
+        })
+        .copied()
+        .flatten()
+}
+
+fn econ_glove_seed(item: &ParsedEconItem) -> Option<(EconGloveKey, u32)> {
     let item_def_index = i32::try_from(item.item_def_index?).ok()?;
     if !valid_glove_item_def_index(item_def_index) {
         return None;
@@ -2051,16 +2057,25 @@ fn econ_glove_spec(item: &ParsedEconItem) -> Option<EconGloveSpec> {
     if !wear.is_finite() || !(0.0..=1.0).contains(&wear) {
         return None;
     }
-    Some(EconGloveSpec {
-        item_def_index,
-        paint_kit,
+    Some((
+        EconGloveKey {
+            item_def_index,
+            paint_kit,
+            wear_bits,
+        },
         seed,
-        wear_bits,
-    })
+    ))
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ObservedGloveSpec {
+    key: EconGloveKey,
+    seed: Option<u32>,
 }
 
 fn replay_active_cosmetics(
     rows: &[&ParsedPlayerTick],
+    econ_glove_seeds: Option<&EconGloveSeedMap>,
     export_stickers: bool,
 ) -> Option<ReplayCosmetics> {
     let mut weapon_specs: BTreeMap<i32, BTreeSet<CosmeticPaintSpec>> = BTreeMap::new();
@@ -2072,8 +2087,7 @@ fn replay_active_cosmetics(
     let mut weapon_stickers_missing = BTreeSet::new();
     let mut knife_specs = BTreeSet::new();
     let mut knife_custom_names = BTreeSet::new();
-    let mut glove_specs = BTreeSet::new();
-    let mut glove_item_defs = BTreeSet::new();
+    let mut glove = None;
 
     for row in rows {
         if !row.is_alive || row.steam_id == 0 {
@@ -2141,18 +2155,20 @@ fn replay_active_cosmetics(
             }
         }
 
-        if let Some(item_def) = row
-            .glove_item_def_index
-            .filter(|def| valid_glove_item_def_index(*def))
-        {
-            glove_item_defs.insert(item_def);
-        }
-        if let Some(spec) = glove_cosmetic_paint_spec(
-            row.glove_paint_kit,
-            row.glove_paint_seed,
-            row.glove_paint_wear,
-        ) {
-            glove_specs.insert(spec);
+        if glove.is_none_or(|spec: ObservedGloveSpec| spec.seed.is_none()) {
+            if let Some(candidate) = observed_glove_spec(row, econ_glove_seeds) {
+                match &mut glove {
+                    None => glove = Some(candidate),
+                    Some(current)
+                        if current.seed.is_none()
+                            && candidate.seed.is_some()
+                            && current.key == candidate.key =>
+                    {
+                        current.seed = candidate.seed;
+                    }
+                    Some(_) => {}
+                }
+            }
         }
     }
 
@@ -2199,13 +2215,13 @@ fn replay_active_cosmetics(
         }
     }
 
-    if glove_specs.len() == 1 && glove_item_defs.len() == 1 {
-        if let Some(spec) = glove_specs.iter().next().copied() {
+    if let Some(glove) = glove {
+        if let Some(seed) = glove.seed {
             cosmetics.glove = Some(ReplayItemCosmetic {
-                item_def_index: glove_item_defs.iter().next().copied(),
-                paint_kit: spec.paint_kit,
-                seed: spec.seed,
-                wear: f32::from_bits(spec.wear_bits),
+                item_def_index: Some(glove.key.item_def_index),
+                paint_kit: glove.key.paint_kit,
+                seed,
+                wear: f32::from_bits(glove.key.wear_bits),
                 custom_name: None,
                 inspect: None,
             });
@@ -2943,20 +2959,30 @@ fn demotracer_econ_index() -> &'static DemoTracerEconIndex {
     })
 }
 
-fn glove_cosmetic_paint_spec(
-    paint_kit: Option<u32>,
-    seed: Option<u32>,
-    wear: Option<f32>,
-) -> Option<CosmeticPaintSpec> {
-    let paint_kit = paint_kit.filter(|value| valid_paint_kit(*value))?;
-    let wear = wear?;
+fn observed_glove_spec(
+    row: &ParsedPlayerTick,
+    econ_glove_seeds: Option<&EconGloveSeedMap>,
+) -> Option<ObservedGloveSpec> {
+    let item_def_index = row
+        .glove_item_def_index
+        .filter(|value| valid_glove_item_def_index(*value))?;
+    let paint_kit = row
+        .glove_paint_kit
+        .filter(|value| valid_paint_kit(*value))?;
+    let wear = row.glove_paint_wear?;
     if !wear.is_finite() || !(0.0..=1.0).contains(&wear) {
         return None;
     }
-    Some(CosmeticPaintSpec {
-        paint_kit,
-        seed: seed.unwrap_or_default(),
-        wear_bits: wear.to_bits(),
+    let wear_bits = wear.to_bits();
+    Some(ObservedGloveSpec {
+        key: EconGloveKey {
+            item_def_index,
+            paint_kit,
+            wear_bits,
+        },
+        seed: row.glove_paint_seed.or_else(|| {
+            matching_econ_glove_seed(econ_glove_seeds, item_def_index, paint_kit, wear_bits)
+        }),
     })
 }
 
@@ -3597,8 +3623,9 @@ mod tests {
     }
 
     #[test]
-    fn manifest_prefers_end_metadata_for_glove_cosmetics() {
+    fn manifest_fills_a_missing_glove_seed_from_matching_end_metadata() {
         let mut parsed = sample_demo();
+        let wear = 0.204_478_43_f32;
         parsed.rows = vec![
             ParsedPlayerTick {
                 tick: 100,
@@ -3612,7 +3639,7 @@ mod tests {
                 glove_item_def_index: Some(5034),
                 glove_paint_kit: Some(10033),
                 glove_paint_seed: None,
-                glove_paint_wear: Some(0.2),
+                glove_paint_wear: Some(wear),
                 ..sample_row(100)
             },
             ParsedPlayerTick {
@@ -3627,7 +3654,7 @@ mod tests {
                 glove_item_def_index: Some(5034),
                 glove_paint_kit: Some(10033),
                 glove_paint_seed: None,
-                glove_paint_wear: Some(0.2),
+                glove_paint_wear: Some(wear),
                 ..sample_row(164)
             },
         ];
@@ -3636,8 +3663,8 @@ mod tests {
             item_def_index: Some(5034),
             paint_kit: Some(10033),
             paint_seed: Some(260),
-            paint_wear_raw: Some(0.204_478_43_f32.to_bits()),
-            paint_wear: Some(0.204_478_43),
+            paint_wear_raw: Some(wear.to_bits()),
+            paint_wear: Some(wear),
             item_name: None,
             skin_name: Some("Crimson Kimono".to_string()),
         }];
@@ -3653,6 +3680,42 @@ mod tests {
         assert_eq!(glove.paint_kit, 10033);
         assert_eq!(glove.seed, 260);
         assert_eq!(glove.wear.to_bits(), 0.204_478_43_f32.to_bits());
+    }
+
+    #[test]
+    fn manifest_does_not_override_live_gloves_with_conflicting_end_metadata() {
+        let mut parsed = sample_demo();
+        parsed.rows = vec![
+            ParsedPlayerTick {
+                glove_item_def_index: Some(5030),
+                glove_paint_kit: Some(10038),
+                glove_paint_seed: None,
+                glove_paint_wear: Some(0.148_281_16),
+                ..sample_row(100)
+            },
+            ParsedPlayerTick {
+                glove_item_def_index: Some(5030),
+                glove_paint_kit: Some(10038),
+                glove_paint_seed: None,
+                glove_paint_wear: Some(0.148_281_16),
+                ..sample_row(164)
+            },
+        ];
+        parsed.econ_items = vec![ParsedEconItem {
+            steam_id: Some(76561198074762801),
+            item_def_index: Some(5030),
+            paint_kit: Some(10037),
+            paint_seed: Some(641),
+            paint_wear_raw: Some(0.145_554_07_f32.to_bits()),
+            paint_wear: Some(0.145_554_07),
+            ..ParsedEconItem::default()
+        }];
+
+        let memory = export_memory_with_cosmetics(parsed);
+        assert!(memory.manifest.files[0]
+            .cosmetics
+            .as_ref()
+            .is_none_or(|cosmetics| cosmetics.glove.is_none()));
     }
 
     #[test]
@@ -3834,7 +3897,7 @@ mod tests {
     }
 
     #[test]
-    fn glove_cosmetics_tolerate_missing_seed() {
+    fn manifest_does_not_fabricate_a_missing_glove_seed() {
         let mut parsed = sample_demo();
         parsed.rows = vec![
             ParsedPlayerTick {
@@ -3857,13 +3920,9 @@ mod tests {
         let glove = memory.manifest.files[0]
             .cosmetics
             .as_ref()
-            .and_then(|cosmetics| cosmetics.glove.as_ref())
-            .expect("expected glove evidence");
+            .and_then(|cosmetics| cosmetics.glove.as_ref());
 
-        assert_eq!(glove.item_def_index, Some(5034));
-        assert_eq!(glove.paint_kit, 10033);
-        assert_eq!(glove.seed, 0);
-        assert_eq!(glove.wear.to_bits(), 0.382_f32.to_bits());
+        assert!(glove.is_none());
     }
 
     #[test]
