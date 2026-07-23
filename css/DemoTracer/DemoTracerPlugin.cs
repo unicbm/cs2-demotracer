@@ -181,6 +181,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     public override void Load(bool hotReload)
     {
         RegisterControlCommandAuthorization();
+        RegisterReplayRetentionJoinHook();
         _moduleDirectoryForPathResolution = ModuleDirectory;
         LoadRuntimeConfig(message => Server.PrintToConsole(message), announceMissing: true);
         LoadDemoTracerEconIndex();
@@ -209,6 +210,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     public override void Unload(bool hotReload)
     {
         StopRuntimeHealthHeartbeat();
+        UnregisterReplayRetentionJoinHook();
         UnhookCosmeticGiveNamedItem();
         ClearReplayStateForLifecycle(hotReload ? "plugin_reload" : "plugin_unload");
         StopUtilityTrace();
@@ -3043,7 +3045,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 file.View,
                 includeScoreboardEvidence ? file.Scoreboard : null,
                 manifestTeam: ReplayTeamFromManifestSide(file.Side),
-                replayMetadata: replayMetadata);
+                replayMetadata: replayMetadata,
+                retentionRank: assignment.RetentionRank);
             BotControllerNative.SetBuySkip(slot);
             TryApplyReplayIdentity(slot, file, manifestDir, avatarOverrides);
             loaded.Add($"{file.Side}:slot{slot}:{file.PlayerName}");
@@ -3051,14 +3054,31 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         return true;
     }
 
-    private static List<ReplayAssignment> BuildReplayAssignments(
+    private List<ReplayAssignment> BuildReplayAssignments(
         IReadOnlyList<ManifestFile> files,
         IReadOnlyList<CCSPlayerController> bots)
     {
         var count = Math.Min(files.Count, bots.Count);
         var assignments = new List<ReplayAssignment>(count);
-        for (var i = 0; i < count; i++)
-            assignments.Add(new ReplayAssignment(files[i], bots[i]));
+        var rankedFiles = files
+            .Select((file, index) => new
+            {
+                File = file,
+                Index = index,
+                Rank = ResolveReplayRetentionRank(file.SteamId, index + 1),
+            })
+            .ToArray();
+        var selectedFiles = ReplayRetentionPriorityParser
+            .SelectPreferredIndices(rankedFiles.Select(item => item.Rank).ToArray(), count)
+            .Select(index => rankedFiles[index])
+            .ToArray();
+        for (var i = 0; i < selectedFiles.Length; i++)
+        {
+            assignments.Add(new ReplayAssignment(
+                selectedFiles[i].File,
+                bots[i],
+                selectedFiles[i].Rank));
+        }
         return assignments;
     }
 
@@ -3105,7 +3125,15 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 return false;
             }
 
-            assignments.Add(new ReplayAssignment(matchingFiles[0], bot));
+            var file = matchingFiles[0];
+            var fallbackRank = files
+                .Select((candidate, index) => (candidate, rank: index + 1))
+                .First(item => ReferenceEquals(item.candidate, file))
+                .rank;
+            assignments.Add(new ReplayAssignment(
+                file,
+                bot,
+                ResolveReplayRetentionRank(file.SteamId, fallbackRank)));
         }
         return true;
     }
@@ -4629,6 +4657,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             _warmReplayBufferSlots.Clear();
             _demoTracerOwnedSlots.Clear();
             _loadedReplays.Clear();
+            ClearReplayRetentionPriority(clearPending: true);
             ClearRetainedBotHiderPresentation();
             _lastEnsuredWeaponDef.Clear();
             _lastReplayWeaponDef.Clear();
@@ -4753,6 +4782,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     {
         CancelReplayPrefetch();
         StopLoadedReplaySlots(reason);
+        ClearReplayRetentionPriority(clearPending: true);
         ClearLoadedAutoVoiceClip();
         ClearLoadedAutoChat();
         _armed = false;
@@ -5043,7 +5073,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         ReplayView? view = null,
         ReplayPlayerScoreboard? scoreboard = null,
         CsTeam? manifestTeam = null,
-        ReplayFileMetadata? replayMetadata = null)
+        ReplayFileMetadata? replayMetadata = null,
+        int retentionRank = ReplayRetentionPriorityParser.MaxPlayersPerTeam)
     {
         InvalidateInitialSpawnAssignment();
         RestoreReplayBotViewmodel(slot);
@@ -5095,7 +5126,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             metadata.TickCount,
             metadata.TickRate,
             metadata.PlayStartTickIndex,
-            metadata.RoundStartOrigin);
+            metadata.RoundStartOrigin,
+            retentionRank);
         _pendingKnifeEntityRefreshes.Remove(slot);
         RememberReplayCosmeticEvidence(slot, _loadedReplays[slot]);
         InvalidateReplayMusicKitRepair(slot);
@@ -5776,7 +5808,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         int TickCount,
         float TickRate,
         uint PlayStartTickIndex,
-        ReplayVector3? RoundStartOrigin);
+        ReplayVector3? RoundStartOrigin,
+        int RetentionRank);
 
     private readonly record struct ReplayMusicKitBaseline(
         long Generation,
@@ -5785,14 +5818,19 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         int ControllerMusicKitMvps,
         bool MvpNoMusic);
 
-    private readonly record struct ReplayAssignment(ManifestFile File, CCSPlayerController Bot);
+    private readonly record struct ReplayAssignment(
+        ManifestFile File,
+        CCSPlayerController Bot,
+        int RetentionRank);
 
     private readonly record struct DtrKickCandidate(
         int Slot,
         int? UserId,
+        CsTeam Team,
         string LiveName,
         string LoadedName,
-        ulong SteamId);
+        ulong SteamId,
+        int RetentionRank);
 
     private readonly record struct PendingWeaponAlign(int WeaponDefIndex, bool ForceSwitch);
 

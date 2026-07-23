@@ -37,6 +37,8 @@ pub struct BrowserPlayerSummary {
     pub name: String,
     pub steam_id: String,
     pub side: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub player_color: Option<String>,
     /// Persistent match identity (`a` / `b`), independent from T/CT side swaps.
     pub team: String,
     pub team_name: Option<String>,
@@ -184,6 +186,7 @@ fn summarize_players_in_window(
                 name,
                 steam_id: steam_id.to_string(),
                 side,
+                player_color: player.player_color,
                 team: team_by_steam_id
                     .get(&steam_id)
                     .map(|team| team.as_str())
@@ -696,6 +699,8 @@ struct PlayerAccumulator {
     name_tick: Option<i32>,
     side: Option<u8>,
     side_tick: Option<i32>,
+    player_color: Option<String>,
+    player_color_tick: Option<i32>,
     team_name: Option<String>,
     team_name_tick: Option<i32>,
     scoreboard: Option<PlayerScoreboardSnapshot>,
@@ -712,6 +717,12 @@ impl PlayerAccumulator {
         if is_at_least_as_recent(row.tick, self.side_tick) {
             self.side = Some(row.team_num);
             self.side_tick = Some(row.tick);
+        }
+        if let Some(player_color) = clean_player_color(row.player_color.as_deref()) {
+            if is_at_least_as_recent(row.tick, self.player_color_tick) {
+                self.player_color = Some(player_color);
+                self.player_color_tick = Some(row.tick);
+            }
         }
         if let Some(team_name) = clean_team_name(row) {
             if is_at_least_as_recent(row.tick, self.team_name_tick) {
@@ -745,6 +756,15 @@ impl PlayerAccumulator {
         }
         self.scoreboard = Some(candidate);
     }
+}
+
+fn clean_player_color(value: Option<&str>) -> Option<String> {
+    let value = value?.trim().to_ascii_lowercase();
+    matches!(
+        value.as_str(),
+        "blue" | "green" | "yellow" | "orange" | "purple"
+    )
+    .then_some(value)
 }
 
 fn is_at_least_as_recent(tick: i32, current_tick: Option<i32>) -> bool {
@@ -988,6 +1008,7 @@ mod tests {
             name: "Player".to_string(),
             steam_id: "76561198012345678".to_string(),
             side: "CT".to_string(),
+            player_color: Some("blue".to_string()),
             team: "b".to_string(),
             team_name: Some("Example Team".to_string()),
             score: Some(20),
@@ -1003,9 +1024,24 @@ mod tests {
         let value = serde_json::to_value(player).unwrap();
 
         assert_eq!(value["steamId"], "76561198012345678");
+        assert_eq!(value["playerColor"], "blue");
         assert_eq!(value["teamName"], "Example Team");
         assert!(value.get("steam_id").is_none());
         assert!(value.get("team_name").is_none());
+    }
+
+    #[test]
+    fn keeps_latest_valid_demo_player_color() {
+        let mut first = row(1, 100, 2, 1, "alpha");
+        first.player_color = Some("green".to_string());
+        let mut second = row(1, 110, 2, 1, "alpha");
+        second.player_color = Some("YELLOW".to_string());
+        let mut invalid = row(1, 120, 2, 1, "alpha");
+        invalid.player_color = Some("unknown".to_string());
+
+        let players = summarize_players(&demo(vec![first, second, invalid]), &BTreeMap::new());
+
+        assert_eq!(players[0].player_color.as_deref(), Some("yellow"));
     }
 
     #[test]

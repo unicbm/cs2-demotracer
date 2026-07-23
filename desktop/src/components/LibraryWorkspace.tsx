@@ -1,9 +1,10 @@
 import { type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from "react";
-import { ArrowIcon, CloseIcon, FolderIcon, LibraryIcon, PlusIcon, RefreshIcon, ReplayIcon, SearchIcon, TraceMark } from "../icons";
+import { ArrowIcon, CloseIcon, FolderIcon, LibraryIcon, PlusIcon, RefreshIcon, ReplayIcon, SearchIcon, TraceMark, TrashIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
 import type { DemoLibraryEntry, DemoLibraryScan, Language, LibraryPlayerSummary } from "../types";
 import { displayMap, MapArtwork, mapArtworkStyle } from "./MapArtwork";
 import { ContextMenu, type ContextMenuState } from "./ContextMenu";
+import { SteamAvatar, teamRepresentative, useSteamProfiles, type SteamProfileMap } from "./SteamProfile";
 import "./library-workspace.css";
 
 export type LibrarySort = "recent" | "map" | "platform";
@@ -41,6 +42,7 @@ interface LibraryWorkspaceProps {
   onRevealManifest: (entry: DemoLibraryEntry) => void;
   onRevealDemo: (entry: DemoLibraryEntry) => void;
   onReparseEntry: (entry: DemoLibraryEntry) => void;
+  onDeleteEntry: (entry: DemoLibraryEntry) => void;
 }
 
 function formatDateParts(value: number, language: Language): { date: string; time: string; iso?: string } {
@@ -122,23 +124,48 @@ function teamNameForIdentity(players: LibraryPlayerSummary[], team: "a" | "b"): 
   return [...counts.values()].sort((left, right) => right.count - left.count)[0]?.name ?? null;
 }
 
-function playerNamesForIdentity(
+function playersForIdentity(
   players: LibraryPlayerSummary[],
   team: "a" | "b",
   identity: string | null,
-): string[] {
+): LibraryPlayerSummary[] {
   const direct = players.filter((player) => player.team?.toLowerCase() === team);
   const matching = direct.length > 0
     ? direct
     : identity
       ? players.filter((player) => player.teamName && sameTeamName(player.teamName, identity))
       : [];
-  const names = new Map<string, string>();
+  const unique = new Map<string, LibraryPlayerSummary>();
   for (const player of matching) {
     const name = player.name.trim();
-    if (name) names.set(name.toLocaleLowerCase(), name);
+    if (name) unique.set(player.steamId || name.toLocaleLowerCase(), player);
   }
-  return [...names.values()];
+  return [...unique.values()];
+}
+
+function libraryTeamContext(entry: DemoLibraryEntry, firstFallback: string, secondFallback: string) {
+  const scoreFirstIdentity = cleanTeamName(entry.score?.teamA.name);
+  const scoreSecondIdentity = cleanTeamName(entry.score?.teamB.name);
+  const firstIdentity = scoreFirstIdentity
+    || teamNameForIdentity(entry.players, "a")
+    || null;
+  const secondIdentity = [
+    scoreSecondIdentity,
+    teamNameForIdentity(entry.players, "b"),
+  ].find((name): name is string => name !== null
+    && (!firstIdentity || !sameTeamName(name, firstIdentity))) ?? null;
+  const firstName = firstIdentity || firstFallback;
+  const secondName = secondIdentity || secondFallback;
+  const firstPlayers = playersForIdentity(entry.players, "a", firstIdentity);
+  const secondPlayers = playersForIdentity(entry.players, "b", secondIdentity);
+  return {
+    firstName,
+    secondName,
+    firstPlayers,
+    secondPlayers,
+    firstRepresentative: teamRepresentative(firstName, firstPlayers),
+    secondRepresentative: teamRepresentative(secondName, secondPlayers),
+  };
 }
 
 function LibraryRow({
@@ -150,9 +177,11 @@ function LibraryRow({
   onRevealManifest,
   onRevealDemo,
   onReparse,
+  onDelete,
   repairing,
   disabled,
   taskBusy,
+  profiles,
 }: {
   entry: DemoLibraryEntry;
   words: TextDictionary;
@@ -162,25 +191,23 @@ function LibraryRow({
   onRevealManifest: () => void;
   onRevealDemo: () => void;
   onReparse: () => void;
+  onDelete: () => void;
   repairing: boolean;
   disabled: boolean;
   taskBusy: boolean;
+  profiles: SteamProfileMap;
 }) {
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
-  const scoreFirstIdentity = cleanTeamName(entry.score?.teamA.name);
-  const scoreSecondIdentity = cleanTeamName(entry.score?.teamB.name);
-  const firstIdentity = scoreFirstIdentity
-    || teamNameForIdentity(entry.players, "a")
-    || null;
-  const secondIdentity = [
-    scoreSecondIdentity,
-    teamNameForIdentity(entry.players, "b"),
-  ].find((name): name is string => name !== null
-    && (!firstIdentity || !sameTeamName(name, firstIdentity))) ?? null;
-  const firstName = firstIdentity || words.teamA;
-  const secondName = secondIdentity || words.teamB;
-  const firstPlayers = playerNamesForIdentity(entry.players, "a", firstIdentity);
-  const secondPlayers = playerNamesForIdentity(entry.players, "b", secondIdentity);
+  const {
+    firstName,
+    secondName,
+    firstPlayers,
+    secondPlayers,
+    firstRepresentative,
+    secondRepresentative,
+  } = libraryTeamContext(entry, words.teamA, words.teamB);
+  const firstPlayerNames = firstPlayers.map((player) => player.name);
+  const secondPlayerNames = secondPlayers.map((player) => player.name);
   const duration = formatDuration(entry.durationSeconds);
   const demoDate = formatDateParts(entry.sourceModifiedAtMs ?? 0, language);
   const sourceName = entry.demoSource ? platformName(entry.demoSource.name) : words.unknownPlatform;
@@ -210,6 +237,7 @@ function LibraryRow({
         { label: words.openDemoLocation, icon: <FolderIcon size={15} />, disabled: needsSourceLink, onSelect: onRevealDemo },
         { label: words.reparseDemo, icon: <RefreshIcon size={15} />, dividerBefore: true, disabled: disabled || taskBusy, onSelect: onReparse },
         ...(needsRepair ? [{ label: repairLabel, icon: <RefreshIcon size={15} />, disabled: repairing || disabled || taskBusy, onSelect: onRepair }] : []),
+        { label: words.deleteArchive, icon: <TrashIcon size={15} />, dividerBefore: true, danger: true, disabled: disabled || taskBusy, onSelect: onDelete },
       ],
     });
   };
@@ -241,13 +269,19 @@ function LibraryRow({
       </div>
       <div className="library-row-match" aria-label={`${firstName} vs ${secondName}`}>
         <div className="library-row-team">
-          <strong title={firstName}>{firstName}</strong>
-          {firstPlayers.length > 0 ? <small title={firstPlayers.join(" · ")}>{firstPlayers.join(" · ")}</small> : null}
+          {firstRepresentative ? <SteamAvatar profile={profiles.get(firstRepresentative.steamId)} fallbackName={firstRepresentative.name} playerColor={firstRepresentative.playerColor} size="compact" /> : null}
+          <span className="library-row-team-copy">
+            <strong title={firstName}>{firstName}</strong>
+            {firstPlayerNames.length > 0 ? <small title={firstPlayerNames.join(" · ")}>{firstPlayerNames.join(" · ")}</small> : null}
+          </span>
         </div>
         <span>vs</span>
         <div className="library-row-team is-opponent">
-          <strong title={secondName}>{secondName}</strong>
-          {secondPlayers.length > 0 ? <small title={secondPlayers.join(" · ")}>{secondPlayers.join(" · ")}</small> : null}
+          <span className="library-row-team-copy">
+            <strong title={secondName}>{secondName}</strong>
+            {secondPlayerNames.length > 0 ? <small title={secondPlayerNames.join(" · ")}>{secondPlayerNames.join(" · ")}</small> : null}
+          </span>
+          {secondRepresentative ? <SteamAvatar profile={profiles.get(secondRepresentative.steamId)} fallbackName={secondRepresentative.name} playerColor={secondRepresentative.playerColor} size="compact" /> : null}
         </div>
       </div>
       <div
@@ -324,6 +358,7 @@ export function LibraryWorkspace({
   onRevealManifest,
   onRevealDemo,
   onReparseEntry,
+  onDeleteEntry,
 }: LibraryWorkspaceProps) {
   const rootsMenuRef = useRef<HTMLDetailsElement | null>(null);
   useEffect(() => {
@@ -369,6 +404,12 @@ export function LibraryWorkspace({
       if (sort === "platform") return (left.demoSource?.name ?? "").localeCompare(right.demoSource?.name ?? "") || rightDate - leftDate;
       return rightDate - leftDate;
     });
+  const previewSteamIds = entries.slice(0, 16).flatMap((entry) => {
+    const teams = libraryTeamContext(entry, words.teamA, words.teamB);
+    return [teams.firstRepresentative?.steamId, teams.secondRepresentative?.steamId]
+      .filter((steamId): steamId is string => Boolean(steamId));
+  });
+  const steamProfiles = useSteamProfiles(previewSteamIds);
 
   return (
     <section className="library-workspace" aria-labelledby="library-title">
@@ -512,9 +553,11 @@ export function LibraryWorkspace({
                   onRevealManifest={() => onRevealManifest(entry)}
                   onRevealDemo={() => onRevealDemo(entry)}
                   onReparse={() => onReparseEntry(entry)}
+                  onDelete={() => onDeleteEntry(entry)}
                   repairing={repairingManifest === entry.manifestPath}
                   disabled={maintenanceBusy || archiveOpenDisabled}
                   taskBusy={taskBusy}
+                  profiles={steamProfiles}
                 />
               ))}
             </div>

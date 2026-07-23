@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react";
-import { ArrowIcon, CheckIcon, CopyIcon, ExternalLinkIcon } from "../icons";
+import { useEffect, useRef } from "react";
+import steamMarkUrl from "../assets/steam-mark.svg";
+import { ArrowIcon, CheckIcon, CopyIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
+import { resolveProfessionalPlayer } from "../professionalPlayers";
 import type { Language } from "../types";
 import {
   PlayerDossier,
@@ -42,9 +44,7 @@ function playerKda(player: RosterPlayer): string | null {
     : null;
 }
 
-type PlayerAnalysisView = "overview" | "configuration" | "cosmetics";
-
-function playerMetricCards(player: RosterPlayer) {
+function playerMetricCards(player: RosterPlayer, words: TextDictionary) {
   const hasValue = (value: number | null | undefined): value is number => value !== null && value !== undefined;
   const rounds = player.details?.statsRounds;
   const validRounds = hasValue(rounds) && rounds > 0 ? rounds : null;
@@ -57,6 +57,7 @@ function playerMetricCards(player: RosterPlayer) {
     { key: "adr", label: "ADR", value: hasValue(totalDamage) && validRounds !== null ? (totalDamage / validRounds).toFixed(1) : null },
     { key: "kd", label: "KD", value: hasValue(player.kills) && hasValue(player.deaths) && player.deaths > 0 ? (player.kills / player.deaths).toFixed(2) : null },
     { key: "kpr", label: "KPR", value: hasValue(player.kills) && validRounds !== null ? (player.kills / validRounds).toFixed(2) : null },
+    { key: "headshots", label: words.headshotKillsShort, value: hasValue(headshots) ? String(headshots) : null },
     { key: "hs", label: "HS%", value: hasValue(player.kills) && player.kills > 0 && hasValue(headshots) && headshots <= player.kills ? `${(headshots / player.kills * 100).toFixed(1)}%` : null },
     { key: "mvps", label: "MVP", value: hasValue(player.mvps) ? String(player.mvps) : null },
   ].filter((metric): metric is { key: string; label: string; value: string } => metric.value !== null);
@@ -81,11 +82,9 @@ export function PlayerAnalysisWorkspace({
   const selectedKey = playerSelectionKey(selectedPlayer);
   const selectedEntry = entries.find((entry) => entry.key === selectedKey);
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const [view, setView] = useState<PlayerAnalysisView>("overview");
 
   useEffect(() => {
     headingRef.current?.focus();
-    setView("overview");
   }, [selectedEntry?.key, selectedKey]);
 
   if (!selectedEntry) {
@@ -116,14 +115,10 @@ export function PlayerAnalysisWorkspace({
   const { player, team } = selectedEntry;
   const steamProfile = steamProfiles.get(player.steamId);
   const steamAlias = currentSteamAlias(steamProfile, player.name);
+  const professionalPlayer = resolveProfessionalPlayer(player.steamId, language);
   const steamProfileAvailable = hasSteamProfile(player.steamId);
-  const metrics = playerMetricCards(player);
+  const metrics = playerMetricCards(player, words);
   const steamCopyTarget = `player:${selectedEntry.key}:steam:0` as CopyTarget;
-  const tabs: Array<{ id: PlayerAnalysisView; label: string }> = [
-    { id: "overview", label: words.playerOverviewTab },
-    { id: "configuration", label: words.playerConfigurationTab },
-    { id: "cosmetics", label: words.playerCosmeticsTab },
-  ];
 
   return (
     <section className={`player-analysis-workspace is-team-${team.id}`} aria-labelledby="player-analysis-title">
@@ -182,7 +177,7 @@ export function PlayerAnalysisWorkspace({
                           key={entryKey}
                         >
                           <span className="player-analysis-index-identity">
-                            <SteamAvatar profile={steamProfiles.get(teamPlayer.steamId)} fallbackName={teamPlayer.name} size="compact" />
+                            <SteamAvatar profile={steamProfiles.get(teamPlayer.steamId)} fallbackName={teamPlayer.name} playerColor={teamPlayer.playerColor} size="compact" />
                             <strong title={teamPlayer.name}>{teamPlayer.name}</strong>
                           </span>
                           {kda ? <span aria-label={`${words.kda} ${kda}`}>{kda}</span> : null}
@@ -198,71 +193,65 @@ export function PlayerAnalysisWorkspace({
           <article className="player-analysis-main" aria-labelledby="player-analysis-title">
             <header className="player-analysis-heading">
               <div className="player-analysis-heading-identity">
-                <SteamAvatar profile={steamProfile} fallbackName={player.name} size="large" />
+                <SteamAvatar profile={steamProfile} fallbackName={player.name} playerColor={player.playerColor} size="large" />
                 <div>
-                  <span>{team.name}{team.startSideLabel ? ` · ${team.startSideLabel}` : ""}</span>
-                  <h1 id="player-analysis-title" ref={headingRef} tabIndex={-1}>{player.name}</h1>
-                  <p>{steamAlias ? `Steam · ${steamAlias}` : "Steam"}<code>{player.steamId || "—"}</code></p>
+                  <span>{team.name}{team.startSideLabel ? <em>{team.startSideLabel}</em> : null}</span>
+                  <h1 id="player-analysis-title" ref={headingRef} tabIndex={-1}>
+                    {player.name}
+                    {professionalPlayer ? <small>{words.verifiedProfessionalPlayer}</small> : null}
+                  </h1>
+                  {steamAlias ? <p>Steam · {steamAlias}</p> : null}
+                  {professionalPlayer ? (
+                    <div className="professional-player-identity" title={`${words.professionalIdentityVerified} · ${professionalPlayer.verifiedAt}`}>
+                      <strong>{professionalPlayer.realName}</strong>
+                      <span>{professionalPlayer.team}</span>
+                      <span>{professionalPlayer.role}</span>
+                      <span>{professionalPlayer.country}</span>
+                    </div>
+                  ) : null}
                 </div>
               </div>
               {steamProfileAvailable ? (
                 <div className="player-analysis-heading-actions">
-                  <button type="button" onClick={() => onCopy(player.steamId, steamCopyTarget)}>
+                  <button className="player-steam-id-tag" type="button" onClick={() => onCopy(player.steamId, steamCopyTarget)} title={words.copySteamId} aria-label={words.copySteamId}>
+                    <code>{player.steamId}</code>
                     {copiedTarget === steamCopyTarget ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
-                    {copiedTarget === steamCopyTarget ? words.copied : words.copySteamId}
                   </button>
-                  <button type="button" onClick={() => onOpenExternal(steamProfileUrl(player.steamId))}>
-                    <ExternalLinkIcon size={15} />{words.openSteamProfile}
+                  <button className="player-steam-profile-link" type="button" onClick={() => onOpenExternal(steamProfileUrl(player.steamId))} title={words.openSteamProfile} aria-label={words.openSteamProfile}>
+                    <img src={steamMarkUrl} alt="" aria-hidden="true" />
                   </button>
                 </div>
               ) : null}
             </header>
 
-            <nav className="player-analysis-tabs" aria-label={words.playerAnalysisSections}>
-              {tabs.map((tab) => (
-                <button
-                  className={view === tab.id ? "is-selected" : ""}
-                  type="button"
-                  role="tab"
-                  aria-selected={view === tab.id}
-                  onClick={() => setView(tab.id)}
-                  key={tab.id}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </nav>
-
-            {view === "overview" ? (
-              <section className="player-analysis-overview-panel" aria-labelledby="player-match-data-title">
-                <header>
-                  <h2 id="player-match-data-title">{words.playerMatchData}</h2>
-                  <span>{player.details?.statsRounds ? `${player.details.statsRounds} ${words.roundsUnit}` : team.name}</span>
-                </header>
-                <div className="player-analysis-metrics">
-                  {metrics.map((metric) => (
-                    <div className={`is-${metric.key}`} key={metric.key}>
-                      <span>{metric.label}</span>
-                      <strong>{metric.value}</strong>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            ) : (
-              <div className="player-analysis-dossier">
-                <PlayerDossier
-                  key={`${selectedEntry.key}:${view}`}
-                  playerKey={selectedEntry.key}
-                  player={player}
-                  language={language}
-                  words={words}
-                  copiedTarget={copiedTarget}
-                  onCopy={onCopy}
-                  onOpenExternal={onOpenExternal}
-                  view={view}
-                />
+            <section className="player-analysis-overview-panel" aria-labelledby="player-match-data-title">
+              <header>
+                <h2 id="player-match-data-title">{words.playerMatchData}</h2>
+                <span>{player.details?.statsRounds ? `${player.details.statsRounds} ${words.roundsUnit}` : team.name}</span>
+              </header>
+              <div className="player-analysis-metrics">
+                {metrics.map((metric) => (
+                  <div className={`is-${metric.key}`} key={metric.key}>
+                    <span>{metric.label}</span>
+                    <strong>{metric.value}</strong>
+                  </div>
+                ))}
               </div>
-            )}
+            </section>
+
+            <div className="player-analysis-dossier">
+              <PlayerDossier
+                key={selectedEntry.key}
+                playerKey={selectedEntry.key}
+                player={player}
+                language={language}
+                words={words}
+                copiedTarget={copiedTarget}
+                onCopy={onCopy}
+                onOpenExternal={onOpenExternal}
+                view="evidence"
+              />
+            </div>
           </article>
         </div>
       </div>

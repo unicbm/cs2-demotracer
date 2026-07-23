@@ -72,6 +72,7 @@ pub(crate) struct LibraryPlayerDto {
     pub steam_id: String,
     pub name: String,
     pub side: String,
+    pub player_color: Option<String>,
     /// Legacy manifests only describe a per-round side, not a stable team.
     pub team: String,
     pub team_name: Option<String>,
@@ -145,6 +146,7 @@ struct LibraryFileWire {
 
 #[derive(Clone, Debug, Default, Deserialize)]
 struct LibraryPlayerScoreboardWire {
+    player_color: Option<String>,
     score: Option<i32>,
     kills: Option<u32>,
     deaths: Option<u32>,
@@ -505,6 +507,9 @@ fn apply_demo_info(
                 steam_id: player.steam_id,
                 name: player.name,
                 side: player.side,
+                player_color: player
+                    .player_color
+                    .or_else(|| archived.and_then(|value| value.player_color.clone())),
                 team: player.team,
                 team_name: player.team_name,
                 rounds: player.rounds,
@@ -644,6 +649,7 @@ fn summarize_players(files: &[LibraryFileWire]) -> Vec<LibraryPlayerDto> {
                     player.name
                 },
                 side: player.latest_side,
+                player_color: scoreboard.player_color,
                 team: String::new(),
                 team_name: None,
                 rounds: player.rounds.len(),
@@ -782,7 +788,7 @@ mod tests {
                     "side": "ct",
                     "steam_id": 76561198000000001_u64,
                     "player_name": "alpha",
-                    "scoreboard": { "score": 25, "kills": 18, "deaths": 7, "assists": 4, "mvps": 3 }
+                    "scoreboard": { "player_color": "blue", "score": 25, "kills": 18, "deaths": 7, "assists": 4, "mvps": 3 }
                 },
                 {
                     "path": "round12/t/76561198000000002_bravo.dtr",
@@ -824,6 +830,7 @@ mod tests {
         assert_eq!(alpha.side, "ct");
         assert_eq!(alpha.rounds, 2);
         assert_eq!(alpha.files, 2);
+        assert_eq!(alpha.player_color.as_deref(), Some("blue"));
         assert_eq!(alpha.kills, Some(18));
         assert_eq!(alpha.deaths, Some(7));
         assert_eq!(alpha.assists, Some(4));

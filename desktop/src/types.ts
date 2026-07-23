@@ -89,6 +89,7 @@ export interface AnalysisPlayerSummary {
   name: string;
   steamId: string;
   side: string;
+  playerColor?: string | null;
   team: "a" | "b" | "unknown" | string;
   teamName?: string | null;
   rounds: number;
@@ -164,6 +165,7 @@ export interface LibraryPlayerSummary {
   name: string;
   steamId: string;
   side: string;
+  playerColor?: string | null;
   team: "a" | "b" | "unknown" | string;
   rounds: number;
   files: number;
@@ -265,6 +267,7 @@ export interface PlayerSummary {
   rounds: number;
   files: number;
   side?: string | null;
+  playerColor?: string | null;
   matchTeam?: string | null;
   teamName?: string | null;
   score?: number | null;

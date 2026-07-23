@@ -7,6 +7,7 @@ export interface ContextMenuItem {
   icon?: ReactNode;
   disabled?: boolean;
   dividerBefore?: boolean;
+  danger?: boolean;
   onSelect: () => void;
 }
 
@@ -89,6 +90,7 @@ export function ContextMenu({ menu, onClose }: {
       {menu.items.map((item, index) => (
         <div className={item.dividerBefore ? "has-divider" : ""} key={`${item.label}-${index}`}>
           <button
+            className={item.danger ? "is-danger" : undefined}
             type="button"
             role="menuitem"
             disabled={item.disabled}

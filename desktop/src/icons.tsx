@@ -114,6 +114,14 @@ export function CloseIcon({ size = 18, ...props }: IconProps) {
   );
 }
 
+export function TrashIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg {...base(size)} {...props}>
+      <path d="M4.5 7h15M9 4.5h6l1 2.5M7 7l.8 12h8.4L17 7M10 10.5v5M14 10.5v5" />
+    </svg>
+  );
+}
+
 export function MinimizeIcon({ size = 16, ...props }: IconProps) {
   return (
     <svg {...base(size)} {...props}>

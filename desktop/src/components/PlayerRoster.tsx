@@ -20,6 +20,7 @@ import { SteamPlayerIdentity, type SteamProfileMap } from "./SteamProfile";
 export interface RosterPlayer {
   name: string;
   steamId: string;
+  playerColor?: string | null;
   score?: number | null;
   kills?: number | null;
   deaths?: number | null;
@@ -47,6 +48,8 @@ interface RosterTeamProps<T extends RosterPlayer> {
   className?: string;
   startSideLabel?: string;
   steamProfiles?: SteamProfileMap;
+  retentionPriority?: boolean;
+  onSetPlayerPriority?: (playerIndex: number, priority: number) => void;
   onSelectPlayer: (selection: PlayerSelection) => void;
 }
 
@@ -520,7 +523,7 @@ function CrosshairEvidence({
     <div className="player-setup-grid">
       <section className="roster-evidence-section player-crosshair-preview-section">
         <header><strong>{words.crosshairPreview}</strong></header>
-        <CrosshairPreview code={previewCode} label={words.crosshairPreview} unavailableLabel={words.crosshairPreviewUnavailable} />
+        <CrosshairPreview code={previewCode} label={words.crosshairPreview} unavailableLabel={words.crosshairPreviewUnavailable} words={words} />
       </section>
       <div className="player-configuration-commands">
         <section className="roster-evidence-section player-crosshair-section">
@@ -542,8 +545,8 @@ function CrosshairEvidence({
             <header><strong>{words.viewmodelProfiles}</strong></header>
             <ul className="roster-command-list">
               {viewmodels.map((command, index) => (
-                <li key={command}>
-                  <span><small>{words.viewmodelProfile.replace("{index}", String(index + 1))}</small><code>{command}</code></span>
+                <li key={`${command}:${index}`}>
+                  <code>{command}</code>
                   <CopyAction value={command} target={targetFor(playerKey, "viewmodel", index)} copiedTarget={copiedTarget} label={words.copyCommand} copiedLabel={words.copied} onCopy={onCopy} />
                 </li>
               ))}
@@ -572,7 +575,7 @@ export function PlayerDossier({
   copiedTarget: CopyTarget | null;
   onCopy: (value: string, target: CopyTarget) => void;
   onOpenExternal: (url: string) => void;
-  view?: "all" | "configuration" | "cosmetics";
+  view?: "all" | "configuration" | "cosmetics" | "evidence";
 }) {
   const [viewer, setViewer] = useState<{ title: string; url: string } | null>(null);
   const details = player.details;
@@ -586,8 +589,8 @@ export function PlayerDossier({
   const evidenceCount = cosmetics.length + musicKitIds.length;
   const steamProfileAvailable = hasSteamProfile(player.steamId);
   const showProfile = view === "all";
-  const showConfiguration = view === "all" || view === "configuration";
-  const showCosmetics = view === "all" || view === "cosmetics";
+  const showConfiguration = view === "all" || view === "configuration" || view === "evidence";
+  const showCosmetics = view === "all" || view === "cosmetics" || view === "evidence";
   return (
     <div className="player-dossier">
       {showProfile ? <div className="roster-profile-line">
@@ -633,8 +636,8 @@ export function PlayerDossier({
               <header><strong>{words.viewmodelProfiles}</strong></header>
               <ul className="roster-command-list">
                 {viewmodels.map((command, index) => (
-                  <li key={command}>
-                    <span><small>{words.viewmodelProfile.replace("{index}", String(index + 1))}</small><code>{command}</code></span>
+                  <li key={`${command}:${index}`}>
+                    <code>{command}</code>
                     <CopyAction value={command} target={targetFor(playerKey, "viewmodel", index)} copiedTarget={copiedTarget} label={words.copyCommand} copiedLabel={words.copied} onCopy={onCopy} />
                   </li>
                 ))}
@@ -676,7 +679,7 @@ export function PlayerDossier({
   );
 }
 
-type RosterStatKey = "kda" | "adr" | "kd" | "kpr" | "hs" | "mvps";
+type RosterStatKey = "kda" | "adr" | "kd" | "kpr" | "headshots" | "hs" | "mvps";
 
 export function RosterTeam<T extends RosterPlayer>({
   teamId,
@@ -688,8 +691,11 @@ export function RosterTeam<T extends RosterPlayer>({
   className = "",
   startSideLabel,
   steamProfiles,
+  retentionPriority = false,
+  onSetPlayerPriority,
   onSelectPlayer,
 }: RosterTeamProps<T>) {
+  const canPrioritize = retentionPriority && players.length > 1 && Boolean(onSetPlayerPriority);
   const hasValue = (value: number | null | undefined): value is number => value !== null && value !== undefined;
   const stat = (value: number | null | undefined) => hasValue(value) ? String(value) : "—";
   const playerStats = players.map((player) => {
@@ -713,8 +719,9 @@ export function RosterTeam<T extends RosterPlayer>({
       kpr: hasValue(kills) && validRounds !== null
         ? (kills / validRounds).toFixed(2)
         : null,
+      headshots: hasValue(headshots) ? String(headshots) : null,
       hs: hasValue(kills) && kills > 0 && hasValue(headshots) && headshots <= kills
-        ? `${(headshots / kills * 100).toFixed(1)}% · ${headshots}`
+        ? `${(headshots / kills * 100).toFixed(1)}%`
         : null,
       mvps: hasValue(player.mvps) ? String(player.mvps) : null,
     };
@@ -724,7 +731,8 @@ export function RosterTeam<T extends RosterPlayer>({
     { key: "adr", label: words.adr, width: "minmax(36px, .48fr)" },
     { key: "kd", label: words.kd, width: "minmax(36px, .46fr)" },
     { key: "kpr", label: "KPR", width: "minmax(40px, .5fr)" },
-    { key: "hs", label: "HS%", width: "minmax(60px, .72fr)" },
+    { key: "headshots", label: words.headshotKillsShort, width: "minmax(38px, .46fr)" },
+    { key: "hs", label: "HS%", width: "minmax(48px, .58fr)" },
     { key: "mvps", label: "MVP", width: "minmax(34px, .42fr)" },
   ];
   const columns = allColumns.filter((column) => playerStats.some((values) => values[column.key] !== null));
@@ -738,10 +746,13 @@ export function RosterTeam<T extends RosterPlayer>({
         </div>
         <span>{countLabel.replace("{count}", String(players.length))}</span>
       </header>
-      <div className="archive-roster-stat-head" style={{ gridTemplateColumns }} aria-hidden="true">
-        <span>{words.playerColumn}</span>
-        {columns.map((column) => <span key={column.key}>{column.label}</span>)}
-        <span />
+      <div className={`archive-roster-stat-row${canPrioritize ? " has-retention" : ""}`}>
+        {canPrioritize ? <span className="roster-retention-head" title={words.retentionPriority}>#</span> : null}
+        <div className="archive-roster-stat-head" style={{ gridTemplateColumns }} aria-hidden="true">
+          <span>{words.playerColumn}</span>
+          {columns.map((column) => <span key={column.key}>{column.label}</span>)}
+          <span />
+        </div>
       </div>
       <ul>
         {players.map((player, playerIndex) => {
@@ -749,7 +760,27 @@ export function RosterTeam<T extends RosterPlayer>({
           const selectionKey = playerSelectionKey(selection);
           const values = playerStats[playerIndex];
           return (
-            <li className="roster-player" key={selectionKey}>
+            <li
+              className={`roster-player${canPrioritize ? " has-retention" : ""}`}
+              key={`${teamId}:${player.steamId || playerIndex}`}
+            >
+              {canPrioritize ? (
+                <select
+                  className="roster-retention-select"
+                  value={playerIndex + 1}
+                  aria-label={words.retentionRank.replace("{rank}", String(playerIndex + 1))}
+                  title={words.retentionRank.replace("{rank}", String(playerIndex + 1))}
+                  onChange={(event) => {
+                    onSetPlayerPriority?.(playerIndex, Number(event.currentTarget.value));
+                  }}
+                >
+                  {players.map((_, priorityIndex) => (
+                    <option key={priorityIndex + 1} value={priorityIndex + 1}>
+                      {priorityIndex + 1}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
               <button
                 className="roster-player-summary"
                 type="button"
@@ -763,6 +794,7 @@ export function RosterTeam<T extends RosterPlayer>({
                   profile={steamProfiles?.get(player.steamId)}
                   demoName={player.name}
                   steamId={player.steamId}
+                  playerColor={player.playerColor}
                 />
                 {columns.map((column) => (
                   <span className={`archive-roster-stat is-${column.key}`} key={column.key}>

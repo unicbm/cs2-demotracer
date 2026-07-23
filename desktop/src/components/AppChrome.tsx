@@ -112,14 +112,13 @@ export function AppChrome({
         <div className="session-header">
           <div className="source-identity">
             <div className="source-title-row">
-              <strong title={sourcePath}>{sourceFileName}</strong>
+              <strong>{sourceFileName}</strong>
               {analysis ? (
                 <span className="source-meta">
                   {analysis.map || "—"} · {analysis.rounds.length} {words.rounds}
                 </span>
               ) : null}
             </div>
-            <span className="source-path" title={sourcePath} aria-label={`${words.source}: ${sourcePath}`}>{sourcePath}</span>
           </div>
 
           <button className="quiet-button change-demo-button" type="button" disabled={busy} onClick={onChangeDemo}>

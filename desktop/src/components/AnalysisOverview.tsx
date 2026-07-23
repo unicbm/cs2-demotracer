@@ -2,7 +2,7 @@ import type { TextDictionary } from "../i18n";
 import type { AnalysisPlayerSummary, AnalysisResult } from "../types";
 import { displayMap, MapArtwork } from "./MapArtwork";
 import type { PlayerSelection } from "./PlayerRoster";
-import { SteamPlayerIdentity, type SteamProfileMap } from "./SteamProfile";
+import { SteamAvatar, SteamPlayerIdentity, teamRepresentative, type SteamProfileMap } from "./SteamProfile";
 import "./analysis-overview.css";
 import "./archive-workspace.css";
 
@@ -85,8 +85,9 @@ function playerMetrics(player: AnalysisPlayerSummary, matchRounds: number | null
     adr: damage !== null && damage !== undefined && validRounds !== null ? (damage / validRounds).toFixed(1) : null,
     kd: kills !== null && kills !== undefined && deaths !== null && deaths !== undefined && deaths > 0 ? (kills / deaths).toFixed(2) : null,
     kr: kills !== null && kills !== undefined && validRounds !== null ? (kills / validRounds).toFixed(2) : null,
+    headshots: headshots !== null && headshots !== undefined ? String(headshots) : null,
     hs: kills !== null && kills !== undefined && kills > 0 && headshots !== null && headshots !== undefined && headshots <= kills
-      ? `${(headshots / kills * 100).toFixed(1)}% · ${headshots}`
+      ? `${(headshots / kills * 100).toFixed(1)}%`
       : null,
     mvps: player.mvps,
   };
@@ -95,7 +96,7 @@ function playerMetrics(player: AnalysisPlayerSummary, matchRounds: number | null
 type PlayerMetrics = ReturnType<typeof playerMetrics>;
 
 interface AnalysisMetricColumn {
-  key: "kda" | "adr" | "kd" | "kr" | "hs" | "mvps";
+  key: "kda" | "adr" | "kd" | "kr" | "headshots" | "hs" | "mvps";
   label: string;
   width: string;
   value: (metrics: PlayerMetrics) => string | null;
@@ -122,7 +123,8 @@ function analysisMetricColumns(players: AnalysisPlayerSummary[], words: TextDict
     { key: "adr", label: words.adr, width: "minmax(45px, .55fr)", value: (values) => metricValue(values.adr) },
     { key: "kd", label: words.kd, width: "minmax(45px, .55fr)", value: (values) => metricValue(values.kd) },
     { key: "kr", label: "KPR", width: "minmax(45px, .55fr)", value: (values) => metricValue(values.kr) },
-    { key: "hs", label: "HS%", width: "minmax(70px, .75fr)", value: (values) => metricValue(values.hs) },
+    { key: "headshots", label: words.headshotKillsShort, width: "minmax(44px, .5fr)", value: (values) => metricValue(values.headshots) },
+    { key: "hs", label: "HS%", width: "minmax(56px, .62fr)", value: (values) => metricValue(values.hs) },
     { key: "mvps", label: "MVP", width: "minmax(44px, .5fr)", value: (values) => metricValue(values.mvps) },
   ];
   return columns.filter((column) => metrics.some((values) => column.value(values) !== null));
@@ -178,6 +180,7 @@ function AnalysisTeamRows({
                   profile={steamProfiles.get(player.steamId)}
                   demoName={player.name}
                   steamId={player.steamId}
+                  playerColor={player.playerColor}
                 />
                 {columns.map((column) => (
                   <span className={`analysis-stat-value is-${column.key}`} key={column.key}>
@@ -211,6 +214,8 @@ export function AnalysisOverview({
   const metricColumns = analysisMetricColumns(sortedPlayers, words, matchRounds);
   const metricGrid = `minmax(190px, 1.8fr) ${metricColumns.map((column) => column.width).join(" ")}`;
   const hasStartingSideEvidence = teamA.length > 0 && teamB.length > 0;
+  const teamARepresentative = teamRepresentative(teamAName, teamA);
+  const teamBRepresentative = teamRepresentative(teamBName, teamB);
 
   return (
     <div className="analysis-overview">
@@ -222,7 +227,10 @@ export function AnalysisOverview({
         <div className="archive-match-summary">
           <div className={`archive-scoreboard is-${analysis.score?.status || "unknown"}`}>
             <div className="archive-score-team is-team-a">
-              <strong title={teamAName}>{teamAName}</strong>
+              <div className="archive-score-team-identity">
+                <strong title={teamAName}>{teamAName}</strong>
+                {teamARepresentative ? <SteamAvatar profile={steamProfiles.get(teamARepresentative.steamId)} fallbackName={teamARepresentative.name} playerColor={teamARepresentative.playerColor} size="hero" /> : null}
+              </div>
               {hasStartingSideEvidence ? <small>{words.startsAsT}</small> : null}
             </div>
             <div className="archive-scoreline" aria-label={analysis.score ? `${teamAName} ${analysis.score.teamA.score} : ${analysis.score.teamB.score} ${teamBName}` : words.scoreUnavailable}>
@@ -234,7 +242,10 @@ export function AnalysisOverview({
               {analysis.score?.status === "completed" ? <small>{words.scoreAtDemoEnd}</small> : null}
             </div>
             <div className="archive-score-team is-team-b">
-              <strong title={teamBName}>{teamBName}</strong>
+              <div className="archive-score-team-identity">
+                <strong title={teamBName}>{teamBName}</strong>
+                {teamBRepresentative ? <SteamAvatar profile={steamProfiles.get(teamBRepresentative.steamId)} fallbackName={teamBRepresentative.name} playerColor={teamBRepresentative.playerColor} size="hero" /> : null}
+              </div>
               {hasStartingSideEvidence ? <small>{words.startsAsCt}</small> : null}
             </div>
           </div>

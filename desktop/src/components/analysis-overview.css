@@ -61,8 +61,8 @@
 
 .analysis-scoreboard-columns > span:not(:first-child) { text-align: right; }
 .analysis-scoreboard-teams { display: grid; }
-.analysis-team-block { --team-color: #d2a525; min-width: 0; }
-.analysis-team-block.is-team-b { --team-color: #3b9fd5; }
+.analysis-team-block { --team-color: #f0a23a; min-width: 0; }
+.analysis-team-block.is-team-b { --team-color: #55b8ec; }
 .analysis-team-block.is-team-unknown { --team-color: var(--text-tertiary); }
 .analysis-team-block + .analysis-team-block { border-top: 1px solid var(--divider-strong); }
 
@@ -77,7 +77,7 @@
 }
 
 .analysis-team-heading strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.analysis-team-heading em { color: var(--text-tertiary); font-size: 9.5px; font-style: normal; font-weight: 650; }
+.analysis-team-heading em { color: var(--team-color); font-size: 9.5px; font-style: normal; font-weight: 800; }
 .analysis-team-heading span { color: var(--text-tertiary); font-size: 10.5px; }
 .analysis-team-heading b { margin-left: auto; color: var(--text-primary); font: 700 16px var(--mono); }
 .analysis-team-block > ul { margin: 0; padding: 0; list-style: none; }

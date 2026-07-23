@@ -19,7 +19,7 @@ import { DialogPrimitive } from "./components/Dialog";
 import { ExportInspector } from "./components/ExportInspector";
 import { FaqWorkspace } from "./components/FaqWorkspace";
 import { LibraryWorkspace, type LibrarySort } from "./components/LibraryWorkspace";
-import type { PlaybackPresetOptions } from "./components/PlaybackCommandBuilder";
+import { DEFAULT_PLAYBACK_ADVANCED_OPTIONS, type PlaybackPresetOptions } from "./components/PlaybackCommandBuilder";
 import { playerSelectionKey } from "./components/PlayerRoster";
 import { RoundWorkspace } from "./components/RoundWorkspace";
 import { SettingsWorkspace } from "./components/SettingsWorkspace";
@@ -217,16 +217,7 @@ const DEFAULT_PLAYBACK_PRESET: PlaybackPresetOptions = {
   avatar: false,
   voice: true,
   playoff: false,
-  projectileAlignment: "inherit",
-  crosshairAlignment: "inherit",
-  leftHandAlignment: "inherit",
-  matchPresentation: "inherit",
-  allowPartial: "inherit",
-  handoffMode: "inherit",
-  handoffScope: "slot",
-  threat360: "inherit",
-  threat360Range: 420,
-  threat360Los: true,
+  ...DEFAULT_PLAYBACK_ADVANCED_OPTIONS,
 };
 
 function emptyProgress(): ProgressState {
@@ -300,7 +291,7 @@ function storedPlaybackPreset(): PlaybackPresetOptions {
     const readBoolean = (key: "weapons" | "cosmetics" | "steamIdentity" | "avatar" | "voice" | "playoff" | "threat360Los") =>
       typeof saved[key] === "boolean" ? saved[key] : DEFAULT_PLAYBACK_PRESET[key];
     const readToggle = (key: "projectileAlignment" | "crosshairAlignment" | "leftHandAlignment" | "allowPartial" | "threat360") =>
-      saved[key] === "inherit" || saved[key] === "on" || saved[key] === "off"
+      saved[key] === "on" || saved[key] === "off"
         ? saved[key]
         : DEFAULT_PLAYBACK_PRESET[key];
     const cosmetics = readBoolean("cosmetics");
@@ -315,11 +306,11 @@ function storedPlaybackPreset(): PlaybackPresetOptions {
       projectileAlignment: readToggle("projectileAlignment"),
       crosshairAlignment: readToggle("crosshairAlignment"),
       leftHandAlignment: readToggle("leftHandAlignment"),
-      matchPresentation: saved.matchPresentation === "inherit" || saved.matchPresentation === "off" || saved.matchPresentation === "scoreboard"
+      matchPresentation: saved.matchPresentation === "off" || saved.matchPresentation === "scoreboard"
         ? saved.matchPresentation
         : DEFAULT_PLAYBACK_PRESET.matchPresentation,
       allowPartial: readToggle("allowPartial"),
-      handoffMode: ["inherit", "off", "death", "contact", "death_or_contact", "death_contact_c4"].includes(saved.handoffMode ?? "")
+      handoffMode: ["off", "death", "contact", "death_or_contact", "death_contact_c4"].includes(saved.handoffMode ?? "")
         ? saved.handoffMode as PlaybackPresetOptions["handoffMode"]
         : DEFAULT_PLAYBACK_PRESET.handoffMode,
       handoffScope: saved.handoffScope === "all" ? "all" : "slot",
@@ -528,6 +519,8 @@ function App() {
   const [repairingManifest, setRepairingManifest] = useState("");
   const [repairingLibrary, setRepairingLibrary] = useState(false);
   const [importingArchives, setImportingArchives] = useState(false);
+  const [deletingManifest, setDeletingManifest] = useState("");
+  const [archiveDeleteTarget, setArchiveDeleteTarget] = useState<DemoLibraryEntry | null>(null);
   const [libraryNotice, setLibraryNotice] = useState("");
   const [libraryQuery, setLibraryQuery] = useState("");
   const [libraryMap, setLibraryMap] = useState("");
@@ -603,13 +596,14 @@ function App() {
   const cosmeticInputRef = useRef<HTMLInputElement | null>(null);
   const chooseOtherOutputRef = useRef<HTMLButtonElement | null>(null);
   const keepWorkingRef = useRef<HTMLButtonElement | null>(null);
+  const cancelArchiveDeleteRef = useRef<HTMLButtonElement | null>(null);
 
   const words = TEXT[language];
   const libraryRoot = libraryPreferences.exportRoot;
   const libraryRoots = libraryPreferences.roots;
   const numberFormat = useMemo(() => new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en-US"), [language]);
   const isRepairing = repairingLibrary || Boolean(repairingManifest);
-  const isMaintainingLibrary = isRepairing || importingArchives;
+  const isMaintainingLibrary = isRepairing || importingArchives || Boolean(deletingManifest);
   const isBusy = singleTask !== null || phase === "openingArchive" || isMaintainingLibrary || batchInvocationActive;
   isBusyRef.current = singleTask !== null || isMaintainingLibrary || batchInvocationActive;
   const inspectorDocked = useMediaQuery("(min-width: 1080px)");
@@ -1754,6 +1748,32 @@ function App() {
     }
   }
 
+  async function deleteArchiveEntry(entry: DemoLibraryEntry) {
+    if (isBusy || deletingManifest) return;
+    const name = entry.displayName || fileName(entry.root) || entry.demoId;
+    try {
+      setGlobalError(null);
+      setLibraryNotice("");
+      setDeletingManifest(entry.manifestPath);
+      await invoke<void>("delete_archive", {
+        request: {
+          manifestPath: entry.manifestPath,
+          libraryRoots,
+        },
+      });
+      manifestCacheRef.current.delete(normalizedDiagnosticPath(entry.manifestPath));
+      setArchiveDeleteTarget(null);
+      const notice = words.archiveDeleted.replace("{name}", name);
+      setLibraryNotice(notice);
+      setLiveMessage(notice);
+      await scanLibrary(libraryRoots);
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
+    } finally {
+      setDeletingManifest("");
+    }
+  }
+
   async function resolveManifestDemoSource(source: {
     manifestPath: string;
     demoSha256: string;
@@ -2665,6 +2685,7 @@ function App() {
             onRevealManifest={(entry: DemoLibraryEntry) => void revealPath(entry.manifestPath)}
             onRevealDemo={(entry: DemoLibraryEntry) => void revealPath(entry.sourcePath || entry.demoPath)}
             onReparseEntry={(entry: DemoLibraryEntry) => void reparseLibraryEntry(entry)}
+            onDeleteEntry={setArchiveDeleteTarget}
           />
         ) : null}
         {phase === "openingArchive" ? <OpeningArchiveView words={words} manifestName={fileName(archivePath)} /> : null}
@@ -2752,6 +2773,28 @@ function App() {
               void chooseOutput();
             }}>{words.chooseAnotherOutput}</button>
             <button className="danger-button" type="button" onClick={() => void performConvert(true)}>{words.replaceAndConvert}</button>
+          </footer>
+        </DialogPrimitive>
+      ) : null}
+
+      {archiveDeleteTarget ? (
+        <DialogPrimitive
+          labelledBy="delete-archive-title"
+          describedBy="delete-archive-description"
+          onDismiss={() => { if (!deletingManifest) setArchiveDeleteTarget(null); }}
+          initialFocusRef={cancelArchiveDeleteRef}
+          dismissOnScrimClick={false}
+        >
+          <header className="dialog-header warning-header">
+            <span><AlertIcon size={18} /></span>
+            <h2 id="delete-archive-title">{words.deleteArchiveTitle}</h2>
+            <button className="icon-button" type="button" disabled={Boolean(deletingManifest)} onClick={() => setArchiveDeleteTarget(null)} aria-label={words.close}><CloseIcon size={16} /></button>
+          </header>
+          <p id="delete-archive-description" className="dialog-description">{words.deleteArchiveBody}</p>
+          <strong className="dialog-target-name">{archiveDeleteTarget.displayName || fileName(archiveDeleteTarget.root) || archiveDeleteTarget.demoId}</strong>
+          <footer className="dialog-actions">
+            <button ref={cancelArchiveDeleteRef} className="secondary-button" type="button" disabled={Boolean(deletingManifest)} onClick={() => setArchiveDeleteTarget(null)}>{words.cancel}</button>
+            <button className="danger-button" type="button" disabled={Boolean(deletingManifest)} onClick={() => void deleteArchiveEntry(archiveDeleteTarget)}>{deletingManifest ? words.deletingArchive : words.deleteArchive}</button>
           </footer>
         </DialogPrimitive>
       ) : null}

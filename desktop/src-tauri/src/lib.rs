@@ -413,6 +413,8 @@ pub struct PlayerSummaryDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub side: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub player_color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub match_team: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub team_name: Option<String>,
@@ -555,6 +557,13 @@ pub struct ImportArchivesDto {
     pub duplicates_skipped: usize,
     pub archives_rejected: usize,
     pub failures: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteArchiveRequest {
+    pub manifest_path: String,
+    pub library_roots: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -821,6 +830,7 @@ struct ManifestFileWire {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 struct ManifestPlayerScoreboardWire {
+    player_color: Option<String>,
     score: Option<i32>,
     kills: Option<u32>,
     deaths: Option<u32>,
@@ -1206,6 +1216,17 @@ async fn scan_demo_library(root: String) -> CommandResult<catalog::LibraryScanDt
     tauri::async_runtime::spawn_blocking(move || catalog::scan_demo_library_for(&root))
         .await
         .map_err(|error| CommandErrorDto::new("library_scan_worker_failed", error.to_string()))?
+}
+
+#[tauri::command]
+async fn delete_archive(
+    request: DeleteArchiveRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    let _busy = state.acquire_busy()?;
+    tauri::async_runtime::spawn_blocking(move || delete_archive_for(&request))
+        .await
+        .map_err(|error| CommandErrorDto::new("archive_delete_worker_failed", error.to_string()))?
 }
 
 #[tauri::command]
@@ -3140,6 +3161,10 @@ fn summarize_manifest_players(files: &[PlayableManifestFile]) -> Vec<PlayerSumma
             rounds: player.rounds.len(),
             files: player.files,
             side: Some(player.first_side),
+            player_color: player
+                .scoreboard
+                .as_ref()
+                .and_then(|value| value.player_color.clone()),
             match_team: None,
             team_name: None,
             score: player.scoreboard.as_ref().and_then(|value| value.score),
@@ -3174,6 +3199,9 @@ fn overlay_archive_players(
                 _ => summary.team,
             };
             summary.side = Some(player.side.clone());
+            if player.player_color.is_some() {
+                summary.player_color = player.player_color.clone();
+            }
             summary.match_team = Some(player.team.clone());
             if player.team_name.is_some() {
                 summary.team_name = player.team_name.clone();
@@ -3209,6 +3237,7 @@ fn overlay_archive_players(
                 rounds: player.rounds,
                 files: 0,
                 side: Some(player.side.clone()),
+                player_color: player.player_color.clone(),
                 match_team: Some(player.team.clone()),
                 team_name: player.team_name.clone(),
                 score: player.score,
@@ -3629,6 +3658,117 @@ fn checked_existing_archive_root(library_root: &Path, root: &Path) -> CommandRes
         ));
     }
     Ok(canonical)
+}
+
+fn delete_archive_for(request: &DeleteArchiveRequest) -> CommandResult<()> {
+    let manifest_path = validate_manifest_input_path(&request.manifest_path)?;
+    let is_manifest = manifest_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("manifest.json"));
+    if !is_manifest {
+        return Err(CommandErrorDto::at_path(
+            "archive_manifest_invalid",
+            "Only a DemoTracer manifest.json archive can be deleted.",
+            &manifest_path,
+        ));
+    }
+    catalog::summarize_manifest(&manifest_path).map_err(|message| {
+        CommandErrorDto::at_path("archive_manifest_invalid", message, &manifest_path)
+    })?;
+    let canonical_manifest = canonicalize_public_path(&manifest_path).map_err(|error| {
+        CommandErrorDto::at_path(
+            "archive_manifest_inspect_failed",
+            error.to_string(),
+            &manifest_path,
+        )
+    })?;
+    let archive_root = canonical_manifest.parent().ok_or_else(|| {
+        CommandErrorDto::at_path(
+            "archive_root_invalid",
+            "The archive manifest has no parent folder.",
+            &canonical_manifest,
+        )
+    })?;
+
+    let mut checked_archive_root = None;
+    for library_root in request
+        .library_roots
+        .iter()
+        .map(|root| root.trim())
+        .filter(|root| !root.is_empty())
+    {
+        let Ok(library_root) = canonical_normal_library_root(Path::new(library_root)) else {
+            continue;
+        };
+        if archive_root.starts_with(&library_root) && archive_root != library_root {
+            checked_archive_root =
+                Some(checked_existing_archive_root(&library_root, archive_root)?);
+            break;
+        }
+    }
+    let archive_root = checked_archive_root.ok_or_else(|| {
+        CommandErrorDto::at_path(
+            "archive_outside_library",
+            "The archive is not inside one of the indexed DemoTracer library folders.",
+            archive_root,
+        )
+    })?;
+    if canonical_manifest.parent() != Some(archive_root.as_path()) {
+        return Err(CommandErrorDto::at_path(
+            "archive_manifest_escape",
+            "The manifest resolves outside the archive folder.",
+            &canonical_manifest,
+        ));
+    }
+
+    validate_archive_tree_for_deletion(&archive_root)?;
+    fs::remove_dir_all(&archive_root).map_err(|error| {
+        CommandErrorDto::at_path("archive_delete_failed", error.to_string(), &archive_root)
+    })
+}
+
+fn validate_archive_tree_for_deletion(root: &Path) -> CommandResult<()> {
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        let entries = fs::read_dir(&directory).map_err(|error| {
+            CommandErrorDto::at_path(
+                "archive_delete_inspect_failed",
+                error.to_string(),
+                &directory,
+            )
+        })?;
+        for entry in entries {
+            let entry = entry.map_err(|error| {
+                CommandErrorDto::at_path(
+                    "archive_delete_inspect_failed",
+                    error.to_string(),
+                    &directory,
+                )
+            })?;
+            let path = entry.path();
+            let metadata = fs::symlink_metadata(&path).map_err(|error| {
+                CommandErrorDto::at_path("archive_delete_inspect_failed", error.to_string(), &path)
+            })?;
+            if catalog::is_symlink_or_reparse(&metadata) {
+                return Err(CommandErrorDto::at_path(
+                    "archive_delete_link_rejected",
+                    "The archive contains a link or junction and was not deleted.",
+                    &path,
+                ));
+            }
+            if metadata.is_dir() {
+                pending.push(path);
+            } else if metadata.is_file() && is_supported_demo_path(&path) {
+                return Err(CommandErrorDto::at_path(
+                    "archive_contains_demo",
+                    "The archive contains a demo file and was not deleted.",
+                    &path,
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validate_round_selection(
@@ -4667,6 +4807,7 @@ fn summarize_exported_players(files: &[ConvertedFile]) -> Vec<PlayerSummaryDto> 
                 scoreboard_round: file.round,
                 scoreboard: file.scoreboard.as_ref().map(|scoreboard| {
                     ManifestPlayerScoreboardWire {
+                        player_color: scoreboard.player_color.clone(),
                         score: scoreboard.score,
                         kills: scoreboard.kills,
                         deaths: scoreboard.deaths,
@@ -4693,6 +4834,7 @@ fn summarize_exported_players(files: &[ConvertedFile]) -> Vec<PlayerSummaryDto> 
                 file.scoreboard
                     .as_ref()
                     .map(|scoreboard| ManifestPlayerScoreboardWire {
+                        player_color: scoreboard.player_color.clone(),
                         score: scoreboard.score,
                         kills: scoreboard.kills,
                         deaths: scoreboard.deaths,
@@ -4711,6 +4853,10 @@ fn summarize_exported_players(files: &[ConvertedFile]) -> Vec<PlayerSummaryDto> 
             rounds: player.rounds.len(),
             files: player.files,
             side: Some(player.first_side),
+            player_color: player
+                .scoreboard
+                .as_ref()
+                .and_then(|value| value.player_color.clone()),
             match_team: None,
             team_name: None,
             score: player.scoreboard.as_ref().and_then(|value| value.score),
@@ -4872,7 +5018,8 @@ fn reveal_file_path(path: &Path) -> std::io::Result<()> {
     #[cfg(windows)]
     {
         Command::new("explorer.exe")
-            .arg(format!("/select,{}", path.display()))
+            .arg("/select,")
+            .arg(path)
             .spawn()?;
         return Ok(());
     }
@@ -4942,6 +5089,7 @@ pub fn run() {
             preflight_output,
             read_manifest,
             scan_demo_library,
+            delete_archive,
             refresh_archive_metadata,
             resolve_archive_source,
             refresh_library_metadata,
@@ -5177,6 +5325,89 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.path);
         }
+    }
+
+    fn write_delete_test_archive(root: &Path) -> PathBuf {
+        fs::create_dir_all(root.join("round00/t")).unwrap();
+        fs::write(root.join("round00/t/player.dtr"), b"test dtr").unwrap();
+        let manifest_path = root.join("manifest.json");
+        fs::write(
+            &manifest_path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "demo_path": "source.dem",
+                "demo_id": "test-demo",
+                "demo_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "map": "de_mirage",
+                "tick_rate": 64.0,
+                "abi": DEMOTRACER_ABI,
+                "dtr_format_version": DTR_FORMAT_VERSION,
+                "files": [{
+                    "round": 0,
+                    "side": "t",
+                    "steam_id": 1,
+                    "player_name": "bot"
+                }]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        manifest_path
+    }
+
+    #[test]
+    fn archive_delete_removes_only_the_archive_folder() {
+        let temp = ManifestTestDir::new("delete-archive");
+        let library = temp.path.join("library");
+        let archive = library.join("de_mirage/test-demo");
+        let manifest = write_delete_test_archive(&archive);
+        let source_demo = temp.write_file("source.dem", b"original demo");
+
+        delete_archive_for(&DeleteArchiveRequest {
+            manifest_path: manifest.display().to_string(),
+            library_roots: vec![library.display().to_string()],
+        })
+        .unwrap();
+
+        assert!(!archive.exists());
+        assert_eq!(fs::read(source_demo).unwrap(), b"original demo");
+    }
+
+    #[test]
+    fn archive_delete_rejects_an_archive_containing_a_demo() {
+        let temp = ManifestTestDir::new("delete-archive-demo-guard");
+        let library = temp.path.join("library");
+        let archive = library.join("de_mirage/test-demo");
+        let manifest = write_delete_test_archive(&archive);
+        let nested_demo = archive.join("source.dem.zst");
+        fs::write(&nested_demo, b"must survive").unwrap();
+
+        let error = delete_archive_for(&DeleteArchiveRequest {
+            manifest_path: manifest.display().to_string(),
+            library_roots: vec![library.display().to_string()],
+        })
+        .unwrap_err();
+
+        assert_eq!(error.code, "archive_contains_demo");
+        assert!(archive.exists());
+        assert_eq!(fs::read(nested_demo).unwrap(), b"must survive");
+    }
+
+    #[test]
+    fn archive_delete_rejects_a_manifest_outside_the_library() {
+        let temp = ManifestTestDir::new("delete-archive-library-guard");
+        let library = temp.path.join("library");
+        fs::create_dir_all(&library).unwrap();
+        let archive = temp.path.join("outside/test-demo");
+        let manifest = write_delete_test_archive(&archive);
+
+        let error = delete_archive_for(&DeleteArchiveRequest {
+            manifest_path: manifest.display().to_string(),
+            library_roots: vec![library.display().to_string()],
+        })
+        .unwrap_err();
+
+        assert_eq!(error.code, "archive_outside_library");
+        assert!(archive.exists());
     }
 
     #[derive(Default)]
@@ -6384,7 +6615,7 @@ mod tests {
         first["subticks"] = serde_json::json!(80);
         first["hifi_event_count"] = serde_json::json!(12);
         first["scoreboard"] = serde_json::json!({
-            "score": 31, "kills": 20, "deaths": 10, "assists": 5, "mvps": 3
+            "player_color": "yellow", "score": 31, "kills": 20, "deaths": 10, "assists": 5, "mvps": 3
         });
         let mut round = manifest_round(0, 2);
         round["scoreboard"] = serde_json::json!({
@@ -6472,6 +6703,7 @@ mod tests {
         assert_eq!(result.playable_files, 2);
         assert_eq!(result.players[0].steam_id, "76561198012345678");
         assert_eq!(result.players[0].name, "Alpha One");
+        assert_eq!(result.players[0].player_color.as_deref(), Some("yellow"));
         assert_eq!(result.players[0].kills, Some(20));
         assert_eq!(result.display_name, "Alpha vs Bravo");
         assert_eq!(result.metadata_status, "current");

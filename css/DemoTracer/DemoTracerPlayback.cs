@@ -193,6 +193,7 @@ public sealed partial class DemoTracerPlugin
         if (!CheckReplayStartGates(message => command.ReplyToCommand(message), stopCurrentForOverride: true))
             return;
 
+        ActivatePendingReplayRetentionPriority();
         StopAndUnloadLoaded();
         CancelReplayPrefetch();
         ResetPlayoffProgress();
@@ -278,6 +279,7 @@ public sealed partial class DemoTracerPlugin
         if (!CheckReplayStartGates(reply, stopCurrentForOverride: true))
             return;
 
+        ActivatePendingReplayRetentionPriority();
         StopAndUnloadLoaded();
         CancelReplayPrefetch();
         ClearPoolPreparedState();
@@ -858,6 +860,7 @@ public sealed partial class DemoTracerPlugin
         if (!CheckReplayStartGates(message => command.ReplyToCommand(message), stopCurrentForOverride: true))
             return;
 
+        ClearReplayRetentionPriority(clearPending: true);
         StopAndUnloadLoaded();
         CancelReplayPrefetch();
         _sequenceActive = false;
@@ -1404,6 +1407,7 @@ public sealed partial class DemoTracerPlugin
             if (!TryParseRoundArgs(command, "dtr_load round", out var manifestPath, out var round, argOffset: 2))
                 return;
 
+            ActivatePendingReplayRetentionPriority();
             var result = LoadRound(manifestPath, round);
             command.ReplyToCommand(result.Message);
             return;
@@ -1445,6 +1449,7 @@ public sealed partial class DemoTracerPlugin
         if (!TryParseRoundArgs(command, "dtr_load_round", out var manifestPath, out var round))
             return;
 
+        ActivatePendingReplayRetentionPriority();
         var result = LoadRound(manifestPath, round);
         command.ReplyToCommand(result.Message);
     }
@@ -1681,9 +1686,15 @@ public sealed partial class DemoTracerPlugin
             candidates.Add(new DtrKickCandidate(
                 slot,
                 controller.UserId,
+                controller.Team,
                 controller.PlayerName ?? string.Empty,
                 replayPlayerName ?? string.Empty,
-                replaySteamId));
+                replaySteamId,
+                replay.RetentionRank > 0
+                    ? replay.RetentionRank
+                    : retained.RetentionRank > 0
+                        ? retained.RetentionRank
+                        : ReplayRetentionPriorityParser.MaxPlayersPerTeam));
         }
 
         return candidates;
@@ -1700,16 +1711,35 @@ public sealed partial class DemoTracerPlugin
         var slot = candidate.Slot;
         var userId = candidate.UserId.Value;
         StopVoiceTestPlayback("dtr_kick", printSummary: false);
-        var stopped = BotControllerNative.StopReplay(slot);
-        var unloaded = BotControllerNative.UnloadReplay(slot);
-        ReleaseReplaySlot(slot, "dtr_kick");
-        _loadedSlots.Remove(slot);
-        ForgetRetainedBotHiderPresentation(slot);
-        ForgetLoadedReplayMetadata(slot);
-        Server.ExecuteCommand($"kickid {userId.ToString(CultureInfo.InvariantCulture)}");
+        if (!TryReleaseAndKickReplayCandidate(candidate, "dtr_kick", out var stopped, out var unloaded))
+        {
+            command.ReplyToCommand($"[DTR ERR] cannot kick slot {candidate.Slot}: missing userid");
+            return;
+        }
 
         command.ReplyToCommand(
             $"[DTR OK] kicked slot={slot} userid={userId.ToString(CultureInfo.InvariantCulture)} stopped={FormatOnOff(stopped)} unloaded={FormatOnOff(unloaded)}");
+    }
+
+    private bool TryReleaseAndKickReplayCandidate(
+        DtrKickCandidate candidate,
+        string reason,
+        out bool stopped,
+        out bool unloaded)
+    {
+        stopped = false;
+        unloaded = false;
+        if (!candidate.UserId.HasValue)
+            return false;
+
+        stopped = BotControllerNative.StopReplay(candidate.Slot);
+        unloaded = BotControllerNative.UnloadReplay(candidate.Slot);
+        ReleaseReplaySlot(candidate.Slot, reason);
+        _loadedSlots.Remove(candidate.Slot);
+        ForgetRetainedBotHiderPresentation(candidate.Slot);
+        ForgetLoadedReplayMetadata(candidate.Slot);
+        Server.ExecuteCommand($"kickid {candidate.UserId.Value.ToString(CultureInfo.InvariantCulture)}");
+        return true;
     }
 
     private static string CommandArgumentsFrom(CommandInfo command, int startArg)
@@ -1728,7 +1758,7 @@ public sealed partial class DemoTracerPlugin
         var steamId = candidate.SteamId == 0
             ? "unknown"
             : candidate.SteamId.ToString(CultureInfo.InvariantCulture);
-        return $"userid={userId} sid={steamId} live=\"{EscapeConsoleString(candidate.LiveName)}\" loaded=\"{EscapeConsoleString(candidate.LoadedName)}\"";
+        return $"userid={userId} sid={steamId} keep={candidate.RetentionRank} live=\"{EscapeConsoleString(candidate.LiveName)}\" loaded=\"{EscapeConsoleString(candidate.LoadedName)}\"";
     }
 
     [ConsoleCommand("dtr_stop_all", "dtr_stop_all")]

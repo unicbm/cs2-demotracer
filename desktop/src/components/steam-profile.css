@@ -24,7 +24,16 @@
 }
 
 .steam-avatar.is-compact { width: 27px; height: 27px; font-size: 10px; }
+.steam-avatar.is-hero { width: 44px; height: 44px; border-width: 2px; font-size: 16px; }
 .steam-avatar.is-large { width: 62px; height: 62px; font-size: 22px; }
+
+.steam-avatar.has-player-color {
+  border-color: var(--steam-avatar-accent);
+  border-width: 2px;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--steam-avatar-accent) 35%, transparent),
+    0 2px 9px color-mix(in srgb, var(--steam-avatar-accent) 22%, transparent);
+}
 
 .steam-avatar img {
   position: absolute;

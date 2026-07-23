@@ -157,6 +157,15 @@ Validates and arms exactly one demo source round, then issues
 
 Direct restart alias: `dtr_round_restart <manifest.json> <source_round>`.
 
+### `dtr_retain <team-a-steamids> <team-b-steamids>`
+
+Queues per-roster replay retention priority for the next successful manifest
+plan. Each argument is an ordered, comma-separated SteamID64 list; rank `1` is
+kept first and rank `5` is released first when a human joins a full team. Use
+`-` for an empty roster or `dtr_retain clear` to discard the queued priority.
+The GUI writes this command immediately before `dtr_go`; priority follows the
+demo identity across side swaps rather than the current entity slot.
+
 ### `dtr_go pool <pool_manifest.json> [server_round]`
 
 Validates and arms a pool plan, then issues `mp_restartgame 1`. `server_round`

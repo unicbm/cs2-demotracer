@@ -45,6 +45,22 @@
   color: var(--text-disabled);
 }
 
+.context-menu button.is-danger:not(:disabled) {
+  color: var(--danger);
+}
+
+.context-menu button.is-danger:hover:not(:disabled),
+.context-menu button.is-danger:focus-visible {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.context-menu button.is-danger:not(:disabled) > span,
+.context-menu button.is-danger:hover:not(:disabled) > span,
+.context-menu button.is-danger:focus-visible > span {
+  color: var(--danger);
+}
+
 .context-menu button > span {
   display: grid;
   color: var(--text-tertiary);

@@ -1,11 +1,21 @@
+import { useEffect, useState } from "react";
 import { AlertIcon, ArrowIcon, CheckIcon, ChevronIcon, CopyIcon, FolderIcon, RefreshIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
+import {
+  buildReplayRetentionCommand,
+  canPrioritizeReplayRoster,
+  moveReplayRetentionPlayer,
+  normalizeReplayRetentionOrder,
+  orderReplayRoster,
+  replayRetentionStorageKey,
+  type ReplayRetentionOrders,
+} from "../replayRetention";
 import type { ConversionSummary, Language, ManifestArchive, ManifestArchiveRound, PlayerSummary } from "../types";
 import { displayMap, MapArtwork, mapArtworkStyle } from "./MapArtwork";
 import { PlaybackCommandBuilder, type PlaybackPresetOptions } from "./PlaybackCommandBuilder";
 import { PlayerAnalysisWorkspace, type PlayerAnalysisTeam } from "./PlayerAnalysisWorkspace";
 import { RosterTeam, type PlayerSelection } from "./PlayerRoster";
-import { useSteamProfiles } from "./SteamProfile";
+import { SteamAvatar, teamRepresentative, useSteamProfiles } from "./SteamProfile";
 import type { CommandMode, CopyTarget } from "./TaskViews";
 import "./archive-workspace.css";
 
@@ -78,6 +88,23 @@ function formatDate(value: number | null | undefined): string {
 
 function platformName(value: string): string {
   return value.toLowerCase() === "faceit" ? "FACEIT" : value;
+}
+
+function readReplayRetentionOrders(key: string): Partial<ReplayRetentionOrders> | null {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || "null") as Partial<ReplayRetentionOrders> | null;
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeReplayRetentionOrders(key: string, value: ReplayRetentionOrders): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Playback still works when persistent browser storage is unavailable.
+  }
 }
 
 function cleanTeamName(value: string | null | undefined): string | null {
@@ -231,12 +258,44 @@ export function ArchiveWorkspace({
   const teamBName = cleanTeamName(archive.score?.teamB.name) || teamNameFromPlayers(archive, "b") || words.teamB;
   const expectedPlayers = Math.max(0, ...playableRounds.map((round) => round.files));
   const rosterPlayers = [...archive.players].sort((left, right) => left.name.localeCompare(right.name));
-  const teamARoster = rosterPlayers.filter((player) => playerMatchIdentity(player, teamAName, teamBName) === "a");
-  const teamBRoster = rosterPlayers.filter((player) => playerMatchIdentity(player, teamAName, teamBName) === "b");
+  const baseTeamARoster = rosterPlayers.filter((player) => playerMatchIdentity(player, teamAName, teamBName) === "a");
+  const baseTeamBRoster = rosterPlayers.filter((player) => playerMatchIdentity(player, teamAName, teamBName) === "b");
   const unassignedRoster = rosterPlayers.filter((player) => playerMatchIdentity(player, teamAName, teamBName) === null);
+  const teamASteamIds = baseTeamARoster.map((player) => player.steamId);
+  const teamBSteamIds = baseTeamBRoster.map((player) => player.steamId);
+  const teamASignature = teamASteamIds.join("|");
+  const teamBSignature = teamBSteamIds.join("|");
+  const retentionKey = replayRetentionStorageKey(archive.demoSha256 || archive.demoId);
+  const [retentionOrders, setRetentionOrders] = useState<ReplayRetentionOrders>({ a: [], b: [] });
+  useEffect(() => {
+    const stored = readReplayRetentionOrders(retentionKey);
+    setRetentionOrders({
+      a: normalizeReplayRetentionOrder(teamASteamIds, stored?.a),
+      b: normalizeReplayRetentionOrder(teamBSteamIds, stored?.b),
+    });
+  }, [retentionKey, teamASignature, teamBSignature]);
+  const teamARetentionOrder = normalizeReplayRetentionOrder(teamASteamIds, retentionOrders.a);
+  const teamBRetentionOrder = normalizeReplayRetentionOrder(teamBSteamIds, retentionOrders.b);
+  const teamARoster = orderReplayRoster(baseTeamARoster, teamARetentionOrder);
+  const teamBRoster = orderReplayRoster(baseTeamBRoster, teamBRetentionOrder);
+  const setRetentionPriority = (team: "a" | "b", playerIndex: number, priority: number) => {
+    const priorityIndex = priority - 1;
+    const next: ReplayRetentionOrders = {
+      a: team === "a" ? moveReplayRetentionPlayer(teamARetentionOrder, playerIndex, priorityIndex) : teamARetentionOrder,
+      b: team === "b" ? moveReplayRetentionPlayer(teamBRetentionOrder, playerIndex, priorityIndex) : teamBRetentionOrder,
+    };
+    setRetentionOrders(next);
+    writeReplayRetentionOrders(retentionKey, next);
+  };
+  const retentionCommand = buildReplayRetentionCommand({
+    a: teamARetentionOrder,
+    b: teamBRetentionOrder,
+  });
   const explicitMatchTeams = new Set(rosterPlayers.map((player) => player.matchTeam?.trim().toLowerCase()));
   const hasStartingSideEvidence = explicitMatchTeams.has("a") && explicitMatchTeams.has("b");
   const steamProfiles = useSteamProfiles(rosterPlayers.map((player) => player.steamId));
+  const teamARepresentative = teamRepresentative(teamAName, teamARoster);
+  const teamBRepresentative = teamRepresentative(teamBName, teamBRoster);
   const matchRounds = archive.score
     ? archive.score.teamA.score + archive.score.teamB.score
     : null;
@@ -291,7 +350,10 @@ export function ArchiveWorkspace({
         <div className="archive-match-summary">
           <div className={`archive-scoreboard is-${archive.score?.status || "unknown"}`}>
             <div className="archive-score-team is-team-a">
-              <strong title={teamAName}>{teamAName}</strong>
+              <div className="archive-score-team-identity">
+                <strong title={teamAName}>{teamAName}</strong>
+                {teamARepresentative ? <SteamAvatar profile={steamProfiles.get(teamARepresentative.steamId)} fallbackName={teamARepresentative.name} playerColor={teamARepresentative.playerColor} size="hero" /> : null}
+              </div>
               {hasStartingSideEvidence ? <small>{words.startsAsT}</small> : null}
             </div>
             <div className="archive-scoreline" aria-label={archive.score ? `${teamAName} ${archive.score.teamA.score} : ${archive.score.teamB.score} ${teamBName}` : words.scoreUnavailable}>
@@ -301,7 +363,10 @@ export function ArchiveWorkspace({
               {archive.score?.status === "completed" ? <small>{words.scoreAtDemoEnd}</small> : null}
             </div>
             <div className="archive-score-team is-team-b">
-              <strong title={teamBName}>{teamBName}</strong>
+              <div className="archive-score-team-identity">
+                <strong title={teamBName}>{teamBName}</strong>
+                {teamBRepresentative ? <SteamAvatar profile={steamProfiles.get(teamBRepresentative.steamId)} fallbackName={teamBRepresentative.name} playerColor={teamBRepresentative.playerColor} size="hero" /> : null}
+              </div>
               {hasStartingSideEvidence ? <small>{words.startsAsCt}</small> : null}
             </div>
           </div>
@@ -325,8 +390,8 @@ export function ArchiveWorkspace({
             <ChevronIcon size={15} />
           </summary>
           <div className="archive-roster-grid">
-            <RosterTeam teamId="a" name={teamAName} players={teamARoster} words={words} countLabel={words.rosterPlayerCount} matchRounds={matchRounds} startSideLabel={hasStartingSideEvidence ? words.startsAsT : undefined} steamProfiles={steamProfiles} onSelectPlayer={onSelectPlayer} />
-            <RosterTeam teamId="b" name={teamBName} players={teamBRoster} words={words} countLabel={words.rosterPlayerCount} matchRounds={matchRounds} className="is-team-b" startSideLabel={hasStartingSideEvidence ? words.startsAsCt : undefined} steamProfiles={steamProfiles} onSelectPlayer={onSelectPlayer} />
+            <RosterTeam teamId="a" name={teamAName} players={teamARoster} words={words} countLabel={words.rosterPlayerCount} matchRounds={matchRounds} startSideLabel={hasStartingSideEvidence ? words.startsAsT : undefined} steamProfiles={steamProfiles} retentionPriority={canPrioritizeReplayRoster(teamASteamIds)} onSetPlayerPriority={(playerIndex, priority) => setRetentionPriority("a", playerIndex, priority)} onSelectPlayer={onSelectPlayer} />
+            <RosterTeam teamId="b" name={teamBName} players={teamBRoster} words={words} countLabel={words.rosterPlayerCount} matchRounds={matchRounds} className="is-team-b" startSideLabel={hasStartingSideEvidence ? words.startsAsCt : undefined} steamProfiles={steamProfiles} retentionPriority={canPrioritizeReplayRoster(teamBSteamIds)} onSetPlayerPriority={(playerIndex, priority) => setRetentionPriority("b", playerIndex, priority)} onSelectPlayer={onSelectPlayer} />
             {unassignedRoster.length > 0 ? (
               <RosterTeam teamId="unknown" name={words.unassignedPlayers} players={unassignedRoster} words={words} countLabel={words.rosterPlayerCount} matchRounds={matchRounds} className="is-unassigned" steamProfiles={steamProfiles} onSelectPlayer={onSelectPlayer} />
             ) : null}
@@ -399,18 +464,6 @@ export function ArchiveWorkspace({
         <aside className="archive-playback-pane" aria-label={words.playDemoCommand}>
           {result && selected ? (
             <>
-              <header className="archive-playback-context" role="status" aria-live="polite">
-                <span>{words.playbackStart}</span>
-                <strong>{words.startFromRound.replace("{round}", String(selected.round))}</strong>
-                <p>
-                  {effectiveCommandMode === "sequence"
-                    ? `${words.sequenceMode} · ${words.archiveRoundsShort.replace("{count}", String(sequenceCount))}`
-                    : sequenceDisabled
-                      ? words.sequenceUnavailable
-                      : words.roundMode}
-                </p>
-              </header>
-
               <PlaybackCommandBuilder
                 words={words}
                 result={result}
@@ -418,6 +471,7 @@ export function ArchiveWorkspace({
                 commandMode={effectiveCommandMode}
                 sequenceDisabled={sequenceDisabled}
                 copied={copiedTarget === "playback"}
+                retentionCommand={retentionCommand}
                 onOptionsChange={onPlaybackPresetChange}
                 onCommandModeChange={onCommandModeChange}
                 onCopy={(command) => onCopy(command, "playback")}

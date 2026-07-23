@@ -421,10 +421,11 @@
 .library-row-date small b::before { margin-right: 7px; color: var(--divider-strong); content: "·"; }
 
 .library-row-match { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; }
-.library-row-team { display: grid; min-width: 0; gap: 4px; }
+.library-row-team { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; min-width: 0; gap: 8px; }
+.library-row-team-copy { display: grid; min-width: 0; gap: 3px; }
 .library-row-team strong { overflow: hidden; color: var(--text-primary); font-family: var(--library-display); font-size: 13.5px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .library-row-team small { overflow: hidden; color: var(--text-tertiary); font-family: var(--library-display); font-size: 10.5px; line-height: 15px; text-overflow: ellipsis; white-space: nowrap; }
-.library-row-team.is-opponent { text-align: right; }
+.library-row-team.is-opponent { grid-template-columns: minmax(0, 1fr) auto; text-align: right; }
 .library-row-match > span { color: var(--text-tertiary); font: 8.5px var(--mono); text-transform: uppercase; }
 
 .library-row-score { justify-items: center; color: var(--text-tertiary); font-family: var(--library-display); }

@@ -204,6 +204,7 @@ public sealed partial class DemoTracerPlugin
                     slot,
                     replay.PlayerName,
                     replay.SteamId,
+                    replay.RetentionRank,
                     replay.ScoreboardFlair,
                     replay.View));
         }
@@ -392,6 +393,7 @@ public sealed partial class DemoTracerPlugin
                 pair.Key,
                 replay.PlayerName,
                 replay.SteamId,
+                replay.RetentionRank,
                 replay.ScoreboardFlair,
                 replay.View);
         }
@@ -448,6 +450,7 @@ public sealed partial class DemoTracerPlugin
         int Slot,
         string PlayerName,
         ulong SteamId,
+        int RetentionRank,
         ReplayScoreboardFlair? ScoreboardFlair,
         ReplayView View);
 }

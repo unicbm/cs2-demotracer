@@ -810,42 +810,39 @@ export function SettingsWorkspace({
         <SettingLine title={words.playoffBeta} description={words.playoffHelp} checked={playback.playoff} onChange={(playoff) => onPlaybackChange({ playoff })} />
         <details className="playback-settings-advanced">
           <summary>
-            <span><strong>{words.playbackAdvancedOverrides}</strong><small>{words.playbackAdvancedOverridesHelp}</small></span>
+            <strong>{words.playbackAdvancedOverrides}</strong>
             <ChevronIcon size={15} />
           </summary>
           <div className="playback-settings-advanced-body">
             <SettingSelectLine title={words.projectileAlignment} description={words.projectileAlignmentHelp} value={playback.projectileAlignment} onChange={(value) => onPlaybackChange({ projectileAlignment: value as PlaybackToggleOverride })}>
-              <option value="inherit">{words.useServerConfig}</option><option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
+              <option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
             </SettingSelectLine>
             <SettingSelectLine title={words.crosshairAlignment} description={words.crosshairAlignmentHelp} value={playback.crosshairAlignment} onChange={(value) => onPlaybackChange({ crosshairAlignment: value as PlaybackToggleOverride })}>
-              <option value="inherit">{words.useServerConfig}</option><option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
+              <option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
             </SettingSelectLine>
             <SettingSelectLine title={words.leftHandAlignment} description={words.leftHandAlignmentHelp} value={playback.leftHandAlignment} onChange={(value) => onPlaybackChange({ leftHandAlignment: value as PlaybackToggleOverride })}>
-              <option value="inherit">{words.useServerConfig}</option><option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
+              <option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
             </SettingSelectLine>
             <SettingSelectLine title={words.matchPresentation} description={words.matchPresentationHelp} value={playback.matchPresentation} onChange={(value) => onPlaybackChange({ matchPresentation: value as PlaybackMatchOverride })}>
-              <option value="inherit">{words.useServerConfig}</option><option value="off">{words.disabled}</option><option value="scoreboard">{words.scoreboardSync}</option>
+              <option value="off">{words.disabled}</option><option value="scoreboard">{words.scoreboardSync}</option>
             </SettingSelectLine>
             <SettingSelectLine title={words.partialReplay} description={words.partialReplayHelp} value={playback.allowPartial} onChange={(value) => onPlaybackChange({ allowPartial: value as PlaybackToggleOverride })}>
-              <option value="inherit">{words.useServerConfig}</option><option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
+              <option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
             </SettingSelectLine>
             <SettingSelectLine title={words.handoffMode} description={words.handoffModeHelp} value={playback.handoffMode} onChange={(value) => onPlaybackChange({ handoffMode: value as PlaybackHandoffMode })}>
-              <option value="inherit">{words.useServerConfig}</option>
               <option value="death_contact_c4">{words.handoffDeathContactC4}</option>
               <option value="death_or_contact">{words.handoffDeathOrContact}</option>
               <option value="death">{words.handoffDeath}</option>
               <option value="contact">{words.handoffContact}</option>
               <option value="off">{words.disabled}</option>
             </SettingSelectLine>
-            {playback.handoffMode !== "inherit" ? (
-              <SettingSelectLine title={words.handoffScope} description={words.handoffScopeHelp} value={playback.handoffScope} onChange={(value) => onPlaybackChange({ handoffScope: value as "slot" | "all" })}>
-                <option value="slot">{words.handoffScopeSlot}</option><option value="all">{words.handoffScopeAll}</option>
-              </SettingSelectLine>
-            ) : null}
-            <SettingSelectLine title={words.threat360} description={words.threat360Help} value={playback.threat360} onChange={(value) => onPlaybackChange({ threat360: value as PlaybackToggleOverride })}>
-              <option value="inherit">{words.useServerConfig}</option><option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
+            <SettingSelectLine title={words.handoffScope} description={words.handoffScopeHelp} value={playback.handoffScope} onChange={(value) => onPlaybackChange({ handoffScope: value as "slot" | "all" })}>
+              <option value="slot">{words.handoffScopeSlot}</option><option value="all">{words.handoffScopeAll}</option>
             </SettingSelectLine>
-            {playback.threat360 !== "inherit" ? (
+            <SettingSelectLine title={words.threat360} description={words.threat360Help} value={playback.threat360} onChange={(value) => onPlaybackChange({ threat360: value as PlaybackToggleOverride })}>
+              <option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
+            </SettingSelectLine>
+            {playback.threat360 === "on" ? (
               <div className="settings-advanced-inline">
                 <label>
                   <span><strong>{words.threat360Range}</strong><small>150–800</small></span>
