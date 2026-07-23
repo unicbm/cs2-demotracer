@@ -1116,8 +1116,15 @@ namespace BotController
             {
                 return false;
             }
+            const bool resumesHeldReplay =
+                p.playing.load(std::memory_order_acquire) &&
+                p.holdBeforeCursor.load(std::memory_order_relaxed) == startIndex;
             p.cursor.store(startIndex, std::memory_order_relaxed);
-            p.startCursor.store(startIndex, std::memory_order_relaxed);
+            // Freeze pre-roll is one continuous replay. Keep its original
+            // start cursor when releasing the hold so start-only input
+            // synthesis cannot replay an old attack edge at live start.
+            if (!resumesHeldReplay)
+                p.startCursor.store(startIndex, std::memory_order_relaxed);
             p.holdBeforeCursor.store(-1, std::memory_order_relaxed);
             InvalidateReplayWeaponCache(p);
             g_lastFinalViewCursor[slot] = -1;

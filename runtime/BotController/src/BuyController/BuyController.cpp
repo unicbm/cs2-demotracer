@@ -13,6 +13,8 @@
 #include <playerslot.h>
 #include <tier0/dbg.h>
 
+#include <array>
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -31,7 +33,7 @@ namespace BotController
         static bool g_installed = false;
         static std::string g_status = "not_attempted";
 
-        static uint8_t g_lastInitDelay[64] = {0};
+        static std::array<std::atomic<uint8_t>, 64> g_lastInitDelay{};
 
         static void IssueBuy(int slot, const char *alias)
         {
@@ -77,11 +79,24 @@ namespace BotController
             uint8_t init = 0;
             if (!SafeRead(self, tg::kBuy_InitialDelay, init))
                 return g_origOnUpdate(self, me);
-            if (init && !g_lastInitDelay[slot])
+            if (init &&
+                !g_lastInitDelay[slot].load(std::memory_order_relaxed))
                 ApplyPlan(self, slot);
-            g_lastInitDelay[slot] = init;
+            g_lastInitDelay[slot].store(init, std::memory_order_relaxed);
 
             g_origOnUpdate(self, me);
+        }
+
+        void ResetInitialDelayLatch(int slot)
+        {
+            if (slot >= 0 && slot < static_cast<int>(g_lastInitDelay.size()))
+                g_lastInitDelay[slot].store(0, std::memory_order_relaxed);
+        }
+
+        void ResetAllInitialDelayLatches()
+        {
+            for (auto &value : g_lastInitDelay)
+                value.store(0, std::memory_order_relaxed);
         }
 
         bool Install(const nlohmann::json &gd, const Sig::ModuleInfo &serverModule,
@@ -124,8 +139,7 @@ namespace BotController
             g_origOnUpdate = nullptr;
             g_installed = false;
             g_status = "not_attempted";
-            for (int i = 0; i < 64; ++i)
-                g_lastInitDelay[i] = 0;
+            ResetAllInitialDelayLatches();
         }
 
         const char *Status() { return g_status.c_str(); }

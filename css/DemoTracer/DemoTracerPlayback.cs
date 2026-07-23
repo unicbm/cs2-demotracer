@@ -204,9 +204,11 @@ public sealed partial class DemoTracerPlugin
         _sequenceActive = _sequenceIndex >= 0;
         _sequencePrepared = false;
         _sequencePreparedRound = -1;
+        _sequencePreparePollToken++;
         InvalidateFreezePreroll();
         _armed = false;
         _armedPrepared = false;
+        _armedPreparePollToken++;
         _armedManifestPath = string.Empty;
         _armedSourceRound = -1;
         _poolActive = false;
@@ -289,12 +291,14 @@ public sealed partial class DemoTracerPlugin
         _sequenceIndex = 0;
         _sequencePrepared = false;
         _sequencePreparedRound = -1;
+        _sequencePreparePollToken++;
         ResetPlayoffProgress();
         _poolActive = false;
         InvalidateFreezePreroll();
         _armed = true;
         _armedLoop = loop;
         _armedPrepared = false;
+        _armedPreparePollToken++;
         _armedManifestPath = manifestPath;
         _armedSourceRound = round;
         _armedLabel = $"source_round={round} manifest={manifestPath}";
@@ -327,7 +331,9 @@ public sealed partial class DemoTracerPlugin
                !normalized.Equals("no", StringComparison.OrdinalIgnoreCase);
     }
 
-    private bool PrepareNextSequenceRound(string reason)
+    private bool PrepareNextSequenceRound(
+        string reason,
+        bool pollIfPending = true)
     {
         if (_sequenceIndex < 0 || _sequenceIndex >= _sequenceRounds.Length)
         {
@@ -340,6 +346,15 @@ public sealed partial class DemoTracerPlugin
             return true;
 
         var round = _sequenceRounds[_sequenceIndex];
+        if (!ReplayPrefetchReady())
+        {
+            if (pollIfPending)
+                PollPendingSequencePreparation(round, reason);
+            Server.PrintToConsole(
+                $"dtr: sequence round {round} is still decoding off-thread; the game thread will not wait");
+            return false;
+        }
+
         var load = LoadRound(_sequenceManifestPath, round);
         if (!load.Ok)
         {
@@ -358,7 +373,49 @@ public sealed partial class DemoTracerPlugin
         return true;
     }
 
-    private bool PrepareArmedRound(string reason)
+    private void PollPendingSequencePreparation(int round, string reason)
+    {
+        var token = ++_sequencePreparePollToken;
+        void Poll()
+        {
+            Server.NextFrame(() =>
+            {
+                if (token != _sequencePreparePollToken ||
+                    !_sequenceActive ||
+                    _sequencePrepared ||
+                    _sequenceIndex < 0 ||
+                    _sequenceIndex >= _sequenceRounds.Length ||
+                    _sequenceRounds[_sequenceIndex] != round)
+                {
+                    return;
+                }
+
+                // Loading replay buffers after freeze time would mutate bot
+                // presentation during live play. Leave the completed prefetch
+                // cached for the next round_start instead.
+                if (!TryReadFreezePhaseRemaining(out _, out _))
+                    return;
+                if (!ReplayPrefetchReady())
+                {
+                    Poll();
+                    return;
+                }
+
+                if (PrepareNextSequenceRound(
+                        $"{reason} prefetch ready",
+                        pollIfPending: false))
+                {
+                    ScheduleFreezePrerollStart($"sequence round {round}");
+                }
+            });
+        }
+
+        Poll();
+    }
+
+    private bool PrepareArmedRound(
+        string reason,
+        bool pollIfPending = true)
     {
         if (!_armed)
             return false;
@@ -376,6 +433,15 @@ public sealed partial class DemoTracerPlugin
         var sourceRound = _armedSourceRound;
         var loop = _armedLoop;
         var label = _armedLabel;
+        if (!ReplayPrefetchReady())
+        {
+            if (pollIfPending)
+                PollPendingArmedPreparation(manifestPath, sourceRound, reason);
+            Server.PrintToConsole(
+                $"dtr: single source_round={sourceRound} is still decoding off-thread; the game thread will not wait");
+            return false;
+        }
+
         var load = LoadRound(manifestPath, sourceRound);
         if (!load.Ok)
         {
@@ -397,6 +463,47 @@ public sealed partial class DemoTracerPlugin
         TryStartDtrRoundBanner($"single_r{sourceRound}");
         Server.PrintToConsole($"[DTR OK] round_start: loaded SINGLE source_round={sourceRound} on {reason}: {load.Message}");
         return true;
+    }
+
+    private void PollPendingArmedPreparation(
+        string manifestPath,
+        int sourceRound,
+        string reason)
+    {
+        var token = ++_armedPreparePollToken;
+        void Poll()
+        {
+            Server.NextFrame(() =>
+            {
+                if (token != _armedPreparePollToken ||
+                    !_armed ||
+                    _armedPrepared ||
+                    _armedSourceRound != sourceRound ||
+                    !_armedManifestPath.Equals(
+                        manifestPath,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                if (!TryReadFreezePhaseRemaining(out _, out _))
+                    return;
+                if (!ReplayPrefetchReady())
+                {
+                    Poll();
+                    return;
+                }
+
+                if (PrepareArmedRound(
+                        $"{reason} prefetch ready",
+                        pollIfPending: false))
+                {
+                    ScheduleFreezePrerollStart(_armedLabel);
+                }
+            });
+        }
+
+        Poll();
     }
 
     private void StartPreparedSequenceRound()
@@ -434,6 +541,7 @@ public sealed partial class DemoTracerPlugin
         _sequenceIndex = 0;
         _sequencePrepared = false;
         _sequencePreparedRound = -1;
+        _sequencePreparePollToken++;
         ResetPlayoffProgress();
         InvalidateFreezePreroll();
         if (hadSequencePrefetch)
@@ -785,13 +893,21 @@ public sealed partial class DemoTracerPlugin
 
     private void StartPreparedPlayoffRound()
     {
-        if (!_playoffPrepared && _playoffPreparePending)
-            _ = CompletePendingPlayoffPreparation(waitForDecode: true, scheduleFreezePreroll: false);
+        if (!_playoffPrepared &&
+            _playoffPreparePending &&
+            ReplayPrefetchReady())
+        {
+            _ = CompletePendingPlayoffPreparation(
+                waitForDecode: false,
+                scheduleFreezePreroll: false);
+        }
 
         var extraRound = _playoffRoundIndex + 1;
         if (!_playoffPrepared)
         {
-            Server.PrintToConsole($"dtr: playoff skipped start for extra round {extraRound}: not prepared by round_freeze_end");
+            Server.PrintToConsole(
+                $"dtr: playoff skipped start for extra round {extraRound}: replay prefetch was not ready by round_freeze_end");
+            ClearPlayoffPendingPreparation(cancelDecode: true);
             _playoffRoundIndex++;
             return;
         }
@@ -869,6 +985,7 @@ public sealed partial class DemoTracerPlugin
         _sequenceIndex = 0;
         _sequencePrepared = false;
         _sequencePreparedRound = -1;
+        _sequencePreparePollToken++;
         ResetPlayoffProgress();
         _armed = false;
         _armedPrepared = false;
@@ -943,12 +1060,19 @@ public sealed partial class DemoTracerPlugin
 
     private void StartPreparedPoolRound()
     {
-        if (!_poolPrepared && _poolPreparePending)
-            _ = CompletePendingPoolPreparation(waitForDecode: true, scheduleFreezePreroll: false);
+        if (!_poolPrepared &&
+            _poolPreparePending &&
+            ReplayPrefetchReady())
+        {
+            _ = CompletePendingPoolPreparation(
+                waitForDecode: false,
+                scheduleFreezePreroll: false);
+        }
 
         if (!_poolPrepared)
         {
-            Server.PrintToConsole($"dtr: pool skipped start for round {_poolRoundIndex}: not prepared at round_start");
+            Server.PrintToConsole(
+                $"dtr: pool skipped start for round {_poolRoundIndex}: replay prefetch was not ready by round_freeze_end");
             _poolRoundIndex++;
             ClearPoolPreparedState();
             return;

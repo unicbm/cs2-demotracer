@@ -1,6 +1,7 @@
 // Per-slot bot buy plan table.
 
 #include "BuyControllerState.h"
+#include "BuyController.h"
 
 #include <array>
 #include <mutex>
@@ -30,10 +31,16 @@ namespace BotController
         {
             if (slot < 0 || slot >= kMaxSlots)
                 return;
-            std::lock_guard<std::mutex> lk(g_mu);
-            g_plans[slot].present = true;
-            g_plans[slot].plan.skip = skip;
-            g_plans[slot].plan.items = items;
+            {
+                std::lock_guard<std::mutex> lk(g_mu);
+                g_plans[slot].present = true;
+                g_plans[slot].plan.skip = skip;
+                g_plans[slot].plan.items = items;
+            }
+            // A plan can be replaced while BuyState is already inside its
+            // initial-delay phase. Treat the new plan as unobserved instead
+            // of inheriting the previous round's edge latch.
+            BuyControllerHooks::ResetInitialDelayLatch(slot);
         }
 
         bool Copy(int slot, BuyPlan &out)
@@ -51,15 +58,21 @@ namespace BotController
         {
             if (slot < 0 || slot >= kMaxSlots)
                 return;
-            std::lock_guard<std::mutex> lk(g_mu);
-            g_plans[slot] = Entry{};
+            {
+                std::lock_guard<std::mutex> lk(g_mu);
+                g_plans[slot] = Entry{};
+            }
+            BuyControllerHooks::ResetInitialDelayLatch(slot);
         }
 
         void ClearAll()
         {
-            std::lock_guard<std::mutex> lk(g_mu);
-            for (auto &e : g_plans)
-                e = Entry{};
+            {
+                std::lock_guard<std::mutex> lk(g_mu);
+                for (auto &e : g_plans)
+                    e = Entry{};
+            }
+            BuyControllerHooks::ResetAllInitialDelayLatches();
         }
 
         int ItemCount(int slot)

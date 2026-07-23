@@ -72,7 +72,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private readonly List<int> _loadedSlots = new();
     private readonly HashSet<int> _warmReplayBufferSlots = new();
     private readonly HashSet<int> _demoTracerOwnedSlots = new();
-    private readonly HashSet<int> _freezePrerollBrainLockedSlots = new();
+    private readonly HashSet<int> _freezePrerollSlots = new();
+    private readonly HashSet<int> _resumedFreezePrerollSlots = new();
     private readonly Dictionary<int, LoadedReplay> _loadedReplays = new();
     private readonly Dictionary<int, int> _lastEnsuredWeaponDef = new();
     private readonly Dictionary<int, int> _lastReplayWeaponDef = new();
@@ -120,6 +121,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private string _armedManifestPath = string.Empty;
     private int _armedSourceRound = -1;
     private bool _armedPrepared;
+    private int _armedPreparePollToken;
     private int _freezePrerollToken;
     private bool _freezePrerollStarted;
 
@@ -129,6 +131,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     private int _sequenceIndex;
     private bool _sequencePrepared;
     private int _sequencePreparedRound = -1;
+    private int _sequencePreparePollToken;
     private bool _poolActive;
     private string _poolManifestPath = string.Empty;
     private RoundPoolManifest? _poolManifest;
@@ -1542,7 +1545,6 @@ public sealed partial class DemoTracerPlugin : BasePlugin
     [GameEventHandler]
     public HookResult OnRoundFreezeEnd(EventRoundFreezeEnd @event, GameEventInfo info)
     {
-        ReleaseFreezePrerollBrainLocks();
         InvalidateFreezePreroll();
 
         if ((_sequenceActive || _poolActive || _armed || HasPlayoffSchedulingState()) && IsWarmupPeriod())
@@ -1551,6 +1553,13 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             StopAllState("warmup_block");
             return HookResult.Continue;
         }
+
+        var resumeLoop = !_sequenceActive &&
+                         !HasPlayoffSchedulingState() &&
+                         !_poolActive &&
+                         _armed &&
+                         _armedLoop;
+        ResumeFreezePrerollReplays(resumeLoop);
 
         if (_sequenceActive)
         {
@@ -3020,9 +3029,31 @@ public sealed partial class DemoTracerPlugin : BasePlugin
             }
 
             ReplayFileMetadata replayMetadata;
-            var loadedReplay = TryTakePrefetchedReplay(recPath, out var prefetchedReplay)
-                ? BotControllerNative.LoadReplay(slot, prefetchedReplay, out replayMetadata)
-                : BotControllerNative.LoadReplayFromFile(slot, recPath, out replayMetadata);
+            var prefetchStatus = TryTakePrefetchedReplay(recPath, out var prefetchedReplay);
+            bool loadedReplay;
+            switch (prefetchStatus)
+            {
+                case DtrReplayPrefetchTakeStatus.Success:
+                    loadedReplay = BotControllerNative.LoadReplay(
+                        slot,
+                        prefetchedReplay,
+                        out replayMetadata);
+                    break;
+                case DtrReplayPrefetchTakeStatus.Pending:
+                    error = $"{file.Side}:slot{slot}:{file.PlayerName} replay prefetch is still pending";
+                    return false;
+                case DtrReplayPrefetchTakeStatus.Failed:
+                    error = $"{file.Side}:slot{slot}:{file.PlayerName} replay prefetch failed validation";
+                    return false;
+                default:
+                    // Explicit/manual load paths do not necessarily create a
+                    // prefetch generation and retain their synchronous behavior.
+                    loadedReplay = BotControllerNative.LoadReplayFromFile(
+                        slot,
+                        recPath,
+                        out replayMetadata);
+                    break;
+            }
             if (!loadedReplay)
             {
                 error = $"{file.Side}:slot{slot}:{file.PlayerName} {recPath} ({BotControllerNative.LastLoadError})";
@@ -4238,16 +4269,11 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 if (!startedUntil)
                     return false;
 
-                // Freeze time has no useful contact state to warm. Replay
-                // injection remains active while native Update and Upkeep are
-                // suppressed until round_freeze_end releases this scoped lock.
-                if (!BotControllerNative.LockReplayBrain(slot))
-                {
-                    BotControllerNative.StopReplay(slot);
-                    return false;
-                }
-
-                _freezePrerollBrainLockedSlots.Add(slot);
+                // Replay injection already owns movement, buttons and view.
+                // Keep native Update/Upkeep alive so buy and shadow state can
+                // advance normally underneath the freeze-time pre-roll.
+                _freezePrerollSlots.Add(slot);
+                _resumedFreezePrerollSlots.Remove(slot);
                 _demoTracerOwnedSlots.Add(slot);
                 return true;
             }
@@ -4258,7 +4284,14 @@ public sealed partial class DemoTracerPlugin : BasePlugin
                 _ => 0,
             };
         }
-        _freezePrerollBrainLockedSlots.Remove(slot);
+        _freezePrerollSlots.Remove(slot);
+        if (anchor == ReplayStartAnchor.Live &&
+            _resumedFreezePrerollSlots.Remove(slot) &&
+            BotControllerNative.GetReplayState(slot).Playing)
+        {
+            _demoTracerOwnedSlots.Add(slot);
+            return true;
+        }
         var started = RegisterReplayPawnForSlot(slot) &&
                       BotControllerNative.StartReplayAt(slot, loop, startIndex);
         if (started)
@@ -4318,11 +4351,34 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         _freezePrerollStarted = false;
     }
 
-    private void ReleaseFreezePrerollBrainLocks()
+    private void ResumeFreezePrerollReplays(bool loop)
     {
-        foreach (var slot in _freezePrerollBrainLockedSlots.ToArray())
-            _ = BotControllerNative.UnlockReplayBrain(slot);
-        _freezePrerollBrainLockedSlots.Clear();
+        foreach (var slot in _freezePrerollSlots.ToArray())
+        {
+            if (_loadedReplays.TryGetValue(slot, out var replay) &&
+                replay.PlayStartTickIndex > 0 &&
+                BotControllerNative.GetReplayState(slot).Playing &&
+                BotControllerNative.StartReplayAt(
+                    slot,
+                    loop,
+                    replay.PlayStartTickIndex))
+            {
+                _resumedFreezePrerollSlots.Add(slot);
+                continue;
+            }
+
+            // Never leave a held freeze command active after the server enters
+            // live play. The normal next-frame start path may retry this slot.
+            _ = BotControllerNative.StopReplay(slot);
+            _resumedFreezePrerollSlots.Remove(slot);
+        }
+        _freezePrerollSlots.Clear();
+    }
+
+    private void ClearFreezePrerollReplayState()
+    {
+        _freezePrerollSlots.Clear();
+        _resumedFreezePrerollSlots.Clear();
     }
 
     private bool TryGetFreezePrerollSchedule(
@@ -4612,7 +4668,7 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         {
             CancelReplayPrefetch();
             InvalidateInitialSpawnAssignment();
-            ReleaseFreezePrerollBrainLocks();
+            ClearFreezePrerollReplayState();
             ClearReplayLeftHandDesiredLatches(forceNative: true);
             var hadReplayState = _loadedSlots.Count > 0 ||
                                  _demoTracerOwnedSlots.Count > 0 ||
@@ -4876,7 +4932,8 @@ public sealed partial class DemoTracerPlugin : BasePlugin
         string reason,
         ReplayReleaseKind releaseKind = ReplayReleaseKind.Immediate)
     {
-        _freezePrerollBrainLockedSlots.Remove(slot);
+        _freezePrerollSlots.Remove(slot);
+        _resumedFreezePrerollSlots.Remove(slot);
         var retainedViewmodel = (releaseKind is ReplayReleaseKind.Handoff or ReplayReleaseKind.Finished) &&
                                 RetainReplayBotViewmodelForRound(slot);
         if (!retainedViewmodel)

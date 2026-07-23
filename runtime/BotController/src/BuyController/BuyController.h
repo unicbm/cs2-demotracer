@@ -13,6 +13,8 @@ namespace BotController
         bool Install(const nlohmann::json &gd, const Sig::ModuleInfo &serverModule,
                      char *errorOut, size_t errorOutLen);
         void Remove();
+        void ResetInitialDelayLatch(int slot);
+        void ResetAllInitialDelayLatches();
 
         const char *Status();
         void *OnUpdateAddress();

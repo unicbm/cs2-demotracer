@@ -121,7 +121,9 @@ public sealed partial class DemoTracerPlugin
         }
     }
 
-    private bool TryTakePrefetchedReplay(string path, out DtrReplayFile replay)
+    private DtrReplayPrefetchTakeStatus TryTakePrefetchedReplay(
+        string path,
+        out DtrReplayFile replay)
         => _dtrReplayPrefetch.TryTake(path, out replay);
 
     private bool ReplayPrefetchReady()
@@ -175,9 +177,15 @@ internal sealed class DtrReplayPrefetch
     private const long MaxRetainedDecodedBytes = 64L * 1024 * 1024;
     private readonly object _sync = new();
     private readonly SemaphoreSlim _singleReader = new(1, 1);
+    private readonly Func<string, DtrReplayFile> _readReplay;
     private Dictionary<string, PrefetchEntry> _pending =
         new(StringComparer.OrdinalIgnoreCase);
     private PrefetchGeneration? _generation;
+
+    internal DtrReplayPrefetch(Func<string, DtrReplayFile>? readReplay = null)
+    {
+        _readReplay = readReplay ?? DtrReplayReader.Read;
+    }
 
     public void Begin(IEnumerable<string> paths)
     {
@@ -205,17 +213,25 @@ internal sealed class DtrReplayPrefetch
         previous?.Retire();
     }
 
-    public bool TryTake(string path, out DtrReplayFile replay)
+    public DtrReplayPrefetchTakeStatus TryTake(
+        string path,
+        out DtrReplayFile replay)
     {
         replay = default;
         PrefetchEntry entry;
         var fullPath = Path.GetFullPath(path);
         lock (_sync)
         {
-            if (!_pending.Remove(fullPath, out entry))
-                return false;
+            if (!_pending.TryGetValue(fullPath, out entry))
+                return DtrReplayPrefetchTakeStatus.Missing;
+            if (!entry.Task.IsCompleted)
+                return DtrReplayPrefetchTakeStatus.Pending;
+            _pending.Remove(fullPath);
         }
 
+        // DecodeAsync converts every exception into a completed failed result.
+        // This GetResult therefore only unwraps an already-completed task and
+        // can never park the game thread behind disk I/O or Brotli decoding.
         var result = entry.Task.GetAwaiter().GetResult();
         try
         {
@@ -223,11 +239,11 @@ internal sealed class DtrReplayPrefetch
                 !ReplayFileStamp.TryRead(fullPath, out var currentStamp) ||
                 currentStamp != result.Stamp)
             {
-                return false;
+                return DtrReplayPrefetchTakeStatus.Failed;
             }
 
             replay = result.Replay;
-            return true;
+            return DtrReplayPrefetchTakeStatus.Success;
         }
         finally
         {
@@ -268,7 +284,7 @@ internal sealed class DtrReplayPrefetch
                 if (!ReplayFileStamp.TryRead(path, out var before))
                     return DtrReplayDecodeResult.Failed;
 
-                var replay = await Task.Run(() => DtrReplayReader.Read(path), cancellationToken)
+                var replay = await Task.Run(() => _readReplay(path), cancellationToken)
                     .ConfigureAwait(false);
                 if (cancellationToken.IsCancellationRequested ||
                     !ReplayFileStamp.TryRead(path, out var after) ||
@@ -402,6 +418,14 @@ internal readonly record struct DtrReplayDecodeResult(
     long ReservedBytes)
 {
     public static DtrReplayDecodeResult Failed { get; } = new(false, default, default, 0);
+}
+
+internal enum DtrReplayPrefetchTakeStatus
+{
+    Missing,
+    Pending,
+    Failed,
+    Success,
 }
 
 internal readonly record struct ReplayFileStamp(long Length, long LastWriteTimeUtcTicks)
