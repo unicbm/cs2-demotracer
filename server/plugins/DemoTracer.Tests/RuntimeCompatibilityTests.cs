@@ -6,7 +6,8 @@ public sealed class RuntimeCompatibilityTests
     [InlineData("1.41.6.9", true)]
     [InlineData("1.41.7.0", true)]
     [InlineData("1.41.7.2", true)]
-    [InlineData("1.41.7.3", false)]
+    [InlineData("1.41.7.3", true)]
+    [InlineData("1.41.7.4", false)]
     [InlineData("unknown", false)]
     [InlineData("", false)]
     public void ManagedSchemaWritesFailClosedOutsideVerifiedPatchRange(
