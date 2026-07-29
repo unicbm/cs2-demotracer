@@ -36,10 +36,10 @@ session cookie, user ID, or an API key.
 Immediately before submission, the official same-origin `resync` route supplies
 the current inventory version and inventory document. The document remains
 inside the official-origin WebView and is used only to reject duplicates. The
-comparison includes item ID, seed, wear, StatTrak state, stickers, keychains,
-and patches while intentionally ignoring custom names and inventory-only state
-such as equip flags and timestamps. It also detects duplicates within the
-selected batch and inside storage units.
+comparison includes item ID, seed, wear, StatTrak state, custom name, stickers,
+keychains, and patches while intentionally ignoring inventory-only state such
+as equip flags and timestamps. It also detects duplicates within the selected
+batch and inside storage units.
 
 New `add` actions are submitted in one request and processed in order by the
 official sync route. A concurrent version conflict triggers one fresh resync,
@@ -51,10 +51,10 @@ Each added entry is a simulated replica, not the original owned item:
 owner/account identifiers, the original item ID, and the exact StatTrak counter
 are not copied. Inventory Simulator does not represent DemoTracer's separate
 sticker-scale evidence in this item shape, so that field is not included.
-When the demo SteamID resolves to a professional player, supported weapon and
-knife replicas use that player's English handle as their custom name. Other
-item types are left unchanged because Inventory Simulator accepts custom names
-only on name-tag-compatible item types.
+Supported weapon and knife replicas preserve the complete demo-backed custom
+name, including the Chinese fullwidth punctuation accepted by current cs2-lib
+and Inventory Simulator releases. Other item types remain unnamed because the
+simulator accepts custom names only on name-tag-compatible item types.
 
 Release files are served from the project's Cloudflare R2 custom domain. Update
 checks and downloads never include a demo name, demo content, replay content,

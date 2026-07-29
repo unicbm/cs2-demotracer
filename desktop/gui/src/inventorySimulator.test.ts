@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   inventorySimulatorItemForCosmetic,
-  inventorySimulatorItemWithNameTag,
   type InventorySimulatorCatalogResolvers,
 } from "./inventorySimulator.ts";
 import type { CosmeticEvidence } from "./types.ts";
@@ -23,7 +22,7 @@ describe("Inventory Simulator cosmetic handoff", () => {
       wear: 0.1234567,
       quality: 9,
       stattrakCounter: 321,
-      customName: "demo evidence",
+      customName: "千古风流今在此，万里功名莫放休",
       originalOwnerSteamId: "76561198000000000",
       itemId: "123456789",
       stickers: [{
@@ -49,7 +48,7 @@ describe("Inventory Simulator cosmetic handoff", () => {
       id: 307,
       seed: 42,
       wear: 0.123456,
-      nameTag: "demo evidence",
+      nameTag: "千古风流今在此，万里功名莫放休",
       statTrak: 0,
       stickers: {
         0: {
@@ -102,17 +101,4 @@ describe("Inventory Simulator cosmetic handoff", () => {
       [0, 1, 2, 3, 0],
     );
   });
-
-  it("overrides a demo custom name with a valid professional handle", () => {
-    assert.deepEqual(
-      inventorySimulatorItemWithNameTag({ id: 307, nameTag: "old name" }, " kyousuke "),
-      { id: 307, nameTag: "kyousuke" },
-    );
-  });
-
-  it("keeps the evidence item unchanged when a handle is not a valid name tag", () => {
-    const item = { id: 307, nameTag: "old name" };
-    assert.equal(inventorySimulatorItemWithNameTag(item, "<invalid>"), item);
-  });
-
 });

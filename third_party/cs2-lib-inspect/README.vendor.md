@@ -16,7 +16,7 @@ Upstream reference commit inspected for this port:
 `c3638890ecea3c97a4c2b7276e140b4a26abc882`.
 
 NameTag compatibility reference commit:
-`e8057c583e89d6b7a37f27e1cb7ebdbe94dd6238`.
+`96d45438ff0596fd3c960981ff821bd956629cc7`.
 
 No upstream TypeScript or generated protobuf source is vendored. The retained
 algorithm attribution and upstream MIT license are included here.

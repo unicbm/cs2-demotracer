@@ -78,16 +78,6 @@ export interface InventorySimulatorCatalogResolvers {
   keychainId: (keychainId: number, stickerId: number | null | undefined) => number | null;
 }
 
-export function inventorySimulatorItemWithNameTag(
-  item: InventorySimulatorItem,
-  nameTag: string,
-): InventorySimulatorItem {
-  const normalized = nameTag.trim();
-  return normalized.length > 0 && NAME_TAG_PATTERN.test(normalized)
-    ? { ...item, nameTag: normalized }
-    : item;
-}
-
 function validCatalogId(value: number | null): value is number {
   return value !== null && Number.isSafeInteger(value) && value > 0;
 }

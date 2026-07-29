@@ -16,13 +16,11 @@ import type { TextDictionary } from "../i18n";
 import {
   INVENTORY_SIMULATOR_BATCH_LIMIT,
   inventorySimulatorSelectionKey,
-  inventorySimulatorItemWithNameTag,
   type InventorySimulatorItem,
 } from "../inventorySimulator";
 import {
   type InventorySimulatorSelectionController,
 } from "../inventorySimulatorSelection";
-import { resolveProfessionalPlayer } from "../professionalPlayers";
 import type { CosmeticEvidence, Language, PlayerDetails, ViewmodelEvidence } from "../types";
 import type { CopyTarget } from "./TaskViews";
 import { CrosshairPreview } from "./CrosshairPreview";
@@ -651,18 +649,14 @@ export function PlayerDossier({
     resolveMusicKitCatalog(musicKitId, language) !== null
   ));
   const evidenceCount = cosmetics.length + musicKitIds.length;
-  const professionalHandle = resolveProfessionalPlayer(player.steamId)?.handle ?? null;
   const cosmeticInventoryEntries = cosmetics.map((cosmetic, index) => {
     const item = buildCosmeticInventorySimulatorItem(cosmetic, language);
-    const namedItem = item && professionalHandle && (cosmetic.kind === "weapon" || cosmetic.kind === "knife")
-      ? inventorySimulatorItemWithNameTag(item, professionalHandle)
-      : item;
     return {
       key: inventorySimulatorSelectionKey(
         player.steamId || playerKey,
         `cosmetic-${cosmetic.kind}-${cosmetic.itemId || cosmetic.itemDefIndex}-${cosmetic.paintKit}-${cosmetic.side || "both"}-${index}`,
       ),
-      item: namedItem && isInventorySimulatorItemCraftable(namedItem) ? namedItem : null,
+      item: item && isInventorySimulatorItemCraftable(item) ? item : null,
     };
   });
   const musicKitInventoryEntries = musicKitIds.map((musicKitId) => ({

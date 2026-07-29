@@ -26,10 +26,10 @@ function inventory(...items: Array<Record<string, unknown>>): string {
 }
 
 describe("Inventory Simulator duplicate filtering", () => {
-  it("ignores name tags and server-only timestamps", () => {
+  it("includes a demo custom name in duplicate identity", () => {
     const candidate = {
       id: 307,
-      nameTag: "kyousuke",
+      nameTag: "千古风流今在此，万里功名莫放休",
       seed: 42,
       wear: 0.123456,
       stickers: { 0: { id: 10_225, schema: 2, wear: 0, rotation: 0, x: 0, y: 0 } },
@@ -41,17 +41,30 @@ describe("Inventory Simulator duplicate filtering", () => {
       equippedT: true,
       stickers: { 0: { id: 10_225, schema: 2 } },
     }));
+    assert.equal(result.items.length, 1);
+    assert.equal(result.items[0], candidate);
+    assert.equal(result.skipped, 0);
+  });
+
+  it("still ignores inventory-only presentation fields", () => {
+    const candidate = { id: 307, nameTag: "中文，句号。分号；感叹！", seed: 42 };
+    const result = dedupe.selectNewItems([candidate], inventory({
+      ...candidate,
+      updatedAt: 123,
+      equippedT: true,
+    }));
     assert.equal(result.items.length, 0);
     assert.equal(result.skipped, 1);
   });
 
-  it("deduplicates the selected batch itself", () => {
+  it("keeps selected items that differ only by custom name", () => {
     const first = { id: 307, seed: 42, nameTag: "kyousuke" };
     const second = { id: 307, seed: 42, nameTag: "another name" };
     const result = dedupe.selectNewItems([first, second], null);
-    assert.equal(result.items.length, 1);
+    assert.equal(result.items.length, 2);
     assert.equal(result.items[0], first);
-    assert.equal(result.skipped, 1);
+    assert.equal(result.items[1], second);
+    assert.equal(result.skipped, 0);
   });
 
   it("keeps items whose cosmetic attributes differ", () => {

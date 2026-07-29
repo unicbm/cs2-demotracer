@@ -45,13 +45,14 @@
       const number = numeric(item[field]);
       if (number !== undefined) normalized[field] = number;
     }
+    if (typeof item.nameTag === "string" && item.nameTag.length > 0) normalized.nameTag = item.nameTag;
     const stickers = normalizedStickers(item.stickers);
     const keychains = normalizedKeychains(item.keychains);
     const patches = normalizedPatches(item.patches);
     if (stickers !== undefined) normalized.stickers = stickers;
     if (keychains !== undefined) normalized.keychains = keychains;
     if (patches !== undefined) normalized.patches = patches;
-    // Intentionally ignore nameTag plus inventory-only ownership/presentation fields.
+    // Intentionally ignore only inventory-specific ownership and presentation fields.
     return JSON.stringify(normalized);
   }
 
