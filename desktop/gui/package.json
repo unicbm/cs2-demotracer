@@ -1,0 +1,39 @@
+{
+  "name": "cs2-demotracer-desktop",
+  "private": true,
+  "version": "1.0.3",
+  "packageManager": "pnpm@11.9.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "test": "pnpm run check:test && node --test src/*.test.ts",
+    "check": "node scripts/check-tauri-config.mjs && node scripts/check-pro-steamid-catalog.mjs && tsc --noEmit --pretty false && tsc --noEmit --pretty false -p tsconfig.node.json",
+    "check:test": "tsc --noEmit --pretty false -p tsconfig.test.json",
+    "build:vite": "vite build",
+    "build": "pnpm run check && pnpm run build:vite",
+    "format:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml",
+    "icon:windows": "node scripts/generate-windows-icon.mjs",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build --bundles nsis"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-process": "2.3.1",
+    "@tauri-apps/plugin-updater": "2.10.1",
+    "csgo-sharecode": "5.0.0",
+    "flag-icons": "7.5.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4",
+    "@types/node": "^22.0.0",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "i18n-iso-countries": "7.14.0",
+    "typescript": "6.0.3",
+    "vite": "8.0.16"
+  }
+}

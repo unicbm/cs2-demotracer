@@ -1,33 +1,40 @@
 # Rust
-/converter/target/
+/desktop/converter/target/
 /target/
 
 # .NET / CounterStrikeSharp
-/css/bin/
-/css/obj/
-/css/**/bin/
-/css/**/obj/
+/server/plugins/bin/
+/server/plugins/obj/
+/server/plugins/**/bin/
+/server/plugins/**/obj/
 *.user
 *.suo
 
 # Native runtime builds
-/runtime/BotController/build/
-/runtime/BotController/out/
+/server/runtime/BotController/build/
+/server/runtime/BotController/out/
 /dist/
-/desktop/node_modules/
-/desktop/dist/
-/desktop/.vite/
-/desktop/coverage/
-/desktop/*.tsbuildinfo
-/desktop/src-tauri/gen/
-/desktop/src-tauri/target/
-/desktop/src-tauri/icons/android/
-/desktop/src-tauri/icons/ios/
-/desktop/src-tauri/icons/icon.icns
-/desktop/src-tauri/icons/icon.png
-/desktop/src-tauri/icons/64x64.png
-/desktop/src-tauri/icons/Square*Logo.png
-/desktop/src-tauri/icons/StoreLogo.png
+/desktop/gui/node_modules/
+/desktop/gui/.pnpm-store/
+/.pnpm-store/
+/desktop/gui/dist/
+/desktop/gui/.vite/
+/desktop/gui/coverage/
+/desktop/gui/*.tsbuildinfo
+/desktop/gui/src-tauri/gen/
+/desktop/gui/src-tauri/target/
+/desktop/gui/src-tauri/target-*/
+/.wrangler/
+/.release-secrets/
+/tooling/release/*.key
+/tooling/release/*.pem
+/desktop/gui/src-tauri/icons/android/
+/desktop/gui/src-tauri/icons/ios/
+/desktop/gui/src-tauri/icons/icon.icns
+/desktop/gui/src-tauri/icons/icon.png
+/desktop/gui/src-tauri/icons/64x64.png
+/desktop/gui/src-tauri/icons/Square*Logo.png
+/desktop/gui/src-tauri/icons/StoreLogo.png
 *.dll
 *.pdb
 *.lib
@@ -36,9 +43,11 @@
 *.exe
 
 # Local conversion data
+/.codex-tmp/
+/.external/
 /output/
 /tmp/
-/converter/output/
+/desktop/converter/output/
 *.dem
 *.dtr
 *.cs2rec

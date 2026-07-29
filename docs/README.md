@@ -1,26 +1,18 @@
-# CS2 DemoTracer Documentation
+# Documentation
 
-Use these pages for detailed setup, usage, command, and reference material.
+The root [README](../README.md) is the product overview and installation entry
+point. This directory contains implementation, operator, and protocol reference
+material.
 
-## Read First
+Contributor workflow and repository boundaries are documented in the root
+[CONTRIBUTING.md](../CONTRIBUTING.md).
 
-- [Usage](USAGE.md): converter CLI, GUI, pool conversion, and server
-  playback workflow.
-- [Commands](COMMANDS.md): `dtr_` command reference and runtime diagnostics.
-- [Dependencies](DEPENDENCIES.md): required server stack, bundled components,
-  optional integrations, and version boundaries.
-- [Limitations](LIMITATIONS.md): known behavior limits and edge cases.
-
-## Reference
-
-- [Format Contract](FORMAT.md): `.dtr` magic, versions, ABI gates, and binary
-  layout.
-- [Examples](../examples/README.md): small Python and Node.js wrappers around
-  the CLI.
-
-## Localized Docs
-
-- [简体中文入口](README.zh-Hans.md)
-- [中文使用说明](USAGE.zh-Hans.md)
-- [中文命令参考](COMMANDS.zh-Hans.md)
-- [中文限制说明](LIMITATIONS.zh-Hans.md)
+- [Development](DEVELOPMENT.md): architecture, source builds, validation, and
+  release packaging.
+- [Commands](COMMANDS.md): public playback commands and runtime defaults.
+- [Dependencies](DEPENDENCIES.md): required, bundled, optional, and conflicting
+  components.
+- [Format](FORMAT.md): `.dtr` layout, version gates, and decoder limits.
+- [Voice](VOICE.md): `.dtv` sidecars and voice replay behavior.
+- [Limitations](LIMITATIONS.md): known replay and presentation boundaries.
+- [Online behavior](ONLINE_SERVICES.md): network requests and local data policy.

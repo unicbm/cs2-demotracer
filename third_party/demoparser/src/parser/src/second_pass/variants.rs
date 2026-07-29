@@ -6,6 +6,7 @@ use itertools::Itertools;
 use memmap2::Mmap;
 use serde::ser::{SerializeMap, SerializeSeq, SerializeStruct};
 use serde::Serialize;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Variant {
@@ -22,7 +23,7 @@ pub enum Variant {
     U32Vec(Vec<u32>),
     U64Vec(Vec<u64>),
     Stickers(Vec<Sticker>),
-    InventoryWeaponCosmetics(Vec<InventoryWeaponCosmetic>),
+    InventoryWeaponCosmetics(Arc<[InventoryWeaponCosmetic]>),
     InputHistory(Vec<InputHistory>),
     UserCmdSubtickMoves(Vec<UserCmdSubtickMove>),
 }
@@ -95,7 +96,7 @@ pub enum VarVec {
     XYVec(Vec<Option<[f32; 2]>>),
     XYZVec(Vec<Option<[f32; 3]>>),
     Stickers(Vec<Vec<Sticker>>),
-    InventoryWeaponCosmetics(Vec<Vec<InventoryWeaponCosmetic>>),
+    InventoryWeaponCosmetics(Vec<Arc<[InventoryWeaponCosmetic]>>),
     InputHistory(Vec<Vec<InputHistory>>),
     UserCmdSubtickMoves(Vec<Vec<UserCmdSubtickMove>>),
 }
@@ -311,7 +312,7 @@ impl PropColumn {
                 }
                 None => {
                     for _ in 0..other.num_nones {
-                        v.push(vec![]);
+                        v.push(Arc::from([]));
                     }
                 }
                 _ => {}
@@ -565,7 +566,7 @@ impl VarVec {
             VarVec::XYZVec(f) => f.push(None),
             VarVec::U32Vec(f) => f.push(vec![]),
             VarVec::Stickers(f) => f.push(vec![]),
-            VarVec::InventoryWeaponCosmetics(f) => f.push(vec![]),
+            VarVec::InventoryWeaponCosmetics(f) => f.push(Arc::from([])),
             VarVec::InputHistory(f) => f.push(vec![]),
             VarVec::UserCmdSubtickMoves(f) => f.push(vec![]),
         }
@@ -632,7 +633,7 @@ impl Serialize for Variant {
             }
             Variant::InventoryWeaponCosmetics(v) => {
                 let mut s = serializer.serialize_seq(Some(v.len()))?;
-                for item in v {
+                for item in v.iter() {
                     s.serialize_element(&item)?;
                 }
                 s.end()
@@ -921,6 +922,7 @@ impl Serialize for OutputSerdeHelperStruct {
 #[cfg(test)]
 mod tests {
     use super::{InventoryWeaponCosmetic, PropColumn, VarVec};
+    use std::sync::Arc;
 
     #[test]
     fn extend_from_moves_nested_cosmetics_after_leading_nones() {
@@ -944,7 +946,9 @@ mod tests {
             num_nones: 2,
         };
         let mut source = PropColumn {
-            data: Some(VarVec::InventoryWeaponCosmetics(vec![vec![weapon.clone()]])),
+            data: Some(VarVec::InventoryWeaponCosmetics(vec![Arc::from([
+                weapon.clone(),
+            ])])),
             num_nones: 0,
         };
 
@@ -953,9 +957,9 @@ mod tests {
         assert_eq!(
             destination.data,
             Some(VarVec::InventoryWeaponCosmetics(vec![
-                Vec::new(),
-                Vec::new(),
-                vec![weapon],
+                Arc::from([]),
+                Arc::from([]),
+                Arc::from([weapon]),
             ]))
         );
         assert_eq!(

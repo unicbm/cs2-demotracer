@@ -1,28 +1,21 @@
-# CS2 DemoTracer
+# DemoTracer
 
 Trace CS2 demos into bot-executable route replays.
 
-**Language:** English | [简体中文](docs/README.zh-Hans.md)
+**CS2 DemoTracer** is an open-source Windows desktop application and matched
+server playback stack. It converts Counter-Strike 2 demo files into compact
+.dtr replays, then reproduces movement, view angles, command state, weapons,
+projectiles, optional voice, and selected presentation evidence through bots on
+a local CS2 server.
 
-> [!CAUTION]
-> **July 2026 CS2 update (1.41.6.9):** Server playback requires
-> CounterStrikeSharp v1.0.371 or newer. Ray-Trace users need v1.0.16 or newer.
-> The playback bundle now carries DemoTracer's maintained BotHider runtime with
-> the required Windows identity offsets. DemoTracer's Windows core replay path
-> has been locally verified. Demos using the newer delta user-command encoding
-> require converter v0.5.0 or newer; the `.dtr` format is unchanged.
+[简体中文](docs/README.zh-Hans.md) · [Documentation](docs/README.md) ·
+[Development](docs/DEVELOPMENT.md) ·
+[Latest release](https://github.com/unicbm/demotracer/releases/latest)
 
-CS2 DemoTracer converts CS2 `.dem` files into compact `.dtr` replay files, then
-plays those routes back through bots on a local CS2 server. The normal converter
-path uses separate packaged Windows x64 CLI and GUI downloads; Python, Node.js,
-Conda, and game-server plugins are not required for conversion. The desktop GUI
-uses Tauri and requires the Microsoft Edge WebView2 Runtime, which is normally
-present on current Windows 10 and Windows 11 installations.
+![CI](https://github.com/unicbm/demotracer/actions/workflows/ci.yml/badge.svg)
+![License](https://img.shields.io/badge/license-AGPL--3.0--only-blue)
 
 ## Demo
-
-First-person spectator view stays synchronized while bots replay converted demo
-movement, view angles, firing, weapon state, and projectile alignment.
 
 <table>
   <tr>
@@ -49,208 +42,104 @@ movement, view angles, firing, weapon state, and projectile alignment.
 
 ## What It Does
 
-- Converts CS2 match demos into `.dtr` route replay files, one player/side/round
-  at a time.
-- Optionally exports demo-backed in-game voice sidecars under `voice/roundXX.dtv`
-  when the source demo contains usable voice data.
-- Replays demo movement, view angles, crouch/jump state, firing, weapon switching,
-  and selected high-fidelity metadata through local CS2 bots.
-- Can align loadout, projectiles, crosshair, scoreboard presentation, and
-  demo-backed cosmetics when those modes are explicitly enabled.
+- Provides a bilingual Tauri and React workflow for opening demos, inspecting
+  rounds, selecting players, converting replays, and maintaining a local
+  replay library.
+- Writes deterministic .dtr v8 files and ABI 17 manifests through the Rust
+  converter linked directly into the desktop application. There is no separate
+  converter CLI in the supported 1.x product.
+- Replays movement, subtick input, view angles, weapons, projectiles, optional
+  demo voice, and demo-backed presentation evidence through the matched
+  CounterStrikeSharp and Metamod stack.
+- Installs, verifies, repairs, updates, and rolls back signed playback bundles
+  while preserving server-local configuration.
+- Keeps cosmetic, sticker, charm, agent, and scoreboard alignment explicit,
+  demo-backed, and default-off where appropriate.
 
-This is local replay tooling for research, content creation, and plugin
-development. It is not intended for matchmaking or cheating.
+DemoTracer is local replay tooling for research, content creation, analysis,
+and plugin development. It is not intended for matchmaking or cheating.
 
 ## Requirements
 
-- **Conversion:** either packaged Windows x64 converter download. No game-server
-  plugins are required.
-- **GUI runtime:** Microsoft Edge WebView2, normally included with current
-  Windows 10 and Windows 11 installations.
-- **Playback:** a local Windows x64 CS2 server with
-  [Metamod:Source](https://www.sourcemm.net/),
-  [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp), and the
-  DemoTracer playback bundle.
-- **Optional:** [Ray-Trace](https://github.com/FUNPLAY-pro-CS2/Ray-Trace), or a
-  compatible provider, for stricter handoff line-of-sight filtering.
+- Windows 10 or Windows 11 x64.
+- Microsoft Edge WebView2 for the desktop application.
+- For playback: a local Windows x64 CS2 server with
+  [Metamod:Source](https://www.sourcemm.net/) and
+  [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp).
 
-The playback bundle supplies DemoTracer's runtime and plugins, but not
-Metamod:Source, CounterStrikeSharp, or a RayTrace provider. See
-[`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md) for versions, bundled components,
-optional integrations, and compatibility boundaries.
+The desktop installer does not require Python, Node.js, Rust, or a local build
+toolchain. See [Dependencies and Compatibility](docs/DEPENDENCIES.md).
 
 ## Downloads
 
-Choose only what you need from the
-[latest GitHub release](https://github.com/unicbm/cs2-demotracer/releases/latest):
+Use the artifacts attached to the
+[latest official release](https://github.com/unicbm/demotracer/releases/latest):
 
-- `cs2-demotracer-cli-v<version>-windows-x64.zip`: the smallest converter
-  download for CLI, wizard, batch, and pool workflows.
-- `cs2-demotracer-gui-v<version>-windows-x64.zip`: the Tauri single-demo desktop
-  converter and local `manifest.json` replay archive browser.
-- `cs2-demotracer-playback-v<version>-windows-x64.zip`: the server-side
-  CounterStrikeSharp/Metamod plugins and runtimes for replaying `.dtr` files on
-  a local Windows x64 CS2 server.
+- cs2-demotracer-setup-vVERSION-windows-x64.exe: desktop installer.
+- cs2-demotracer-playback-vVERSION-windows-x64.zip: matched playback bundle.
+- Updater signatures and SHA-256 checksums for independent verification.
 
-The playback bundle is not a hosted or cloud service. Install it only on the
-local CS2 server where converted routes should be replayed. CLI and GUI users
-who only convert demos do not need it.
+Only artifacts published by unicbm and signed by the official release keys are
+official DemoTracer builds. See
+[Trademark and Official Build Policy](TRADEMARKS.md).
 
-## Quick Start
+## Source Build
 
-Convert and validate a demo:
+The maintained source target is Windows x64. Install Rust stable, Node.js 22,
+pnpm 11.9, .NET 10, and the Tauri Windows prerequisites, then run:
 
-```powershell
-cs2-demotracer.exe inspect --demo "<demo.dem>"
-cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>"
-cs2-demotracer.exe validate --input "<output-dir>"
-```
+    cd desktop\converter
+    cargo test --locked
 
-To export demo-backed in-game voice for automatic replay, add `--export-voice`:
+    cd ..\gui
+    pnpm install --frozen-lockfile
+    pnpm run check
+    pnpm test
+    cargo test --manifest-path src-tauri\Cargo.toml --locked
 
-```powershell
-cs2-demotracer.exe convert --demo "<demo.dem>" --output "<output-dir>" --export-voice
-```
+    cd ..\..
+    .\tooling\scripts\test-css.ps1
+    .\tooling\scripts\check-release-contract.ps1
 
-This writes `voice/roundXX.dtv` sidecars next to the converted round replay
-files. Not every demo contains voice; community, FACEIT, and 5E demos are more
-likely to include it. See [`docs/VOICE.md`](docs/VOICE.md).
+Native BotController and BotHider builds additionally require the local CS2
+Metamod and SDK toolchain. Detailed setup is documented in
+[Development](docs/DEVELOPMENT.md).
 
-Play a converted manifest on a local server:
+## Compatibility Contract
 
-```text
-css_plugins reload DemoTracer
-dtr_config_status
-dtr_preset 0x15; dtr_go seq "<output-dir>\<demo-id>\manifest.json" 0
-```
+The release truth source is
+[shared/contracts/playback-contract.v1.json](shared/contracts/playback-contract.v1.json).
 
-`0x15` enables weapon alignment, Steam identity, and automatic voice playback.
-The desktop GUI builds this preset from remembered playback switches.
-`seq` starts a sequence from a source round. Use
-`dtr_go round "<manifest.json>" 0` for a single source round.
-The GUI can also open an existing per-demo `manifest.json`, validate its
-referenced `.dtr` files, select a source round, and build either command without
-requiring the original `.dem`.
+| Contract | Supported value |
+| --- | --- |
+| .dtr writer | v8 |
+| .dtr reader | v3-v8 |
+| Manifest ABI | 17 |
+| BotController ABI | 16, minor 33+ |
+| BotHider API | 1 |
+| DemoTracer companion API | 6 |
 
-The GUI starts in a local replay library. On Windows its first-run default is
-`Documents\CS2 DemoTracer\Library`; an existing user-selected library is kept,
-and additional archive folders can be indexed alongside the main export folder.
-New GUI conversions are grouped as
-`<library>\<map>\<readable-name>--<hash12>\`, while the complete demo SHA-256
-remains the identity. Each archive includes a pretty-printed desktop
-`demo-info.json` catalog summary next to the unchanged, portable ABI 17
-`manifest.json`, plus a small `demo-source.json` local provenance pointer. Both
-desktop sidecars can contain the original local `.dem` path; that pointer is
-never part of the playback manifest or its ABI.
-The library lightly indexes these files; `.dtr` payloads are read only after a
-replay is opened for full validation. Library cards show the map,
-score evidence, teams, players, K/D/A, full demo duration, inferred platform,
-approximate source-file time when known, archive time, and ABI/format, CS2
-patch, and converter versions. Platform inference prefers the header server
-name and labels filename-only matches as possible sources. CS2 demos do not
-expose a reliable absolute match time, so the GUI labels file time as
-approximate rather than presenting it as the match date. Old archives without a
-current sidecar do not present their round-start scoreboard snapshot as a final
-score. Metadata repair first reuses each remembered source path and verifies its
-full SHA-256. It asks for a relocated file or search folder only when that local
-pointer no longer works, then updates the local sidecars without rewriting
-`.dtr` files. **Choose rounds again** uses the same verified pointer, so an
-archive can return directly to conversion without asking for its source from
-scratch. **Organize old
-archives** validates scattered replay folders, copies each unique demo into the
-map-grouped main library, and leaves every source folder untouched.
-
-More commands:
-
-- Converter usage: [`docs/USAGE.md`](docs/USAGE.md)
-- Voice export and replay: [`docs/VOICE.md`](docs/VOICE.md)
-- Playback commands: [`docs/COMMANDS.md`](docs/COMMANDS.md)
-- Examples: [`examples/`](examples/)
-
-## Cosmetic Alignment and GSLT Safety
-
-> [!IMPORTANT]
-> Cosmetic, custom-name, sticker, charm, and agent model metadata are never exported by
-> default. Normal `convert` output is the recommended safe path.
->
-> Export that metadata only when you intentionally pass `--export-cosmetics`,
-> `--acknowledge-cosmetic-gslt-risk`, and
-> `--accept-cosmetic-export-disclaimer`; stickers also require
-> `--export-stickers`, and charms also require `--export-charms`. Runtime
-> cosmetic, agent, sticker, and charm alignment are also default-off and consume
-> only demo evidence from the manifest.
-> Each exported weapon, knife, or glove cosmetic also receives a deterministic
-> `inspect.command` and, when the Steam protocol length limit permits,
-> `inspect.steam_url`. These are self-contained local CS2 preview payloads; they
-> do not claim that the item is still present in a Steam inventory or market
-> listing. Sticker and charm data appear in the preview only when their matching
-> export flags were enabled.
-> When `cosmetics.agent` evidence exists and agent alignment is enabled,
-> DemoTracer changes that safe replay bot slot to the demo-backed agent model.
->
-> This feature is for local/private replay fidelity. Bot-only inventory mutation
-> is not a Valve policy exemption if humans can observe, control, possess,
-> inspect, or otherwise use bots with simulated items. On dedicated, community,
-> or public servers, treat cosmetic/inventory simulation as operator-risk under
-> Valve's [Game Server Operation Guidelines](https://blog.counter-strike.net/server_guidelines/)
-> and Steam [game server account](https://steamcommunity.com/dev/managegameservers)
-> rules.
-
-## `.dtr` Format Contract
-
-`.dtr` is the native replay file consumed by DemoTracer's CounterStrikeSharp
-loader and BotController runtime. Detailed binary layout is documented in
-[`docs/FORMAT.md`](docs/FORMAT.md).
-
-- Magic: `CSDTRREC`
-- Current writer format: `.dtr` v7
-- Runtime reader support: v3 through v7
-- Current manifest ABI: 17
-- Current BotController native ABI: 16
-- Current DemoTracer companion API: 6
-- Endianness: little-endian
-- Current v7 layout: section container with required movement snapshot, tick
-  metadata, and subtick sections; optional projectile, high-fidelity metadata,
-  command-frame, and movement-extra sections.
-- Maintained Rust/Desktop and C# readers enforce bounded file, section, decoded
-  byte, item-count, and per-tick subtick limits before allocating or decoding.
-
-The format is lossless for stored replay evidence: movement snapshots,
-projectile events, high-fidelity metadata, subtick records, and command-frame
-data retain their original `f32`, integer, or UTF-8 JSON values. Detailed binary
-layout is documented in [`docs/FORMAT.md`](docs/FORMAT.md).
-
-## Documentation
-
-- Docs index: [`docs/README.md`](docs/README.md)
-- Usage: [`docs/USAGE.md`](docs/USAGE.md)
-- Playback commands: [`docs/COMMANDS.md`](docs/COMMANDS.md)
-- Dependencies: [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md)
-- File format: [`docs/FORMAT.md`](docs/FORMAT.md)
-- Limitations: [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md)
+See [.dtr Format Contract](docs/FORMAT.md) for the binary layout and limits.
 
 ## Repository Layout
 
-- `converter/`: Rust conversion core, CLI, local Rust API, and pool conversion.
-- `desktop/`: Tauri/React single-demo converter and replay archive GUI.
-- `runtime/BotController/`: CS2 Metamod runtime used by the playback bundle.
-- `runtime/BotHider/`: DemoTracer-maintained BotHider native/CSS runtime and
-  versioned presentation-lease API.
-- `css/DemoTracer/`: CounterStrikeSharp playback plugin.
-- `css/DemoTracerApi/`: companion-plugin API contract.
-- `docs/`: maintained usage, reference, format, and dependency docs.
-- `examples/`: small Python and Node.js CLI integration examples.
-- `third_party/`: vendored third-party source and license files.
+- desktop/gui: Tauri and React application plus the Rust desktop backend.
+- desktop/converter: Rust parsing, analysis, synthesis, .dtr writing, manifests,
+  and validation.
+- server/plugins: CounterStrikeSharp playback orchestration and companion API.
+- server/runtime: maintained BotController and BotHider native runtimes.
+- shared: versioned compatibility contracts and generated runtime metadata.
+- third_party: vendored dependencies, provenance, and license notices.
+- tooling: validation, packaging, signing, and release automation.
 
 ## Credits and License
 
-CS2 DemoTracer builds on
+DemoTracer builds on
 [CS2-Bot-Controller](https://github.com/XBribo/CS2-Bot-Controller),
 [CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider),
 [demoparser](https://github.com/LaihoE/demoparser), Metamod:Source, and
-CounterStrikeSharp. [minidemo-encoder](https://github.com/csgowiki/minidemo-encoder)
-provided historical workflow inspiration.
+CounterStrikeSharp.
 
-The project is AGPL-3.0-only; see [`LICENSE`](LICENSE). Vendored components keep
-their upstream licenses and attribution under `third_party/` and
-`runtime/BotHider/`.
+First-party source is licensed under **AGPL-3.0-only**. Vendored components and
+datasets retain their recorded licenses and attribution. The code license does
+not grant rights to misrepresent modified builds as official releases.

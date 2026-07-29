@@ -491,20 +491,38 @@ impl<'a> SecondPassParser<'a> {
                 svc_CreateStringTable => self.parse_create_stringtable(msg_bytes),
                 svc_UpdateStringTable => self.update_string_table(msg_bytes),
                 svc_ServerInfo => self.parse_server_info(msg_bytes),
-                CS_UM_SendPlayerItemDrops => self.parse_item_drops(msg_bytes),
-                CS_UM_EndOfMatchAllPlayersData => self.parse_player_end_msg(msg_bytes),
-                UM_SayText2 => self.create_custom_event_chat_message(msg_bytes),
-                UM_SayText => self.create_custom_event_server_message(msg_bytes),
-                net_SetConVar => self.create_custom_event_parse_convars(msg_bytes),
+                CS_UM_SendPlayerItemDrops if self.decode_plan.item_drops => {
+                    self.parse_item_drops(msg_bytes)
+                }
+                CS_UM_EndOfMatchAllPlayersData if self.decode_plan.end_of_match => {
+                    self.parse_player_end_msg(msg_bytes)
+                }
+                UM_SayText2 if self.decode_plan.game_events => {
+                    self.create_custom_event_chat_message(msg_bytes)
+                }
+                UM_SayText if self.decode_plan.game_events => {
+                    self.create_custom_event_server_message(msg_bytes)
+                }
+                net_SetConVar if self.decode_plan.game_events => {
+                    self.create_custom_event_parse_convars(msg_bytes)
+                }
                 CS_UM_PlayerStatsUpdate => self.parse_player_stats_update(msg_bytes),
-                CS_UM_ServerRankUpdate => self.create_custom_event_rank_update(msg_bytes),
+                CS_UM_ServerRankUpdate if self.decode_plan.game_events => {
+                    self.create_custom_event_rank_update(msg_bytes)
+                }
                 net_Tick => self.parse_net_tick(msg_bytes),
                 svc_ClearAllStringTables => self.clear_stringtables(),
-                svc_VoiceData => self.parse_voice_data(msg_bytes),
-                GE_Source1LegacyGameEvent => self.parse_game_event(msg_bytes, &mut wrong_order_events),
+                svc_VoiceData if self.decode_plan.voice_data => self.parse_voice_data(msg_bytes),
+                GE_Source1LegacyGameEvent if self.decode_plan.game_events => {
+                    self.parse_game_event(msg_bytes, &mut wrong_order_events)
+                }
                 svc_UserCmds => self.parse_user_cmd(msg_bytes),
-                GE_FireBulletsId => self.create_custom_event_fire_bullets(msg_bytes),
-                GE_PlayerBulletHitId => self.create_custom_event_player_bullet_hit(msg_bytes),
+                GE_FireBulletsId if self.decode_plan.game_events => {
+                    self.create_custom_event_fire_bullets(msg_bytes)
+                }
+                GE_PlayerBulletHitId if self.decode_plan.game_events => {
+                    self.create_custom_event_player_bullet_hit(msg_bytes)
+                }
                 _ => Ok(()),
             };
             ok?

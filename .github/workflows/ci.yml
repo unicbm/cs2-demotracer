@@ -12,17 +12,37 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Read professional identity source pin
+        id: pro-steamid-source
+        shell: pwsh
+        run: |
+          $source = Get-Content desktop\gui\pro-steamid-catalog-source.json -Raw | ConvertFrom-Json
+          "commit=$($source.commit)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Checkout professional identity source
+        uses: actions/checkout@v4
+        with:
+          repository: unicbm/CS2-pro-steamid-lib
+          ref: ${{ steps.pro-steamid-source.outputs.commit }}
+          path: .external/CS2-pro-steamid-lib
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+          run_install: false
+
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: desktop/package-lock.json
+          cache: pnpm
+          cache-dependency-path: desktop/gui/pnpm-lock.yaml
 
       - name: Install .NET
         uses: actions/setup-dotnet@v4
@@ -30,59 +50,64 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Check converter formatting
-        working-directory: converter
+        working-directory: desktop/converter
         run: cargo fmt --check
 
       - name: Check converter workspace
-        working-directory: converter
+        working-directory: desktop/converter
         run: cargo check --workspace --locked
 
-      - name: Check converter CLI binary
-        working-directory: converter
-        run: cargo check --locked --no-default-features --features cli,demoparser --bin cs2-demotracer
-
       - name: Test converter
-        working-directory: converter
+        working-directory: desktop/converter
         run: cargo test --locked
 
+      - name: Check release contract
+        shell: pwsh
+        run: tooling\scripts\check-release-contract.ps1
+
       - name: Install desktop dependencies
-        working-directory: desktop
-        run: npm.cmd ci
+        working-directory: desktop/gui
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate professional identity snapshot
+        run: node desktop\gui\scripts\import-pro-steamid-catalog.mjs .external\CS2-pro-steamid-lib
 
       - name: Check desktop frontend
-        working-directory: desktop
-        run: npm.cmd run check
+        working-directory: desktop/gui
+        run: pnpm run check
+
+      - name: Test desktop frontend state
+        working-directory: desktop/gui
+        run: pnpm test
 
       - name: Build desktop frontend
-        working-directory: desktop
-        run: npm.cmd run build
+        working-directory: desktop/gui
+        run: pnpm run build:vite
 
       - name: Check desktop Rust formatting
-        working-directory: desktop/src-tauri
+        working-directory: desktop/gui/src-tauri
         run: cargo fmt --check
 
       - name: Test desktop Rust backend
-        working-directory: desktop/src-tauri
+        working-directory: desktop/gui/src-tauri
         run: cargo test --locked
 
       - name: Build desktop GUI
-        working-directory: desktop
-        run: npm.cmd run tauri:build -- --target x86_64-pc-windows-msvc -- --locked
+        working-directory: desktop/gui
+        run: pnpm run tauri:build --target x86_64-pc-windows-msvc -- --locked
 
-      - name: Build CSS plugin
-        run: dotnet build css\DemoTracer\DemoTracer.csproj -c Release
-
-      - name: Test CSS command policy
-        run: dotnet test css\DemoTracer.Tests\DemoTracer.Tests.csproj -c Release
+      - name: Build and test CSS plugin
+        shell: pwsh
+        run: tooling\scripts\test-css.ps1
 
       - name: Configure native replay safety tests
-        run: cmake -S runtime\BotController\tests -B runtime\BotController\out\replay-safety-ci -A x64
+        run: cmake -S server\runtime\BotController\tests -B server\runtime\BotController\out\replay-safety-ci -A x64
 
       - name: Build native replay safety tests
-        run: cmake --build runtime\BotController\out\replay-safety-ci --config Release
+        run: cmake --build server\runtime\BotController\out\replay-safety-ci --config Release
 
       - name: Test native replay safety
-        run: ctest --test-dir runtime\BotController\out\replay-safety-ci -C Release --output-on-failure
+        run: ctest --test-dir server\runtime\BotController\out\replay-safety-ci -C Release --output-on-failure
 
       - name: Check public-source hygiene
         shell: pwsh
@@ -97,13 +122,13 @@ jobs:
             exit 1
           }
 
-          $browserTargetDir = Join-Path "converter" ("wa" + "sm")
+          $browserTargetDir = Join-Path "desktop\converter" ("wa" + "sm")
           if (Test-Path $browserTargetDir) {
             Write-Error "unexpected browser-target converter directory: $browserTargetDir"
             exit 1
           }
 
-          $hits = git grep -n -E 'C:\\Users\\|[Ww][Aa][Ss][Mm]|[Cc]urrent writer format is `\.dtr` v4' -- . ':!converter/Cargo.lock' ':!desktop/src-tauri/Cargo.lock' ':!desktop/package-lock.json'
+          $hits = git grep -n -E 'C:\\Users\\|[Ww][Aa][Ss][Mm]|[Cc]urrent writer format is `\.dtr` v4' -- . ':!desktop/converter/Cargo.lock' ':!desktop/gui/src-tauri/Cargo.lock' ':!desktop/gui/pnpm-lock.yaml'
           if ($LASTEXITCODE -eq 1) {
             exit 0
           }
@@ -125,24 +150,24 @@ jobs:
 
       - name: Configure production replay ABI fuzz target
         run: >-
-          cmake -S runtime/BotController/tests
-          -B runtime/BotController/out/replay-abi-fuzz-ci
+          cmake -S server/runtime/BotController/tests
+          -B server/runtime/BotController/out/replay-abi-fuzz-ci
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DCMAKE_CXX_COMPILER=clang++
           -DBOTCONTROLLER_BUILD_FUZZER=ON
 
       - name: Build native replay tests and fuzz target
-        run: cmake --build runtime/BotController/out/replay-abi-fuzz-ci --config RelWithDebInfo
+        run: cmake --build server/runtime/BotController/out/replay-abi-fuzz-ci --config RelWithDebInfo
 
       - name: Test native replay safety under Clang
         run: >-
-          ctest --test-dir runtime/BotController/out/replay-abi-fuzz-ci
+          ctest --test-dir server/runtime/BotController/out/replay-abi-fuzz-ci
           --output-on-failure
 
       - name: Smoke fuzz production replay ABI validator
         timeout-minutes: 2
         run: >-
-          runtime/BotController/out/replay-abi-fuzz-ci/BotControllerReplayAbiFuzz
+          server/runtime/BotController/out/replay-abi-fuzz-ci/BotControllerReplayAbiFuzz
           -runs=2000
           -max_len=4096
           -rss_limit_mb=1024
