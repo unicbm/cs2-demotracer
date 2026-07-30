@@ -57,12 +57,16 @@ chat settings.
 
 ```text
 dtr_align [status|default|full|handoff_safe|off]
-dtr_align <weapons|projectiles|crosshair|left_hand> <on|off>
+dtr_align <weapons|projectiles|crosshair|left_hand|balance> <on|off>
 ```
 
-`default` and `full` enable all four components. `handoff_safe` disables only
-left-hand desired writes. Weapon alignment applies demo loadouts and active
-weapon switching; projectile alignment consumes demo-backed throw evidence.
+`default` enables weapons, projectiles, crosshair, and left-hand desired.
+`full` additionally enables the default-off round-start balance write.
+`handoff_safe` disables left-hand desired and balance writes. Weapon alignment
+applies demo loadouts and active weapon switching; projectile alignment consumes
+demo-backed throw evidence. Balance alignment writes only the demo-backed
+`m_iAccount` value once when the corresponding DTR round starts; missing
+evidence is left untouched.
 
 Advanced projectile diagnostics:
 
@@ -153,6 +157,7 @@ JSON comments and trailing commas.
 | --- | --- |
 | Identity | `steam` |
 | Fidelity | weapons, projectiles, crosshair, and left-hand on |
+| Round-start balance | off |
 | Match presentation | off |
 | Cosmetics | off |
 | Partial replay | on |

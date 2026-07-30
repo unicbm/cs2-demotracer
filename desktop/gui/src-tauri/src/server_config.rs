@@ -31,7 +31,8 @@ const BUILTIN_DEFAULT_CONFIG: &str = r#"{
   },
   "fidelity": {
     "preset": "default",
-    "crosshair": true
+    "crosshair": true,
+    "balance": false
   },
   "match": {
     "preset": "off"
@@ -1010,6 +1011,7 @@ fn validate_fidelity(
         "projectiles",
         "crosshair",
         "left_hand_desired",
+        "balance",
     ];
     collect_unknown_keys("$.fidelity", section, &fields, unknown);
     validate_string_enum(
@@ -1028,7 +1030,13 @@ fn validate_fidelity(
         errors,
         warnings,
     );
-    for field in ["weapons", "projectiles", "crosshair", "left_hand_desired"] {
+    for field in [
+        "weapons",
+        "projectiles",
+        "crosshair",
+        "left_hand_desired",
+        "balance",
+    ] {
         validate_bool(section, field, &format!("$.fidelity.{field}"), errors);
     }
 }
@@ -1321,6 +1329,7 @@ fn canonicalize_known_field_names(value: &mut Value) {
             "projectiles",
             "crosshair",
             "left_hand_desired",
+            "balance",
         ],
     );
     canonicalize_section(root, "match", &["preset", "scoreboard"]);
@@ -1526,6 +1535,22 @@ mod tests {
             .warnings
             .iter()
             .any(|issue| issue.code == "legacy_align_overridden"));
+    }
+
+    #[test]
+    fn validation_accepts_fidelity_balance_as_a_known_boolean() {
+        let valid = validate_config_text(r#"{"fidelity":{"balance":true}}"#);
+        assert!(valid.valid);
+        assert!(!valid
+            .unknown_paths
+            .contains(&"$.fidelity.balance".to_string()));
+
+        let invalid = validate_config_text(r#"{"fidelity":{"balance":"yes"}}"#);
+        assert!(!invalid.valid);
+        assert!(invalid
+            .errors
+            .iter()
+            .any(|issue| issue.path == "$.fidelity.balance"));
     }
 
     #[test]

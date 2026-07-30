@@ -296,7 +296,10 @@ section ID `4`.
 
 The top-level object contains:
 
-- `schema_version`: current metadata schema is `3`.
+- `schema_version`: current metadata schema is `4`.
+- `round_start_balance`: optional demo-backed `m_iAccount` value from the first
+  player row at or after the source round's live-start tick. Absence means no
+  balance evidence and must never be interpreted as zero.
 - `events`: player-scoped high-fidelity events.
 - `inventory_snapshots`: inventory state after inventory changes.
 - `projectiles`: player-scoped projectile effect metadata. This supplements

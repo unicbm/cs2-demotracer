@@ -258,6 +258,32 @@ public sealed class DtrReplayReaderLimitsTests : IDisposable
     }
 
     [Fact]
+    public void ReadsRoundStartBalanceFromHighFidelitySchemaFour()
+    {
+        var metadata = Encoding.UTF8.GetBytes(
+            """{"schema_version":4,"round_start_balance":5250,"events":[],"inventory_snapshots":[],"projectiles":[]}""");
+        var path = WriteFile(writer =>
+        {
+            WriteCompleteHeader(
+                writer,
+                version: 7,
+                tickCount: 0,
+                subtickCount: 0,
+                metadataJsonLength: (uint)metadata.Length);
+            writer.Write(4U);
+            WriteSection(writer, sectionId: 1, codec: CodecNone, elementCount: 0, payload: []);
+            WriteSection(writer, sectionId: 2, codec: CodecNone, elementCount: 0, payload: []);
+            WriteSection(writer, sectionId: 4, codec: CodecNone, elementCount: 1, payload: metadata);
+            WriteSection(writer, sectionId: 5, codec: CodecNone, elementCount: 0, payload: []);
+        });
+
+        var replay = DtrReplayReader.Read(path);
+
+        Assert.Equal(4, replay.HighFidelity.SchemaVersion);
+        Assert.Equal(5_250U, replay.HighFidelity.RoundStartBalance);
+    }
+
+    [Fact]
     public void RejectsTopLevelTrailingBytes()
     {
         var path = WriteFile(writer =>

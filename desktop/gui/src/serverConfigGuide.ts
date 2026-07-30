@@ -60,6 +60,7 @@ export const SERVER_CONFIG_GUIDE: readonly ServerConfigGuideField[] = [
   booleanField("fidelity.projectiles", "fidelity", undefined, "投掷物与 Demo 证据对齐。", "Align projectiles to demo evidence."),
   booleanField("fidelity.crosshair", "fidelity", true, "观战时同步并在结束后恢复准星。", "Sync the spectator crosshair and restore it afterwards."),
   booleanField("fidelity.left_hand_desired", "fidelity", undefined, "写入 Demo 记录的左右手 desired 状态。", "Write the demo-recorded left-hand desired state."),
+  booleanField("fidelity.balance", "fidelity", false, "在对应 DTR 回合开始时把 replay Bot 余额同步为 Demo 记录值。", "Set each replay bot's balance from demo evidence when its DTR round starts."),
 
   enumField("match.preset", "match", ["off", "scoreboard", "full"], "off", "本地赛事展示预设，不改变回放移动。", "Local match-presentation preset; it does not change replay movement."),
   booleanField("match.scoreboard", "match", undefined, "尽力同步 KDA、MVP、队名与比分。", "Best-effort KDA, MVP, team-name, and score synchronization."),
