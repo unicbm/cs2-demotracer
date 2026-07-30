@@ -78,6 +78,13 @@ an inventory/market asset identifier. Because this is additive derived JSON
 that old readers ignore, it does not change the `.dtr` format or manifest ABI
 17.
 
+Glove evidence is retained when the demo exposes an exact item definition,
+paint kit, and wear but omits the texture seed. Such entries carry
+`"seed": 0, "seed_known": false`; the zero is only a backward-compatible
+transport placeholder. The playback plugin clears prior glove attributes and
+writes the known fields without writing a texture-seed attribute. No inspect
+payload is generated for partial glove evidence.
+
 ## Header
 
 | Field | Type | Notes |

@@ -165,6 +165,14 @@ public sealed class BotRandomizerCosmeticLeaseTests
             DemoTracerCosmeticWriteField.Gloves));
     }
 
+    [Fact]
+    public void LegacyCosmeticsKeepSeedEvidenceWhileExplicitlyUnknownSeedsDoNot()
+    {
+        Assert.True(DemoTracerPlugin.HasCosmeticSeedEvidence(null));
+        Assert.True(DemoTracerPlugin.HasCosmeticSeedEvidence(true));
+        Assert.False(DemoTracerPlugin.HasCosmeticSeedEvidence(false));
+    }
+
     private static BotRandomizerCosmeticWriteClaim? BuildClaim(
         DemoTracerBotRandomizerClaimEvidence evidence)
         => DemoTracerPlugin.BuildBotRandomizerWriteClaim(

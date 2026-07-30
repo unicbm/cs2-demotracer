@@ -6829,6 +6829,7 @@ mod tests {
                 item_def_index: Some(500),
                 paint_kit: 1,
                 seed: 2,
+                seed_known: None,
                 wear: 0.1,
                 custom_name: None,
                 inspect: None,
