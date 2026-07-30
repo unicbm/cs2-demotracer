@@ -27,7 +27,7 @@ pub(crate) const REQUIRED_RECEIPT_PATHS: &[&str] = &[
     "addons/metamod/bothider.vdf",
     "addons/counterstrikesharp/plugins/demotracer/demotracer.dll",
     "addons/counterstrikesharp/plugins/demotracer/demotracerapi.dll",
-    "addons/counterstrikesharp/plugins/demotracer/demotracer-econ-index.v1.json",
+    "addons/counterstrikesharp/plugins/demotracer/cs2-lib-econ-index.v1.json",
     "addons/counterstrikesharp/plugins/demotracerbothider/demotracerbothider.dll",
     "addons/counterstrikesharp/shared/demotracerbothiderapi/demotracerbothiderapi.dll",
     "addons/counterstrikesharp/shared/0harmony/0harmony.dll",
@@ -460,7 +460,7 @@ fn inspect_cs2_install_for(requested_path: &str) -> CommandResult<EnvironmentDia
         &[
             "addons/counterstrikesharp/plugins/DemoTracer/DemoTracer.dll",
             "addons/counterstrikesharp/plugins/DemoTracer/DemoTracerApi.dll",
-            "addons/counterstrikesharp/plugins/DemoTracer/demotracer-econ-index.v1.json",
+            "addons/counterstrikesharp/plugins/DemoTracer/cs2-lib-econ-index.v1.json",
         ],
     ));
     checks.push(required_files_check(
@@ -1091,7 +1091,7 @@ fn json_files_check(game_csgo: &Path) -> DiagnosticCheckDto {
     let files = [
         "addons/BotController/gamedata.json",
         "addons/BotHider/gamedata.json",
-        "addons/counterstrikesharp/plugins/DemoTracer/demotracer-econ-index.v1.json",
+        "addons/counterstrikesharp/plugins/DemoTracer/cs2-lib-econ-index.v1.json",
     ];
     let invalid = files
         .iter()

@@ -17,8 +17,10 @@ The desktop bundles or derives data from pinned, attributed components:
 - [Ian Lucas's `cs2-lib-inspect`](https://github.com/ianlucas/cs2-lib-inspect)
   behavior for local inspect-link encoding.
 - [Ian Lucas's `cs2-lib`](https://github.com/ianlucas/cs2-lib) metadata for
-  cosmetic names, localization, CDN image keys, and inspect-compatible item
-  grammar.
+  item identifiers, valid cosmetic relationships, legacy-model metadata,
+  names, localization, CDN image keys, and inspect-compatible item grammar.
+  The converter and server consume a deterministic generated projection of the
+  exact npm package; DemoTracer does not maintain a second item-ID registry.
 - `csgo-sharecode` for crosshair decoding.
 - `flag-icons` for bundled country flag assets in professional player profiles.
 - `CS2 Pro SteamID Lib` for the offline, evidence-backed professional identity
@@ -80,7 +82,7 @@ The playback bundle contains:
 - Native `BotController` and `BotHider` Metamod runtimes.
 - `DemoTracer` and `DemoTracerBotHider` CounterStrikeSharp plugins.
 - `DemoTracerApi.dll` and `DemoTracerBotHiderApi.dll` contracts.
-- The econ index, example config, and installation receipt.
+- The generated cs2-lib econ projection, example config, and installation receipt.
 
 The C# projects target .NET 10. Metamod, CounterStrikeSharp itself, and RayTrace
 are not bundled.

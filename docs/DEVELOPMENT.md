@@ -11,7 +11,7 @@
 | `server/runtime/BotController/` | Native replay buffers, movement/input injection, weapon control, and C ABI |
 | `server/runtime/BotHider/` | Native and managed bot identity/presentation provider |
 | `shared/contracts/` | Versioned desktop/server release contracts |
-| `shared/econ/` | Compact generated metadata consumed by conversion and playback |
+| `shared/econ/` | Cross-runtime projection generated from the pinned `@ianlucas/cs2-lib` package |
 | `tooling/` | Validation, packaging, signing, and publishing automation |
 
 The Rust converter crate is the conversion truth source. The desktop backend
@@ -45,7 +45,11 @@ the same pinned checkout and generation step.
 Run the narrowest affected checks first:
 
 ```powershell
-cd desktop\converter
+cd tooling\cs2-lib-data
+npm.cmd ci --ignore-scripts
+npm.cmd run check
+
+cd ..\..\desktop\converter
 cargo test --locked
 
 cd ..\gui
@@ -58,6 +62,11 @@ cd ..\..
 .\tooling\scripts\test-css.ps1
 .\tooling\scripts\check-release-contract.ps1
 ```
+
+Refresh `shared/econ/cs2-lib-econ-index.v1.json` only by updating the exact
+`@ianlucas/cs2-lib` dependency and lockfile under `tooling/cs2-lib-data`, then
+running `npm.cmd run generate` there. Do not add or patch item IDs in the
+generated JSON.
 
 Build the supported desktop target:
 

@@ -15,6 +15,7 @@
 /server/runtime/BotController/out/
 /dist/
 /desktop/gui/node_modules/
+/tooling/cs2-lib-data/node_modules/
 /desktop/gui/.pnpm-store/
 /.pnpm-store/
 /desktop/gui/dist/

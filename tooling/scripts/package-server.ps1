@@ -273,7 +273,7 @@ Copy-RequiredFile (Join-Path $botHiderRuntimeRoot "addons\metamod\BotHider.vdf")
 $pluginOut = Join-Path $stageRoot "addons\counterstrikesharp\plugins\DemoTracer"
 Copy-RequiredFile (Join-Path $cssOut "DemoTracer.deps.json") (Join-Path $pluginOut "DemoTracer.deps.json")
 Copy-RequiredFile (Join-Path $cssOut "DemoTracer.dll") (Join-Path $pluginOut "DemoTracer.dll")
-Copy-RequiredFile (Join-Path $cssOut "demotracer-econ-index.v1.json") (Join-Path $pluginOut "demotracer-econ-index.v1.json")
+Copy-RequiredFile (Join-Path $cssOut "cs2-lib-econ-index.v1.json") (Join-Path $pluginOut "cs2-lib-econ-index.v1.json")
 Copy-RequiredFile (Join-Path $repoRoot "server\plugins\DemoTracer\demotracer.config.example.json") (Join-Path $pluginOut "demotracer.config.example.json")
 Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.deps.json") (Join-Path $pluginOut "DemoTracerApi.deps.json")
 Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.dll") (Join-Path $pluginOut "DemoTracerApi.dll")
@@ -441,7 +441,7 @@ through CS2's native `say` / `say_team` path when `dtr_chat_auto on` is enabled
 - `addons/counterstrikesharp/shared/DemoTracerBotHiderApi/`
 - `addons/counterstrikesharp/plugins/DemoTracer/`
   - `demotracer.config.example.json` sanitized local runtime defaults
-  - `demotracer-econ-index.v1.json` compact econ validation index
+  - `cs2-lib-econ-index.v1.json` compact projection of the pinned cs2-lib catalog
   - `demotracer-runtime.v1.json` is created at runtime as a short-lived local
     health heartbeat; it is not prepackaged
 - `docs/COMMANDS.md`
@@ -474,7 +474,7 @@ Included in this bundle:
 - `DemoTracerBotHider` CounterStrikeSharp plugin
 - `DemoTracerBotHiderApi.dll`
 - `DemoTracerApi.dll`
-- `demotracer-econ-index.v1.json`
+- `cs2-lib-econ-index.v1.json`
 - `demotracer.config.example.json`
 
 Do not install a second public CS2-Bot-Hider CSS plugin beside the bundled

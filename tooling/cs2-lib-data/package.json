@@ -1,0 +1,15 @@
+{
+  "name": "demotracer-cs2-lib-data",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "generate": "node generate-econ-index.mjs",
+    "check": "node generate-econ-index.mjs --check"
+  },
+  "dependencies": {
+    "@ianlucas/cs2-lib": "8.4.0"
+  }
+}

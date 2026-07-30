@@ -1,0 +1,189 @@
+import {
+  CS2_ITEMS,
+  CS2_PAINTABLE_ITEMS,
+  CS2RarityColorOrder,
+} from "@ianlucas/cs2-lib";
+import { readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const PACKAGE_NAME = "@ianlucas/cs2-lib";
+const REPOSITORY = "https://github.com/ianlucas/cs2-lib";
+
+const scriptDirectory = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(scriptDirectory, "..", "..");
+const outputPath = resolve(
+  repoRoot,
+  "shared",
+  "econ",
+  "cs2-lib-econ-index.v1.json",
+);
+const packageRoot = resolve(
+  scriptDirectory,
+  "node_modules",
+  "@ianlucas",
+  "cs2-lib",
+);
+const packageJson = JSON.parse(
+  readFileSync(resolve(packageRoot, "package.json"), "utf8"),
+);
+const packageLock = JSON.parse(
+  readFileSync(resolve(scriptDirectory, "package-lock.json"), "utf8"),
+);
+const packageLockEntry =
+  packageLock.packages?.["node_modules/@ianlucas/cs2-lib"];
+
+if (packageJson.name !== PACKAGE_NAME || packageJson.version !== "8.4.0") {
+  throw new Error(
+    `Expected ${PACKAGE_NAME}@8.4.0, found ${packageJson.name}@${packageJson.version}`,
+  );
+}
+if (packageLockEntry?.version !== packageJson.version || !packageLockEntry.integrity) {
+  throw new Error("package-lock.json does not pin the installed cs2-lib package");
+}
+
+function requirePositiveInteger(value, field, item) {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`Invalid ${field} on cs2-lib item ${item.id}`);
+  }
+  return value;
+}
+
+function sortedUnique(values) {
+  return [...new Set(values)].sort((left, right) => left - right);
+}
+
+function itemDefIndices(type) {
+  return sortedUnique(
+    CS2_ITEMS.filter((item) => item.type === type).map((item) =>
+      requirePositiveInteger(item.def, "def", item),
+    ),
+  );
+}
+
+function itemIndices(type) {
+  return sortedUnique(
+    CS2_ITEMS.filter(
+      (item) =>
+        item.type === type && Number.isSafeInteger(item.index) && item.index > 0,
+    ).map((item) => requirePositiveInteger(item.index, "index", item)),
+  );
+}
+
+function weaponPaints(predicate = () => true) {
+  const pairs = new Map();
+  for (const item of CS2_ITEMS.filter(
+    (candidate) =>
+      candidate.type === "weapon" &&
+      candidate.index !== undefined &&
+      predicate(candidate),
+  )) {
+    const weaponDefIndex = requirePositiveInteger(item.def, "def", item);
+    const paintKit = requirePositiveInteger(item.index, "index", item);
+    const rarity = CS2RarityColorOrder[item.rarity];
+    if (!Number.isSafeInteger(rarity) || rarity < 1 || rarity > 7) {
+      throw new Error(`Invalid rarity on cs2-lib item ${item.id}`);
+    }
+
+    const key = `${weaponDefIndex}:${paintKit}`;
+    const pair = {
+      weapon_defidx: weaponDefIndex,
+      paint_kit: paintKit,
+      rarity,
+    };
+    const existing = pairs.get(key);
+    if (existing !== undefined && existing.rarity !== rarity) {
+      throw new Error(`Conflicting rarity for cs2-lib weapon paint ${key}`);
+    }
+    pairs.set(key, pair);
+  }
+  return [...pairs.values()].sort(
+    (left, right) =>
+      left.weapon_defidx - right.weapon_defidx ||
+      left.paint_kit - right.paint_kit,
+  );
+}
+
+const weaponPaintPairs = weaponPaints();
+const legacyBodygroupPaintPairs = weaponPaints((item) => item.legacy === true).map(
+  ({ weapon_defidx, paint_kit }) => ({ weapon_defidx, paint_kit }),
+);
+const paintKitIds = sortedUnique(
+  CS2_ITEMS.filter(
+    (item) =>
+      CS2_PAINTABLE_ITEMS.includes(item.type) &&
+      Number.isSafeInteger(item.index) &&
+      item.index > 0,
+  ).map((item) => requirePositiveInteger(item.index, "index", item)),
+);
+const replayEquipmentDefIndices = sortedUnique(
+  CS2_ITEMS.filter((item) =>
+    ["weapon", "utility", "melee"].includes(item.type),
+  ).map((item) => requirePositiveInteger(item.def, "def", item)),
+);
+const knifeDefIndices = itemDefIndices("melee");
+const gloveDefIndices = itemDefIndices("glove");
+const agentDefIndices = itemDefIndices("agent");
+const stickerIds = itemIndices("sticker");
+const keychainIds = itemIndices("keychain");
+const musicKitIds = itemIndices("musickit");
+const scoreboardFlairDefIndices = itemDefIndices("collectible");
+
+const index = {
+  name: "cs2-lib-econ-index",
+  schema_version: 1,
+  description:
+    "Generated runtime projection of the pinned @ianlucas/cs2-lib item catalog for CS2 DemoTracer.",
+  source: {
+    package: PACKAGE_NAME,
+    version: packageJson.version,
+    integrity: packageLockEntry.integrity,
+    repository: REPOSITORY,
+  },
+  generation_policy:
+    "Generated exclusively from @ianlucas/cs2-lib exports; do not hand-edit or add local item identifiers.",
+  id_space_warning:
+    "Do not compare IDs across arrays unless the array name/domain matches.",
+  weapon_paints: weaponPaintPairs,
+  legacy_bodygroup_paints: legacyBodygroupPaintPairs,
+  paint_kit_ids: paintKitIds,
+  replay_equipment_defidx: replayEquipmentDefIndices,
+  knife_defidx: knifeDefIndices,
+  glove_defidx: gloveDefIndices,
+  agent_defidx: agentDefIndices,
+  sticker_ids: stickerIds,
+  keychain_ids: keychainIds,
+  music_kit_ids: musicKitIds,
+  scoreboard_flair_defidx: scoreboardFlairDefIndices,
+  counts: {
+    weapon_paints: weaponPaintPairs.length,
+    legacy_bodygroup_paints: legacyBodygroupPaintPairs.length,
+    paint_kit_ids: paintKitIds.length,
+    replay_equipment_defidx: replayEquipmentDefIndices.length,
+    knife_defidx: knifeDefIndices.length,
+    glove_defidx: gloveDefIndices.length,
+    agent_defidx: agentDefIndices.length,
+    sticker_ids: stickerIds.length,
+    keychain_ids: keychainIds.length,
+    music_kit_ids: musicKitIds.length,
+    scoreboard_flair_defidx: scoreboardFlairDefIndices.length,
+    weapon_paint_rarities: weaponPaintPairs.length,
+  },
+};
+const generated = `${JSON.stringify(index, null, 2)}\n`;
+
+if (process.argv.includes("--check")) {
+  const existing = readFileSync(outputPath, "utf8");
+  if (existing !== generated) {
+    throw new Error(
+      `${outputPath} is stale; run npm.cmd run generate in ${scriptDirectory}`,
+    );
+  }
+  console.log(`Verified ${outputPath} against ${PACKAGE_NAME}@${packageJson.version}.`);
+} else {
+  writeFileSync(outputPath, generated, "utf8");
+  console.log(
+    `Wrote ${outputPath} from ${PACKAGE_NAME}@${packageJson.version} ` +
+      `(${weaponPaintPairs.length} weapon paints, ${stickerIds.length} stickers).`,
+  );
+}
