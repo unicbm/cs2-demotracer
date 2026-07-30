@@ -124,9 +124,16 @@ validated manifest avatar PNGs; missing evidence falls back to the Steam avatar.
 
 BotHider remains the authority that authenticates a replay SteamID to a live
 bot slot. DemoTracer then acquires a field-granular BotRandomizer writer lease
-using BotRandomizer's own slot incarnation. DemoTracer claims only normalized,
-positive demo evidence. Omitted weapons, default knives, missing gloves or
-agents, and empty sticker or keychain families remain owned by BotRandomizer.
+using BotRandomizer's own slot incarnation. Every authenticated professional
+replay slot always claims Agent, Knife, and Gloves as replay identity fields.
+Missing normalized evidence means the native T/CT agent model, the default
+team knife (CT 42 or T 59), or no gloves; it does not authorize Randomizer to
+synthesize those fields. DemoTracer actively restores those defaults after a
+late lease, including a freeze-period knife entity rebuild when needed.
+
+Ordinary weapons remain positive-evidence, field-granular claims. A weapon not
+present in the demo, and sticker or keychain families omitted from its evidence,
+remain owned by BotRandomizer.
 
 If the provider, identity authentication, heartbeat, or incarnation check is
 unavailable, replay can continue but DemoTracer performs no cosmetic writes.

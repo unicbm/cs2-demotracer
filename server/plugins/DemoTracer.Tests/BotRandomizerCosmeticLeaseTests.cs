@@ -1,25 +1,31 @@
 using BotRandomizerApi;
+using CounterStrikeSharp.API.Modules.Utils;
 
 namespace DemoTracer.Tests;
 
 public sealed class BotRandomizerCosmeticLeaseTests
 {
     [Fact]
-    public void EmptyEvidenceDoesNotCreateClaim()
+    public void EmptyEvidenceStillClaimsReplayIdentityFields()
     {
         var claim = BuildClaim(Evidence());
 
-        Assert.Null(claim);
+        Assert.NotNull(claim);
+        Assert.True(claim.Agent);
+        Assert.True(claim.Knife);
+        Assert.True(claim.Gloves);
+        Assert.False(claim.MusicKit);
+        Assert.Empty(claim.Weapons);
     }
 
     [Fact]
-    public void KnifeEvidenceDoesNotClaimMissingGloves()
+    public void ReplayIdentityClaimsDoNotDependOnPositiveKnifeOrGloveEvidence()
     {
-        var claim = BuildClaim(Evidence(knife: true));
+        var claim = BuildClaim(Evidence());
 
         Assert.NotNull(claim);
         Assert.True(claim.Knife);
-        Assert.False(claim.Gloves);
+        Assert.True(claim.Gloves);
         Assert.Empty(claim.Weapons);
     }
 
@@ -36,6 +42,9 @@ public sealed class BotRandomizerCosmeticLeaseTests
         Assert.Equal(7, weapon.WeaponDefinitionIndex);
         Assert.True(weapon.Paint);
         Assert.DoesNotContain(claim.Weapons, candidate => candidate.WeaponDefinitionIndex is 16 or 60);
+        Assert.True(claim.Agent);
+        Assert.True(claim.Knife);
+        Assert.True(claim.Gloves);
     }
 
     [Fact]
@@ -72,7 +81,7 @@ public sealed class BotRandomizerCosmeticLeaseTests
     }
 
     [Fact]
-    public void EmptyOriginalOrDefaultEvidenceRemainsUnclaimed()
+    public void EmptyOriginalOrDefaultWeaponEvidenceLeavesOnlyIdentityClaims()
     {
         var claim = BuildClaim(Evidence(
             weapons:
@@ -80,7 +89,11 @@ public sealed class BotRandomizerCosmeticLeaseTests
                 new DemoTracerBotRandomizerWeaponEvidence(7, false, false, false, null)
             ]));
 
-        Assert.Null(claim);
+        Assert.NotNull(claim);
+        Assert.True(claim.Agent);
+        Assert.True(claim.Knife);
+        Assert.True(claim.Gloves);
+        Assert.Empty(claim.Weapons);
     }
 
     [Fact]
@@ -102,10 +115,9 @@ public sealed class BotRandomizerCosmeticLeaseTests
     }
 
     [Fact]
-    public void LeaseInvalidationImmediatelyDisablesEveryClaim()
+    public void ReleasedReplayLeaseAllowsRandomizerToOwnAgentKnifeAndGlovesAgain()
     {
         var apiClaim = Assert.IsType<BotRandomizerCosmeticWriteClaim>(BuildClaim(Evidence(
-            agent: true,
             weapons:
             [
                 new DemoTracerBotRandomizerWeaponEvidence(7, true, true, true, false)
@@ -113,12 +125,24 @@ public sealed class BotRandomizerCosmeticLeaseTests
         var snapshot = new DemoTracerBotRandomizerLeaseSnapshot();
         snapshot.Activate("token", "epoch-a", [apiClaim]);
 
+        Assert.True(snapshot.TryGet(Slot, SubjectSteamId, out var active));
+        Assert.True(active.Allows(DemoTracerCosmeticWriteField.Agent));
+        Assert.True(active.Allows(DemoTracerCosmeticWriteField.Knife));
+        Assert.True(active.Allows(DemoTracerCosmeticWriteField.Gloves));
+
         snapshot.Invalidate();
 
         Assert.Equal(string.Empty, snapshot.Token);
         Assert.Equal(string.Empty, snapshot.ProviderEpoch);
         Assert.Empty(snapshot.Claims);
         Assert.False(snapshot.TryGet(Slot, SubjectSteamId, out _));
+    }
+
+    [Fact]
+    public void DefaultKnifeUsesTheNativeTeamDefinition()
+    {
+        Assert.Equal(42, DemoTracerPlugin.DefaultKnifeDefIndexForTeam(CsTeam.CounterTerrorist));
+        Assert.Equal(59, DemoTracerPlugin.DefaultKnifeDefIndexForTeam(CsTeam.Terrorist));
     }
 
     [Fact]
@@ -142,20 +166,17 @@ public sealed class BotRandomizerCosmeticLeaseTests
     }
 
     private static BotRandomizerCosmeticWriteClaim? BuildClaim(
-        DemoTracerBotRandomizerPositiveEvidence evidence)
+        DemoTracerBotRandomizerClaimEvidence evidence)
         => DemoTracerPlugin.BuildBotRandomizerWriteClaim(
             Slot,
             Incarnation,
             SubjectSteamId,
             evidence);
 
-    private static DemoTracerBotRandomizerPositiveEvidence Evidence(
-        bool agent = false,
-        bool knife = false,
-        bool gloves = false,
+    private static DemoTracerBotRandomizerClaimEvidence Evidence(
         bool musicKit = false,
         IReadOnlyList<DemoTracerBotRandomizerWeaponEvidence>? weapons = null)
-        => new(agent, knife, gloves, musicKit, weapons ?? []);
+        => new(musicKit, weapons ?? []);
 
     private const int Slot = 3;
     private const ulong Incarnation = 11;

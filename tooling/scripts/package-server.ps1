@@ -491,8 +491,11 @@ Optional:
 
 - Ray-Trace v1.0.16 or newer, only for stricter line-of-sight filtering in
   handoff 360 threat detection.
-- Demo-backed agent model evidence can change the matching safe replay bot slot
-  to the demo agent model when `dtr_cosmetics agents` is enabled.
+
+For every BotHider-authenticated professional replay slot, BotRandomizer v1
+coordination always reserves Agent, Knife, and Gloves. Missing evidence restores
+the native team model, the default T/CT knife, and no gloves; ordinary weapon
+definitions without positive demo evidence remain available to BotRandomizer.
 '@
 $readme = $readme.Replace("__VERSION__", $Version)
 $readme = $readme.Replace("__DTR_READER_MIN__", [string]$playbackContract.dtr_reader.min)

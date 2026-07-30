@@ -92,10 +92,17 @@ dtr_cosmetics [status|off|weapons|basic|full]
 dtr_cosmetics <weapons|knives|gloves|names|agents|stickers|charms|preserve_native> <on|off>
 ```
 
-`weapons` enables weapon paints and custom names. `basic` adds knives, gloves,
-and agents. `full` adds stickers and charms. All modes consume only explicitly
-exported demo evidence and are default-off. Review the GSLT warning in the root
-README before enabling them.
+`weapons` enables demo-backed paints and custom names for ordinary weapons;
+`full` additionally enables stickers and charms. Those optional fields remain
+default-off and are claimed only when the demo contains positive evidence for
+that weapon definition.
+
+When the BotRandomizer v1 lease API is available, `agents`, `knives`, and
+`gloves` are replay-identity fields rather than absence-fill toggles. Every
+BotHider-authenticated professional replay slot claims all three regardless of
+the selected cosmetic preset. Missing evidence restores the native team model,
+the default team knife, or no gloves instead of allowing random values. Review
+the GSLT warning in the root README before using cosmetic alignment.
 
 ### Handoff
 

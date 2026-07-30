@@ -89,7 +89,10 @@ measurements.
   stop, unload, finish, handoff, or failure.
 - Movement replay uses native movement/input hooks; teleport is not the primary
   playback path.
-- Cosmetic and scoreboard alignment remain default-off and demo-backed.
+- Ordinary weapon, attachment, and scoreboard alignment remain default-off and
+  demo-backed. For a BotHider-authenticated professional replay slot,
+  BotRandomizer coordination always reserves Agent, Knife, and Gloves; missing
+  evidence restores the native team model, default team knife, and no gloves.
 
 ## Packaging
 

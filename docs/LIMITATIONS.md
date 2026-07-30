@@ -39,5 +39,7 @@
   the safety warning in the [root README](../README.md#safety-defaults).
 - With BotRandomizer installed, demo-backed cosmetic writes require its v1
   writer lease and an authenticated BotHider replay identity. If either
-  provider is unavailable, playback continues with Randomizer-owned cosmetics
-  and DemoTracer fails closed instead of reverting missing evidence to defaults.
+  provider is unavailable, playback continues and DemoTracer fails closed.
+  While the lease is active, Agent, Knife, and Gloves are identity fields:
+  missing evidence is restored to the native/default state, while ordinary
+  weapon fields without positive evidence remain available to Randomizer.
