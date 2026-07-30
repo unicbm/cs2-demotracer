@@ -85,6 +85,13 @@ The playback bundle contains:
 The C# projects target .NET 10. Metamod, CounterStrikeSharp itself, and RayTrace
 are not bundled.
 
+Demo-backed cosmetic alignment can coordinate with BotRandomizer 1.5 through
+`BotRandomizerApi` v1. The API assembly and BotRandomizer provider are not part
+of the DemoTracer playback bundle. Install the canonical API once under
+`addons/counterstrikesharp/shared/BotRandomizerApi/` and install BotRandomizer
+separately. Source builds use the verbatim v1 contract snapshot under
+`server/vendor/BotRandomizerApi`; its provenance is recorded beside the source.
+
 ## Runtime Contracts
 
 | Contract | Required value |
@@ -94,6 +101,7 @@ are not bundled.
 | Manifest ABI | 17 |
 | BotController native ABI | 16, minor 33+ |
 | DemoTracer BotHider API | 1 |
+| BotRandomizer cosmetic writer API | 1 |
 | DemoTracer companion API | 6 |
 
 `addons/demotracer-install.v1.json` records the bundle contract and file hashes.
@@ -111,6 +119,19 @@ plugin beside it. Multiple presentation writers are unsupported.
 The provider leases demo names, SteamID64 values, scoreboard presentation, and
 crosshair state only to validated replay bots. BotController separately applies
 validated manifest avatar PNGs; missing evidence falls back to the Steam avatar.
+
+## BotRandomizer Cosmetic Boundary
+
+BotHider remains the authority that authenticates a replay SteamID to a live
+bot slot. DemoTracer then acquires a field-granular BotRandomizer writer lease
+using BotRandomizer's own slot incarnation. DemoTracer claims only normalized,
+positive demo evidence. Omitted weapons, default knives, missing gloves or
+agents, and empty sticker or keychain families remain owned by BotRandomizer.
+
+If the provider, identity authentication, heartbeat, or incarnation check is
+unavailable, replay can continue but DemoTracer performs no cosmetic writes.
+Weapon paint claims update their named paint attributes without clearing the
+complete attribute list, preserving Randomizer-owned stickers and keychains.
 
 ## Optional RayTrace
 

@@ -19,5 +19,6 @@
   <ItemGroup>
     <ProjectReference Include="..\DemoTracer\DemoTracer.csproj" />
     <ProjectReference Include="..\..\runtime\BotHider\csharp\BotHiderImpl\BotHiderImpl.csproj" />
+    <ProjectReference Include="..\..\vendor\BotRandomizerApi\BotRandomizerApi.csproj" />
   </ItemGroup>
 </Project>
