@@ -297,7 +297,11 @@ function CosmeticEvidencePopover({
       <dl className="cosmetic-popover-facts">
         {cosmetic.itemDefIndex !== null && cosmetic.itemDefIndex !== undefined ? <div><dt>{words.itemDefinition}</dt><dd>{cosmetic.itemDefIndex}</dd></div> : null}
         {cosmetic.paintKit !== null && cosmetic.paintKit !== undefined ? <div><dt>{words.paintKit}</dt><dd>{cosmetic.paintKit}</dd></div> : null}
-        {cosmetic.seed !== null && cosmetic.seed !== undefined ? <div><dt>{words.patternTemplate}</dt><dd>{cosmetic.seed}</dd></div> : null}
+        {cosmetic.seed !== null && cosmetic.seed !== undefined ? (
+          <div><dt>{words.patternTemplate}</dt><dd>{cosmetic.seed}</dd></div>
+        ) : cosmetic.kind === "glove" ? (
+          <div><dt>{words.patternTemplate}</dt><dd>{words.unresolvedCosmeticSeed}</dd></div>
+        ) : null}
         {wear !== null && wear !== undefined ? (
           <div className="cosmetic-popover-wear is-wide">
             <dt>{words.wearRating}</dt>

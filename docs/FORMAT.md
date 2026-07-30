@@ -80,10 +80,11 @@ that old readers ignore, it does not change the `.dtr` format or manifest ABI
 
 Glove evidence is retained when the demo exposes an exact item definition,
 paint kit, and wear but omits the texture seed. Such entries carry
-`"seed": 0, "seed_known": false`; the zero is only a backward-compatible
-transport placeholder. The playback plugin clears prior glove attributes and
-writes the known fields without writing a texture-seed attribute. No inspect
-payload is generated for partial glove evidence.
+a deterministic fallback `seed` in the CS2 range plus `"seed_known": false`.
+The fallback is stable for the same player, side, glove, and wear so replays do
+not change patterns between rounds. The evidence UI still reports the seed as
+unresolved, while playback writes the fallback after clearing prior glove
+attributes. No inspect payload is generated for partial glove evidence.
 
 ## Header
 
