@@ -11,14 +11,20 @@ if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
 $sourceRoot = Join-Path $RepoRoot "server\plugins\DemoTracer"
 $entryPointPath = Join-Path $sourceRoot "DemoTracerPlugin.cs"
 $defaultFileLimit = 1500
-$legacyFileLimits = @{}
+$fileLimits = @{
+    "DemoTracerPlugin.cs" = 600
+    "DemoTracerPlayback.cs" = 600
+    "DemoTracerPlaybackCommands.cs" = 600
+    "DemoTracerPlayoff.cs" = 600
+    "DemoTracerReplayTargets.cs" = 300
+}
 
 $errors = [System.Collections.Generic.List[string]]::new()
 $sourceFiles = @(Get-ChildItem -LiteralPath $sourceRoot -Filter '*.cs' -File)
 foreach ($file in $sourceFiles) {
     $lineCount = [System.IO.File]::ReadAllLines($file.FullName).Length
-    $limit = if ($legacyFileLimits.ContainsKey($file.Name)) {
-        $legacyFileLimits[$file.Name]
+    $limit = if ($fileLimits.ContainsKey($file.Name)) {
+        $fileLimits[$file.Name]
     } else {
         $defaultFileLimit
     }

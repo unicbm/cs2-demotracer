@@ -105,8 +105,9 @@ measurements.
 
 `test-css.ps1` also enforces the managed-source boundaries: the
 CounterStrikeSharp entry point remains a small composition root, ordinary
-source files cannot grow past the maintained limit, and the companion API
-assembly remains contract-only.
+source files cannot grow past the maintained limit, playback planning, playoff,
+direct commands, and replay-target safety remain separate domains, and the
+companion API assembly remains contract-only.
 
 ## Packaging
 
