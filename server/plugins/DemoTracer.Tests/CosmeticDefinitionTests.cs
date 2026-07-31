@@ -2,10 +2,13 @@ namespace DemoTracer.Tests;
 
 public sealed class CosmeticDefinitionTests
 {
+    private static readonly ReplayEquipmentCatalog Catalog = ReplayEquipmentCatalog.Load(
+        Path.Combine(AppContext.BaseDirectory, "cs2-lib-econ-index.v1.json"));
+
     [Fact]
     public void ZeusIsAWeaponCosmeticDefinition()
     {
-        Assert.True(DemoTracerPlugin.IsWeaponCosmeticCategory(31));
+        Assert.True(Catalog.IsWeaponCosmeticCategory(31));
     }
 
     [Theory]
@@ -14,6 +17,6 @@ public sealed class CosmeticDefinitionTests
     [InlineData(49)]
     public void EquipmentWithoutWeaponPaintsIsNotAWeaponCosmeticDefinition(int weaponDefIndex)
     {
-        Assert.False(DemoTracerPlugin.IsWeaponCosmeticCategory(weaponDefIndex));
+        Assert.False(Catalog.IsWeaponCosmeticCategory(weaponDefIndex));
     }
 }

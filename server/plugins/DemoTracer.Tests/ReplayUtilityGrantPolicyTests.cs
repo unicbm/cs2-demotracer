@@ -3,6 +3,8 @@ namespace DemoTracer.Tests;
 public sealed class ReplayUtilityGrantPolicyTests
 {
     private const ulong ReplaySteamId = 76561198000000001UL;
+    private static readonly ReplayEquipmentCatalog Catalog = ReplayEquipmentCatalog.Load(
+        Path.Combine(AppContext.BaseDirectory, "cs2-lib-econ-index.v1.json"));
 
     [Theory]
     [InlineData("item_pickup", 45)]
@@ -17,7 +19,7 @@ public sealed class ReplayUtilityGrantPolicyTests
             TargetCountAfter = 1
         };
 
-        Assert.True(DemoTracerPlugin.ShouldQueueReplayUtilityGrant(replayEvent, ReplaySteamId));
+        Assert.True(ReplayUtilityGrantPolicy.ShouldQueue(replayEvent, ReplaySteamId, Catalog));
     }
 
     [Fact]
@@ -31,7 +33,7 @@ public sealed class ReplayUtilityGrantPolicyTests
             TargetCountAfter = 1
         };
 
-        Assert.False(DemoTracerPlugin.ShouldQueueReplayUtilityGrant(replayEvent, ReplaySteamId));
+        Assert.False(ReplayUtilityGrantPolicy.ShouldQueue(replayEvent, ReplaySteamId, Catalog));
     }
 
     [Theory]
@@ -50,6 +52,6 @@ public sealed class ReplayUtilityGrantPolicyTests
             TargetCountAfter = 1
         };
 
-        Assert.False(DemoTracerPlugin.ShouldQueueReplayUtilityGrant(replayEvent, ReplaySteamId));
+        Assert.False(ReplayUtilityGrantPolicy.ShouldQueue(replayEvent, ReplaySteamId, Catalog));
     }
 }

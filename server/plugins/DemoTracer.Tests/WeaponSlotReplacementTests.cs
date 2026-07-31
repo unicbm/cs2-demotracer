@@ -6,22 +6,22 @@ public sealed class WeaponSlotReplacementTests
     public void RoundZeroP2000ToUspWaitsForOldPistolBeforeGrantingTarget()
     {
         Assert.Equal(
-            DemoTracerPlugin.WeaponSlotReplacementAction.WaitForClear,
-            DemoTracerPlugin.DecideWeaponSlotReplacement(
+            WeaponSlotReplacementAction.WaitForClear,
+            ReplayWeaponReplacementPolicy.Decide(
                 targetPresent: false,
                 anySlotWeapon: true,
                 clearWaitFramesRemaining: 8));
 
         Assert.Equal(
-            DemoTracerPlugin.WeaponSlotReplacementAction.GrantTarget,
-            DemoTracerPlugin.DecideWeaponSlotReplacement(
+            WeaponSlotReplacementAction.GrantTarget,
+            ReplayWeaponReplacementPolicy.Decide(
                 targetPresent: false,
                 anySlotWeapon: false,
                 clearWaitFramesRemaining: 7));
 
         Assert.Equal(
-            DemoTracerPlugin.WeaponSlotReplacementAction.TargetReady,
-            DemoTracerPlugin.DecideWeaponSlotReplacement(
+            WeaponSlotReplacementAction.TargetReady,
+            ReplayWeaponReplacementPolicy.Decide(
                 targetPresent: true,
                 anySlotWeapon: true,
                 clearWaitFramesRemaining: 7));
@@ -31,8 +31,8 @@ public sealed class WeaponSlotReplacementTests
     public void ReplacementTimeoutPreservesExistingPistolInsteadOfGrantingIntoConflict()
     {
         Assert.Equal(
-            DemoTracerPlugin.WeaponSlotReplacementAction.PreserveExisting,
-            DemoTracerPlugin.DecideWeaponSlotReplacement(
+            WeaponSlotReplacementAction.PreserveExisting,
+            ReplayWeaponReplacementPolicy.Decide(
                 targetPresent: false,
                 anySlotWeapon: true,
                 clearWaitFramesRemaining: 0));
@@ -45,7 +45,7 @@ public sealed class WeaponSlotReplacementTests
     [InlineData("weapon_bayonet")]
     public void KnifeCanNeverEnterTheDestructiveDropAndKillPath(string className)
     {
-        Assert.False(DemoTracerPlugin.CanDropAndKillReplayWeapon(className));
+        Assert.False(ReplayWeaponReplacementPolicy.CanDropAndKill(className));
     }
 
     [Theory]
@@ -54,6 +54,6 @@ public sealed class WeaponSlotReplacementTests
     [InlineData("weapon_smokegrenade")]
     public void NonKnifeReplayEquipmentCanStillUseTheDropAndKillPath(string className)
     {
-        Assert.True(DemoTracerPlugin.CanDropAndKillReplayWeapon(className));
+        Assert.True(ReplayWeaponReplacementPolicy.CanDropAndKill(className));
     }
 }

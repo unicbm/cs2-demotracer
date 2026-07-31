@@ -14,7 +14,7 @@ public sealed class RuntimeCompatibilityTests
         string patch,
         bool expected)
     {
-        Assert.Equal(expected, DemoTracerPlugin.IsManagedSchemaPatchSupported(patch));
+        Assert.Equal(expected, ReplayRuntimePolicy.IsManagedSchemaPatchSupported(patch));
     }
 
     [Theory]
@@ -30,7 +30,7 @@ public sealed class RuntimeCompatibilityTests
     {
         Assert.Equal(
             expected,
-            DemoTracerPlugin.ShouldApplyReplayMusicKit(
+            ReplayRuntimePolicy.ShouldApplyMusicKit(
                 cosmeticsEnabled,
                 runtimeSupported,
                 musicKitId));
@@ -47,7 +47,7 @@ public sealed class RuntimeCompatibilityTests
     {
         Assert.Equal(
             expected,
-            DemoTracerPlugin.ShouldApplyReplayScoreboardFlair(
+            ReplayRuntimePolicy.ShouldApplyScoreboardFlair(
                 scoreboardEnabled,
                 identitySupportsFlair));
     }

@@ -80,7 +80,8 @@ The playback bundle contains:
 
 - Native `BotController` and `BotHider` Metamod runtimes.
 - `DemoTracer` and `DemoTracerBotHider` CounterStrikeSharp plugins.
-- `DemoTracerApi.dll` and `DemoTracerBotHiderApi.dll` contracts.
+- `DemoTracerApi.dll` and `DemoTracerBotHiderApi.dll` contracts, installed once
+  under their respective `addons/counterstrikesharp/shared/` directories.
 - The generated cs2-lib econ projection, example config, and installation receipt.
 
 The C# projects target .NET 10. Metamod, CounterStrikeSharp itself, and RayTrace

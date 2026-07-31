@@ -26,7 +26,7 @@ pub(crate) const REQUIRED_RECEIPT_PATHS: &[&str] = &[
     "addons/bothider/gamedata.json",
     "addons/metamod/bothider.vdf",
     "addons/counterstrikesharp/plugins/demotracer/demotracer.dll",
-    "addons/counterstrikesharp/plugins/demotracer/demotracerapi.dll",
+    "addons/counterstrikesharp/shared/demotracerapi/demotracerapi.dll",
     "addons/counterstrikesharp/plugins/demotracer/cs2-lib-econ-index.v1.json",
     "addons/counterstrikesharp/plugins/demotracerbothider/demotracerbothider.dll",
     "addons/counterstrikesharp/shared/demotracerbothiderapi/demotracerbothiderapi.dll",
@@ -459,7 +459,7 @@ fn inspect_cs2_install_for(requested_path: &str) -> CommandResult<EnvironmentDia
         game_csgo,
         &[
             "addons/counterstrikesharp/plugins/DemoTracer/DemoTracer.dll",
-            "addons/counterstrikesharp/plugins/DemoTracer/DemoTracerApi.dll",
+            "addons/counterstrikesharp/shared/DemoTracerApi/DemoTracerApi.dll",
             "addons/counterstrikesharp/plugins/DemoTracer/cs2-lib-econ-index.v1.json",
         ],
     ));
@@ -1510,7 +1510,9 @@ pub(crate) fn receipt_component(normalized_path: &str) -> Option<&'static str> {
         || normalized_path.starts_with("addons/counterstrikesharp/shared/demotracerbothiderapi/")
     {
         Some("bot_hider_managed")
-    } else if normalized_path.starts_with("addons/counterstrikesharp/plugins/demotracer/") {
+    } else if normalized_path.starts_with("addons/counterstrikesharp/plugins/demotracer/")
+        || normalized_path.starts_with("addons/counterstrikesharp/shared/demotracerapi/")
+    {
         Some("demotracer")
     } else if normalized_path.starts_with("addons/") {
         Some("shared_dependency")
@@ -2419,6 +2421,10 @@ mod tests {
                 "addons/counterstrikesharp/plugins/demotracerbothider/demotracerbothider.dll"
             ),
             Some("bot_hider_managed")
+        );
+        assert_eq!(
+            receipt_component("addons/counterstrikesharp/shared/demotracerapi/demotracerapi.dll"),
+            Some("demotracer")
         );
     }
 

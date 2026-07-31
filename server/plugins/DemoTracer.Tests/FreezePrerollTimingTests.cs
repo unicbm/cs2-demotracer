@@ -14,7 +14,7 @@ public sealed class FreezePrerollTimingTests
         float expectedDelaySeconds,
         float expectedPlaybackSeconds)
     {
-        var timing = DemoTracerPlugin.ComputeFreezePrerollTiming(
+        var timing = ReplayRuntimePolicy.ComputeFreezePrerollTiming(
             freezeTimeSeconds,
             phaseRemainingSeconds,
             recordedPrerollSeconds);

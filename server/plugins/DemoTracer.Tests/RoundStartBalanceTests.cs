@@ -11,7 +11,7 @@ public sealed class RoundStartBalanceTests
         bool runtimeSupported,
         uint? evidence)
     {
-        var resolved = DemoTracerPlugin.TryResolveReplayRoundStartBalance(
+        var resolved = ReplayRuntimePolicy.TryResolveRoundStartBalance(
             enabled,
             runtimeSupported,
             evidence,
@@ -25,7 +25,7 @@ public sealed class RoundStartBalanceTests
     [Fact]
     public void PreservesZeroAsPositiveEvidence()
     {
-        var resolved = DemoTracerPlugin.TryResolveReplayRoundStartBalance(
+        var resolved = ReplayRuntimePolicy.TryResolveRoundStartBalance(
             enabled: true,
             runtimeSupported: true,
             evidence: 0,
@@ -39,7 +39,7 @@ public sealed class RoundStartBalanceTests
     [Fact]
     public void ClampsDemoEvidenceToCurrentServerMaximum()
     {
-        var resolved = DemoTracerPlugin.TryResolveReplayRoundStartBalance(
+        var resolved = ReplayRuntimePolicy.TryResolveRoundStartBalance(
             enabled: true,
             runtimeSupported: true,
             evidence: 20_000,

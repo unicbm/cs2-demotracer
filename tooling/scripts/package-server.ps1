@@ -275,8 +275,8 @@ Copy-RequiredFile (Join-Path $cssOut "DemoTracer.deps.json") (Join-Path $pluginO
 Copy-RequiredFile (Join-Path $cssOut "DemoTracer.dll") (Join-Path $pluginOut "DemoTracer.dll")
 Copy-RequiredFile (Join-Path $cssOut "cs2-lib-econ-index.v1.json") (Join-Path $pluginOut "cs2-lib-econ-index.v1.json")
 Copy-RequiredFile (Join-Path $repoRoot "server\plugins\DemoTracer\demotracer.config.example.json") (Join-Path $pluginOut "demotracer.config.example.json")
-Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.deps.json") (Join-Path $pluginOut "DemoTracerApi.deps.json")
-Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.dll") (Join-Path $pluginOut "DemoTracerApi.dll")
+$demoTracerApiSharedOut = Join-Path $stageRoot "addons\counterstrikesharp\shared\DemoTracerApi"
+Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.dll") (Join-Path $demoTracerApiSharedOut "DemoTracerApi.dll")
 
 $botHiderPluginOut = Join-Path $stageRoot "addons\counterstrikesharp\plugins\DemoTracerBotHider"
 Copy-RequiredFile (Join-Path $botHiderCssOut "DemoTracerBotHider.deps.json") (Join-Path $botHiderPluginOut "DemoTracerBotHider.deps.json")
@@ -287,7 +287,7 @@ $harmonySource = Join-Path $botHiderCssOut "shared\0Harmony\0Harmony.dll"
 Copy-RequiredFile $harmonySource (Join-Path $stageRoot "addons\counterstrikesharp\shared\0Harmony\0Harmony.dll")
 if ($IncludeSymbols) {
     Copy-RequiredFile (Join-Path $cssOut "DemoTracer.pdb") (Join-Path $pluginOut "DemoTracer.pdb")
-    Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.pdb") (Join-Path $pluginOut "DemoTracerApi.pdb")
+    Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.pdb") (Join-Path $demoTracerApiSharedOut "DemoTracerApi.pdb")
     Copy-RequiredFile (Join-Path $botHiderCssOut "DemoTracerBotHider.pdb") (Join-Path $botHiderPluginOut "DemoTracerBotHider.pdb")
     Copy-RequiredFile (Join-Path $botHiderApiOut "DemoTracerBotHiderApi.pdb") (Join-Path $botHiderSharedOut "DemoTracerBotHiderApi.pdb")
 }
@@ -311,7 +311,8 @@ $receiptFiles = @(
             } elseif ($relativePath -like "addons/counterstrikesharp/plugins/DemoTracerBotHider/*" -or
                       $relativePath -like "addons/counterstrikesharp/shared/DemoTracerBotHiderApi/*") {
                 "bot_hider_managed"
-            } elseif ($relativePath -like "addons/counterstrikesharp/plugins/DemoTracer/*") {
+            } elseif ($relativePath -like "addons/counterstrikesharp/plugins/DemoTracer/*" -or
+                      $relativePath -like "addons/counterstrikesharp/shared/DemoTracerApi/*") {
                 "demotracer"
             } else {
                 "shared_dependency"
@@ -416,6 +417,7 @@ through CS2's native `say` / `say_team` path when `dtr_chat_auto on` is enabled
 - `addons/demotracer-install.v1.json` (component contract and file hashes for desktop diagnostics)
 - `addons/counterstrikesharp/plugins/DemoTracerBotHider/`
 - `addons/counterstrikesharp/shared/DemoTracerBotHiderApi/`
+- `addons/counterstrikesharp/shared/DemoTracerApi/`
 - `addons/counterstrikesharp/plugins/DemoTracer/`
   - `demotracer.config.example.json` sanitized local runtime defaults
   - `cs2-lib-econ-index.v1.json` compact projection of the pinned cs2-lib catalog

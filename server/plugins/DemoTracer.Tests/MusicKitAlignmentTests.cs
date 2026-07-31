@@ -5,7 +5,7 @@ public sealed class MusicKitAlignmentTests
     [Fact]
     public void MatchingInventoryAndControllerStateNeedsNoRepair()
     {
-        Assert.True(DemoTracerPlugin.ReplayMusicKitStateMatches(
+        Assert.True(ReplayRuntimePolicy.MusicKitStateMatches(
             expectedMusicKitId: 70,
             inventoryMusicKitId: 70,
             controllerMusicKitId: 70,
@@ -23,7 +23,7 @@ public sealed class MusicKitAlignmentTests
         int controllerMusicKitId,
         bool mvpNoMusic)
     {
-        Assert.False(DemoTracerPlugin.ReplayMusicKitStateMatches(
+        Assert.False(ReplayRuntimePolicy.MusicKitStateMatches(
             expectedMusicKitId: 70,
             inventoryMusicKitId,
             controllerMusicKitId,
@@ -34,7 +34,7 @@ public sealed class MusicKitAlignmentTests
     [Fact]
     public void StaleMvpCountRequiresRepair()
     {
-        Assert.False(DemoTracerPlugin.ReplayMusicKitStateMatches(
+        Assert.False(ReplayRuntimePolicy.MusicKitStateMatches(
             expectedMusicKitId: 70,
             inventoryMusicKitId: 70,
             controllerMusicKitId: 70,
@@ -48,7 +48,7 @@ public sealed class MusicKitAlignmentTests
     [InlineData(65536)]
     public void InvalidManifestKitCannotMatchRuntimeState(int expectedMusicKitId)
     {
-        Assert.False(DemoTracerPlugin.ReplayMusicKitStateMatches(
+        Assert.False(ReplayRuntimePolicy.MusicKitStateMatches(
             expectedMusicKitId,
             inventoryMusicKitId: 70,
             controllerMusicKitId: 70,

@@ -7,7 +7,7 @@
 | `desktop/gui/` | Supported Tauri/React application and thin Rust command bridge |
 | `desktop/converter/` | Rust parsing, analysis, `.dtr` writing, manifests, and validation |
 | `server/plugins/DemoTracer/` | CounterStrikeSharp orchestration and `dtr_` commands |
-| `server/plugins/DemoTracerApi/` | Companion-plugin API |
+| `server/plugins/DemoTracerApi/` | Contract-only companion API installed under CounterStrikeSharp `shared/` |
 | `server/runtime/BotController/` | Native replay buffers, movement/input injection, weapon control, and C ABI |
 | `server/runtime/BotHider/` | Native and managed bot identity/presentation provider |
 | `shared/contracts/` | Versioned desktop/server release contracts |
@@ -102,6 +102,11 @@ measurements.
   demo-backed. BotRandomizer coordination claims Agent, Knife, Gloves, and
   ordinary weapon fields only when the selected preset has positive demo
   evidence. Missing cosmetic evidence must not trigger entity reconstruction.
+
+`test-css.ps1` also enforces the managed-source boundaries: the
+CounterStrikeSharp entry point remains a small composition root, ordinary
+source files cannot grow past the maintained limit, and the companion API
+assembly remains contract-only.
 
 ## Packaging
 

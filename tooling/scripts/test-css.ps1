@@ -49,3 +49,4 @@ Write-Host "Using $dotnet"
 Invoke-Dotnet $dotnet @("restore", $projectPath, "--configfile", $nugetConfigPath, "-m:1", "-nodeReuse:false", "-p:NuGetAudit=false")
 Invoke-Dotnet $dotnet @("build", $projectPath, "-c", $Configuration, "--no-restore", "-m:1", "-nodeReuse:false", "-p:UseSharedCompilation=false", "-p:NuGetAudit=false")
 Invoke-Dotnet $dotnet @("test", $projectPath, "-c", $Configuration, "--no-build", "--no-restore", "-m:1", "-nodeReuse:false")
+& (Join-Path $PSScriptRoot "check-demotracer-source-governance.ps1") -RepoRoot $repoRoot
