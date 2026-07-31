@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------------------------
+ * Copyright (c) 2026 unicbm. All rights reserved.
+ * Licensed under the GNU Affero General Public License v3.0 only.
+ * See LICENSE in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
 import { useRef, type CSSProperties, type RefObject } from "react";
 import { ArrowIcon } from "../icons";
 import type { Language } from "../types";

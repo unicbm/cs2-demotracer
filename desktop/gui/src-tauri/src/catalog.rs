@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------------------------
+ * Copyright (c) 2026 unicbm. All rights reserved.
+ * Licensed under the GNU Affero General Public License v3.0 only.
+ * See LICENSE in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
 use super::{
     archive_info::{read_demo_info, DemoArchiveInfo, DemoInfoRead},
     CommandErrorDto, CommandResult, MAX_MANIFEST_BYTES, MIN_SUPPORTED_DTR_FORMAT_VERSION,

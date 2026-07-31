@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------------------------
+ * Copyright (c) 2026 unicbm. All rights reserved.
+ * Licensed under the GNU Affero General Public License v3.0 only.
+ * See LICENSE in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
 use super::{AppState, CommandErrorDto, CommandResult, CosmeticConsentDto, TaskEvent, TaskPhase};
 use cs2_demotracer::demo_id::sha256_hex;
 use cs2_demotracer::demo_series::{group_demo_sources, resolve_demo_source, DemoSourceSet};

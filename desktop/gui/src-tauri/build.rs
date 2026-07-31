@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------------------------
+ * Copyright (c) 2026 unicbm. All rights reserved.
+ * Licensed under the GNU Affero General Public License v3.0 only.
+ * See LICENSE in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
 fn validate_windows_icon(path: &std::path::Path) {
     const REQUIRED_SIZES: &[u16] = &[16, 20, 24, 28, 32, 36, 40, 48, 64, 96, 128, 256];
 

@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------------------------
+ * Copyright (c) 2026 unicbm. All rights reserved.
+ * Licensed under the GNU Affero General Public License v3.0 only.
+ * See LICENSE in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
 use crate::diagnostics::{
     checked_receipt_relative_path, embedded_playback_contract, normalized_receipt_path,
     receipt_component, resolve_install_paths, InstallReceiptWire, INSTALL_RECEIPT_RELATIVE_PATH,

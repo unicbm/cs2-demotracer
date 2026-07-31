@@ -131,7 +131,12 @@ line-of-sight filtering.
 | `dtr_voice_mix <voice_clip.dtv> <xuid=slot[,xuid=slot...]|loaded> [recipient_slot|all]` | Test multi-speaker mapping. |
 | `dtr_voice_stop` | Stop voice test playback. |
 
-See [VOICE.md](VOICE.md) for sidecar layout and recipient rules.
+When the demo contains usable voice frames, the converter writes
+`voice/roundXX.dtv` beside the manifest archive. Keep the sidecar with its
+matching manifest; copying only `.dtr` files is insufficient. DemoTracer maps
+speaker XUIDs to loaded replay bots. Observers hear all replay voice, human T/CT
+players hear their own team, and bots and HLTV are not recipients. Missing or
+unusable voice evidence simply produces no sidecar.
 
 ## Manual Replay Control
 
@@ -198,3 +203,23 @@ Kept for existing scripts; new tooling should use the commands above.
 | `dtr_weapon_align`, `dtr_projectile_align`, `dtr_crosshair_align`, `dtr_left_hand_desired` | `dtr_align ...` |
 | `dtr_cosmetic_align`, `dtr_sticker_align`, `dtr_charm_align` | `dtr_cosmetics ...` |
 | `dtr_set ...` | Dedicated identity, alignment, handoff, or partial command |
+
+## Known Boundaries
+
+- Playback targets local Windows x64 servers with the source map and enough safe
+  bot slots; it is not intended for matchmaking.
+- `.dtr` preserves its recorded evidence but is not a complete reconstruction
+  of every CS2 command or physics interaction.
+- Plugins that control bot AI, buying, inventory, movement, identity, or
+  presentation can conflict with replay state.
+- Boosts and player-on-player movement can differ when a human replaces a
+  recorded participant; complex handoff transitions remain best-effort.
+- Scoreboard alignment is best-effort and default-off. Some demos contain team
+  or default avatars rather than true player avatars.
+- Projectile alignment is not exact for every throw, especially molotov and
+  incendiary effects. Uncertain evidence stays on native CS2 behavior.
+- Voice requires usable voice netmessages. Sticker and keychain transforms
+  cannot reproduce every CS2 presentation detail exactly.
+- Cosmetic writes are explicit opt-in and positive-evidence-only. With
+  BotRandomizer installed, missing provider leases or authenticated replay
+  identity cause DemoTracer to fail closed without stopping playback.

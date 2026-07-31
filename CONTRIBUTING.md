@@ -27,5 +27,10 @@ AGPL-3.0-only. By submitting a contribution, you confirm that you have the
 right to provide it under that license. Third-party files and datasets retain
 their existing licenses.
 
+First-party source files carry the repository copyright and AGPL notice.
+`tooling/scripts/check-first-party-headers.ps1` enforces that boundary. Never
+apply the first-party header to `third_party`, `server/vendor`, BotController,
+BotHider, generated catalogs, or another upstream work.
+
 Modified distributions must not imply endorsement or official-build status;
 see [Trademark and Official Build Policy](TRADEMARKS.md).

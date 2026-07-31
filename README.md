@@ -8,8 +8,7 @@ server playback stack. It converts Counter-Strike 2 demo files into compact
 projectiles, optional voice, and selected presentation evidence through bots on
 a local CS2 server.
 
-[简体中文](docs/README.zh-Hans.md) · [Documentation](docs/README.md) ·
-[Development](docs/DEVELOPMENT.md) ·
+[Documentation](docs/README.md) · [Development](docs/DEVELOPMENT.md) ·
 [Latest release](https://github.com/unicbm/demotracer/releases/latest)
 
 ![CI](https://github.com/unicbm/demotracer/actions/workflows/ci.yml/badge.svg)
@@ -68,7 +67,7 @@ and plugin development. It is not intended for matchmaking or cheating.
   [CounterStrikeSharp](https://github.com/roflmuffin/CounterStrikeSharp).
 
 The desktop installer does not require Python, Node.js, Rust, or a local build
-toolchain. See [Dependencies and Compatibility](docs/DEPENDENCIES.md).
+toolchain. See [Development](docs/DEVELOPMENT.md#dependencies-and-provenance).
 
 ## Downloads
 

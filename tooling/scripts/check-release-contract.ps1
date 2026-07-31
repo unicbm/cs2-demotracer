@@ -1,3 +1,9 @@
+# ---------------------------------------------------------------------------------------------
+# Copyright (c) 2026 unicbm. All rights reserved.
+# Licensed under the GNU Affero General Public License v3.0 only.
+# See LICENSE in the project root for license information.
+# ---------------------------------------------------------------------------------------------
+
 param(
     [string]$Version = ""
 )
@@ -122,5 +128,7 @@ Assert-TextPresent "tooling\scripts\package-server.ps1" 'DemoTracer-CSS-v\$Versi
 Assert-PathAbsent "tooling\scripts\publish-r2.ps1" "R2 updater publisher"
 Assert-PathAbsent "tooling\scripts\package-gui-update-test.ps1" "GUI updater test packager"
 Assert-PathAbsent "tooling\release\updater-public-key.txt" "updater public key"
+
+& (Join-Path $PSScriptRoot "check-first-party-headers.ps1") -RepoRoot $repoRoot
 
 Write-Host "Release contract verified for v$Version."

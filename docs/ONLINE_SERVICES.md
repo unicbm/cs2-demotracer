@@ -60,5 +60,4 @@ normal browser privacy policy. A local CSS ZIP is validated against its embedded
 receipt and per-file hashes before installation.
 
 DemoTracer 1.0 has no telemetry, cloud conversion, replay upload, account
-system, or remote player catalog. A future anonymous, consent-based telemetry
-design is documented in [TELEMETRY.md](TELEMETRY.md); that design is not active.
+system, or remote player catalog.

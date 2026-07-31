@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------------------------
+ * Copyright (c) 2026 unicbm. All rights reserved.
+ * Licensed under the GNU Affero General Public License v3.0 only.
+ * See LICENSE in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { SteamProfile } from "../types";

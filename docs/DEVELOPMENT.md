@@ -18,14 +18,41 @@ The Rust converter crate is the conversion truth source. The desktop backend
 calls it directly; there is no supported converter CLI. Future automation
 should use a separately versioned API instead of recreating a second UI.
 
+## Dependencies and Provenance
+
+The packaged Windows x64 desktop app requires Microsoft Edge WebView2 but no
+developer toolchain. Source builds require Rust stable with the Windows MSVC
+target, Node.js 22, pnpm 11.9, .NET 10, and the Tauri Windows prerequisites.
+
+Pinned parser, inspect-link, cosmetic, crosshair, flag, and professional-player
+sources are recorded under `third_party/`, `tooling/cs2-lib-data/`, lockfiles,
+and their accompanying notices. Generated catalog projections are never edited
+by hand.
+
+`server/runtime/BotController` and `server/runtime/BotHider` are maintained
+derivatives of XBribo's projects. Preserve their own licenses, attribution, and
+`UPSTREAM.md` files; they are not first-party DemoTracer source for copyright
+header purposes. The playback server additionally requires Windows x64 CS2,
+Metamod:Source, CounterStrikeSharp 1.0.371 or newer, and a matching DemoTracer
+bundle.
+
+BotRandomizer 1.5 integration is optional and uses its separately installed v1
+API. Ray-Trace 1.0.16 or newer is optional for stricter handoff line-of-sight
+checks. Do not mix BotController or BotHider binaries from full
+CS2-Bot-Improver packages into a DemoTracer bundle.
+
+| Contract | Required value |
+| --- | --- |
+| `.dtr` writer / reader | v8 / v3-v8 |
+| Manifest ABI | 17 |
+| BotController native ABI | 16, minor 33+ |
+| BotHider / BotRandomizer API | 1 / 1 |
+| DemoTracer companion API | 6 |
+
 ## Build and Test
 
 Requirements:
 
-- Rust stable with the Windows MSVC target
-- Node.js 22 and pnpm 11.9
-- .NET 10 SDK
-- Tauri's Windows prerequisites and Microsoft Edge WebView2
 - Local CS2 Metamod/SDK toolchain only when rebuilding native runtimes
 
 The full professional identity dataset is maintained in the separate public
