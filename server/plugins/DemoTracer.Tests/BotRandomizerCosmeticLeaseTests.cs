@@ -19,6 +19,24 @@ public sealed class BotRandomizerCosmeticLeaseTests
     }
 
     [Fact]
+    public void MissingAgentEvidenceWithoutTrustedCapturePreservesTheLivePawn()
+    {
+        Assert.Equal(
+            MissingAgentEvidenceRecovery.PreserveCurrentModel,
+            DemoTracerPlugin.ResolveMissingAgentEvidenceRecovery(
+                hasMatchingNativeModelCapture: false));
+    }
+
+    [Fact]
+    public void MissingAgentEvidenceMayApplyAMatchingSpawnCaptureInPlace()
+    {
+        Assert.Equal(
+            MissingAgentEvidenceRecovery.ApplyCapturedModel,
+            DemoTracerPlugin.ResolveMissingAgentEvidenceRecovery(
+                hasMatchingNativeModelCapture: true));
+    }
+
+    [Fact]
     public void ReplayIdentityClaimsDoNotDependOnPositiveKnifeOrGloveEvidence()
     {
         var claim = BuildClaim(Evidence());

@@ -37,4 +37,23 @@ public sealed class WeaponSlotReplacementTests
                 anySlotWeapon: true,
                 clearWaitFramesRemaining: 0));
     }
+
+    [Theory]
+    [InlineData("weapon_knife")]
+    [InlineData("weapon_knife_t")]
+    [InlineData("weapon_knife_karambit")]
+    [InlineData("weapon_bayonet")]
+    public void KnifeCanNeverEnterTheDestructiveDropAndKillPath(string className)
+    {
+        Assert.False(DemoTracerPlugin.CanDropAndKillReplayWeapon(className));
+    }
+
+    [Theory]
+    [InlineData("weapon_glock")]
+    [InlineData("weapon_ak47")]
+    [InlineData("weapon_smokegrenade")]
+    public void NonKnifeReplayEquipmentCanStillUseTheDropAndKillPath(string className)
+    {
+        Assert.True(DemoTracerPlugin.CanDropAndKillReplayWeapon(className));
+    }
 }
