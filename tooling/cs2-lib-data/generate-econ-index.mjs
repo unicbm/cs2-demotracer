@@ -104,6 +104,67 @@ function weaponPaints(predicate = () => true) {
   );
 }
 
+function replayEquipmentSlot(item) {
+  if (item.type === "melee") {
+    return "knife";
+  }
+  if (item.type === "utility") {
+    return "utility";
+  }
+  switch (item.category) {
+    case "rifle":
+    case "heavy":
+    case "smg":
+      return "primary";
+    case "secondary":
+      return "secondary";
+    case "equipment":
+      if (item.model !== "taser") {
+        throw new Error(`Unsupported cs2-lib equipment model on item ${item.id}`);
+      }
+      return "taser";
+    case "c4":
+      if (item.model !== "c4") {
+        throw new Error(`Unsupported cs2-lib c4 model on item ${item.id}`);
+      }
+      return "c4";
+    default:
+      throw new Error(`Unsupported replay equipment category on cs2-lib item ${item.id}`);
+  }
+}
+
+function replayEquipmentDefinitions() {
+  const definitions = new Map();
+  const classNames = new Set();
+  for (const item of CS2_ITEMS.filter(
+    (candidate) =>
+      candidate.base === true &&
+      ["weapon", "utility", "melee"].includes(candidate.type),
+  )) {
+    const weaponDefIndex = requirePositiveInteger(item.def, "def", item);
+    if (typeof item.model !== "string" || item.model.length === 0) {
+      throw new Error(`Missing model on cs2-lib replay equipment item ${item.id}`);
+    }
+
+    const className = `weapon_${item.model}`;
+    if (definitions.has(weaponDefIndex)) {
+      throw new Error(`Duplicate cs2-lib replay equipment defindex ${weaponDefIndex}`);
+    }
+    if (classNames.has(className)) {
+      throw new Error(`Duplicate cs2-lib replay equipment class ${className}`);
+    }
+    definitions.set(weaponDefIndex, {
+      weapon_defidx: weaponDefIndex,
+      class_name: className,
+      replay_slot: replayEquipmentSlot(item),
+    });
+    classNames.add(className);
+  }
+  return [...definitions.values()].sort(
+    (left, right) => left.weapon_defidx - right.weapon_defidx,
+  );
+}
+
 const weaponPaintPairs = weaponPaints();
 const legacyBodygroupPaintPairs = weaponPaints((item) => item.legacy === true).map(
   ({ weapon_defidx, paint_kit }) => ({ weapon_defidx, paint_kit }),
@@ -121,6 +182,15 @@ const replayEquipmentDefIndices = sortedUnique(
     ["weapon", "utility", "melee"].includes(item.type),
   ).map((item) => requirePositiveInteger(item.def, "def", item)),
 );
+const replayEquipment = replayEquipmentDefinitions();
+if (
+  replayEquipment.length !== replayEquipmentDefIndices.length ||
+  replayEquipment.some(
+    (item, index) => item.weapon_defidx !== replayEquipmentDefIndices[index],
+  )
+) {
+  throw new Error("cs2-lib replay equipment definitions do not cover every replay defindex");
+}
 const knifeDefIndices = itemDefIndices("melee");
 const gloveDefIndices = itemDefIndices("glove");
 const agentDefIndices = itemDefIndices("agent");
@@ -148,6 +218,7 @@ const index = {
   legacy_bodygroup_paints: legacyBodygroupPaintPairs,
   paint_kit_ids: paintKitIds,
   replay_equipment_defidx: replayEquipmentDefIndices,
+  replay_equipment: replayEquipment,
   knife_defidx: knifeDefIndices,
   glove_defidx: gloveDefIndices,
   agent_defidx: agentDefIndices,
@@ -160,6 +231,7 @@ const index = {
     legacy_bodygroup_paints: legacyBodygroupPaintPairs.length,
     paint_kit_ids: paintKitIds.length,
     replay_equipment_defidx: replayEquipmentDefIndices.length,
+    replay_equipment: replayEquipment.length,
     knife_defidx: knifeDefIndices.length,
     glove_defidx: gloveDefIndices.length,
     agent_defidx: agentDefIndices.length,

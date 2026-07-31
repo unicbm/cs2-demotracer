@@ -5,7 +5,7 @@ public sealed class CosmeticDefinitionTests
     [Fact]
     public void ZeusIsAWeaponCosmeticDefinition()
     {
-        Assert.True(DemoTracerPlugin.IsWeaponCosmeticDefIndex(31));
+        Assert.True(DemoTracerPlugin.IsWeaponCosmeticCategory(31));
     }
 
     [Theory]
@@ -14,6 +14,6 @@ public sealed class CosmeticDefinitionTests
     [InlineData(49)]
     public void EquipmentWithoutWeaponPaintsIsNotAWeaponCosmeticDefinition(int weaponDefIndex)
     {
-        Assert.False(DemoTracerPlugin.IsWeaponCosmeticDefIndex(weaponDefIndex));
+        Assert.False(DemoTracerPlugin.IsWeaponCosmeticCategory(weaponDefIndex));
     }
 }

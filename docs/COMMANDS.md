@@ -178,7 +178,6 @@ plugin with `css_plugins reload DemoTracer`.
 | `dtr_doctor [manifest.json]` | Check dependencies and optional manifest compatibility. |
 | `dtr_bots` | List candidate bots and replay ownership. |
 | `dtr_status [slot <slot>|<slot>]` | Print replay state. |
-| `dtr_util_trace <0|1> [file.csv]` | Toggle utility CSV tracing for development. |
 | `bh_status` | Print BotHider provider and managed-slot state. |
 | `bc_status` | Print native hooks and per-slot locks. |
 | `bc_replay_pov [off|spectated|always]` | Control native first-person POV publication. |

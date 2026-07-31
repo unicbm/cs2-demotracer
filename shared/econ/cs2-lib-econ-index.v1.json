@@ -12437,6 +12437,328 @@
     525,
     526
   ],
+  "replay_equipment": [
+    {
+      "weapon_defidx": 1,
+      "class_name": "weapon_deagle",
+      "replay_slot": "secondary"
+    },
+    {
+      "weapon_defidx": 2,
+      "class_name": "weapon_elite",
+      "replay_slot": "secondary"
+    },
+    {
+      "weapon_defidx": 3,
+      "class_name": "weapon_fiveseven",
+      "replay_slot": "secondary"
+    },
+    {
+      "weapon_defidx": 4,
+      "class_name": "weapon_glock",
+      "replay_slot": "secondary"
+    },
+    {
+      "weapon_defidx": 7,
+      "class_name": "weapon_ak47",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 8,
+      "class_name": "weapon_aug",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 9,
+      "class_name": "weapon_awp",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 10,
+      "class_name": "weapon_famas",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 11,
+      "class_name": "weapon_g3sg1",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 13,
+      "class_name": "weapon_galilar",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 14,
+      "class_name": "weapon_m249",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 16,
+      "class_name": "weapon_m4a1",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 17,
+      "class_name": "weapon_mac10",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 19,
+      "class_name": "weapon_p90",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 23,
+      "class_name": "weapon_mp5sd",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 24,
+      "class_name": "weapon_ump45",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 25,
+      "class_name": "weapon_xm1014",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 26,
+      "class_name": "weapon_bizon",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 27,
+      "class_name": "weapon_mag7",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 28,
+      "class_name": "weapon_negev",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 29,
+      "class_name": "weapon_sawedoff",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 30,
+      "class_name": "weapon_tec9",
+      "replay_slot": "secondary"
+    },
+    {
+      "weapon_defidx": 31,
+      "class_name": "weapon_taser",
+      "replay_slot": "taser"
+    },
+    {
+      "weapon_defidx": 32,
+      "class_name": "weapon_hkp2000",
+      "replay_slot": "secondary"
+    },
+    {
+      "weapon_defidx": 33,
+      "class_name": "weapon_mp7",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 34,
+      "class_name": "weapon_mp9",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 35,
+      "class_name": "weapon_nova",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 36,
+      "class_name": "weapon_p250",
+      "replay_slot": "secondary"
+    },
+    {
+      "weapon_defidx": 38,
+      "class_name": "weapon_scar20",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 39,
+      "class_name": "weapon_sg556",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 40,
+      "class_name": "weapon_ssg08",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 42,
+      "class_name": "weapon_knife",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 43,
+      "class_name": "weapon_flashbang",
+      "replay_slot": "utility"
+    },
+    {
+      "weapon_defidx": 44,
+      "class_name": "weapon_hegrenade",
+      "replay_slot": "utility"
+    },
+    {
+      "weapon_defidx": 45,
+      "class_name": "weapon_smokegrenade",
+      "replay_slot": "utility"
+    },
+    {
+      "weapon_defidx": 46,
+      "class_name": "weapon_molotov",
+      "replay_slot": "utility"
+    },
+    {
+      "weapon_defidx": 47,
+      "class_name": "weapon_decoy",
+      "replay_slot": "utility"
+    },
+    {
+      "weapon_defidx": 48,
+      "class_name": "weapon_incgrenade",
+      "replay_slot": "utility"
+    },
+    {
+      "weapon_defidx": 49,
+      "class_name": "weapon_c4",
+      "replay_slot": "c4"
+    },
+    {
+      "weapon_defidx": 59,
+      "class_name": "weapon_knife_t",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 60,
+      "class_name": "weapon_m4a1_silencer",
+      "replay_slot": "primary"
+    },
+    {
+      "weapon_defidx": 61,
+      "class_name": "weapon_usp_silencer",
+      "replay_slot": "secondary"
+    },
+    {
+      "weapon_defidx": 63,
+      "class_name": "weapon_cz75a",
+      "replay_slot": "secondary"
+    },
+    {
+      "weapon_defidx": 64,
+      "class_name": "weapon_revolver",
+      "replay_slot": "secondary"
+    },
+    {
+      "weapon_defidx": 500,
+      "class_name": "weapon_bayonet",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 503,
+      "class_name": "weapon_knife_css",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 505,
+      "class_name": "weapon_knife_flip",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 506,
+      "class_name": "weapon_knife_gut",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 507,
+      "class_name": "weapon_knife_karambit",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 508,
+      "class_name": "weapon_knife_m9_bayonet",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 509,
+      "class_name": "weapon_knife_tactical",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 512,
+      "class_name": "weapon_knife_falchion",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 514,
+      "class_name": "weapon_knife_survival_bowie",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 515,
+      "class_name": "weapon_knife_butterfly",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 516,
+      "class_name": "weapon_knife_push",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 517,
+      "class_name": "weapon_knife_cord",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 518,
+      "class_name": "weapon_knife_canis",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 519,
+      "class_name": "weapon_knife_ursus",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 520,
+      "class_name": "weapon_knife_gypsy_jackknife",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 521,
+      "class_name": "weapon_knife_outdoor",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 522,
+      "class_name": "weapon_knife_stiletto",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 523,
+      "class_name": "weapon_knife_widowmaker",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 525,
+      "class_name": "weapon_knife_skeleton",
+      "replay_slot": "knife"
+    },
+    {
+      "weapon_defidx": 526,
+      "class_name": "weapon_knife_kukri",
+      "replay_slot": "knife"
+    }
+  ],
   "knife_defidx": [
     42,
     59,
@@ -23903,6 +24225,7 @@
     "legacy_bodygroup_paints": 899,
     "paint_kit_ids": 1479,
     "replay_equipment_defidx": 64,
+    "replay_equipment": 64,
     "knife_defidx": 22,
     "glove_defidx": 10,
     "agent_defidx": 63,
