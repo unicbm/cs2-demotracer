@@ -77,6 +77,7 @@ public sealed class CommandPolicyTests
         Assert.False(DemoTracerCommandCallerPolicy.CanExecute(
             serverConsole: false,
             isBot: false,
+            playerSlot: 1,
             remoteAddress,
             isDedicatedServer: false));
     }
@@ -92,6 +93,22 @@ public sealed class CommandPolicyTests
         Assert.True(DemoTracerCommandCallerPolicy.CanExecute(
             serverConsole: false,
             isBot: false,
+            playerSlot: 0,
+            remoteAddress,
+            isDedicatedServer: false));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("192.168.1.20:27005")]
+    [InlineData("steam-networking")]
+    public void ListenServerHostDoesNotDependOnReportedIpAddress(string? remoteAddress)
+    {
+        Assert.True(DemoTracerCommandCallerPolicy.CanExecute(
+            serverConsole: false,
+            isBot: false,
+            playerSlot: 0,
             remoteAddress,
             isDedicatedServer: false));
     }
@@ -102,16 +119,19 @@ public sealed class CommandPolicyTests
         Assert.False(DemoTracerCommandCallerPolicy.CanExecute(
             serverConsole: false,
             isBot: false,
+            playerSlot: 0,
             remoteAddress: "127.0.0.1",
             isDedicatedServer: true));
         Assert.False(DemoTracerCommandCallerPolicy.CanExecute(
             serverConsole: false,
             isBot: true,
+            playerSlot: 0,
             remoteAddress: "127.0.0.1",
             isDedicatedServer: false));
         Assert.True(DemoTracerCommandCallerPolicy.CanExecute(
             serverConsole: true,
             isBot: false,
+            playerSlot: -1,
             remoteAddress: null,
             isDedicatedServer: true));
     }

@@ -102,11 +102,11 @@ default-off and are claimed only when the demo contains positive evidence for
 that weapon definition.
 
 When the BotRandomizer v1 lease API is available, `agents`, `knives`, and
-`gloves` are replay-identity fields rather than absence-fill toggles. Every
-BotHider-authenticated professional replay slot claims all three regardless of
-the selected cosmetic preset. Missing evidence restores the native team model,
-the default team knife, or no gloves instead of allowing random values. Review
-the GSLT warning in the root README before using cosmetic alignment.
+`gloves` use the same positive-evidence rule: DemoTracer claims a field only
+when the selected preset enables it and the demo contains that cosmetic.
+Missing evidence is not converted into a default item and does not authorize
+DemoTracer to rewrite or rebuild the live entity. Review the GSLT warning in
+the root README before using cosmetic alignment.
 
 ### Handoff
 

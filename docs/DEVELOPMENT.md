@@ -99,9 +99,9 @@ measurements.
 - Movement replay uses native movement/input hooks; teleport is not the primary
   playback path.
 - Ordinary weapon, attachment, and scoreboard alignment remain default-off and
-  demo-backed. For a BotHider-authenticated professional replay slot,
-  BotRandomizer coordination always reserves Agent, Knife, and Gloves; missing
-  evidence restores the native team model, default team knife, and no gloves.
+  demo-backed. BotRandomizer coordination claims Agent, Knife, Gloves, and
+  ordinary weapon fields only when the selected preset has positive demo
+  evidence. Missing cosmetic evidence must not trigger entity reconstruction.
 
 ## Packaging
 
