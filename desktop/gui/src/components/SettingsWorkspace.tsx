@@ -25,7 +25,6 @@ import type {
   EnvironmentPluginClassification,
   Language,
   LocalEnvironmentSettings,
-  GuiUpdateStatus,
   PlaybackReleaseStatus,
   RuntimeVerificationStatus,
   ServerConfigDocument,
@@ -33,7 +32,6 @@ import type {
   Theme,
 } from "../types";
 import { SERVER_CONFIG_GUIDE, type ServerConfigGuideGroup } from "../serverConfigGuide";
-import { releaseNotesForLanguage } from "../releaseNotes";
 import type {
   PlaybackHandoffMode,
   PlaybackMatchOverride,
@@ -65,10 +63,10 @@ interface SettingsWorkspaceProps {
   detecting: boolean;
   detectionCompleted: boolean;
   inspecting: boolean;
-  guiUpdate: GuiUpdateStatus;
+  appVersion: string;
   playbackRelease: PlaybackReleaseStatus | null;
   playbackReleaseError: string;
-  releaseAction: "checking" | "installingRemote" | "installingFile" | "rollingBack" | null;
+  releaseAction: "installingFile" | "rollingBack" | null;
   releaseNotice: string;
   onLanguageChange: (language: Language) => void;
   onThemeChange: (theme: Theme) => void;
@@ -78,10 +76,6 @@ interface SettingsWorkspaceProps {
   onDetectCs2: () => void;
   onUseCandidate: (candidate: Cs2InstallCandidate) => void;
   onInspectEnvironment: () => void;
-  onCheckGuiUpdate: () => void;
-  onInstallGuiUpdate: () => void;
-  onCheckPlaybackRelease: () => void;
-  onInstallPlaybackRelease: () => void;
   onInstallPlaybackBundle: () => void;
   onRollbackPlayback: () => void;
   onLoadServerConfig: () => void;
@@ -183,13 +177,6 @@ function confidenceLabel(words: TextDictionary, confidence: string): string {
   if (confidence === "medium") return words.confidenceMedium;
   if (confidence === "low") return words.confidenceLow;
   return confidence;
-}
-
-function formatReleaseBytes(value?: number | null): string {
-  if (!value || value <= 0) return "—";
-  const units = ["B", "KiB", "MiB", "GiB"];
-  const power = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
-  return `${(value / 1024 ** power).toFixed(power === 0 ? 0 : 1)} ${units[power]}`;
 }
 
 function SettingLine({
@@ -311,7 +298,7 @@ export function SettingsWorkspace({
   detecting,
   detectionCompleted,
   inspecting,
-  guiUpdate,
+  appVersion,
   playbackRelease,
   playbackReleaseError,
   releaseAction,
@@ -324,10 +311,6 @@ export function SettingsWorkspace({
   onDetectCs2,
   onUseCandidate,
   onInspectEnvironment,
-  onCheckGuiUpdate,
-  onInstallGuiUpdate,
-  onCheckPlaybackRelease,
-  onInstallPlaybackRelease,
   onInstallPlaybackBundle,
   onRollbackPlayback,
   onLoadServerConfig,
@@ -690,27 +673,15 @@ export function SettingsWorkspace({
   );
 
   const releaseBusy = releaseAction !== null;
-  const guiProgress = guiUpdate.totalBytes && guiUpdate.downloadedBytes != null
-    ? Math.min(100, Math.round((guiUpdate.downloadedBytes / guiUpdate.totalBytes) * 100))
-    : null;
-  const guiReleaseNotes = releaseNotesForLanguage(guiUpdate.notes, language);
-  const playbackReleaseNotes = releaseNotesForLanguage(playbackRelease?.notes, language);
-  const guiStatus = guiUpdate.phase === "checking" ? (language === "zh" ? "正在检查" : "Checking")
-    : guiUpdate.phase === "downloading" ? (language === "zh" ? "正在下载" : "Downloading")
-      : guiUpdate.phase === "installing" ? (language === "zh" ? "正在安装" : "Installing")
-        : guiUpdate.phase === "available" ? (language === "zh" ? "有新版本" : "Update available")
-          : guiUpdate.phase === "error" ? (language === "zh" ? "检查失败" : "Check failed")
-            : guiUpdate.phase === "current" ? (language === "zh" ? "已是最新" : "Up to date")
-              : (language === "zh" ? "尚未检查" : "Not checked");
   const updatesView = (
     <div className="settings-pane release-manager-pane">
       <header className="settings-pane-header">
         <div>
-          <span className="settings-eyebrow">{language === "zh" ? "安装与更新" : "Install & update"}</span>
-          <h2>{language === "zh" ? "DemoTracer 版本管理" : "DemoTracer version management"}</h2>
+          <span className="settings-eyebrow">{language === "zh" ? "安装与版本" : "Install & versions"}</span>
+          <h2>{language === "zh" ? "DemoTracer 组件管理" : "DemoTracer component management"}</h2>
           <p>{language === "zh"
-            ? "桌面应用和 CS2 回放组件分别管理。"
-            : "Manage the desktop app and CS2 playback components separately."}</p>
+            ? "桌面应用通过 NSIS 安装；CS2 插件从本地 CSS ZIP 安装。"
+            : "Install the desktop app with NSIS and CS2 components from a local CSS ZIP."}</p>
         </div>
       </header>
 
@@ -721,29 +692,15 @@ export function SettingsWorkspace({
           <div>
             <h3 id="desktop-release-title">{language === "zh" ? "桌面应用" : "Desktop application"}</h3>
             <p>{language === "zh"
-              ? "自动检查，手动确认安装。"
-              : "Checks automatically and installs only after confirmation."}</p>
+              ? "DemoTracer-GUI 版本。新版本请从 GitHub Releases 下载 NSIS 安装器。"
+              : "DemoTracer-GUI version. Download new NSIS installers from GitHub Releases."}</p>
           </div>
-          <span className={`count-badge${guiUpdate.phase === "available" ? " is-warning" : ""}`}>
-            v{guiUpdate.currentVersion || playbackRelease?.appVersion || "1.0.0"}
-          </span>
+          <span className="count-badge">v{appVersion || playbackRelease?.appVersion || "1.0.0"}</span>
         </div>
-        <div className="desktop-release-summary">
-          <strong>v{guiUpdate.currentVersion || "—"}{guiUpdate.availableVersion ? ` → v${guiUpdate.availableVersion}` : ""}</strong>
-          <span>{guiStatus}</span>
-        </div>
-        {guiProgress != null ? <div className="release-progress" aria-label={`${guiProgress}%`}><span style={{ width: `${guiProgress}%` }} /></div> : null}
-        {guiReleaseNotes ? <p className="release-notes">{guiReleaseNotes}</p> : null}
-        {guiUpdate.error ? <p className="release-error"><AlertIcon size={15} />{guiUpdate.error}</p> : null}
         <div className="release-actions">
-          <button className="secondary-button" type="button" disabled={guiUpdate.phase === "checking" || guiUpdate.phase === "downloading" || guiUpdate.phase === "installing"} onClick={onCheckGuiUpdate}>
-            <RefreshIcon size={15} />{language === "zh" ? "检查桌面更新" : "Check desktop update"}
+          <button className="secondary-button" type="button" onClick={() => onOpenExternal("https://github.com/unicbm/demotracer/releases")}>
+            <ExternalLinkIcon size={15} />{language === "zh" ? "打开 GitHub Releases" : "Open GitHub Releases"}
           </button>
-          {guiUpdate.phase === "available" ? (
-            <button className="primary-button" type="button" onClick={onInstallGuiUpdate}>
-              <ReplayIcon size={15} />{language === "zh" ? `安装 v${guiUpdate.availableVersion}` : `Install v${guiUpdate.availableVersion}`}
-            </button>
-          ) : null}
         </div>
       </section>
 
@@ -752,10 +709,10 @@ export function SettingsWorkspace({
           <div>
             <h3 id="playback-release-title">{language === "zh" ? "CS2 回放组件" : "CS2 playback components"}</h3>
             <p>{language === "zh"
-              ? "只在你点击检查或安装时联网；自动定位 Steam/CS2，替换旧版 provider 前先备份，并保留一次安全回滚。"
-              : "Goes online only when you click check or install; locates Steam/CS2, backs up legacy providers before replacement, and keeps a safe rollback."}</p>
+              ? "选择已下载的 DemoTracer-CSS ZIP；安装前验证 receipt 和内部文件哈希，并保留一次安全回滚。"
+              : "Choose a downloaded DemoTracer-CSS ZIP; its receipt and internal file hashes are verified before installation, with one safe rollback retained."}</p>
           </div>
-          <span className={`count-badge${playbackRelease?.updateAvailable ? " is-warning" : ""}`}>
+          <span className="count-badge">
             {playbackRelease?.currentVersion ? `v${playbackRelease.currentVersion}` : (language === "zh" ? "未验证" : "Unverified")}
           </span>
         </div>
@@ -767,21 +724,12 @@ export function SettingsWorkspace({
             <code className="release-target-path">{environment.cs2Path}</code>
             <div className="release-version-grid">
               <div><span>{language === "zh" ? "已安装" : "Installed"}</span><strong>{playbackRelease?.currentVersion ? `v${playbackRelease.currentVersion}` : (language === "zh" ? "未安装/旧版" : "Missing / legacy")}</strong></div>
-              <div><span>{language === "zh" ? "线上版本" : "Online"}</span><strong>{playbackRelease?.latestVersion ? `v${playbackRelease.latestVersion}` : "—"}</strong></div>
-              <div><span>{language === "zh" ? "包体积" : "Package"}</span><strong>{formatReleaseBytes(playbackRelease?.packageSize)}</strong></div>
+              <div><span>{language === "zh" ? "安装方式" : "Install source"}</span><strong>{language === "zh" ? "本地 ZIP" : "Local ZIP"}</strong></div>
             </div>
-            {playbackReleaseNotes ? <p className="release-notes">{playbackReleaseNotes}</p> : null}
-            {!playbackRelease?.configured ? <p className="release-error"><AlertIcon size={15} />{language === "zh" ? "当前构建没有注入发布域名和公钥；本地开发构建不会联网安装。" : "This build has no release domain or public key; local development builds do not install from the network."}</p> : null}
             {playbackReleaseError ? <p className="release-error"><AlertIcon size={15} />{playbackReleaseError}</p> : null}
             <div className="release-actions">
-              <button className="secondary-button" type="button" disabled={releaseBusy || !playbackRelease?.configured} onClick={onCheckPlaybackRelease}>
-                <RefreshIcon size={15} />{releaseAction === "checking" ? (language === "zh" ? "正在检查" : "Checking") : (language === "zh" ? "检查组件更新" : "Check component update")}
-              </button>
-              <button className="primary-button" type="button" disabled={releaseBusy || !playbackRelease?.configured} onClick={onInstallPlaybackRelease}>
-                <ReplayIcon size={15} />{releaseAction === "installingRemote" ? (language === "zh" ? "正在安装" : "Installing") : playbackRelease?.currentVersion ? (language === "zh" ? "安装/修复最新版" : "Install / repair latest") : (language === "zh" ? "自动安装" : "Install automatically")}
-              </button>
-              <button className="secondary-button" type="button" disabled={releaseBusy || !playbackRelease?.configured} onClick={onInstallPlaybackBundle}>
-                <FolderIcon size={15} />{releaseAction === "installingFile" ? (language === "zh" ? "正在安装" : "Installing") : (language === "zh" ? "从签名包安装" : "Install signed bundle")}
+              <button className="primary-button" type="button" disabled={releaseBusy} onClick={onInstallPlaybackBundle}>
+                <FolderIcon size={15} />{releaseAction === "installingFile" ? (language === "zh" ? "正在安装" : "Installing") : (language === "zh" ? "从 CSS ZIP 安装" : "Install from CSS ZIP")}
               </button>
               <button className="text-button" type="button" disabled={releaseBusy || !playbackRelease?.canRollback} onClick={onRollbackPlayback}>
                 {releaseAction === "rollingBack" ? (language === "zh" ? "正在回滚" : "Rolling back") : (language === "zh" ? "回滚上次安装" : "Rollback last install")}
@@ -1224,7 +1172,7 @@ export function SettingsWorkspace({
     </div>
   );
 
-  const aboutVersion = guiUpdate.currentVersion || playbackRelease?.appVersion || "1.0.0";
+  const aboutVersion = appVersion || playbackRelease?.appVersion || "1.0.0";
   const aboutView = (
     <div className="settings-pane settings-about-pane">
       <header className="settings-pane-header credits-pane-header">
@@ -1371,7 +1319,7 @@ export function SettingsWorkspace({
             <SearchIcon size={17} /><span><strong>{words.settingsNavEnvironment}</strong><small>{words.settingsNavEnvironmentHelp}</small></span>
           </button>
           <button className={section === "updates" ? "is-active" : ""} type="button" aria-current={section === "updates" ? "page" : undefined} onClick={() => setSection("updates")}>
-            <RefreshIcon size={17} /><span><strong>{language === "zh" ? "安装与更新" : "Install & update"}</strong><small>{language === "zh" ? "桌面和回放组件版本" : "Desktop and playback versions"}</small></span>
+            <RefreshIcon size={17} /><span><strong>{language === "zh" ? "组件管理" : "Components"}</strong><small>{language === "zh" ? "GUI 版本与本地 CSS 安装" : "GUI version and local CSS install"}</small></span>
           </button>
           <button className={section === "paths" ? "is-active" : ""} type="button" aria-current={section === "paths" ? "page" : undefined} onClick={() => setSection("paths")}>
             <FolderIcon size={17} /><span><strong>{words.settingsNavPaths}</strong><small>{words.settingsNavPathsHelp}</small></span>

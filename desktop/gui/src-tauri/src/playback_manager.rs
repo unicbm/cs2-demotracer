@@ -1,13 +1,10 @@
 use crate::diagnostics::{
     checked_receipt_relative_path, embedded_playback_contract, normalized_receipt_path,
-    receipt_component, resolve_install_paths, InstallReceiptWire, PlaybackContractWire,
-    INSTALL_RECEIPT_RELATIVE_PATH, MAX_RECEIPT_FILES, MAX_RECEIPT_FILE_BYTES,
-    REQUIRED_RECEIPT_PATHS,
+    receipt_component, resolve_install_paths, InstallReceiptWire, INSTALL_RECEIPT_RELATIVE_PATH,
+    MAX_RECEIPT_FILES, MAX_RECEIPT_FILE_BYTES, REQUIRED_RECEIPT_PATHS,
 };
 use crate::{CommandErrorDto, CommandResult};
-use base64::Engine;
 use cs2_demotracer::demo_id::sha256_hex;
-use minisign_verify::{PublicKey, Signature};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -16,15 +13,10 @@ use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
-use url::Url;
 
-const RELEASE_PLUGIN_CONFIG_KEY: &str = "demotracerRelease";
-const PLAYBACK_MANIFEST_URL_KEY: &str = "playbackManifestUrl";
-const MAX_RELEASE_MANIFEST_BYTES: usize = 512 * 1024;
 const MAX_PLAYBACK_PACKAGE_BYTES: usize = 256 * 1024 * 1024;
 const MAX_EXTRACTED_PACKAGE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_ZIP_ENTRIES: usize = 512;
-const MAX_SIGNATURE_BYTES: usize = 16 * 1024;
 const INSTALL_STATE_SCHEMA: u32 = 1;
 const INSTALL_STATE_DIRECTORY: &str = "playback-installs-v1";
 const STAGING_DIRECTORY: &str = "playback-staging-v1";
@@ -34,42 +26,12 @@ const LEGACY_PROVIDER_DIRECTORIES: &[&str] = &[
     "addons/counterstrikesharp/plugins/BotHiderImpl",
 ];
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PlaybackReleaseManifestWire {
-    schema_version: u32,
-    product: String,
-    version: String,
-    pub_date: String,
-    #[serde(default)]
-    notes: String,
-    platform: String,
-    url: String,
-    signature: String,
-    sha256: String,
-    size: u64,
-    compatibility: PlaybackContractWire,
-}
-
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PlaybackReleaseStatusDto {
     pub app_version: String,
-    pub configured: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub manifest_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current_version: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub latest_version: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub update_available: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pub_date: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub notes: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub package_size: Option<u64>,
     pub can_rollback: bool,
 }
 
@@ -123,82 +85,11 @@ pub(crate) async fn playback_release_status(
         .version
         .clone()
         .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
-    let manifest_url = release_configuration(&app).ok().map(|config| config.0);
     tauri::async_runtime::spawn_blocking(move || {
-        local_playback_status(&local_data, cs2_path.as_deref(), manifest_url, app_version)
+        local_playback_status(&local_data, cs2_path.as_deref(), app_version)
     })
     .await
     .map_err(|error| CommandErrorDto::new("playback_status_worker_failed", error.to_string()))?
-}
-
-#[tauri::command]
-pub(crate) async fn check_playback_release(
-    app: AppHandle,
-    cs2_path: Option<String>,
-) -> CommandResult<PlaybackReleaseStatusDto> {
-    let local_data = app_local_data_dir(&app)?;
-    let app_version = app
-        .config()
-        .version
-        .clone()
-        .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
-    let (manifest_url, _) = release_configuration(&app)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let manifest = fetch_release_manifest(&manifest_url)?;
-        let mut status = local_playback_status(
-            &local_data,
-            cs2_path.as_deref(),
-            Some(manifest_url),
-            app_version,
-        )?;
-        status.latest_version = Some(manifest.version.clone());
-        status.update_available = Some(version_is_newer(
-            status.current_version.as_deref(),
-            &manifest.version,
-        )?);
-        status.pub_date = Some(manifest.pub_date);
-        status.notes = (!manifest.notes.trim().is_empty()).then_some(manifest.notes);
-        status.package_size = Some(manifest.size);
-        Ok(status)
-    })
-    .await
-    .map_err(|error| CommandErrorDto::new("playback_check_worker_failed", error.to_string()))?
-}
-
-#[tauri::command]
-pub(crate) async fn install_playback_release(
-    app: AppHandle,
-    cs2_path: String,
-) -> CommandResult<PlaybackInstallResultDto> {
-    let local_data = app_local_data_dir(&app)?;
-    let (manifest_url, public_key) = release_configuration(&app)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        ensure_cs2_is_stopped()?;
-        let manifest = fetch_release_manifest(&manifest_url)?;
-        let package =
-            crate::http_client::get_https(&manifest.url, MAX_PLAYBACK_PACKAGE_BYTES, 120_000)
-                .map_err(|error| CommandErrorDto::new("playback_download_failed", error))?;
-        if package.len() as u64 != manifest.size {
-            return Err(CommandErrorDto::new(
-                "playback_download_size_mismatch",
-                format!(
-                    "Downloaded playback package is {} bytes; manifest requires {} bytes.",
-                    package.len(),
-                    manifest.size
-                ),
-            ));
-        }
-        verify_download(&package, &manifest.sha256, &manifest.signature, &public_key)?;
-        install_package_bytes(
-            &local_data,
-            &cs2_path,
-            &package,
-            &manifest.version,
-            &format!("release:{manifest_url}"),
-        )
-    })
-    .await
-    .map_err(|error| CommandErrorDto::new("playback_install_worker_failed", error.to_string()))?
 }
 
 #[tauri::command]
@@ -207,8 +98,8 @@ pub(crate) async fn choose_playback_bundle(
 ) -> CommandResult<Option<String>> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut dialog = rfd::FileDialog::new()
-            .set_title("Choose a signed DemoTracer playback bundle")
-            .add_filter("DemoTracer playback bundle", &["zip"]);
+            .set_title("Choose a DemoTracer CSS bundle")
+            .add_filter("DemoTracer CSS bundle", &["zip"]);
         if let Some(value) = initial_path
             .as_deref()
             .map(str::trim)
@@ -234,7 +125,6 @@ pub(crate) async fn install_playback_bundle(
     package_path: String,
 ) -> CommandResult<PlaybackInstallResultDto> {
     let local_data = app_local_data_dir(&app)?;
-    let (_, public_key) = release_configuration(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
         ensure_cs2_is_stopped()?;
         let package_path = PathBuf::from(package_path.trim());
@@ -255,14 +145,6 @@ pub(crate) async fn install_playback_bundle(
                 &package_path,
             ));
         }
-        let signature_path = PathBuf::from(format!("{}.sig", package_path.display()));
-        let signature = fs::read_to_string(&signature_path).map_err(|error| {
-            CommandErrorDto::at_path(
-                "playback_signature_unreadable",
-                format!("A matching .sig file is required: {error}"),
-                &signature_path,
-            )
-        })?;
         let package = fs::read(&package_path).map_err(|error| {
             CommandErrorDto::at_path(
                 "playback_package_unreadable",
@@ -270,7 +152,6 @@ pub(crate) async fn install_playback_bundle(
                 &package_path,
             )
         })?;
-        verify_signature(&package, &signature, &public_key)?;
         let expected_version = package_receipt_version(&package)?;
         install_package_bytes(
             &local_data,
@@ -307,49 +188,11 @@ fn app_local_data_dir(app: &AppHandle) -> CommandResult<PathBuf> {
     })
 }
 
-fn release_configuration(app: &AppHandle) -> CommandResult<(String, String)> {
-    let plugins = &app.config().plugins.0;
-    let manifest_url = plugins
-        .get(RELEASE_PLUGIN_CONFIG_KEY)
-        .and_then(|value| value.get(PLAYBACK_MANIFEST_URL_KEY))
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            CommandErrorDto::new(
-                "release_channel_not_configured",
-                "This build does not contain a DemoTracer release channel.",
-            )
-        })?;
-    validate_https_url(manifest_url)?;
-    let public_key = plugins
-        .get("updater")
-        .and_then(|value| value.get("pubkey"))
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            CommandErrorDto::new(
-                "release_public_key_missing",
-                "This build does not contain the release signing public key.",
-            )
-        })?;
-    decode_release_public_key(public_key).map_err(|error| {
-        CommandErrorDto::new(
-            "release_public_key_invalid",
-            format!("The embedded release signing public key is invalid: {error}"),
-        )
-    })?;
-    Ok((manifest_url.to_string(), public_key.to_string()))
-}
-
 fn local_playback_status(
     local_data: &Path,
     cs2_path: Option<&str>,
-    manifest_url: Option<String>,
     app_version: String,
 ) -> CommandResult<PlaybackReleaseStatusDto> {
-    let configured = manifest_url.is_some();
     let mut current_version = None;
     let mut can_rollback = false;
     if let Some(cs2_path) = cs2_path.map(str::trim).filter(|path| !path.is_empty()) {
@@ -362,108 +205,16 @@ fn local_playback_status(
     }
     Ok(PlaybackReleaseStatusDto {
         app_version,
-        configured,
-        manifest_url,
         current_version,
-        latest_version: None,
-        update_available: None,
-        pub_date: None,
-        notes: None,
-        package_size: None,
         can_rollback,
     })
-}
-
-fn fetch_release_manifest(url: &str) -> CommandResult<PlaybackReleaseManifestWire> {
-    validate_https_url(url)?;
-    let bytes = crate::http_client::get_https(url, MAX_RELEASE_MANIFEST_BYTES, 15_000)
-        .map_err(|error| CommandErrorDto::new("playback_manifest_download_failed", error))?;
-    let manifest: PlaybackReleaseManifestWire =
-        serde_json::from_slice(&bytes).map_err(|error| {
-            CommandErrorDto::new(
-                "playback_manifest_invalid",
-                format!("Playback release manifest is invalid JSON: {error}"),
-            )
-        })?;
-    validate_release_manifest(&manifest)?;
-    Ok(manifest)
-}
-
-fn validate_release_manifest(manifest: &PlaybackReleaseManifestWire) -> CommandResult<()> {
-    if manifest.schema_version != 1
-        || manifest.product != "CS2 DemoTracer Playback Bundle"
-        || manifest.platform != "windows-x64"
-    {
-        return Err(CommandErrorDto::new(
-            "playback_manifest_contract_mismatch",
-            "Playback release manifest product, schema, or platform does not match this app.",
-        ));
-    }
-    parse_version(&manifest.version)?;
-    if manifest.pub_date.trim().is_empty() || manifest.pub_date.len() > 64 {
-        return Err(CommandErrorDto::new(
-            "playback_manifest_invalid",
-            "Playback release publication date is missing or too long.",
-        ));
-    }
-    validate_https_url(&manifest.url)?;
-    if manifest.size == 0 || manifest.size > MAX_PLAYBACK_PACKAGE_BYTES as u64 {
-        return Err(CommandErrorDto::new(
-            "playback_manifest_invalid",
-            "Playback release package size is outside the accepted range.",
-        ));
-    }
-    validate_sha256_text(&manifest.sha256)?;
-    if manifest.signature.is_empty() || manifest.signature.len() > MAX_SIGNATURE_BYTES {
-        return Err(CommandErrorDto::new(
-            "playback_manifest_invalid",
-            "Playback release signature is missing or too large.",
-        ));
-    }
-    decode_release_signature(&manifest.signature).map_err(|error| {
-        CommandErrorDto::new(
-            "playback_manifest_invalid",
-            format!("Playback release signature is malformed: {error}"),
-        )
-    })?;
-    if manifest.compatibility
-        != embedded_playback_contract()
-            .map_err(|error| CommandErrorDto::new("embedded_contract_invalid", error))?
-    {
-        return Err(CommandErrorDto::new(
-            "playback_manifest_contract_mismatch",
-            "Playback release compatibility contract does not exactly match this desktop build.",
-        ));
-    }
-    Ok(())
-}
-
-fn validate_https_url(value: &str) -> CommandResult<()> {
-    let url = Url::parse(value).map_err(|error| {
-        CommandErrorDto::new(
-            "release_url_invalid",
-            format!("Release URL is invalid: {error}"),
-        )
-    })?;
-    if url.scheme() != "https"
-        || url.host_str().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(CommandErrorDto::new(
-            "release_url_invalid",
-            "Release URLs must use credential-free HTTPS and cannot contain a fragment.",
-        ));
-    }
-    Ok(())
 }
 
 fn validate_sha256_text(value: &str) -> CommandResult<()> {
     if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(CommandErrorDto::new(
-            "playback_manifest_invalid",
-            "Playback release SHA-256 must contain exactly 64 hexadecimal characters.",
+            "playback_receipt_invalid",
+            "Playback receipt SHA-256 must contain exactly 64 hexadecimal characters.",
         ));
     }
     Ok(())
@@ -476,69 +227,6 @@ fn parse_version(value: &str) -> CommandResult<Version> {
             format!("Playback release version is not valid SemVer: {error}"),
         )
     })
-}
-
-fn version_is_newer(current: Option<&str>, latest: &str) -> CommandResult<bool> {
-    let latest = parse_version(latest)?;
-    match current {
-        Some(current) => Ok(latest > parse_version(current)?),
-        None => Ok(true),
-    }
-}
-
-fn verify_download(
-    bytes: &[u8],
-    expected_sha256: &str,
-    signature: &str,
-    public_key: &str,
-) -> CommandResult<()> {
-    let actual = sha256_hex(bytes);
-    if !actual.eq_ignore_ascii_case(expected_sha256.trim()) {
-        return Err(CommandErrorDto::new(
-            "playback_package_hash_mismatch",
-            "Downloaded playback package SHA-256 does not match the signed release metadata.",
-        ));
-    }
-    verify_signature(bytes, signature, public_key)
-}
-
-fn verify_signature(bytes: &[u8], signature: &str, public_key: &str) -> CommandResult<()> {
-    let public_key = decode_release_public_key(public_key)
-        .map_err(|error| CommandErrorDto::new("release_public_key_invalid", error))?;
-    let signature = decode_release_signature(signature)
-        .map_err(|error| CommandErrorDto::new("playback_signature_invalid", error))?;
-    public_key
-        .verify(bytes, &signature, false)
-        .map_err(|error| {
-            CommandErrorDto::new(
-                "playback_signature_invalid",
-                format!("Playback package signature verification failed: {error}"),
-            )
-        })
-}
-
-fn decode_release_public_key(value: &str) -> Result<PublicKey, String> {
-    if let Ok(key) = PublicKey::decode(value) {
-        return Ok(key);
-    }
-    let decoded = base64::engine::general_purpose::STANDARD
-        .decode(value.trim())
-        .map_err(|error| format!("Tauri public key wrapper is invalid: {error}"))?;
-    let decoded = String::from_utf8(decoded)
-        .map_err(|error| format!("Tauri public key is not UTF-8: {error}"))?;
-    PublicKey::decode(&decoded).map_err(|error| error.to_string())
-}
-
-fn decode_release_signature(value: &str) -> Result<Signature, String> {
-    if let Ok(signature) = Signature::decode(value) {
-        return Ok(signature);
-    }
-    let decoded = base64::engine::general_purpose::STANDARD
-        .decode(value.trim())
-        .map_err(|error| format!("Tauri signature wrapper is invalid: {error}"))?;
-    let decoded = String::from_utf8(decoded)
-        .map_err(|error| format!("Tauri signature is not UTF-8: {error}"))?;
-    Signature::decode(&decoded).map_err(|error| error.to_string())
 }
 
 fn package_receipt_version(bytes: &[u8]) -> CommandResult<String> {
@@ -1379,46 +1067,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn compares_semver_without_lexical_version_bugs() {
-        assert!(version_is_newer(Some("1.0.9"), "1.0.10").unwrap());
-        assert!(!version_is_newer(Some("1.2.0"), "1.1.99").unwrap());
-        assert!(version_is_newer(None, "1.0.0").unwrap());
-    }
-
-    #[test]
-    fn release_urls_require_clean_https() {
-        assert!(validate_https_url("https://downloads.example.com/stable/playback.json").is_ok());
-        assert!(validate_https_url("http://downloads.example.com/playback.json").is_err());
-        assert!(validate_https_url("https://user@example.com/playback.json").is_err());
-        assert!(validate_https_url("https://example.com/playback.json#old").is_err());
-    }
-
-    #[test]
     fn safe_version_labels_cannot_escape_backup_directory() {
         assert_eq!(safe_version_label("../v1.0.0/beta"), ".._v1.0.0_beta");
-    }
-
-    #[test]
-    fn accepts_the_committed_tauri_updater_public_key() {
-        assert!(decode_release_public_key(include_str!(
-            "../../../../tooling/release/updater-public-key.txt"
-        ))
-        .is_ok());
-    }
-
-    #[test]
-    fn verifies_a_tauri_wrapped_signature_from_the_release_key() {
-        verify_signature(
-            include_bytes!("../tests/fixtures/tauri-signature-message.txt"),
-            include_str!("../tests/fixtures/tauri-signature-message.txt.sig"),
-            include_str!("../../../../tooling/release/updater-public-key.txt"),
-        )
-        .unwrap();
-    }
-
-    #[test]
-    fn rejects_malformed_tauri_signature_wrappers() {
-        assert!(decode_release_signature("not-a-signature").is_err());
-        assert!(decode_release_signature("bm90IGEgbWluaXNpZ24gc2lnbmF0dXJl").is_err());
     }
 }

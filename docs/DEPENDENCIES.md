@@ -71,11 +71,10 @@ Required external components:
 - The matching DemoTracer playback bundle.
 
 The desktop app can detect Steam library installations and install, repair,
-update, or roll back DemoTracer's signed playback files. Close CS2 before any
+or roll back DemoTracer CSS files from a local release ZIP. Close CS2 before any
 playback mutation. Automatic management does not install or replace Metamod or
 CounterStrikeSharp, and it preserves the server-local
-`demotracer.config.json`. A signed local bundle can be selected when the target
-machine is offline.
+`demotracer.config.json`.
 
 The playback bundle contains:
 

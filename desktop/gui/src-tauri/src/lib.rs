@@ -39,8 +39,8 @@ use cs2_demotracer::voice_export::export_round_voice_sidecars;
 use diagnostics::{choose_cs2_dir, detect_cs2_installations, inspect_cs2_install};
 use inventory_simulator::{set_inventory_simulator_panel, start_inventory_simulator_batch};
 use playback_manager::{
-    check_playback_release, choose_playback_bundle, install_playback_bundle,
-    install_playback_release, playback_release_status, rollback_playback_install,
+    choose_playback_bundle, install_playback_bundle, playback_release_status,
+    rollback_playback_install,
 };
 use serde::{Deserialize, Serialize};
 use server_config::{load_server_config, save_server_config, validate_server_config};
@@ -5253,7 +5253,6 @@ fn open_external_url(url: &str) -> std::io::Result<()> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(|window, event| {
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
                 window.app_handle().exit(0);
@@ -5273,8 +5272,6 @@ pub fn run() {
             detect_cs2_installations,
             inspect_cs2_install,
             playback_release_status,
-            check_playback_release,
-            install_playback_release,
             choose_playback_bundle,
             install_playback_bundle,
             rollback_playback_install,

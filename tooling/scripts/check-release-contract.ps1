@@ -105,23 +105,22 @@ if (-not [bool]$tauriConfig.bundle.active -or @($tauriConfig.bundle.targets) -no
     throw "desktop release bundling must target NSIS"
 }
 Assert-Equal "NSIS install mode" ([string]$tauriConfig.bundle.windows.nsis.installMode) "currentUser"
-if (@($tauriCapability.permissions) -notcontains "updater:default" -or
-    @($tauriCapability.permissions) -notcontains "process:default") {
-    throw "desktop updater/process permissions are missing"
+if (@($tauriCapability.permissions) -notcontains "process:default") {
+    throw "desktop process permission is missing"
 }
-Assert-TextPresent "desktop\gui\package.json" '"@tauri-apps/plugin-updater"\s*:' "desktop updater dependency"
+if (@($tauriCapability.permissions) -contains "updater:default") {
+    throw "desktop updater permission must not be present"
+}
+Assert-TextAbsent "desktop\gui\package.json" '"@tauri-apps/plugin-updater"\s*:' "desktop updater dependency"
 Assert-TextPresent "desktop\gui\package.json" '"@tauri-apps/plugin-process"\s*:' "desktop process dependency"
-Assert-TextPresent "desktop\gui\src-tauri\Cargo.toml" '^tauri-plugin-updater\s*=' "Tauri updater dependency"
-Assert-TextPresent "desktop\gui\src-tauri\Cargo.toml" '^minisign-verify\s*=' "playback signature verifier"
-Assert-TextPresent "tooling\scripts\package-converter.ps1" 'signer",\s*"sign"' "updater artifact signing"
+Assert-TextAbsent "desktop\gui\src-tauri\Cargo.toml" '^tauri-plugin-updater\s*=' "Tauri updater dependency"
+Assert-TextAbsent "desktop\gui\src-tauri\Cargo.toml" '^minisign-verify\s*=' "playback signature verifier"
+Assert-TextAbsent "desktop\gui\src-tauri\tauri.conf.json" 'releases\.detr\.site|"updater"\s*:|latest\.json|playback\.json' "remote updater configuration"
 Assert-TextPresent "tooling\scripts\package-converter.ps1" 'CertificateThumbprint' "Authenticode configuration"
-Assert-TextPresent "tooling\scripts\package-converter.ps1" 'https://releases\.detr\.site' "release domain"
-Assert-TextPresent "tooling\scripts\publish-r2.ps1" 'channels/stable/latest\.json' "stable desktop update channel"
-Assert-TextPresent "tooling\scripts\publish-r2.ps1" 'channels/stable/playback\.json' "stable playback update channel"
-
-$updaterPublicKey = (Read-Text "tooling\release\updater-public-key.txt").Trim()
-if ($updaterPublicKey -notmatch '^[A-Za-z0-9+/]+={0,2}$' -or $updaterPublicKey.Length -lt 80) {
-    throw "tooling/release/updater-public-key.txt is not a valid encoded updater public key"
-}
+Assert-TextPresent "tooling\scripts\package-converter.ps1" 'DemoTracer-GUI-v\$Version-windows-x64' "GUI release asset name"
+Assert-TextPresent "tooling\scripts\package-server.ps1" 'DemoTracer-CSS-v\$Version-windows-x64' "CSS release asset name"
+Assert-PathAbsent "tooling\scripts\publish-r2.ps1" "R2 updater publisher"
+Assert-PathAbsent "tooling\scripts\package-gui-update-test.ps1" "GUI updater test packager"
+Assert-PathAbsent "tooling\release\updater-public-key.txt" "updater public key"
 
 Write-Host "Release contract verified for v$Version."

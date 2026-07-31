@@ -6,9 +6,6 @@ local paths, or logs.
 
 | Trigger | Request | Data sent |
 | --- | --- | --- |
-| App launch, at most once every 24 hours | `releases.detr.site/channels/stable/latest.json` | Installed app version, platform, and normal request metadata |
-| The user clicks **Check component update** | `releases.detr.site/channels/stable/playback.json` | Installed playback version, platform, and normal request metadata |
-| A desktop update is explicitly confirmed, or the user clicks playback install | `releases.detr.site/releases/...` | Requested release version and normal request metadata |
 | A roster is visible | `steamcommunity.com/profiles/<steamid>?xml=1` | SteamID64 and normal request metadata |
 | **About & credits** is opened | `avatars.githubusercontent.com` | Public GitHub avatar identifier and normal request metadata |
 | A cosmetic image is opened | `cdn.cstrike.app` | Catalog image key and normal request metadata |
@@ -56,14 +53,11 @@ name, including the Chinese fullwidth punctuation accepted by current cs2-lib
 and Inventory Simulator releases. Other item types remain unnamed because the
 simulator accepts custom names only on name-tag-compatible item types.
 
-Release files are served from the project's Cloudflare R2 custom domain. Update
-checks and downloads never include a demo name, demo content, replay content,
-Steam install path, local filesystem path, player identity, or generated
-manifest. Only the desktop GUI checks for updates automatically. It presents the
-current version, latest version, and release notes in a confirmation dialog and
-does not download or install until the user approves. Playback update checks and
-installs are always manual. Desktop and playback packages are verified with the
-public update key embedded in the app before installation.
+GUI and CSS releases are downloaded manually from this repository's GitHub
+Releases. The application contains no remote update checker or release download
+client. Choosing the GitHub Releases link opens the system browser under the
+normal browser privacy policy. A local CSS ZIP is validated against its embedded
+receipt and per-file hashes before installation.
 
 DemoTracer 1.0 has no telemetry, cloud conversion, replay upload, account
 system, or remote player catalog. A future anonymous, consent-based telemetry

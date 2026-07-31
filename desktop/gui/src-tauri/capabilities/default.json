@@ -13,7 +13,6 @@
     "core:window:allow-set-background-color",
     "core:webview:allow-set-webview-background-color",
     "core:webview:allow-set-webview-zoom",
-    "process:default",
-    "updater:default"
+    "process:default"
   ]
 }

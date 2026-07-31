@@ -17,7 +17,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $outputRootPath = Join-Path $repoRoot $OutputRoot
-$packageName = "cs2-demotracer-playback-v$Version-windows-x64"
+$packageName = "DemoTracer-CSS-v$Version-windows-x64"
 $stageRoot = Join-Path $outputRootPath $packageName
 $zipPath = Join-Path $outputRootPath "$packageName.zip"
 $runtimeRoot = if ([System.IO.Path]::IsPathRooted($RuntimePackage)) {
@@ -292,11 +292,6 @@ if ($IncludeSymbols) {
     Copy-RequiredFile (Join-Path $botHiderApiOut "DemoTracerBotHiderApi.pdb") (Join-Path $botHiderSharedOut "DemoTracerBotHiderApi.pdb")
 }
 
-New-Item -ItemType Directory -Force -Path (Join-Path $stageRoot "docs") | Out-Null
-Copy-RequiredFile (Join-Path $repoRoot "docs\COMMANDS.md") (Join-Path $stageRoot "docs\COMMANDS.md")
-Copy-RequiredFile (Join-Path $repoRoot "docs\VOICE.md") (Join-Path $stageRoot "docs\VOICE.md")
-Copy-RequiredFile (Join-Path $repoRoot "server\runtime\BotController\UPSTREAM.md") (Join-Path $stageRoot "docs\BOTCONTROLLER-UPSTREAM.md")
-Copy-RequiredFile (Join-Path $repoRoot "server\runtime\BotHider\UPSTREAM.md") (Join-Path $stageRoot "docs\BOTHIDER-UPSTREAM.md")
 Copy-RequiredFile (Join-Path $repoRoot "LICENSE") (Join-Path $stageRoot "LICENSE")
 
 $gitCommit = (git -C $repoRoot rev-parse --short=12 HEAD).Trim()
@@ -341,25 +336,8 @@ $installReceipt = [ordered]@{
 $installReceiptPath = Join-Path $addonsOut "demotracer-install.v1.json"
 $installReceipt | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $installReceiptPath -Encoding UTF8
 
-$versionText = @"
-CS2 DemoTracer Playback Bundle
-version: v$Version
-git_commit: $gitCommit
-platform: windows-x64
-required_botcontroller_abi: $($playbackContract.bot_controller.abi_major)
-required_botcontroller_abi_minor: $($playbackContract.bot_controller.min_abi_minor)
-dtr_reader: $($playbackContract.dtr_reader.min)..$($playbackContract.dtr_reader.max)
-demotracer_api: $($playbackContract.demotracer.companion_api)
-demotracer_bothider_api: $($playbackContract.bot_hider.api)
-counterstrikesharp_target: $($playbackContract.counterstrikesharp.target_framework)
-
-Install target:
-Copy this package's addons directory into your CS2 server game/csgo directory.
-"@
-Set-Content -LiteralPath (Join-Path $stageRoot "VERSION.txt") -Value $versionText -Encoding UTF8
-
 $readme = @'
-# CS2 DemoTracer Playback Bundle v__VERSION__
+# DemoTracer-CSS v__VERSION__
 
 This is the complete Windows x64 local playback package. Install it into the CS2
 server used for replay; it is not a hosted or cloud service. The bundle includes
@@ -416,9 +394,8 @@ command.
 ## Voice Replay
 
 Voice playback uses demo-backed `.dtv` sidecars exported by the desktop GUI when
-voice export is enabled. Keep `voice/roundXX.dtv` next to the matching manifest output
-and enable `dtr_voice_auto on` before `dtr_go seq` or `dtr_go round`. See
-`docs/VOICE.md`.
+voice export is enabled. Keep `voice/roundXX.dtv` next to the matching manifest
+output and enable `dtr_voice_auto on` before `dtr_go seq` or `dtr_go round`.
 
 ## Chat Replay
 
@@ -444,10 +421,6 @@ through CS2's native `say` / `say_team` path when `dtr_chat_auto on` is enabled
   - `cs2-lib-econ-index.v1.json` compact projection of the pinned cs2-lib catalog
   - `demotracer-runtime.v1.json` is created at runtime as a short-lived local
     health heartbeat; it is not prepackaged
-- `docs/COMMANDS.md`
-- `docs/VOICE.md`
-- `docs/BOTCONTROLLER-UPSTREAM.md`
-- `docs/BOTHIDER-UPSTREAM.md`
 
 ## Compatibility
 
@@ -520,9 +493,4 @@ if (Test-Path -LiteralPath $zipPath) {
 }
 Compress-Archive -LiteralPath $stageRoot -DestinationPath $zipPath -Force
 
-$hash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
-$sumPath = Join-Path $outputRootPath "$packageName.sha256.txt"
-Set-Content -LiteralPath $sumPath -Value "$hash  $packageName.zip" -Encoding ASCII
-
 Write-Host "Wrote $zipPath"
-Write-Host "SHA256 $hash"

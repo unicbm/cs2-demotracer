@@ -51,8 +51,8 @@ a local CS2 server.
 - Replays movement, subtick input, view angles, weapons, projectiles, optional
   demo voice, and demo-backed presentation evidence through the matched
   CounterStrikeSharp and Metamod stack.
-- Installs, verifies, repairs, updates, and rolls back signed playback bundles
-  while preserving server-local configuration.
+- Installs, verifies, repairs, and rolls back local CSS bundles while preserving
+  server-local configuration.
 - Keeps cosmetic, sticker, charm, agent, and scoreboard alignment explicit,
   demo-backed, and default-off where appropriate.
 
@@ -75,11 +75,10 @@ toolchain. See [Dependencies and Compatibility](docs/DEPENDENCIES.md).
 Use the artifacts attached to the
 [latest official release](https://github.com/unicbm/demotracer/releases/latest):
 
-- cs2-demotracer-setup-vVERSION-windows-x64.exe: desktop installer.
-- cs2-demotracer-playback-vVERSION-windows-x64.zip: matched playback bundle.
-- Updater signatures and SHA-256 checksums for independent verification.
+- `DemoTracer-GUI-vVERSION-windows-x64.exe`: NSIS desktop installer.
+- `DemoTracer-CSS-vVERSION-windows-x64.zip`: matched CS2 playback plugins.
 
-Only artifacts published by unicbm and signed by the official release keys are
+Only artifacts attached by unicbm to this repository's GitHub Releases are
 official DemoTracer builds. See
 [Trademark and Official Build Policy](TRADEMARKS.md).
 
@@ -130,7 +129,7 @@ See [.dtr Format Contract](docs/FORMAT.md) for the binary layout and limits.
 - server/runtime: maintained BotController and BotHider native runtimes.
 - shared: versioned compatibility contracts and generated runtime metadata.
 - third_party: vendored dependencies, provenance, and license notices.
-- tooling: validation, packaging, signing, and release automation.
+- tooling: validation, packaging, and release automation.
 
 ## Credits and License
 

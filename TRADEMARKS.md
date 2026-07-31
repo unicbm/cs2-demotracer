@@ -14,9 +14,9 @@ must preserve required notices, and must not imply that it is signed, supported,
 or endorsed by the upstream project.
 
 Official binaries are distributed through the unicbm/demotracer GitHub
-repository and the release endpoints configured in source. Official desktop and
-playback artifacts carry cryptographic signatures and published SHA-256
-checksums. A source build is not an official binary merely because it was built
+repository's GitHub Releases. The release page and its attached
+`DemoTracer-GUI` and `DemoTracer-CSS` assets are the canonical distribution
+surface. A source build is not an official binary merely because it was built
 from an unmodified commit.
 
 This policy protects users from source confusion without limiting the

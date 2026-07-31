@@ -30,15 +30,6 @@
       "devCsp": "default-src 'self' http://localhost:1420 http://127.0.0.1:1420 ws://localhost:1420 ws://127.0.0.1:1420; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost http://localhost:1420 http://127.0.0.1:1420 ws://localhost:1420 ws://127.0.0.1:1420; img-src 'self' data: asset: http://asset.localhost https://cdn.cstrike.app https://avatars.akamai.steamstatic.com https://avatars.fastly.steamstatic.com https://steamcdn-a.akamaihd.net https://avatars.githubusercontent.com; frame-src https://3d.cstrike.app; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self' 'unsafe-eval'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
     }
   },
-  "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERENzVBQTg5NEZCNjUxRjcKUldUM1ViWlBpYXAxM2FBUEdMMmxjbkE1TFNyMCtXVXpvL3V2a3NkK1VRTUo0c1Q0V0U1VkpBTnkK",
-      "endpoints": ["https://releases.detr.site/channels/stable/latest.json"],
-      "windows": {
-        "installMode": "passive"
-      }
-    }
-  },
   "bundle": {
     "active": true,
     "targets": ["nsis"],

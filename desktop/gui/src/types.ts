@@ -446,14 +446,7 @@ export interface Cs2InstallCandidate {
 
 export interface PlaybackReleaseStatus {
   appVersion: string;
-  configured: boolean;
-  manifestUrl?: string | null;
   currentVersion?: string | null;
-  latestVersion?: string | null;
-  updateAvailable?: boolean | null;
-  pubDate?: string | null;
-  notes?: string | null;
-  packageSize?: number | null;
   canRollback: boolean;
 }
 
@@ -463,25 +456,6 @@ export interface PlaybackInstallResult {
   removedLegacyFiles: number;
   backupPath: string;
   gameCsgoPath: string;
-}
-
-export type GuiUpdatePhase =
-  | "idle"
-  | "checking"
-  | "current"
-  | "available"
-  | "downloading"
-  | "installing"
-  | "error";
-
-export interface GuiUpdateStatus {
-  phase: GuiUpdatePhase;
-  currentVersion: string;
-  availableVersion?: string;
-  notes?: string;
-  downloadedBytes?: number;
-  totalBytes?: number;
-  error?: string;
 }
 
 export type EnvironmentOverallStatus = "pass" | "warning" | "error" | "unverified";

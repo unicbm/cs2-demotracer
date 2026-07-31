@@ -580,24 +580,6 @@
   white-space: nowrap;
 }
 
-.desktop-release-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 46px;
-  padding: 10px 14px 0;
-  gap: 16px;
-}
-
-.desktop-release-summary strong {
-  font-size: 14px;
-}
-
-.desktop-release-summary span {
-  color: var(--text-secondary);
-  font-size: 11px;
-}
-
 .release-actions {
   display: flex;
   flex-wrap: wrap;
@@ -606,31 +588,10 @@
   gap: 8px;
 }
 
-.release-progress {
-  height: 4px;
-  overflow: hidden;
-  background: color-mix(in srgb, var(--trace) 12%, var(--surface-subtle));
-}
-
-.release-progress span {
-  display: block;
-  height: 100%;
-  background: var(--trace);
-  transition: width 120ms linear;
-}
-
-.release-notes,
 .release-error,
 .release-callout,
 .release-target-path {
   margin: 10px 14px 0;
-}
-
-.release-notes {
-  color: var(--text-secondary);
-  font-size: 11px;
-  line-height: 17px;
-  white-space: pre-line;
 }
 
 .release-error {

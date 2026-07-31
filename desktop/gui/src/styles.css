@@ -2285,64 +2285,6 @@ input[type="radio"] {
   width: min(590px, calc(100vw - 48px));
 }
 
-.gui-update-dialog {
-  width: min(460px, calc(100vw - 48px));
-}
-
-.update-dialog-version {
-  display: flex;
-  align-items: center;
-  margin-top: 16px;
-  gap: 9px;
-}
-
-.update-dialog-version strong {
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-.update-dialog-version > svg {
-  color: var(--text-tertiary);
-}
-
-.update-dialog-notes {
-  margin-top: 15px;
-  font-size: var(--type-body);
-  line-height: 20px;
-  white-space: pre-wrap;
-}
-
-.update-dialog-scope {
-  margin-top: 7px;
-  color: var(--text-tertiary);
-  font-size: var(--type-support);
-  line-height: 18px;
-}
-
-.update-dialog-progress span {
-  color: var(--text-tertiary);
-  font-size: 10px;
-}
-
-.update-dialog-progress {
-  display: grid;
-  margin-top: 14px;
-  gap: 7px;
-}
-
-.update-dialog-progress > div:first-child {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.update-dialog-status {
-  margin-top: 14px;
-  color: var(--text-secondary);
-  font-size: var(--type-body);
-}
-
 .dialog-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

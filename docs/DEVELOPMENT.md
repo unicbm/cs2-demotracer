@@ -105,56 +105,32 @@ measurements.
 
 ## Packaging
 
-Windows releases have two signing layers:
+The public release contains exactly two Windows x64 assets:
 
-- A Tauri updater key signs both the NSIS updater artifact and playback ZIP.
-  Store the private key outside the repository, set
-  `TAURI_SIGNING_PRIVATE_KEY_PATH`, and keep the matching public key in
-  `tooling/release/updater-public-key.txt`.
-- An Authenticode code-signing certificate can sign the NSIS executable and
-  reduce Windows reputation warnings. Pass its SHA-1 certificate-store
-  thumbprint to the packaging script when available. Authenticode is recommended
-  but not required for updater integrity: an unsigned build requires the
-  explicit `-AllowUnsignedInstaller` override at both package and publish time.
+- `DemoTracer-GUI-vVERSION-windows-x64.exe`: NSIS desktop installer.
+- `DemoTracer-CSS-vVERSION-windows-x64.zip`: matched CS2 plugin bundle.
+
+The desktop app has no remote updater. Users download new installers and CSS
+bundles from this repository's GitHub Releases. Local CSS installation still
+validates the bundle receipt and every recorded file hash before changing CS2,
+and preserves one rollback.
 
 ```powershell
-$env:TAURI_SIGNING_PRIVATE_KEY_PATH = "<private-key-path>"
 .\tooling\scripts\package-release.ps1 `
   -Version <version> `
   -CertificateThumbprint <code-signing-certificate-thumbprint>
-.\tooling\scripts\publish-r2.ps1 -Version <version>
 ```
 
 The release contract check verifies package versions and ABI/API gates before
-packaging. `package-release.ps1` produces a Windows x64 NSIS installer, its
-Tauri updater signature, the playback ZIP and signature, both stable-channel
-manifests, and `SHA256SUMS.txt` under `dist/release-v<version>`.
+packaging. `package-release.ps1` rebuilds the NSIS installer and CSS bundle, then
+creates a clean `dist/release-v<version>` directory containing only those two
+files.
 
-`publish-r2.ps1` uploads versioned assets below
-`https://releases.detr.site/releases/v<version>/`, refreshes the stable download
-aliases, and publishes `playback.json` and `latest.json` last. This ordering
-prevents a channel manifest from advertising incomplete assets. Immutable
-versioned objects use long-lived cache headers; stable aliases and channel
-manifests use short revalidation windows.
-
-Release notes are short user-facing sentences. Pass English with
-`-ReleaseNotes` and Simplified Chinese with `-ReleaseNotesZh`; the desktop app
-selects the active UI language while retaining compatibility with older
-plain-text manifests.
-
-Without an Authenticode certificate, pass `-AllowUnsignedInstaller`. The script
-labels that result as unsigned and warns that Windows SmartScreen may appear.
-The Tauri updater signature remains mandatory and is independent of
-Authenticode. Never commit or upload the updater private key, its password, a
-certificate private key, or a PFX file.
-
-To verify the complete in-app GUI update path without touching stable, run
-`package-gui-update-test.ps1 -AllowUnsignedInstaller`, then
-`publish-gui-update-test.ps1 -AllowUnsignedInstaller`. This produces a local
-v1.0.0 bootstrap installer, a signed v1.0.1 updater artifact, and publishes only
-`test/gui-updater/...` plus `channels/test/latest.json`. The test build checks
-that isolated channel, presents the same explicit update dialog as stable, and
-never updates playback components automatically.
+An Authenticode code-signing certificate can reduce Windows reputation
+warnings. Pass its SHA-1 certificate-store thumbprint when available. Without a
+certificate, pass `-AllowUnsignedInstaller`; the script labels the result as
+unsigned and Windows SmartScreen may warn. Never commit or upload a certificate
+private key or PFX file.
 
 Before publishing:
 
