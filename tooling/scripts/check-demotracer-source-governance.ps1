@@ -13,13 +13,24 @@ $entryPointPath = Join-Path $sourceRoot "DemoTracerPlugin.cs"
 $defaultFileLimit = 1500
 $fileLimits = @{
     "DemoTracerPlugin.cs" = 600
+    "DemoTracerAlignmentCommands.cs" = 650
+    "DemoTracerControlCommands.cs" = 450
+    "DemoTracerCosmeticCommands.cs" = 450
     "DemoTracerPlayback.cs" = 600
     "DemoTracerPlaybackCommands.cs" = 600
     "DemoTracerPlayoff.cs" = 600
     "DemoTracerReplayLifecycle.cs" = 400
+    "DemoTracerReplayLoadout.cs" = 600
     "DemoTracerReplayMetadata.cs" = 300
     "DemoTracerReplaySlotLifecycle.cs" = 300
     "DemoTracerReplayTargets.cs" = 300
+    "DemoTracerReplayWeaponAlignment.cs" = 350
+    "DemoTracerReplayWeaponInventory.cs" = 200
+    "DemoTracerReplayWeaponMutation.cs" = 250
+    "DtrReplayReader.cs" = 550
+    "DtrReplayReaderPayload.cs" = 500
+    "DtrReplayReaderSections.cs" = 400
+    "DtrReplayReaderValidation.cs" = 350
     "ReplayPlanState.cs" = 250
 }
 

@@ -104,12 +104,15 @@ measurements.
   evidence. Missing cosmetic evidence must not trigger entity reconstruction.
 
 `test-css.ps1` also enforces the managed-source boundaries: the
-CounterStrikeSharp entry point remains a small composition root, ordinary
-source files cannot grow past the maintained limit, playback planning, playoff,
-direct commands, replay-target safety, global teardown, slot lifecycle, and
-loaded metadata remain separate domains. Armed, sequence, and playoff reset
-invariants belong to `ReplayPlanState`; the companion API assembly remains
-contract-only.
+CounterStrikeSharp entry point remains a small composition root and ordinary
+source files cannot grow past the maintained limit. Playback planning, playoff,
+replay-target safety, global teardown, slot lifecycle, and loaded metadata remain
+separate domains. Control commands are grouped by alignment, cosmetics, and
+general diagnostics. Replay loadout orchestration is kept apart from weapon
+alignment, inventory observation, and entity mutation. The `.dtr` reader keeps
+format entry, section decoding, payload decoding, and semantic validation in
+separate files. Armed, sequence, and playoff reset invariants belong to
+`ReplayPlanState`; the companion API assembly remains contract-only.
 
 ## Packaging
 
