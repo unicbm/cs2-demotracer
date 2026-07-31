@@ -106,8 +106,10 @@ measurements.
 `test-css.ps1` also enforces the managed-source boundaries: the
 CounterStrikeSharp entry point remains a small composition root, ordinary
 source files cannot grow past the maintained limit, playback planning, playoff,
-direct commands, and replay-target safety remain separate domains, and the
-companion API assembly remains contract-only.
+direct commands, replay-target safety, global teardown, slot lifecycle, and
+loaded metadata remain separate domains. Armed, sequence, and playoff reset
+invariants belong to `ReplayPlanState`; the companion API assembly remains
+contract-only.
 
 ## Packaging
 

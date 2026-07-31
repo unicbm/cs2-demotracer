@@ -16,7 +16,11 @@ $fileLimits = @{
     "DemoTracerPlayback.cs" = 600
     "DemoTracerPlaybackCommands.cs" = 600
     "DemoTracerPlayoff.cs" = 600
+    "DemoTracerReplayLifecycle.cs" = 400
+    "DemoTracerReplayMetadata.cs" = 300
+    "DemoTracerReplaySlotLifecycle.cs" = 300
     "DemoTracerReplayTargets.cs" = 300
+    "ReplayPlanState.cs" = 250
 }
 
 $errors = [System.Collections.Generic.List[string]]::new()
