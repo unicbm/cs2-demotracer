@@ -49,17 +49,17 @@ public sealed class WeaponSlotReplacementTests
     [InlineData("weapon_knife_t")]
     [InlineData("weapon_knife_karambit")]
     [InlineData("weapon_bayonet")]
-    public void KnifeCanNeverEnterTheDestructiveDropAndKillPath(string className)
+    public void KnifeCanNeverEnterTheDestructiveRemoveAndKillPath(string className)
     {
-        Assert.False(ReplayWeaponReplacementPolicy.CanDropAndKill(className));
+        Assert.False(ReplayWeaponReplacementPolicy.CanRemoveAndKill(className));
     }
 
     [Theory]
     [InlineData("weapon_glock")]
     [InlineData("weapon_ak47")]
     [InlineData("weapon_smokegrenade")]
-    public void NonKnifeReplayEquipmentCanStillUseTheDropAndKillPath(string className)
+    public void NonKnifeReplayEquipmentCanStillUseTheRemoveAndKillPath(string className)
     {
-        Assert.True(ReplayWeaponReplacementPolicy.CanDropAndKill(className));
+        Assert.True(ReplayWeaponReplacementPolicy.CanRemoveAndKill(className));
     }
 }
