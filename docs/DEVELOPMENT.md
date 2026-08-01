@@ -133,6 +133,27 @@ measurements.
   ordinary weapon fields only when the selected preset has positive demo
   evidence. Missing cosmetic evidence must not trigger entity reconstruction.
 
+### Replay slot lifecycle
+
+`ReplaySlotRegistry` is the managed truth source for whether a slot is loaded,
+claimed for DemoTracer writes, or actively playing. Its phases have these
+meanings:
+
+- `Loaded`: the native replay remains available, but DemoTracer no longer owns
+  gameplay or inventory writes for the slot.
+- `Claimed`: the slot is loaded and DemoTracer may perform preparation writes.
+- `Playing`: native playback has started and DemoTracer still owns the slot.
+
+Loading starts a new claimed epoch. Starting playback preserves that epoch.
+Handoff, stop, finish, or failure releases the slot back to `Loaded` and starts
+a new epoch, invalidating callbacks captured by the prior owner. Unload removes
+the slot entirely. Code outside the registry must not maintain parallel loaded,
+owned, or playing collections.
+
+Delayed entity or inventory writes capture the registry epoch and verify it at
+execution time. Replay identity generation remains separate because identity
+metadata can change independently from the write-ownership lifecycle.
+
 `test-css.ps1` also enforces the managed-source boundaries: the
 CounterStrikeSharp entry point remains a small composition root and ordinary
 source files cannot grow past the maintained limit. Playback planning, playoff,
