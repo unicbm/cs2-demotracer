@@ -33,6 +33,7 @@ $fileLimits = @{
     "DemoTracerReplayWeaponAlignment.cs" = 350
     "DemoTracerReplayWeaponInventory.cs" = 200
     "DemoTracerReplayWeaponMutation.cs" = 250
+    "DemoTracerWeaponSlotReplacement.cs" = 450
     "DtrReplayReader.cs" = 550
     "DtrReplayReaderPayload.cs" = 500
     "DtrReplayReaderSections.cs" = 400

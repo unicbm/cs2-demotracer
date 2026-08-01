@@ -49,17 +49,50 @@ public sealed class WeaponSlotReplacementTests
     [InlineData("weapon_knife_t")]
     [InlineData("weapon_knife_karambit")]
     [InlineData("weapon_bayonet")]
-    public void KnifeCanNeverEnterTheDestructiveRemoveAndKillPath(string className)
+    public void KnifeCanNeverEnterTheDestructiveReplacementPath(string className)
     {
-        Assert.False(ReplayWeaponReplacementPolicy.CanRemoveAndKill(className));
+        Assert.False(ReplayWeaponReplacementPolicy.CanRemoveForReplacement(className));
     }
 
     [Theory]
     [InlineData("weapon_glock")]
     [InlineData("weapon_ak47")]
     [InlineData("weapon_smokegrenade")]
-    public void NonKnifeReplayEquipmentCanStillUseTheRemoveAndKillPath(string className)
+    public void NonKnifeReplayEquipmentCanStillUseTheReplacementPath(string className)
     {
-        Assert.True(ReplayWeaponReplacementPolicy.CanRemoveAndKill(className));
+        Assert.True(ReplayWeaponReplacementPolicy.CanRemoveForReplacement(className));
+    }
+
+    [Theory]
+    [InlineData(true, true, false, false, true)]
+    [InlineData(false, true, false, false, false)]
+    [InlineData(true, false, false, false, false)]
+    [InlineData(true, true, true, false, false)]
+    [InlineData(true, true, false, true, false)]
+    public void CancellationRestoresFallbackOnlyToTheSameEmptyPawn(
+        bool samePlayer,
+        bool samePawn,
+        bool targetPresent,
+        bool anySlotWeapon,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            ReplayWeaponReplacementPolicy.ShouldRestoreFallback(
+                samePlayer,
+                samePawn,
+                targetPresent,
+                anySlotWeapon));
+    }
+
+    [Fact]
+    public void EmptyCtSidearmSlotFallsBackToP2000InsteadOfKnife()
+    {
+        Assert.Equal(
+            "weapon_hkp2000",
+            ReplayWeaponReplacementPolicy.EmptySlotFallbackItem(
+                ReplayWeaponSlot.Secondary,
+                counterTerrorist: true,
+                targetItem: "weapon_usp_silencer"));
     }
 }
