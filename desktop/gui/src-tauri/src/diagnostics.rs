@@ -2445,7 +2445,7 @@ mod tests {
             "writtenAtMs": now_ms(),
             "running": true,
             "pluginVersion": "0.8.0",
-            "demoTracerApi": 6,
+            "demoTracerApi": 7,
             "counterStrikeSharpVersion": "1.0.371.0",
             "botController": {
                 "abiMajor": 16,
@@ -2509,7 +2509,7 @@ mod tests {
             "writtenAtMs": now_ms().saturating_sub(MAX_RUNTIME_HEALTH_AGE_MS + 1),
             "running": true,
             "pluginVersion": "0.8.0",
-            "demoTracerApi": 6,
+            "demoTracerApi": 7,
             "counterStrikeSharpVersion": "1.0.371.0",
             "botController": {
                 "abiMajor": 16,
