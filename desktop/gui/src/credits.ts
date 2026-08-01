@@ -4,7 +4,7 @@
  * See LICENSE in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-export type CreditFoundationId = "xbribo" | "ianLucas" | "demoparser";
+export type CreditFoundationId = "xbribo" | "ianLucas" | "demoparser" | "csgowiki";
 
 export interface CreditPerson {
   name: string;
@@ -122,6 +122,20 @@ export const DEMOTRACER_CREDITS = {
           name: "demoparser",
           repository: "LaihoE/demoparser",
           url: "https://github.com/LaihoE/demoparser",
+        },
+      ],
+    },
+    {
+      id: "csgowiki",
+      author: "CSGOWiki",
+      githubHandle: "csgowiki",
+      avatarUrl: "https://avatars.githubusercontent.com/u/103179080?v=4",
+      profileUrl: "https://github.com/csgowiki",
+      projects: [
+        {
+          name: "Mini Demo Encoder",
+          repository: "csgowiki/minidemo-encoder",
+          url: "https://github.com/csgowiki/minidemo-encoder",
         },
       ],
     },

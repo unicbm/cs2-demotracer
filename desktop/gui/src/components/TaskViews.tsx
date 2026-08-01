@@ -13,7 +13,6 @@ import {
   CopyIcon,
   FolderIcon,
   ReplayIcon,
-  TraceMark,
 } from "../icons";
 import type { TextDictionary } from "../i18n";
 import type { ConversionSummary, ProgressPhase, ProgressState } from "../types";
@@ -26,37 +25,6 @@ export type CopyTarget =
   | `player:${string}:${"steam" | "crosshair" | "viewmodel" | "inspect"}:${number}`;
 export type CommandMode = "sequence" | "round";
 
-interface DemoPickerViewProps {
-  words: TextDictionary;
-  chooseButtonRef: RefObject<HTMLButtonElement | null>;
-  onChoose: () => void;
-  onOpenManifest: () => void;
-}
-
-export function DemoPickerView({ words, chooseButtonRef, onChoose, onOpenManifest }: DemoPickerViewProps) {
-  return (
-    <section className="demo-picker-view" aria-labelledby="demo-picker-title">
-      <TraceMark size={34} />
-      <h1 id="demo-picker-title">{words.chooseDemoTitle}</h1>
-      <p>{words.chooseDemoBody}</p>
-      <div className="picker-actions">
-        <button ref={chooseButtonRef} className="primary-button" type="button" onClick={onChoose}>
-          <FolderIcon size={17} />
-          {words.chooseDemo}
-        </button>
-        <button className="secondary-button" type="button" onClick={onOpenManifest}>
-          <ReplayIcon size={16} />
-          {words.openManifest}
-        </button>
-      </div>
-      <div className="picker-notes">
-        <span>{words.localOnly}</span>
-        <span>{words.fullParse}</span>
-      </div>
-    </section>
-  );
-}
-
 interface OpeningArchiveViewProps {
   words: TextDictionary;
   manifestName: string;
@@ -64,13 +32,13 @@ interface OpeningArchiveViewProps {
 
 export function OpeningArchiveView({ words, manifestName }: OpeningArchiveViewProps) {
   return (
-    <section className="task-progress-view archive-opening-view" aria-labelledby="archive-opening-title">
+    <section className="task-state-view task-progress-view archive-opening-view" aria-labelledby="archive-opening-title">
       <div className="task-progress-copy">
         <h1 id="archive-opening-title">{words.openingManifestTitle}</h1>
         <strong>{manifestName}</strong>
         <p>{words.openingManifestBody}</p>
       </div>
-      <div className="indeterminate-progress" aria-hidden="true"><span /></div>
+      <div className="indeterminate-progress" role="progressbar" aria-label={words.readingArchive}><span /></div>
       <div className="task-progress-meta" role="status" aria-live="polite">
         <span>{words.readingArchive}</span>
       </div>
@@ -88,22 +56,34 @@ interface AnalysisProgressViewProps {
   sourceFileName: string;
   elapsedSeconds: number;
   progressPhase: ProgressPhase;
+  cancelPending: boolean;
+  onCancel: () => void;
 }
 
-export function AnalysisProgressView({ words, sourceFileName, elapsedSeconds, progressPhase }: AnalysisProgressViewProps) {
+export function AnalysisProgressView({
+  words,
+  sourceFileName,
+  elapsedSeconds,
+  progressPhase,
+  cancelPending,
+  onCancel,
+}: AnalysisProgressViewProps) {
   const decompressing = progressPhase === "decompressing";
   return (
-    <section className="task-progress-view" aria-labelledby="analysis-progress-title">
+    <section className="task-state-view task-progress-view" aria-labelledby="analysis-progress-title">
       <div className="task-progress-copy">
         <h1 id="analysis-progress-title">{decompressing ? words.decompressingTitle : words.analyzingTitle}</h1>
         <strong>{sourceFileName}</strong>
         <p>{decompressing ? words.decompressingBody : words.fullParse}</p>
       </div>
-      <div className="indeterminate-progress" aria-hidden="true"><span /></div>
+      <div className="indeterminate-progress" role="progressbar" aria-label={decompressing ? words.decompressingTitle : words.analyzingTitle}><span /></div>
       <div className="task-progress-meta" role="status" aria-live="polite">
         <span>{words.localOnly}</span>
         {elapsedSeconds >= 8 ? <span>{words.elapsed.replace("{time}", formatElapsed(elapsedSeconds))}</span> : null}
       </div>
+      <button className="secondary-button analysis-cancel-button" type="button" disabled={cancelPending} onClick={onCancel}>
+        {cancelPending ? words.stoppingAnalysis : words.stopAnalysis}
+      </button>
       {elapsedSeconds >= 30 ? <p className="long-task-note">{words.analyzingLong}</p> : null}
     </section>
   );
@@ -119,7 +99,7 @@ interface AnalysisFailedViewProps {
 
 export function AnalysisFailedView({ words, error, retryButtonRef, onRetry, onChangeDemo }: AnalysisFailedViewProps) {
   return (
-    <section className="failure-view" aria-labelledby="analysis-failed-title">
+    <section className="task-state-view failure-view" aria-labelledby="analysis-failed-title">
       <span className="failure-symbol" aria-hidden="true"><AlertIcon size={22} /></span>
       <h1 id="analysis-failed-title" tabIndex={-1}>{words.analysisFailedTitle}</h1>
       <p>{error}</p>
@@ -158,7 +138,7 @@ export function ConversionProgressView({ words, progress, outputRoot }: Conversi
         : stages[activeIndex];
 
   return (
-    <section className="conversion-progress-view" aria-labelledby="conversion-title">
+    <section className="task-state-view conversion-progress-view" aria-labelledby="conversion-title">
       <header>
         <h1 id="conversion-title">{words.conversionTitle}</h1>
         <p>{words.conversionBody}</p>
@@ -167,18 +147,26 @@ export function ConversionProgressView({ words, progress, outputRoot }: Conversi
       <div className="conversion-progress-main">
         <strong>{stages[activeIndex]}</strong>
         <span className="progress-count">{currentLabel}</span>
-        <div className={`linear-progress${determinate ? " is-determinate" : " is-indeterminate"}`} aria-hidden="true">
+        <div
+          className={`linear-progress${determinate ? " is-determinate" : " is-indeterminate"}`}
+          role="progressbar"
+          aria-label={stages[activeIndex]}
+          aria-valuemin={determinate ? 0 : undefined}
+          aria-valuemax={determinate ? progress.estimated : undefined}
+          aria-valuenow={determinate ? progress.written : undefined}
+          aria-valuetext={currentLabel}
+        >
           <span style={determinate ? { width: `${fraction * 100}%` } : undefined} />
         </div>
-        {progress.currentRound !== undefined ? (
-          <span className="round-progress-copy">
-            {words.roundProgress
+        <span className="round-progress-copy" aria-hidden={progress.currentRound === undefined}>
+          {progress.currentRound !== undefined
+            ? words.roundProgress
               .replace("{round}", String(progress.currentRound))
               .replace("{completed}", String(progress.completedRounds))
-              .replace("{total}", String(progress.selectedRounds))}
-          </span>
-        ) : null}
-        {progress.currentItem ? <span className="current-item">{progress.currentItem}</span> : null}
+              .replace("{total}", String(progress.selectedRounds))
+            : "\u00a0"}
+        </span>
+        <span className="current-item" aria-hidden={!progress.currentItem}>{progress.currentItem || "\u00a0"}</span>
       </div>
 
       <ol className="stage-list" aria-label={words.workflowLabel}>
@@ -219,7 +207,7 @@ interface ValidationFailedViewProps {
 
 export function ValidationFailedView({ words, error, outputRoot, onOpenFolder, onBack }: ValidationFailedViewProps) {
   return (
-    <section className="failure-view validation-failure" aria-labelledby="validation-failed-title">
+    <section className="task-state-view failure-view validation-failure" aria-labelledby="validation-failed-title">
       <span className="failure-symbol" aria-hidden="true"><AlertIcon size={22} /></span>
       <h1 id="validation-failed-title" tabIndex={-1}>{words.validationFailedTitle}</h1>
       <p>{words.validationFailedBody}</p>
@@ -279,7 +267,7 @@ export function ResultView({
         : words.cosmeticsUnknown;
 
   return (
-    <section className="result-view" aria-labelledby="result-title">
+    <section className="task-state-view result-view" aria-labelledby="result-title">
       <header className="result-heading">
         <span className="success-symbol" aria-hidden="true"><CheckIcon size={20} /></span>
         <div>

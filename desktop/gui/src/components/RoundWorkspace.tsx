@@ -4,7 +4,7 @@
  * See LICENSE in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowIcon, FolderIcon, SlidersIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
 import type { InventorySimulatorItem } from "../inventorySimulator";
@@ -27,6 +27,7 @@ interface RoundWorkspaceProps {
   outputRoot: string;
   copiedTarget: CopyTarget | null;
   selectedPlayer: PlayerSelection | null;
+  convertPending: boolean;
   onToggleRound: (round: RoundInfo) => void;
   onRestoreRecommended: () => void;
   onClearSelection: () => void;
@@ -58,6 +59,7 @@ export function RoundWorkspace({
   outputRoot,
   copiedTarget,
   selectedPlayer,
+  convertPending,
   onToggleRound,
   onRestoreRecommended,
   onClearSelection,
@@ -72,7 +74,22 @@ export function RoundWorkspace({
   onSyncInventorySimulator,
   formatNumber,
 }: RoundWorkspaceProps) {
-  const [expandedRound, setExpandedRound] = useState<number | null>(null);
+  const [inspectedRound, setInspectedRound] = useState<number | null>(() => (
+    analysis.rounds.find((round) => selectedRounds.has(round.round))?.round
+      ?? analysis.rounds[0]?.round
+      ?? null
+  ));
+  const inspectedAnalysisIdRef = useRef(analysis.analysisId);
+  useEffect(() => {
+    const analysisChanged = inspectedAnalysisIdRef.current !== analysis.analysisId;
+    inspectedAnalysisIdRef.current = analysis.analysisId;
+    setInspectedRound((current) => {
+      if (!analysisChanged && analysis.rounds.some((round) => round.round === current)) return current;
+      return analysis.rounds.find((round) => selectedRounds.has(round.round))?.round
+        ?? analysis.rounds[0]?.round
+        ?? null;
+    });
+  }, [analysis.analysisId, analysis.rounds, selectedRounds]);
   const recommendedCount = useMemo(() => analysis.rounds.filter((round) => round.status === "recommended").length, [analysis.rounds]);
   const suspiciousCount = analysis.rounds.length - recommendedCount;
   const labels: RoundTableLabels = {
@@ -88,14 +105,12 @@ export function RoundWorkspace({
     suspicious: words.suspicious,
     noProblems: words.noIssues,
     suspiciousLocked: words.suspiciousLocked,
-    showDetails: words.showIssues,
-    hideDetails: words.hideIssues,
   };
   const summary = words.roundSummary
     .replace("{total}", formatNumber(analysis.rounds.length))
     .replace("{recommended}", formatNumber(recommendedCount))
     .replace("{suspicious}", formatNumber(suspiciousCount));
-  const canConvert = selectedRounds.size > 0 && Boolean(outputDir);
+  const canConvert = selectedRounds.size > 0 && Boolean(outputDir) && !convertPending;
   const roster = analysisRoster(analysis, words);
   const steamProfiles = useSteamProfiles(analysis.players.map((player) => player.steamId));
   const inventorySelection = useInventorySimulatorSelection(
@@ -134,31 +149,34 @@ export function RoundWorkspace({
         steamProfiles={steamProfiles}
         onSelectPlayer={onSelectPlayer}
       />
-      <div className="round-toolbar">
-        <strong className="round-summary">{summary}</strong>
-        <div className="round-batch-actions">
-          <button className="text-button" type="button" onClick={onRestoreRecommended}>{words.restoreRecommended}</button>
-          <button className="text-button" type="button" onClick={onClearSelection}>{words.clearSelection}</button>
+      <div className="round-selection-panel">
+        <div className="round-toolbar">
+          <strong className="round-summary">{summary}</strong>
+          <div className="round-batch-actions">
+            <button className="text-button" type="button" disabled={convertPending} onClick={onRestoreRecommended}>{words.restoreRecommended}</button>
+            <button className="text-button" type="button" disabled={convertPending} onClick={onClearSelection}>{words.clearSelection}</button>
+          </div>
+          {suspiciousCount > 0 ? (
+            <label className="allow-suspicious-control">
+              <input type="checkbox" checked={allowSuspicious} disabled={convertPending} onChange={(event) => onAllowSuspiciousChange(event.target.checked)} />
+              <span className="wide-label">{words.allowSuspicious}</span>
+              <span className="compact-label">{words.allowSuspiciousShort}</span>
+            </label>
+          ) : <span className="toolbar-spacer" />}
         </div>
-        {suspiciousCount > 0 ? (
-          <label className="allow-suspicious-control">
-            <input type="checkbox" checked={allowSuspicious} onChange={(event) => onAllowSuspiciousChange(event.target.checked)} />
-            <span className="wide-label">{words.allowSuspicious}</span>
-            <span className="compact-label">{words.allowSuspiciousShort}</span>
-          </label>
-        ) : <span className="toolbar-spacer" />}
-      </div>
 
-      <RoundTable
-        labels={labels}
-        rounds={analysis.rounds}
-        selectedRounds={selectedRounds}
-        allowSuspicious={allowSuspicious}
-        expandedRound={expandedRound}
-        onToggle={onToggleRound}
-        onToggleDetails={(round) => setExpandedRound((current) => current === round ? null : round)}
-        formatNumber={formatNumber}
-      />
+        <RoundTable
+          labels={labels}
+          rounds={analysis.rounds}
+          selectedRounds={selectedRounds}
+          allowSuspicious={allowSuspicious}
+          activeRound={inspectedRound}
+          disabled={convertPending}
+          onToggle={onToggleRound}
+          onInspect={(round) => setInspectedRound(round.round)}
+          formatNumber={formatNumber}
+        />
+      </div>
 
       <footer className="export-status-bar">
         <div className="selection-status" aria-live="polite">
@@ -170,16 +188,16 @@ export function RoundWorkspace({
           </div>
         </div>
         <div className="export-actions">
-          <button className="secondary-button output-button" type="button" onClick={onChooseOutput}>
+          <button className="secondary-button output-button" type="button" onClick={onChooseOutput} disabled={convertPending}>
             <FolderIcon size={15} />
             {outputDir ? words.changeOutput : words.chooseOutput}
           </button>
-          <button className="secondary-button status-settings-button" type="button" onClick={(event) => onOpenSettings(event.currentTarget)}>
+          <button className="secondary-button status-settings-button" type="button" onClick={(event) => onOpenSettings(event.currentTarget)} disabled={convertPending}>
             <SlidersIcon size={15} />
             {words.exportSettings}
           </button>
-          <button className="primary-button convert-button" type="button" disabled={!canConvert} onClick={onConvert}>
-            {words.convertCount.replace("{count}", String(selectedRounds.size))}
+          <button className="primary-button convert-button" type="button" disabled={!canConvert} aria-busy={convertPending} onClick={onConvert}>
+            {convertPending ? words.preparing : words.convertCount.replace("{count}", String(selectedRounds.size))}
             <ArrowIcon size={16} />
           </button>
         </div>

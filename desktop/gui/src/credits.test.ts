@@ -55,6 +55,10 @@ test("credits retain the foundational upstream projects", () => {
         id: "demoparser",
         repositories: ["LaihoE/demoparser"],
       },
+      {
+        id: "csgowiki",
+        repositories: ["csgowiki/minidemo-encoder"],
+      },
     ],
   );
 

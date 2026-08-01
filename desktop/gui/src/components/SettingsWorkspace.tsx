@@ -19,7 +19,7 @@ import {
   SunIcon,
   TraceMark,
 } from "../icons";
-import { UI_SCALE_STEPS, type UiScale } from "../appearance";
+import { UI_SCALE_STEPS, UI_SKINS, type UiScale } from "../appearance";
 import { DEMOTRACER_CREDITS } from "../credits";
 import type { TextDictionary } from "../i18n";
 import type {
@@ -35,7 +35,7 @@ import type {
   RuntimeVerificationStatus,
   ServerConfigDocument,
   ServerConfigValidation,
-  Theme,
+  UiSkin,
 } from "../types";
 import { SERVER_CONFIG_GUIDE, type ServerConfigGuideGroup } from "../serverConfigGuide";
 import type {
@@ -51,7 +51,7 @@ type SettingsSection = "appearance" | "environment" | "updates" | "paths" | "exp
 interface SettingsWorkspaceProps {
   words: TextDictionary;
   language: Language;
-  theme: Theme;
+  uiSkin: UiSkin;
   uiScale: UiScale;
   environment: LocalEnvironmentSettings;
   exportRoot: string;
@@ -74,8 +74,7 @@ interface SettingsWorkspaceProps {
   playbackReleaseError: string;
   releaseAction: "installingFile" | "rollingBack" | null;
   releaseNotice: string;
-  onLanguageChange: (language: Language) => void;
-  onThemeChange: (theme: Theme) => void;
+  onUiSkinChange: (skin: UiSkin) => void;
   onUiScaleChange: (scale: UiScale) => void;
   onCs2PathChange: (path: string) => void;
   onBrowseCs2: () => void;
@@ -286,7 +285,7 @@ function CreditsAvatar({
 export function SettingsWorkspace({
   words,
   language,
-  theme,
+  uiSkin,
   uiScale,
   environment,
   exportRoot,
@@ -309,8 +308,7 @@ export function SettingsWorkspace({
   playbackReleaseError,
   releaseAction,
   releaseNotice,
-  onLanguageChange,
-  onThemeChange,
+  onUiSkinChange,
   onUiScaleChange,
   onCs2PathChange,
   onBrowseCs2,
@@ -376,36 +374,42 @@ export function SettingsWorkspace({
     return words.serverConfigGroupCosmetics;
   };
 
+  const skinLabels: Record<UiSkin, readonly [string, string]> = {
+    trace: [words.skinTrace, words.skinTracePalette],
+    cobalt: [words.skinCobalt, words.skinCobaltPalette],
+    ember: [words.skinEmber, words.skinEmberPalette],
+    signal: [words.skinSignal, words.skinSignalPalette],
+  };
+
   const appearanceView = (
     <div className="settings-pane settings-appearance-pane">
       <header className="settings-pane-header">
         <div>
-          <span className="settings-eyebrow">{words.settingsNavAppearance}</span>
           <h2>{words.appearanceTitle}</h2>
           <p>{words.appearanceSubtitle}</p>
         </div>
       </header>
 
       <section className="settings-card" aria-label={words.appearanceTitle}>
-        <SettingSelectLine
-          title={words.language}
-          description={words.languageHelp}
-          value={language}
-          onChange={(value) => onLanguageChange(value as Language)}
-        >
-          <option value="zh">中文</option>
-          <option value="en">English</option>
-        </SettingSelectLine>
-        <SettingSelectLine
-          title={words.theme}
-          description={words.themeHelp}
-          value={theme}
-          onChange={(value) => onThemeChange(value as Theme)}
-        >
-          <option value="system">{words.systemTheme}</option>
-          <option value="light">{words.lightTheme}</option>
-          <option value="dark">{words.darkTheme}</option>
-        </SettingSelectLine>
+        <div className="settings-skin-line">
+          <span className="settings-skin-copy"><strong>{words.uiSkin}</strong><small>{words.uiSkinHelp}</small></span>
+          <div className="settings-skin-grid" role="group" aria-label={words.uiSkin}>
+            {UI_SKINS.map((skin) => (
+              <button
+                className={`settings-skin-choice${uiSkin === skin ? " is-selected" : ""}`}
+                type="button"
+                data-skin-preview={skin}
+                aria-pressed={uiSkin === skin}
+                onClick={() => onUiSkinChange(skin)}
+                key={skin}
+              >
+                <span className="settings-skin-swatches" aria-hidden="true"><i /><i /><i /></span>
+                <span><strong>{skinLabels[skin][0]}</strong><small>{skinLabels[skin][1]}</small></span>
+                {uiSkin === skin ? <CheckIcon size={14} /> : null}
+              </button>
+            ))}
+          </div>
+        </div>
         <SettingSelectLine
           title={words.uiScale}
           description={words.uiScaleHelp}
@@ -424,7 +428,6 @@ export function SettingsWorkspace({
     <div className="settings-pane settings-environment-pane">
       <header className="settings-pane-header">
         <div>
-          <span className="settings-eyebrow">{words.settingsNavEnvironment}</span>
           <h2>{words.environmentTitle}</h2>
           <p>{words.environmentSubtitle}</p>
         </div>
@@ -683,7 +686,6 @@ export function SettingsWorkspace({
     <div className="settings-pane release-manager-pane">
       <header className="settings-pane-header">
         <div>
-          <span className="settings-eyebrow">{language === "zh" ? "安装与版本" : "Install & versions"}</span>
           <h2>{language === "zh" ? "DemoTracer 组件管理" : "DemoTracer component management"}</h2>
           <p>{language === "zh"
             ? "桌面应用通过 NSIS 安装；CS2 插件从本地 CSS ZIP 安装。"
@@ -756,7 +758,6 @@ export function SettingsWorkspace({
     <div className="settings-pane">
       <header className="settings-pane-header">
         <div>
-          <span className="settings-eyebrow">{words.settingsNavPaths}</span>
           <h2>{words.pathsSettingsTitle}</h2>
           <p>{words.pathsSettingsSubtitle}</p>
         </div>
@@ -847,7 +848,6 @@ export function SettingsWorkspace({
     <div className="settings-pane">
       <header className="settings-pane-header">
         <div>
-          <span className="settings-eyebrow">{words.settingsNavExport}</span>
           <h2>{words.exportDefaultsTitle}</h2>
           <p>{words.exportDefaultsSubtitle}</p>
         </div>
@@ -954,7 +954,6 @@ export function SettingsWorkspace({
     <div className="settings-pane">
       <header className="settings-pane-header">
         <div>
-          <span className="settings-eyebrow">{words.settingsNavPlayback}</span>
           <h2>{words.playbackDefaultsTitle}</h2>
           <p>{words.playbackDefaultsSubtitle}</p>
         </div>
@@ -1054,7 +1053,6 @@ export function SettingsWorkspace({
     <div className="settings-pane server-config-pane">
       <header className="settings-pane-header">
         <div>
-          <span className="settings-eyebrow">{words.settingsNavServerConfig}</span>
           <h2>{words.serverConfigTitle}</h2>
           <p>{words.serverConfigSubtitle}</p>
         </div>
@@ -1074,7 +1072,13 @@ export function SettingsWorkspace({
       {!environment.cs2Path.trim() ? (
         <section className="settings-card diagnostic-empty">
           <span><FolderIcon size={22} /></span>
-          <div><h3>{words.serverConfigNeedsPath}</h3><p>{words.serverConfigNeedsPathHelp}</p></div>
+          <div>
+            <h3>{words.serverConfigNeedsPath}</h3>
+            <p>{words.serverConfigNeedsPathHelp}</p>
+            <button className="secondary-button server-config-choose-path" type="button" onClick={onBrowseCs2}>
+              <FolderIcon size={15} />{words.browseFolder}
+            </button>
+          </div>
         </section>
       ) : !serverConfigDocument ? (
         <section className="settings-card diagnostic-empty">
@@ -1179,27 +1183,34 @@ export function SettingsWorkspace({
   );
 
   const aboutVersion = appVersion || playbackRelease?.appVersion || "1.0.0";
+  const foundationDescriptions = {
+    xbribo: words.creditsFoundationXBribo,
+    ianLucas: words.creditsFoundationIanLucas,
+    demoparser: words.creditsFoundationDemoparser,
+    csgowiki: words.creditsFoundationCsgowiki,
+  } as const;
   const aboutView = (
     <div className="settings-pane settings-about-pane">
-      <header className="settings-pane-header credits-pane-header">
-        <div>
-          <span className="settings-eyebrow">{words.settingsNavAbout}</span>
-          <h2>{words.aboutTitle}</h2>
-          <p>{words.aboutSubtitle}</p>
+      <header className="credits-editorial-hero">
+        <div className="credits-trace-stage" aria-hidden="true">
+          <svg viewBox="0 0 960 360" preserveAspectRatio="none">
+            <path className="credits-trace-ghost" d="M-30 292 C120 292 110 72 278 92 S442 316 598 222 S756 34 996 78" />
+            <path className="credits-trace-live" pathLength="1" d="M-30 292 C120 292 110 72 278 92 S442 316 598 222 S756 34 996 78" />
+            <circle className="credits-trace-node is-one" cx="278" cy="92" r="5" />
+            <circle className="credits-trace-node is-two" cx="598" cy="222" r="5" />
+          </svg>
         </div>
-        <span className="credits-version">v{aboutVersion}</span>
-      </header>
-
-      <section className="settings-card credits-hero" aria-labelledby="credits-product-title">
-        <div className="credits-brand-lockup">
-          <span className="credits-brand-mark" aria-hidden="true"><TraceMark size={42} /></span>
-          <div>
-            <h3 id="credits-product-title">CS2 DemoTracer</h3>
-            <p>{words.aboutTagline}</p>
-          </div>
+        <div className="credits-hero-meta">
+          <span>{words.aboutKicker}</span>
+          <code>BUILD {aboutVersion}</code>
+        </div>
+        <div className="credits-hero-copy">
+          <span>{words.aboutTitle}</span>
+          <h2 id="credits-product-title"><b>{words.aboutHeroLine1}</b><b>{words.aboutHeroLine2}</b></h2>
+          <p>{words.aboutTagline}</p>
         </div>
         <button
-          className="credits-creator credits-link-card"
+          className="credits-creator-line credits-link-card"
           type="button"
           title={`GitHub · ${DEMOTRACER_CREDITS.creator.githubHandle}`}
           aria-label={`GitHub: ${DEMOTRACER_CREDITS.creator.githubHandle}`}
@@ -1213,98 +1224,86 @@ export function SettingsWorkspace({
           </div>
           <ExternalLinkIcon className="credits-external-icon" size={13} />
         </button>
+      </header>
+
+      <section className="credits-editorial-section" aria-labelledby="credits-contributors-title">
+        <header className="credits-section-heading">
+          <span>01</span>
+          <div>
+            <h3 id="credits-contributors-title">{words.creditsContributorsTitle}</h3>
+            <p>{words.creditsContributorsHelp}</p>
+          </div>
+        </header>
+        <div className="credits-people-list">
+          {DEMOTRACER_CREDITS.contributors.map((contributor, index) => (
+            <button
+              className="credits-person-line credits-link-card"
+              type="button"
+              key={contributor.githubHandle}
+              title={`GitHub · ${contributor.githubHandle}`}
+              aria-label={`GitHub: ${contributor.githubHandle}`}
+              onClick={() => onOpenExternal(contributor.profileUrl)}
+            >
+              <span className="credits-row-index">{String(index + 1).padStart(2, "0")}</span>
+              <CreditsAvatar name={contributor.name} avatarUrl={contributor.avatarUrl} />
+              <span><strong>{contributor.name}</strong><small>@{contributor.githubHandle}</small></span>
+              <ExternalLinkIcon className="credits-external-icon" size={14} />
+            </button>
+          ))}
+        </div>
       </section>
 
-      <div className="credits-board">
-        <section className="settings-card credits-contributors" aria-labelledby="credits-contributors-title">
-          <div className="settings-card-heading">
-            <div>
-              <h3 id="credits-contributors-title">{words.creditsContributorsTitle}</h3>
-              <p>{words.creditsContributorsHelp}</p>
-            </div>
+      <section className="credits-editorial-section credits-foundations" aria-labelledby="credits-foundations-title">
+        <header className="credits-section-heading">
+          <span>02</span>
+          <div>
+            <h3 id="credits-foundations-title">{words.creditsFoundationsTitle}</h3>
+            <p>{words.creditsFoundationsHelp}</p>
           </div>
-          <div className="credits-person-grid">
-            {DEMOTRACER_CREDITS.contributors.map((contributor) => (
-              <button
-                className="credits-person credits-link-card"
-                type="button"
-                key={contributor.githubHandle}
-                title={`GitHub · ${contributor.githubHandle}`}
-                aria-label={`GitHub: ${contributor.githubHandle}`}
-                onClick={() => onOpenExternal(contributor.profileUrl)}
-              >
-                <CreditsAvatar name={contributor.name} avatarUrl={contributor.avatarUrl} />
-                <strong>{contributor.name}</strong>
-                <ExternalLinkIcon className="credits-external-icon" size={12} />
-              </button>
-            ))}
-          </div>
-        </section>
+        </header>
+        <div className="credits-foundation-list">
+          {DEMOTRACER_CREDITS.foundations.map((foundation, index) => (
+            <article className="credits-foundation" key={foundation.id}>
+              <span className="credits-foundation-index">{String(index + 1).padStart(2, "0")}</span>
+              <div className="credits-foundation-copy">
+                <button
+                  className="credits-foundation-profile credits-link-card"
+                  type="button"
+                  title={`GitHub · ${foundation.githubHandle}`}
+                  aria-label={`GitHub: ${foundation.githubHandle}`}
+                  onClick={() => onOpenExternal(foundation.profileUrl)}
+                >
+                  <CreditsAvatar name={foundation.githubHandle} avatarUrl={foundation.avatarUrl} />
+                  <span><strong>{foundation.author}</strong><small>@{foundation.githubHandle}</small></span>
+                  <ExternalLinkIcon className="credits-external-icon" size={13} />
+                </button>
+                <p>{foundationDescriptions[foundation.id]}</p>
+              </div>
+              <div className="credits-project-list">
+                {foundation.projects.map((project) => (
+                  <button
+                    type="button"
+                    key={project.repository}
+                    title={`GitHub · ${project.repository}`}
+                    onClick={() => onOpenExternal(project.url)}
+                  >
+                    <span>{project.name}</span><code>{project.repository}</code><ExternalLinkIcon size={11} />
+                  </button>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
 
-        <section className="settings-card credits-foundations" aria-labelledby="credits-foundations-title">
-          <div className="settings-card-heading">
-            <div>
-              <h3 id="credits-foundations-title">{words.creditsFoundationsTitle}</h3>
-              <p>{words.creditsFoundationsHelp}</p>
-            </div>
-          </div>
-          <div className="credits-foundation-list">
-            {DEMOTRACER_CREDITS.foundations.map((foundation) => {
-              const description = foundation.id === "xbribo"
-                ? words.creditsFoundationXBribo
-                : foundation.id === "ianLucas"
-                  ? words.creditsFoundationIanLucas
-                  : words.creditsFoundationDemoparser;
-              return (
-                <article className="credits-foundation" key={foundation.id}>
-                  <div className="credits-foundation-heading">
-                    <button
-                      className="credits-foundation-profile credits-link-card"
-                      type="button"
-                      title={`GitHub · ${foundation.githubHandle}`}
-                      aria-label={`GitHub: ${foundation.githubHandle}`}
-                      onClick={() => onOpenExternal(foundation.profileUrl)}
-                    >
-                      <CreditsAvatar name={foundation.githubHandle} avatarUrl={foundation.avatarUrl} />
-                      <strong>{foundation.author}</strong>
-                      <ExternalLinkIcon className="credits-external-icon" size={12} />
-                    </button>
-                    <div className="credits-repository-list">
-                      {foundation.projects.map((project) => (
-                        <button
-                          className="credits-repository-link"
-                          type="button"
-                          key={project.repository}
-                          title={`GitHub · ${project.repository}`}
-                          onClick={() => onOpenExternal(project.url)}
-                        >
-                          <code>{project.repository}</code>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <p>{description}</p>
-                  <div className="credits-project-list">
-                    {foundation.projects.map((project) => (
-                      <button type="button" key={project.name} onClick={() => onOpenExternal(project.url)}>
-                        {project.name}<ExternalLinkIcon size={10} />
-                      </button>
-                    ))}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-      </div>
-
-      <aside className="credits-thank-you">
+      <footer className="credits-finale">
         <span aria-hidden="true"><TraceMark size={24} /></span>
         <div>
           <strong>{words.creditsThankYouTitle}</strong>
           <p>{words.creditsThankYouBody}</p>
         </div>
-      </aside>
+        <code>GLHF / TRACE COMPLETE</code>
+      </footer>
     </div>
   );
 
@@ -1321,12 +1320,6 @@ export function SettingsWorkspace({
           <button className={section === "appearance" ? "is-active" : ""} type="button" aria-current={section === "appearance" ? "page" : undefined} onClick={() => setSection("appearance")}>
             <SunIcon size={17} /><span><strong>{words.settingsNavAppearance}</strong><small>{words.settingsNavAppearanceHelp}</small></span>
           </button>
-          <button className={section === "environment" ? "is-active" : ""} type="button" aria-current={section === "environment" ? "page" : undefined} onClick={() => setSection("environment")}>
-            <SearchIcon size={17} /><span><strong>{words.settingsNavEnvironment}</strong><small>{words.settingsNavEnvironmentHelp}</small></span>
-          </button>
-          <button className={section === "updates" ? "is-active" : ""} type="button" aria-current={section === "updates" ? "page" : undefined} onClick={() => setSection("updates")}>
-            <RefreshIcon size={17} /><span><strong>{language === "zh" ? "组件管理" : "Components"}</strong><small>{language === "zh" ? "GUI 版本与本地 CSS 安装" : "GUI version and local CSS install"}</small></span>
-          </button>
           <button className={section === "paths" ? "is-active" : ""} type="button" aria-current={section === "paths" ? "page" : undefined} onClick={() => setSection("paths")}>
             <FolderIcon size={17} /><span><strong>{words.settingsNavPaths}</strong><small>{words.settingsNavPathsHelp}</small></span>
           </button>
@@ -1339,11 +1332,9 @@ export function SettingsWorkspace({
           <button className={section === "serverConfig" ? "is-active" : ""} type="button" aria-current={section === "serverConfig" ? "page" : undefined} onClick={() => setSection("serverConfig")}>
             <LibraryIcon size={17} /><span><strong>{words.settingsNavServerConfig}</strong><small>{words.settingsNavServerConfigHelp}</small></span>
           </button>
-          <div className="settings-nav-footer">
-            <button className={section === "about" ? "is-active" : ""} type="button" aria-current={section === "about" ? "page" : undefined} onClick={() => setSection("about")}>
-              <TraceMark size={17} /><span><strong>{words.settingsNavAbout}</strong><small>{words.settingsNavAboutHelp}</small></span>
-            </button>
-          </div>
+          <button className={section === "about" ? "is-active" : ""} type="button" aria-current={section === "about" ? "page" : undefined} onClick={() => setSection("about")}>
+            <TraceMark size={17} /><span><strong>{words.settingsNavAbout}</strong><small>{words.settingsNavAboutHelp}</small></span>
+          </button>
         </nav>
         <div className="settings-content">
           {section === "appearance" ? appearanceView : null}

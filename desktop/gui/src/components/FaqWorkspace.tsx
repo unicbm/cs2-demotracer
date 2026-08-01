@@ -5,12 +5,11 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { useMemo, useState } from "react";
-import type { TextDictionary } from "../i18n";
 import { ChevronIcon, SearchIcon, TraceMark } from "../icons";
 import type { Language } from "../types";
 import "./faq-workspace.css";
 
-type FaqCategory = "basics" | "batch" | "data" | "runtime";
+type FaqCategory = "basics" | "data" | "runtime";
 
 interface FaqEntry {
   id: string;
@@ -23,7 +22,6 @@ interface FaqEntry {
 }
 
 interface FaqCopy {
-  eyebrow: string;
   title: string;
   subtitle: string;
   searchPlaceholder: string;
@@ -35,21 +33,18 @@ interface FaqCopy {
   noResultsTitle: string;
   noResultsBody: string;
   clearSearch: string;
-  note: string;
   entries: FaqEntry[];
 }
 
 const FAQ_COPY: Record<Language, FaqCopy> = {
   zh: {
-    eyebrow: "内置帮助",
     title: "常见问题",
-    subtitle: "关于 Demo 扫描、批量入库、转换结果与本地回放环境的简明说明。",
+    subtitle: "关于 Demo 扫描、生成结果与本地回放环境的简明说明。",
     searchPlaceholder: "搜索问题，例如“为什么要完整解析”",
     searchLabel: "搜索常见问题",
     allCategories: "全部",
     categories: {
       basics: "解析与转换",
-      batch: "批量入库",
       data: "比赛信息",
       runtime: "回放环境",
     },
@@ -58,7 +53,6 @@ const FAQ_COPY: Record<Language, FaqCopy> = {
     noResultsTitle: "没有找到相关问题",
     noResultsBody: "换一个关键词，或切回“全部”分类。",
     clearSearch: "清除搜索",
-    note: "所有扫描和转换均在本机完成",
     entries: [
       {
         id: "full-parse",
@@ -95,7 +89,7 @@ const FAQ_COPY: Record<Language, FaqCopy> = {
       },
       {
         id: "batch-folder-scan",
-        category: "batch",
+        category: "basics",
         question: "文件夹扫描会对原始 Demo 做什么？",
         summary: "它只查找本地 .dem 和 .dem.zst 并建立任务清单，不修改、移动或上传原文件。",
         paragraphs: [
@@ -106,7 +100,7 @@ const FAQ_COPY: Record<Language, FaqCopy> = {
       },
       {
         id: "batch-limit",
-        category: "batch",
+        category: "basics",
         question: "为什么一次不能加入无限多个 Demo？",
         summary: "队列上限用于控制磁盘占用、错误可读性和预计完成时间。",
         paragraphs: [
@@ -117,7 +111,7 @@ const FAQ_COPY: Record<Language, FaqCopy> = {
       },
       {
         id: "batch-stop-resume",
-        category: "batch",
+        category: "basics",
         question: "中途停止会丢掉已经完成的内容吗？",
         summary: "停止只应终止未完成工作；已验证入库的档案必须保留。",
         paragraphs: [
@@ -129,7 +123,7 @@ const FAQ_COPY: Record<Language, FaqCopy> = {
       },
       {
         id: "hltv-parts",
-        category: "batch",
+        category: "basics",
         question: "HLTV 的 P1 + P2 超长 Demo 会自动合并吗？",
         summary: "当前版本不合并，它们会被识别为两个独立 Demo。",
         paragraphs: [
@@ -185,15 +179,13 @@ const FAQ_COPY: Record<Language, FaqCopy> = {
     ],
   },
   en: {
-    eyebrow: "Built-in help",
     title: "Frequently asked questions",
-    subtitle: "Straightforward answers about demo scanning, batch imports, conversion results, and the local playback environment.",
+    subtitle: "Straightforward answers about demo scanning, generated replays, and the local playback environment.",
     searchPlaceholder: "Search, for example “why is a full parse required?”",
     searchLabel: "Search frequently asked questions",
     allCategories: "All",
     categories: {
       basics: "Parsing & conversion",
-      batch: "Batch library import",
       data: "Match information",
       runtime: "Playback environment",
     },
@@ -202,7 +194,6 @@ const FAQ_COPY: Record<Language, FaqCopy> = {
     noResultsTitle: "No matching questions",
     noResultsBody: "Try another term or switch back to the All category.",
     clearSearch: "Clear search",
-    note: "All scanning and conversion runs locally",
     entries: [
       {
         id: "full-parse",
@@ -239,7 +230,7 @@ const FAQ_COPY: Record<Language, FaqCopy> = {
       },
       {
         id: "batch-folder-scan",
-        category: "batch",
+        category: "basics",
         question: "What does a folder scan do to the source demos?",
         summary: "It finds local .dem and .dem.zst files and builds a job list; it does not modify, move, or upload them.",
         paragraphs: [
@@ -250,7 +241,7 @@ const FAQ_COPY: Record<Language, FaqCopy> = {
       },
       {
         id: "batch-limit",
-        category: "batch",
+        category: "basics",
         question: "Why can’t I add an unlimited number of demos at once?",
         summary: "A queue limit keeps disk use, errors, and the expected completion time understandable.",
         paragraphs: [
@@ -261,7 +252,7 @@ const FAQ_COPY: Record<Language, FaqCopy> = {
       },
       {
         id: "batch-stop-resume",
-        category: "batch",
+        category: "basics",
         question: "Will stopping a batch discard demos that already finished?",
         summary: "Stopping should end unfinished work only; archives that passed validation must remain available.",
         paragraphs: [
@@ -273,7 +264,7 @@ const FAQ_COPY: Record<Language, FaqCopy> = {
       },
       {
         id: "hltv-parts",
-        category: "batch",
+        category: "basics",
         question: "Are extra-long HLTV P1 + P2 demos merged automatically?",
         summary: "Not in the current version; they are treated as two independent demos.",
         paragraphs: [
@@ -331,11 +322,10 @@ const FAQ_COPY: Record<Language, FaqCopy> = {
 };
 
 export interface FaqWorkspaceProps {
-  words: TextDictionary;
   language: Language;
 }
 
-export function FaqWorkspace({ words, language }: FaqWorkspaceProps) {
+export function FaqWorkspace({ language }: FaqWorkspaceProps) {
   const copy = FAQ_COPY[language];
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<FaqCategory | "all">("all");
@@ -361,11 +351,9 @@ export function FaqWorkspace({ words, language }: FaqWorkspaceProps) {
       <header className="faq-hero">
         <div className="faq-hero-mark" aria-hidden="true"><TraceMark size={30} /></div>
         <div className="faq-hero-copy">
-          <span>{copy.eyebrow}</span>
           <h1 id="faq-workspace-title">{copy.title}</h1>
           <p>{copy.subtitle}</p>
         </div>
-        <div className="faq-local-note"><i aria-hidden="true" />{words.localOnlyShort} · {copy.note}</div>
       </header>
 
       <div className="faq-controls">

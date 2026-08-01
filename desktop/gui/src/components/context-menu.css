@@ -12,11 +12,10 @@
   max-width: min(320px, calc(100vw - 16px));
   padding: 5px;
   color: var(--text-primary);
-  background: color-mix(in srgb, var(--surface-raised) 96%, transparent);
+  background: var(--surface-raised);
   border: 1px solid var(--divider-strong);
-  border-radius: 7px;
-  box-shadow: 0 16px 42px color-mix(in srgb, #080b10 28%, transparent);
-  backdrop-filter: blur(18px) saturate(1.08);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-dialog);
 }
 
 .context-menu > div.has-divider {

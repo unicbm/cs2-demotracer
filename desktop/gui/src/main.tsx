@@ -7,7 +7,30 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import {
+  normalizeTheme,
+  normalizeUiSkin,
+  resolveTheme,
+  themeBackground,
+  THEME_STORAGE_KEY,
+  UI_SKIN_STORAGE_KEY,
+} from "./appearance";
 import "./styles.css";
+
+const initialTheme = normalizeTheme(localStorage.getItem(THEME_STORAGE_KEY));
+const initialUiSkin = normalizeUiSkin(localStorage.getItem(UI_SKIN_STORAGE_KEY));
+const initialResolvedTheme = resolveTheme(
+  initialTheme,
+  window.matchMedia("(prefers-color-scheme: dark)").matches,
+);
+const initialBackground = themeBackground(initialUiSkin, initialResolvedTheme);
+
+document.documentElement.dataset.theme = initialTheme;
+document.documentElement.dataset.skin = initialUiSkin;
+document.documentElement.dataset.colorMode = initialResolvedTheme;
+document.documentElement.style.backgroundColor = initialBackground;
+document.body.style.backgroundColor = initialBackground;
+document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute("content", initialBackground);
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

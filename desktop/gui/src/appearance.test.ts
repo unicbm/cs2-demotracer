@@ -9,9 +9,15 @@ import { describe, it } from "node:test";
 import {
   cycleUiScale,
   normalizeUiScale,
+  normalizeUiSkin,
+  normalizeTheme,
   resolveTheme,
   stepUiScale,
+  themeBackground,
+  THEME_STORAGE_KEY,
   toggleResolvedTheme,
+  UI_SKINS,
+  UI_SKIN_STORAGE_KEY,
 } from "./appearance.ts";
 
 describe("appearance preferences", () => {
@@ -22,9 +28,39 @@ describe("appearance preferences", () => {
     assert.equal(toggleResolvedTheme("dark", false), "light");
   });
 
+  it("normalizes stored theme values", () => {
+    assert.equal(normalizeTheme("light"), "light");
+    assert.equal(normalizeTheme("dark"), "dark");
+    assert.equal(normalizeTheme("system"), "system");
+    assert.equal(normalizeTheme("invalid"), "system");
+    assert.equal(normalizeTheme(null), "system");
+  });
+
   it("resolves system theme using the current OS preference", () => {
     assert.equal(resolveTheme("system", false), "light");
     assert.equal(resolveTheme("system", true), "dark");
+  });
+
+  it("normalizes the four persistent UI skins", () => {
+    assert.deepEqual(UI_SKINS, ["trace", "cobalt", "ember", "signal"]);
+    assert.notEqual(UI_SKIN_STORAGE_KEY, THEME_STORAGE_KEY);
+    assert.equal(normalizeUiSkin("trace"), "trace");
+    assert.equal(normalizeUiSkin("cobalt"), "cobalt");
+    assert.equal(normalizeUiSkin("ember"), "ember");
+    assert.equal(normalizeUiSkin("signal"), "signal");
+    assert.equal(normalizeUiSkin("invalid"), "trace");
+    assert.equal(normalizeUiSkin(null), "trace");
+  });
+
+  it("uses a native background matched to both skin and theme", () => {
+    assert.equal(themeBackground("trace", "light"), "#e8ebe8");
+    assert.equal(themeBackground("trace", "dark"), "#0e1211");
+    assert.equal(themeBackground("cobalt", "light"), "#e9edf2");
+    assert.equal(themeBackground("cobalt", "dark"), "#0b1018");
+    assert.equal(themeBackground("ember", "light"), "#ece9e4");
+    assert.equal(themeBackground("ember", "dark"), "#12100e");
+    assert.equal(themeBackground("signal", "light"), "#e9ebe4");
+    assert.equal(themeBackground("signal", "dark"), "#090b08");
   });
 
   it("normalizes and steps persistent UI scale values", () => {

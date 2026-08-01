@@ -10,6 +10,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { exit as exitApp } from "@tauri-apps/plugin-process";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import packageMetadata from "../package.json";
 import { AppChrome } from "./components/AppChrome";
 import { ArchiveWorkspace } from "./components/ArchiveWorkspace";
 import type { InventorySimulatorItem } from "./inventorySimulator";
@@ -43,9 +44,15 @@ import {
 import { AlertIcon, ArrowIcon, CheckIcon, CloseIcon, CopyIcon, FolderIcon } from "./icons";
 import { COSMETIC_PHRASE, TEXT } from "./i18n";
 import {
+  normalizeTheme,
   normalizeUiScale,
+  normalizeUiSkin,
   resolveTheme,
   stepUiScale,
+  themeBackground,
+  THEME_STORAGE_KEY,
+  toggleResolvedTheme,
+  UI_SKIN_STORAGE_KEY,
   type UiScale,
 } from "./appearance";
 import {
@@ -105,6 +112,7 @@ import type {
   TaskEvent,
   TaskPhase,
   Theme,
+  UiSkin,
 } from "./types";
 
 const DEFAULT_SETTINGS: ConverterSettings = {
@@ -167,6 +175,10 @@ interface DuplicateDemoConflictState {
     relinkedDuplicates: number;
   };
 }
+
+type ReparseTarget =
+  | { kind: "archive"; archive: ManifestArchive }
+  | { kind: "library"; entry: DemoLibraryEntry };
 
 interface InventorySimulatorPanelBounds {
   x: number;
@@ -312,11 +324,6 @@ function storedLanguage(): Language {
   const saved = localStorage.getItem("demotracer.language");
   if (saved === "zh" || saved === "en") return saved;
   return navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
-}
-
-function storedTheme(): Theme {
-  const saved = localStorage.getItem("demotracer.theme");
-  return saved === "light" || saved === "dark" || saved === "system" ? saved : "system";
 }
 
 function storedUiScale(): UiScale {
@@ -591,7 +598,8 @@ function useMediaQuery(query: string): boolean {
 
 function App() {
   const [language, setLanguage] = useState<Language>(storedLanguage);
-  const [theme, setTheme] = useState<Theme>(storedTheme);
+  const [theme, setTheme] = useState<Theme>(() => normalizeTheme(localStorage.getItem(THEME_STORAGE_KEY)));
+  const [uiSkin, setUiSkin] = useState<UiSkin>(() => normalizeUiSkin(localStorage.getItem(UI_SKIN_STORAGE_KEY)));
   const [uiScale, setUiScale] = useState<UiScale>(storedUiScale);
   const [phase, setPhase] = useState<Phase>("idle");
   const [singleTask, setSingleTask] = useState<"analysis" | "conversion" | null>(null);
@@ -619,6 +627,8 @@ function App() {
   const [importingArchives, setImportingArchives] = useState(false);
   const [deletingManifest, setDeletingManifest] = useState("");
   const [archiveDeleteTarget, setArchiveDeleteTarget] = useState<DemoLibraryEntry | null>(null);
+  const [reparseTarget, setReparseTarget] = useState<ReparseTarget | null>(null);
+  const [analysisCancelPending, setAnalysisCancelPending] = useState(false);
   const [libraryNotice, setLibraryNotice] = useState("");
   const [libraryQuery, setLibraryQuery] = useState("");
   const [libraryMap, setLibraryMap] = useState("");
@@ -650,7 +660,7 @@ function App() {
   );
   const [detectingInstallations, setDetectingInstallations] = useState(false);
   const [inspectingEnvironment, setInspectingEnvironment] = useState(false);
-  const [appVersion, setAppVersion] = useState("");
+  const [appVersion, setAppVersion] = useState(packageMetadata.version);
   const [playbackRelease, setPlaybackRelease] = useState<PlaybackReleaseStatus | null>(null);
   const [playbackReleaseError, setPlaybackReleaseError] = useState("");
   const [releaseAction, setReleaseAction] = useState<"installingFile" | "rollingBack" | null>(null);
@@ -668,6 +678,7 @@ function App() {
   const [globalError, setGlobalError] = useState<CommandErrorDto | null>(null);
   const [inspectorSheetOpen, setInspectorSheetOpen] = useState(false);
   const [overwriteConflict, setOverwriteConflict] = useState<OutputPreflight | null>(null);
+  const [conversionStartPending, setConversionStartPending] = useState(false);
   const [demoPreflightActive, setDemoPreflightActive] = useState(false);
   const [demoPreflightProgress, setDemoPreflightProgress] = useState<DemoPreflightProgress | null>(null);
   const [duplicateDemoConflict, setDuplicateDemoConflict] = useState<DuplicateDemoConflictState | null>(null);
@@ -691,6 +702,7 @@ function App() {
   const libraryScanTokenRef = useRef(0);
   const taskWarningsRef = useRef<string[]>([]);
   const isBusyRef = useRef(false);
+  const conversionStartLockRef = useRef(false);
   const analyzedMaxRoundSecondsRef = useRef(DEFAULT_SETTINGS.maxRoundSeconds);
   const environmentInspectionTokenRef = useRef(0);
   const batchIdRef = useRef("");
@@ -722,14 +734,22 @@ function App() {
   const numberFormat = useMemo(() => new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en-US"), [language]);
   const isRepairing = repairingLibrary || Boolean(repairingManifest);
   const isMaintainingLibrary = isRepairing || importingArchives || Boolean(deletingManifest);
-  const isBusy = singleTask !== null || phase === "openingArchive" || isMaintainingLibrary || batchInvocationActive || demoPreflightActive;
-  isBusyRef.current = singleTask !== null || isMaintainingLibrary || batchInvocationActive || demoPreflightActive;
+  const isBusy = singleTask !== null || phase === "openingArchive" || isMaintainingLibrary || batchInvocationActive || demoPreflightActive || conversionStartPending;
+  isBusyRef.current = isBusy;
   const systemDark = useMediaQuery("(prefers-color-scheme: dark)");
   const resolvedTheme = resolveTheme(theme, systemDark);
-  const inspectorDocked = useMediaQuery("(min-width: 1080px)");
+  const inspectorDocked = useMediaQuery("(min-width: 1320px)");
   const inspectorVisible = selectedPlayer === null && (inspectorDocked || inspectorSheetOpen);
   const elapsedSeconds = useElapsed(singleTask === "analysis");
   const sourceFileName = analysis?.fileName || fileName(sourcePath);
+  const sessionTitle = phase === "archive" && archive
+    ? archive.displayName || fileName(archive.demoPath) || archive.demoId
+    : sourceFileName;
+  const sessionMeta = phase === "archive" && archive
+    ? [fileName(archive.sourcePath || archive.demoPath), archive.map, `${archive.rounds.length} ${words.rounds}`].filter(Boolean).join(" · ")
+    : analysis
+      ? [analysis.map || "—", `${analysis.rounds.length} ${words.rounds}`].join(" · ")
+      : "";
   soundNotificationsRef.current = localEnvironment.soundNotifications;
   const importedBatchSources = useMemo(() => new Set(
     (libraryScan?.entries ?? [])
@@ -873,11 +893,15 @@ function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.skin = uiSkin;
+    document.documentElement.dataset.colorMode = resolvedTheme;
     document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
-    const nativeBackground = resolvedTheme === "dark" ? "#111318" : "#f5f6f8";
+    const nativeBackground = themeBackground(uiSkin, resolvedTheme);
     document.documentElement.style.backgroundColor = nativeBackground;
     document.body.style.backgroundColor = nativeBackground;
-    localStorage.setItem("demotracer.theme", theme);
+    document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute("content", nativeBackground);
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+    localStorage.setItem(UI_SKIN_STORAGE_KEY, uiSkin);
     localStorage.setItem("demotracer.language", language);
     if ("__TAURI_INTERNALS__" in window) {
       void Promise.all([
@@ -886,7 +910,7 @@ function App() {
         getCurrentWebview().setBackgroundColor(nativeBackground),
       ]).catch(() => undefined);
     }
-  }, [language, resolvedTheme, theme]);
+  }, [language, resolvedTheme, theme, uiSkin]);
 
   useEffect(() => {
     localStorage.setItem(UI_SCALE_STORAGE_KEY, String(uiScale));
@@ -1288,7 +1312,11 @@ function App() {
     });
   }, [words]);
 
-  const runAnalysis = useCallback(async (path: string, expectedDemoSha256?: string) => {
+  const runAnalysis = useCallback(async (
+    path: string,
+    expectedDemoSha256?: string,
+    preserveArchive = false,
+  ) => {
     if (!isDemoFilePath(path)) {
       setGlobalError({ code: "invalid_demo_path", message: words.invalidDemo, path });
       return;
@@ -1301,12 +1329,13 @@ function App() {
     const maxRoundSeconds = settings.maxRoundSeconds;
     analyzedMaxRoundSecondsRef.current = maxRoundSeconds;
     setGlobalError(null);
+    setAnalysisCancelPending(false);
     setAnalysisError("");
     setValidationError("");
     setSourcePath(path);
     setAnalysis(null);
     setResult(null);
-    dispatchLibraryWorkspace({ type: "clear" });
+    if (!preserveArchive) dispatchLibraryWorkspace({ type: "clear" });
     setOutputRoot("");
     setSelectedRounds(new Set());
     setInspectorSheetOpen(false);
@@ -1339,10 +1368,31 @@ function App() {
       setOutputDir((current) => current || libraryRoot);
       setPhase("selecting");
       setSingleTask(null);
+      setAnalysisCancelPending(false);
       playTaskSound("success");
     } catch (reason) {
       if (token !== taskTokenRef.current) return;
       const error = parseCommandError(reason);
+      setAnalysisCancelPending(false);
+      if (error.code === "analysis_cancelled") {
+        setAnalysisError("");
+        setSingleTask(null);
+        if (preserveArchive) {
+          setPhase("archive");
+        } else {
+          setPhase("idle");
+          setSourcePath("");
+        }
+        playTaskSound("stopped");
+        return;
+      }
+      if (preserveArchive) {
+        setSingleTask(null);
+        setPhase("archive");
+        setGlobalError(error);
+        playTaskSound("failure");
+        return;
+      }
       dispatchLibraryWorkspace({ type: "clear" });
       localStorage.removeItem(LIBRARY_SESSION_STORAGE_KEY);
       setAnalysisError(error.message);
@@ -1351,6 +1401,17 @@ function App() {
       playTaskSound("failure");
     }
   }, [absorbEvent, libraryRoot, playTaskSound, primeTaskSound, settings.maxRoundSeconds, words.invalidDemo]);
+
+  async function cancelAnalysis() {
+    if (singleTask !== "analysis" || analysisCancelPending) return;
+    setAnalysisCancelPending(true);
+    try {
+      await invoke("cancel_analysis");
+    } catch (reason) {
+      setAnalysisCancelPending(false);
+      setGlobalError(parseCommandError(reason));
+    }
+  }
 
   const preflightDemoSelection = useCallback(async (path: string) => {
     if (!isDemoFilePath(path)) {
@@ -2232,7 +2293,7 @@ function App() {
       });
       setSourcePath(resolvedSource);
       setRepairingManifest("");
-      await runAnalysis(resolvedSource, selectedArchive.demoSha256);
+      await runAnalysis(resolvedSource, selectedArchive.demoSha256, true);
     } catch (reason) {
       setGlobalError(parseCommandError(reason));
     } finally {
@@ -2699,20 +2760,34 @@ function App() {
 
   async function beginConvert() {
     if (!analysis || selectedRounds.size === 0) return;
-    let destination = outputDir;
-    if (!destination) destination = (await chooseOutput()) ?? "";
-    if (!destination) return;
-    if (settings.exportCosmetics && !cosmeticConsentAccepted) {
-      requestCosmeticExport();
-      return;
+    await runConversionStartExclusive(async () => {
+      let destination = outputDir;
+      if (!destination) destination = (await chooseOutput()) ?? "";
+      if (!destination) return;
+      if (settings.exportCosmetics && !cosmeticConsentAccepted) {
+        requestCosmeticExport();
+        return;
+      }
+      const preflight = await preflightOutput(destination);
+      if (!preflight) return;
+      if (preflight.exists) {
+        setOverwriteConflict(preflight);
+        return;
+      }
+      await performConvert(false, destination);
+    });
+  }
+
+  async function runConversionStartExclusive(action: () => Promise<void>) {
+    if (conversionStartLockRef.current || isBusyRef.current) return;
+    conversionStartLockRef.current = true;
+    setConversionStartPending(true);
+    try {
+      await action();
+    } finally {
+      conversionStartLockRef.current = false;
+      setConversionStartPending(false);
     }
-    const preflight = await preflightOutput(destination);
-    if (!preflight) return;
-    if (preflight.exists) {
-      setOverwriteConflict(preflight);
-      return;
-    }
-    await performConvert(false, destination);
   }
 
   async function performConvert(overwrite: boolean, destination = outputDir) {
@@ -2820,6 +2895,17 @@ function App() {
     }
   }
 
+  function confirmReparse() {
+    const target = reparseTarget;
+    if (!target) return;
+    setReparseTarget(null);
+    if (target.kind === "archive") {
+      void reconvertArchive(target.archive);
+    } else {
+      void reparseLibraryEntry(target.entry);
+    }
+  }
+
   async function copyText(value: string, target: CopyTarget) {
     try {
       try {
@@ -2887,7 +2973,10 @@ function App() {
     window.requestAnimationFrame(() => {
       const trigger = [...document.querySelectorAll<HTMLButtonElement>("[data-player-key]")]
         .find((button) => button.dataset.playerKey === selectionKey);
-      (trigger ?? document.querySelector<HTMLButtonElement>("[data-player-key]"))?.focus();
+      const focusTarget = trigger ?? document.querySelector<HTMLButtonElement>("[data-player-key]");
+      const disclosure = focusTarget?.closest<HTMLDetailsElement>("details");
+      if (disclosure) disclosure.open = true;
+      focusTarget?.focus({ preventScroll: true });
     });
   }
 
@@ -2950,6 +3039,7 @@ function App() {
         outputRoot={outputRoot}
         copiedTarget={copiedTarget}
         selectedPlayer={selectedPlayer}
+        convertPending={conversionStartPending}
         onToggleRound={toggleRound}
         onRestoreRecommended={restoreRecommended}
         onClearSelection={() => setSelectedRounds(new Set())}
@@ -2972,6 +3062,7 @@ function App() {
           words={words}
           settings={settings}
           docked={inspectorDocked}
+          disabled={conversionStartPending}
           returnFocusRef={settingsTriggerRef}
           onChange={updateSettings}
           onRequestCosmetics={requestCosmeticExport}
@@ -2986,11 +3077,17 @@ function App() {
     <div className="app-shell">
       <AppChrome
         words={words}
-        sourcePath={sourcePath}
-        sourceFileName={sourceFileName}
-        analysis={analysis}
+        sourcePath={phase === "archive" && archive ? archive.manifestPath : sourcePath}
+        sessionTitle={sessionTitle}
+        sessionMeta={sessionMeta}
+        language={language}
+        resolvedTheme={resolvedTheme}
+        libraryActive={activeSection === "library" || activeSection === "batch"}
         settingsActive={activeSection === "settings"}
         faqActive={activeSection === "faq"}
+        busy={isBusy}
+        onOpenLibrary={() => dispatchLibraryWorkspace({ type: "navigate", section: "library" })}
+        onExitSession={resetSession}
         onToggleSettings={() => dispatchLibraryWorkspace({
           type: "navigate",
           section: activeSection === "settings" ? "library" : "settings",
@@ -2999,6 +3096,9 @@ function App() {
           type: "navigate",
           section: activeSection === "faq" ? "library" : "faq",
         })}
+        onLanguageChange={setLanguage}
+        onToggleTheme={() => setTheme(toggleResolvedTheme(theme, systemDark))}
+        onConvert={() => void chooseDemos()}
         onRequestClose={() => void requestWindowClose()}
       />
 
@@ -3037,7 +3137,7 @@ function App() {
             onClick={() => dispatchLibraryWorkspace({ type: "navigate", section: "batch" })}
           >
             <i aria-hidden="true" />
-            <strong>{language === "zh" ? "批量转换" : "Batch conversion"}</strong>
+            <strong>{language === "zh" ? "多个 Demo 入库" : "Multiple demo import"}</strong>
             <code>{batchInvocationActive
               ? (language === "zh" ? `正在处理 ${batchSummary.total} 个 Demo` : `Processing ${batchSummary.total} demos`)
               : (language === "zh" ? "有未完成任务，点击继续" : "Unfinished task — click to continue")}</code>
@@ -3045,12 +3145,12 @@ function App() {
         ) : null}
 
         {activeSection === "faq" ? (
-          <FaqWorkspace words={words} language={language} />
+          <FaqWorkspace language={language} />
         ) : activeSection === "settings" ? (
           <SettingsWorkspace
             words={words}
             language={language}
-            theme={theme}
+            uiSkin={uiSkin}
             uiScale={uiScale}
             environment={localEnvironment}
             exportRoot={libraryRoot}
@@ -3073,8 +3173,7 @@ function App() {
             playbackReleaseError={playbackReleaseError}
             releaseAction={releaseAction}
             releaseNotice={releaseNotice}
-            onLanguageChange={setLanguage}
-            onThemeChange={setTheme}
+            onUiSkinChange={setUiSkin}
             onUiScaleChange={setUiScale}
             onCs2PathChange={(cs2Path) => {
               setLocalEnvironment((current) => ({ ...current, cs2Path }));
@@ -3107,6 +3206,42 @@ function App() {
             onConverterChange={updateSettings}
             onRequestCosmetics={requestCosmeticExport}
             onPlaybackChange={(patch) => setPlaybackPreset((current) => ({ ...current, ...patch }))}
+          />
+        ) : activeSection === "batch" ? (
+          <BatchWorkspace
+            words={words}
+            language={language}
+            notice={batchScanError}
+            candidates={batchCandidates}
+            selectedCandidateIds={batchSelectedIds}
+            concurrency={batchConcurrency}
+            runState={currentBatchRunState}
+            startDisabled={singleTask !== null}
+            canResume={canResumeBatch}
+            jobs={batchJobs}
+            summary={batchSummary}
+            soundNotifications={localEnvironment.soundNotifications}
+            exportCosmetics={batchCosmeticSettings.exportCosmetics}
+            exportStickers={batchCosmeticSettings.exportStickers}
+            exportCharms={batchCosmeticSettings.exportCharms}
+            cosmeticOptionsLocked={batchCosmeticOptionsLocked}
+            onChooseDemos={() => void chooseDemos()}
+            onBack={() => dispatchLibraryWorkspace({ type: "navigate", section: "library" })}
+            onSelectionChange={setBatchSelectedIds}
+            onConcurrencyChange={setBatchConcurrency}
+            onRequestCosmetics={requestCosmeticExport}
+            onCosmeticOptionsChange={updateSettings}
+            onSoundNotificationsChange={(enabled) => {
+              if (enabled) primeTaskSound(true);
+              setLocalEnvironment((current) => ({ ...current, soundNotifications: enabled }));
+            }}
+            onStart={(candidateIds) => void startBatchImport(candidateIds)}
+            onResume={() => void resumeBatchImport()}
+            onStop={() => void stopBatchImport()}
+            onRetryJob={(jobId) => void resumeBatchImport(jobId)}
+            onOpenArchive={(job) => {
+              if (job.outputPath) void runManifest(job.outputPath);
+            }}
           />
         ) : (
           <>
@@ -3143,7 +3278,7 @@ function App() {
             onRepairEntry={(entry: DemoLibraryEntry) => void repairArchiveMetadata(entry)}
             onRevealManifest={(entry: DemoLibraryEntry) => void revealPath(entry.manifestPath)}
             onRevealDemo={(entry: DemoLibraryEntry) => void revealPath(entry.sourcePath || entry.demoPath)}
-            onReparseEntry={(entry: DemoLibraryEntry) => void reparseLibraryEntry(entry)}
+            onReparseEntry={(entry: DemoLibraryEntry) => setReparseTarget({ kind: "library", entry })}
             onDeleteEntry={setArchiveDeleteTarget}
           />
         ) : null}
@@ -3180,12 +3315,20 @@ function App() {
                 void runManifest(manifestPath);
               }
             }}
-            onReconvert={() => void reconvertArchive(archive)}
+            onReconvert={() => setReparseTarget({ kind: "archive", archive })}
             onChooseManifest={() => void chooseManifest()}
-            onClose={resetSession}
           />
         ) : null}
-        {phase === "analyzing" ? <AnalysisProgressView words={words} sourceFileName={sourceFileName} elapsedSeconds={elapsedSeconds} progressPhase={progress.phase} /> : null}
+        {phase === "analyzing" ? (
+          <AnalysisProgressView
+            words={words}
+            sourceFileName={sourceFileName}
+            elapsedSeconds={elapsedSeconds}
+            progressPhase={progress.phase}
+            cancelPending={analysisCancelPending}
+            onCancel={() => void cancelAnalysis()}
+          />
+        ) : null}
         {phase === "analysisFailed" ? (
           <AnalysisFailedView words={words} error={analysisError} retryButtonRef={retryButtonRef} onRetry={() => void runAnalysis(sourcePath)} onChangeDemo={() => void chooseDemo(sourcePath)} />
         ) : null}
@@ -3234,44 +3377,6 @@ function App() {
         />
       </div>
 
-      {activeSection === "batch" ? (
-        <BatchWorkspace
-          words={words}
-          language={language}
-          notice={batchScanError}
-          candidates={batchCandidates}
-          selectedCandidateIds={batchSelectedIds}
-          concurrency={batchConcurrency}
-          runState={currentBatchRunState}
-          startDisabled={singleTask !== null}
-          canResume={canResumeBatch}
-          jobs={batchJobs}
-          summary={batchSummary}
-          soundNotifications={localEnvironment.soundNotifications}
-          exportCosmetics={batchCosmeticSettings.exportCosmetics}
-          exportStickers={batchCosmeticSettings.exportStickers}
-          exportCharms={batchCosmeticSettings.exportCharms}
-          cosmeticOptionsLocked={batchCosmeticOptionsLocked}
-          onChooseDemos={() => void chooseDemos()}
-          onBack={() => dispatchLibraryWorkspace({ type: "navigate", section: "library" })}
-          onSelectionChange={setBatchSelectedIds}
-          onConcurrencyChange={setBatchConcurrency}
-          onRequestCosmetics={requestCosmeticExport}
-          onCosmeticOptionsChange={updateSettings}
-          onSoundNotificationsChange={(enabled) => {
-            if (enabled) primeTaskSound(true);
-            setLocalEnvironment((current) => ({ ...current, soundNotifications: enabled }));
-          }}
-          onStart={(candidateIds) => void startBatchImport(candidateIds)}
-          onResume={() => void resumeBatchImport()}
-          onStop={() => void stopBatchImport()}
-          onRetryJob={(jobId) => void resumeBatchImport(jobId)}
-          onOpenArchive={(job) => {
-            if (job.outputPath) void runManifest(job.outputPath);
-          }}
-        />
-      ) : null}
-
       {dragActive ? (
         <div className="drop-overlay" role="status">
           <FolderIcon size={24} />
@@ -3295,7 +3400,12 @@ function App() {
               setOverwriteConflict(null);
               void chooseOutput();
             }}>{words.chooseAnotherOutput}</button>
-            <button className="danger-button" type="button" onClick={() => void performConvert(true)}>{words.replaceAndConvert}</button>
+            <button
+              className="danger-button"
+              type="button"
+              disabled={conversionStartPending}
+              onClick={() => void runConversionStartExclusive(() => performConvert(true))}
+            >{words.replaceAndConvert}</button>
           </footer>
         </DialogPrimitive>
       ) : null}
@@ -3381,6 +3491,25 @@ function App() {
           <footer className="dialog-actions">
             <button ref={cancelArchiveDeleteRef} className="secondary-button" type="button" disabled={Boolean(deletingManifest)} onClick={() => setArchiveDeleteTarget(null)}>{words.cancel}</button>
             <button className="danger-button" type="button" disabled={Boolean(deletingManifest)} onClick={() => void deleteArchiveEntry(archiveDeleteTarget)}>{deletingManifest ? words.deletingArchive : words.deleteArchive}</button>
+          </footer>
+        </DialogPrimitive>
+      ) : null}
+
+      {reparseTarget ? (
+        <DialogPrimitive
+          labelledBy="reparse-title"
+          describedBy="reparse-description"
+          onDismiss={() => setReparseTarget(null)}
+          dismissOnScrimClick={false}
+        >
+          <header className="dialog-header warning-header">
+            <span><AlertIcon size={18} /></span>
+            <h2 id="reparse-title">{words.reparseConfirmTitle}</h2>
+          </header>
+          <p id="reparse-description" className="dialog-description">{words.reparseConfirmBody}</p>
+          <footer className="dialog-actions">
+            <button className="secondary-button" type="button" onClick={() => setReparseTarget(null)}>{words.cancel}</button>
+            <button className="danger-button" type="button" onClick={confirmReparse}>{words.reparseConfirmAction}</button>
           </footer>
         </DialogPrimitive>
       ) : null}

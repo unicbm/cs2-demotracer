@@ -35,6 +35,7 @@ interface ExportInspectorProps {
   words: TextDictionary;
   settings: ConverterSettings;
   docked: boolean;
+  disabled: boolean;
   returnFocusRef: RefObject<HTMLElement | null>;
   onChange: (patch: Partial<ConverterSettings>) => void;
   onRequestCosmetics: () => void;
@@ -47,6 +48,7 @@ function InspectorContents({
   settings,
   firstControlRef,
   dismissible,
+  disabled,
   onChange,
   onRequestCosmetics,
   onClose,
@@ -72,6 +74,7 @@ function InspectorContents({
         ) : null}
       </header>
 
+      <fieldset className="inspector-controls" disabled={disabled}>
       <div className="inspector-body">
         <section className="inspector-section">
           <h3>{words.playback}</h3>
@@ -164,6 +167,7 @@ function InspectorContents({
       <footer className="inspector-footer">
         <button className="text-button" type="button" onClick={onRestoreDefaults}>{words.restoreDefaults}</button>
       </footer>
+      </fieldset>
     </>
   );
 }

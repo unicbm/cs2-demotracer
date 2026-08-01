@@ -4,7 +4,7 @@
  * See LICENSE in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Fragment, type KeyboardEvent, useRef } from "react";
+import { type KeyboardEvent, useRef } from "react";
 import type { RoundInfo } from "../types";
 
 export interface RoundTableLabels {
@@ -20,8 +20,6 @@ export interface RoundTableLabels {
   suspicious: string;
   noProblems: string;
   suspiciousLocked: string;
-  showDetails: string;
-  hideDetails: string;
 }
 
 interface RoundTableProps {
@@ -29,9 +27,10 @@ interface RoundTableProps {
   rounds: RoundInfo[];
   selectedRounds: Set<number>;
   allowSuspicious: boolean;
-  expandedRound: number | null;
+  activeRound: number | null;
+  disabled: boolean;
   onToggle: (round: RoundInfo) => void;
-  onToggleDetails: (roundNumber: number) => void;
+  onInspect: (round: RoundInfo) => void;
   formatNumber?: (value: number) => string;
   formatDuration?: (seconds: number) => string;
 }
@@ -47,13 +46,15 @@ export function RoundTable({
   rounds,
   selectedRounds,
   allowSuspicious,
-  expandedRound,
+  activeRound,
+  disabled,
   onToggle,
-  onToggleDetails,
+  onInspect,
   formatNumber = (value) => value.toLocaleString(),
   formatDuration = defaultFormatDuration,
 }: RoundTableProps) {
   const tableRef = useRef<HTMLTableElement>(null);
+  const inspectedRound = rounds.find((round) => round.round === activeRound) ?? rounds[0] ?? null;
 
   function moveCheckboxFocus(event: KeyboardEvent<HTMLInputElement>) {
     if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
@@ -73,115 +74,112 @@ export function RoundTable({
     if (event.key === "End") nextIndex = checkboxes.length - 1;
 
     event.preventDefault();
-    checkboxes[nextIndex]?.focus();
+    const nextCheckbox = checkboxes[nextIndex];
+    nextCheckbox?.focus();
+    const nextRoundNumber = Number(nextCheckbox?.dataset.roundNumber);
+    const nextRound = rounds.find((round) => round.round === nextRoundNumber);
+    if (nextRound) onInspect(nextRound);
   }
 
   return (
-    <div className="round-table-scroll">
-      <table className="round-data-table" ref={tableRef}>
-        <caption className="sr-only">{labels.caption}</caption>
-        <thead>
-          <tr>
-            <th className="round-select-column" scope="col">
-              <span className="sr-only">{labels.select}</span>
-            </th>
-            <th scope="col">{labels.round}</th>
-            <th scope="col">{labels.status}</th>
-            <th scope="col">{labels.duration}</th>
-            <th scope="col">{labels.teams}</th>
-            <th scope="col">{labels.validRows}</th>
-            <th scope="col">{labels.problems}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rounds.map((round) => {
-            const suspicious = round.status === "suspicious";
-            const selectionDisabled = suspicious && !allowSuspicious;
-            const selected = selectedRounds.has(round.round);
-            const expanded = expandedRound === round.round && round.problems.length > 0;
-            const detailId = `round-${round.round}-problems`;
-            const statusLabel = suspicious ? labels.suspicious : labels.recommended;
+    <div className="round-inspector">
+      <div className="round-master-pane">
+        <div className="round-table-scroll">
+          <table className="round-data-table" ref={tableRef}>
+            <caption className="sr-only">{labels.caption}</caption>
+            <thead>
+              <tr>
+                <th className="round-select-column" scope="col"><span className="sr-only">{labels.select}</span></th>
+                <th scope="col">{labels.round}</th>
+                <th scope="col">{labels.status}</th>
+                <th scope="col">{labels.duration}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rounds.map((round) => {
+                const suspicious = round.status === "suspicious";
+                const selectionDisabled = suspicious && !allowSuspicious;
+                const selected = selectedRounds.has(round.round);
+                const current = inspectedRound?.round === round.round;
+                const statusLabel = suspicious ? labels.suspicious : labels.recommended;
 
-            return (
-              <Fragment key={round.round}>
-                <tr
-                  className={`round-data-row${selected ? " is-selected" : ""}${selectionDisabled ? " is-selection-locked" : ""}`}
-                >
-                  <td className="round-select-cell">
-                    <input
-                      type="checkbox"
-                      data-round-select="true"
-                      checked={selected}
-                      disabled={selectionDisabled}
-                      aria-label={`${labels.select} ${labels.round} ${round.round}, ${statusLabel}`}
-                      title={selectionDisabled ? labels.suspiciousLocked : undefined}
-                      onChange={() => onToggle(round)}
-                      onKeyDown={moveCheckboxFocus}
-                    />
-                  </td>
-                  <th className="round-number-cell" scope="row">
-                    {String(round.round).padStart(2, "0")}
-                  </th>
-                  <td>
-                    <span className={`round-status round-status-${round.status}`}>
-                      <span className="round-status-icon" aria-hidden="true">
-                        {suspicious ? "!" : "\u2713"}
-                      </span>
-                      {statusLabel}
-                    </span>
-                  </td>
-                  <td className="round-duration-cell">{formatDuration(round.durationSeconds)}</td>
-                  <td className="round-team-cell">
-                    <span>T {round.tPlayers}</span>
-                    <span aria-hidden="true">/</span>
-                    <span>CT {round.ctPlayers}</span>
-                  </td>
-                  <td className="round-rows-cell">{formatNumber(round.validRows)}</td>
-                  <td className="round-problem-cell">
-                    {round.problems.length > 0 ? (
-                      <button
-                        className="round-problem-toggle"
-                        type="button"
-                        aria-expanded={expanded}
-                        aria-controls={detailId}
-                        title={round.problems.join(" \u00b7 ")}
-                        onClick={() => onToggleDetails(round.round)}
-                      >
-                        <span>{round.problems[0]}</span>
-                        <span className="round-detail-chevron" aria-hidden="true">
-                          {expanded ? "\u2212" : "+"}
-                        </span>
-                        <span className="sr-only">
-                          {expanded ? labels.hideDetails : labels.showDetails}
-                        </span>
-                      </button>
-                    ) : (
-                      <span className="round-no-problems">
-                        <span aria-hidden="true">✓</span>
-                        {labels.noProblems}
-                      </span>
-                    )}
-                  </td>
-                </tr>
-                {expanded ? (
-                  <tr className="round-detail-row">
-                    <td colSpan={7}>
-                      <div id={detailId} className="round-detail-content">
-                        <strong>{labels.problems}</strong>
-                        <ul>
-                          {round.problems.map((problem, index) => (
-                            <li key={`${round.round}-${index}`}>{problem}</li>
-                          ))}
-                        </ul>
-                      </div>
+                return (
+                  <tr
+                    className={`round-data-row${selected ? " is-selected" : ""}${selectionDisabled ? " is-selection-locked" : ""}${current ? " is-current" : ""}`}
+                    key={round.round}
+                  >
+                    <td className="round-select-cell">
+                      <input
+                        type="checkbox"
+                        data-round-select="true"
+                        data-round-number={round.round}
+                        checked={selected}
+                        disabled={disabled || selectionDisabled}
+                        aria-label={`${labels.select} ${labels.round} ${round.round}, ${statusLabel}${selectionDisabled ? `, ${labels.suspiciousLocked}` : ""}`}
+                        title={selectionDisabled ? labels.suspiciousLocked : undefined}
+                        onChange={() => onToggle(round)}
+                        onKeyDown={moveCheckboxFocus}
+                      />
                     </td>
+                    <th className="round-number-cell" scope="row">
+                      <button
+                        className="round-inspect-button"
+                        type="button"
+                        disabled={disabled}
+                        aria-label={`${labels.round} ${round.round}, ${statusLabel}${selectionDisabled ? `, ${labels.suspiciousLocked}` : ""}`}
+                        aria-current={current ? "true" : undefined}
+                        onClick={() => onInspect(round)}
+                      >
+                        {String(round.round).padStart(2, "0")}
+                      </button>
+                    </th>
+                    <td>
+                      <span className={`round-status round-status-${round.status}`}>
+                        <span className="round-status-icon" aria-hidden="true">{suspicious ? "!" : "✓"}</span>
+                        {statusLabel}
+                      </span>
+                    </td>
+                    <td className="round-duration-cell">{formatDuration(round.durationSeconds)}</td>
                   </tr>
-                ) : null}
-              </Fragment>
-            );
-          })}
-        </tbody>
-      </table>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <section className="round-detail-pane" aria-live="polite">
+        {inspectedRound ? (
+          <>
+            <header className="round-detail-header">
+              <div>
+                <small>{labels.caption}</small>
+                <h2>{labels.round} {String(inspectedRound.round).padStart(2, "0")}</h2>
+              </div>
+              <span className={`round-status round-status-${inspectedRound.status}`}>
+                <span className="round-status-icon" aria-hidden="true">{inspectedRound.status === "suspicious" ? "!" : "✓"}</span>
+                {inspectedRound.status === "suspicious" ? labels.suspicious : labels.recommended}
+              </span>
+            </header>
+
+            <dl className="round-detail-facts">
+              <div><dt>{labels.duration}</dt><dd>{formatDuration(inspectedRound.durationSeconds)}</dd></div>
+              <div><dt>{labels.teams}</dt><dd>T {inspectedRound.tPlayers} / CT {inspectedRound.ctPlayers}</dd></div>
+              <div><dt>{labels.validRows}</dt><dd>{formatNumber(inspectedRound.validRows)}</dd></div>
+              <div><dt>{labels.select}</dt><dd>{selectedRounds.has(inspectedRound.round) ? "✓" : "—"}</dd></div>
+            </dl>
+
+            <section className="round-problem-panel" aria-labelledby="round-problem-title">
+              <h3 id="round-problem-title">{labels.problems}</h3>
+              {inspectedRound.problems.length > 0 ? (
+                <ul>{inspectedRound.problems.map((problem, index) => <li key={`${inspectedRound.round}-${index}`}>{problem}</li>)}</ul>
+              ) : (
+                <p className="round-no-problems"><span aria-hidden="true">✓</span>{labels.noProblems}</p>
+              )}
+            </section>
+          </>
+        ) : null}
+      </section>
     </div>
   );
 }

@@ -15,7 +15,6 @@ import {
   ReplayIcon,
 } from "../icons";
 import type { Language } from "../types";
-import { DialogPrimitive } from "./Dialog";
 import "./batch-workspace.css";
 
 export const BATCH_SELECTION_LIMIT = 8;
@@ -137,7 +136,7 @@ interface BatchCopy {
 
 const COPY: Record<Language, BatchCopy> = {
   zh: {
-    title: "批量转换",
+    title: "导入多个 Demo",
     reselect: "重新选择",
     close: "关闭",
     demos: "Demo",
@@ -179,13 +178,13 @@ const COPY: Record<Language, BatchCopy> = {
     elapsed: "{time}",
     retry: "重试",
     openArchive: "打开",
-    start: "转换 {count} 个 Demo",
+    start: "导入 {count} 个 Demo",
     resume: "继续",
     stop: "停止派发",
     stopping: "正在停止",
   },
   en: {
-    title: "Batch conversion",
+    title: "Import multiple demos",
     reselect: "Choose again",
     close: "Close",
     demos: "Demos",
@@ -227,7 +226,7 @@ const COPY: Record<Language, BatchCopy> = {
     elapsed: "{time}",
     retry: "Retry",
     openArchive: "Open",
-    start: "Convert {count} demos",
+    start: "Import {count} demos",
     resume: "Resume",
     stop: "Stop dispatch",
     stopping: "Stopping",
@@ -326,13 +325,7 @@ export function BatchWorkspace({
   }
 
   return (
-    <DialogPrimitive
-      labelledBy="batch-workspace-title"
-      onDismiss={onBack}
-      dismissOnScrimClick
-      scrimClassName="batch-dialog-scrim"
-      className="batch-workspace"
-    >
+    <section className="batch-workspace" aria-labelledby="batch-workspace-title">
       <header className="batch-heading">
         <div>
           <h1 id="batch-workspace-title">{copy.title}</h1>
@@ -535,6 +528,6 @@ export function BatchWorkspace({
       </footer>
 
       <span className="sr-only" role="status" aria-live="polite">{words.localOnlyShort}</span>
-    </DialogPrimitive>
+    </section>
   );
 }

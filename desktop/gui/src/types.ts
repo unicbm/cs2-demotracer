@@ -6,6 +6,7 @@
 
 export type Language = "zh" | "en";
 export type Theme = "system" | "light" | "dark";
+export type UiSkin = "trace" | "cobalt" | "ember" | "signal";
 export type SideChoice = "both" | "t" | "ct";
 export type WorkspaceSection = "library" | "batch" | "settings" | "faq";
 export type SubtickMode = "auto" | "off";

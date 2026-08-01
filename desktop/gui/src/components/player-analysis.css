@@ -5,7 +5,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 .player-analysis-workspace {
-  --selected-team-color: #f0a23a;
+  --selected-team-color: var(--team-a);
   display: grid;
   flex: 1;
   grid-template-rows: auto minmax(0, 1fr);
@@ -14,7 +14,7 @@
   background: var(--workspace);
 }
 
-.player-analysis-workspace.is-team-b { --selected-team-color: #55b8ec; }
+.player-analysis-workspace.is-team-b { --selected-team-color: var(--team-b); }
 .player-analysis-workspace.is-team-unknown { --selected-team-color: var(--text-tertiary); }
 
 .player-analysis-toolbar {
@@ -124,11 +124,11 @@
 }
 
 .player-analysis-team {
-  --player-team-color: #f0a23a;
+  --player-team-color: var(--team-a);
   padding: 14px 0 0;
 }
 
-.player-analysis-team.is-team-b { --player-team-color: #55b8ec; }
+.player-analysis-team.is-team-b { --player-team-color: var(--team-b); }
 .player-analysis-team.is-team-unknown { --player-team-color: var(--text-tertiary); }
 
 .player-analysis-team + .player-analysis-team {
@@ -477,7 +477,7 @@
 
 .player-analysis-metrics .is-adr strong { color: var(--trace); }
 .player-analysis-metrics .is-kd strong,
-.player-analysis-metrics .is-kpr strong { color: var(--accent); }
+.player-analysis-metrics .is-kpr strong { color: var(--info); }
 
 .player-analysis-dossier {
   min-width: 0;
@@ -646,7 +646,7 @@
 
 .crosshair-config-list > li.is-selected {
   border-color: color-mix(in srgb, var(--trace) 55%, var(--divider));
-  box-shadow: inset 3px 0 0 var(--trace);
+  box-shadow: inset var(--selection-rail-width) 0 0 var(--trace);
 }
 
 .crosshair-preview {
@@ -825,7 +825,7 @@
   color: #f4f7fa;
   background: #111827;
   border: 1px solid rgba(155, 173, 198, 0.34);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   box-shadow: 0 30px 90px rgba(0, 0, 0, 0.58);
 }
 

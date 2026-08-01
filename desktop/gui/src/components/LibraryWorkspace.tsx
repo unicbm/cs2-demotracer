@@ -12,7 +12,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { ArrowIcon, CloseIcon, FolderIcon, LibraryIcon, PlusIcon, RefreshIcon, ReplayIcon, SearchIcon, TraceMark, TrashIcon } from "../icons";
+import { ArrowIcon, CloseIcon, FolderIcon, PlusIcon, RefreshIcon, ReplayIcon, SearchIcon, TraceMark, TrashIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
 import { resolveProfessionalPlayer } from "../professionalPlayers";
 import type { DemoLibraryEntry, DemoLibraryScan, Language, LibraryPlayerSummary } from "../types";
@@ -768,12 +768,8 @@ export function LibraryWorkspace({
     <section className="library-workspace" aria-labelledby="library-title">
       <header className="library-heading">
         <div>
-          <span className="library-eyebrow"><LibraryIcon size={15} />{words.libraryFolder}</span>
           <h1 id="library-title">{words.libraryTitle}</h1>
           <p>{words.librarySubtitle}</p>
-        </div>
-        <div className="library-primary-actions">
-          <button className="primary-button" type="button" onClick={onConvert} disabled={maintenanceBusy || taskBusy}><PlusIcon size={16} />{words.convertDemo}</button>
         </div>
       </header>
 
@@ -790,7 +786,7 @@ export function LibraryWorkspace({
         </div>
       ) : (
         <>
-          <div className="library-command-bar">
+          {(isScanning || (scan?.entries.length ?? 0) > 0) ? <div className="library-command-bar">
             <details className="library-roots-menu" ref={rootsMenuRef}>
               <summary className="library-root-button" title={exportRoot}>
                 <FolderIcon size={16} />
@@ -880,7 +876,7 @@ export function LibraryWorkspace({
             <button className="icon-button library-refresh" type="button" disabled={loading || maintenanceBusy} onClick={onRefresh} aria-label={words.scanLibrary} title={words.scanLibrary}>
               <RefreshIcon size={17} />
             </button>
-          </div>
+          </div> : null}
 
           <div className="library-result-meta">
             <strong>{importingArchives
@@ -908,11 +904,14 @@ export function LibraryWorkspace({
               ) : renderLibraryRow(item.entry))}
             </div>
           ) : (
-            <div className="library-no-results">
-              <SearchIcon size={24} />
+            <div className={`library-no-results${scan?.entries.length === 0 ? " is-blank-slate" : ""}`}>
+              <span className="library-blank-mark" aria-hidden="true">
+                {scan?.entries.length === 0 ? <TraceMark size={36} /> : <SearchIcon size={22} />}
+              </span>
               <strong>{scan?.entries.length === 0 ? words.libraryDirectoryEmptyTitle : words.libraryNoResultsTitle}</strong>
               <p>{scan?.entries.length === 0 ? words.libraryDirectoryEmptyBody : words.libraryNoResultsBody}</p>
               {scan?.entries.length === 0 ? <button className="primary-button" type="button" onClick={onConvert}><PlusIcon size={15} />{words.convertDemo}</button> : null}
+              {scan?.entries.length === 0 ? <em>{words.dropDemo} · {words.dropTypes}</em> : null}
             </div>
           )}
         </>

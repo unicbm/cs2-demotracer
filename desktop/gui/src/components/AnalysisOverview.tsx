@@ -6,11 +6,11 @@
 
 import type { TextDictionary } from "../i18n";
 import type { AnalysisPlayerSummary, AnalysisResult } from "../types";
-import { displayMap, MapArtwork } from "./MapArtwork";
-import type { PlayerSelection } from "./PlayerRoster";
-import { SteamAvatar, SteamPlayerIdentity, teamRepresentative, type SteamProfileMap } from "./SteamProfile";
+import { ChevronIcon } from "../icons";
+import { displayMap } from "./MapArtwork";
+import { playerSelectionKey, type PlayerSelection } from "./PlayerRoster";
+import { SteamPlayerIdentity, type SteamProfileMap } from "./SteamProfile";
 import "./analysis-overview.css";
-import "./archive-workspace.css";
 
 function cleanTeamName(value: string | null | undefined): string | null {
   const name = value?.trim();
@@ -43,15 +43,6 @@ function formatDuration(seconds: number): string {
   return hours > 0
     ? `${hours}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`
     : `${minutes}:${String(remainder).padStart(2, "0")}`;
-}
-
-function formatDate(value: number | null | undefined): string {
-  if (!value || !Number.isFinite(value)) return "—";
-  return new Intl.DateTimeFormat(document.documentElement.lang || undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  }).format(new Date(value));
 }
 
 function platformName(value: string): string {
@@ -174,6 +165,7 @@ function AnalysisTeamRows({
               <button
                 className="analysis-player-stat-row"
                 type="button"
+                data-player-key={playerSelectionKey(selection)}
                 style={{ gridTemplateColumns }}
                 title={words.rosterPlayerHint}
                 onClick={() => onSelectPlayer(selection)}
@@ -216,63 +208,46 @@ export function AnalysisOverview({
     : null;
   const metricColumns = analysisMetricColumns(sortedPlayers, words, matchRounds);
   const metricGrid = `minmax(190px, 1.8fr) ${metricColumns.map((column) => column.width).join(" ")}`;
-  const teamARepresentative = teamRepresentative(teamAName, teamA);
-  const teamBRepresentative = teamRepresentative(teamBName, teamB);
-
   return (
     <div className="analysis-overview">
-      <section className="archive-match-hero">
-        <div className="archive-map-panel">
-          <MapArtwork map={analysis.map} loading="eager" />
-          <div><span>{words.map}</span><strong>{displayMap(analysis.map)}</strong></div>
+      <section className="analysis-matchbar" aria-label={words.matchAnalysis}>
+        <div className="analysis-map-identity"><small>{words.map}</small><strong>{displayMap(analysis.map)}</strong></div>
+        <div className="analysis-score-team is-team-a"><small>{words.teamA}</small><strong title={teamAName}>{teamAName}</strong></div>
+        <div className="analysis-scoreline" aria-label={analysis.score ? `${teamAName} ${analysis.score.teamA.score} : ${analysis.score.teamB.score} ${teamBName}` : words.scoreUnavailable}>
+          {analysis.score
+            ? <><b>{analysis.score.teamA.score}</b><i>:</i><b>{analysis.score.teamB.score}</b></>
+            : <em>— : —</em>}
         </div>
-        <div className="archive-match-summary">
-          <div className={`archive-scoreboard is-${analysis.score?.status || "unknown"}`}>
-            <div className="archive-score-team is-team-a">
-              <div className="archive-score-team-identity">
-                <strong title={teamAName}>{teamAName}</strong>
-                {teamARepresentative ? <SteamAvatar profile={steamProfiles.get(teamARepresentative.steamId)} fallbackName={teamARepresentative.name} playerColor={teamARepresentative.playerColor} size="hero" /> : null}
-              </div>
-            </div>
-            <div className="archive-scoreline" aria-label={analysis.score ? `${teamAName} ${analysis.score.teamA.score} : ${analysis.score.teamB.score} ${teamBName}` : words.scoreUnavailable}>
-              <span className="archive-score-numbers">
-                {analysis.score
-                  ? <><b>{analysis.score.teamA.score}</b><i>:</i><b>{analysis.score.teamB.score}</b></>
-                  : <em>— : —</em>}
-              </span>
-              {analysis.score?.status === "completed" ? <small>{words.scoreAtDemoEnd}</small> : null}
-            </div>
-            <div className="archive-score-team is-team-b">
-              <div className="archive-score-team-identity">
-                <strong title={teamBName}>{teamBName}</strong>
-                {teamBRepresentative ? <SteamAvatar profile={steamProfiles.get(teamBRepresentative.steamId)} fallbackName={teamBRepresentative.name} playerColor={teamBRepresentative.playerColor} size="hero" /> : null}
-              </div>
-            </div>
-          </div>
-          <dl className="archive-match-facts analysis-match-facts">
-            <div><dt>{words.demoSource}</dt><dd>{analysis.demoSource ? platformName(analysis.demoSource.name) : "—"}</dd></div>
-            <div><dt>{words.demoServerName}</dt><dd title={analysis.serverName ?? undefined}>{analysis.serverName || "—"}</dd></div>
-            <div><dt>{words.demoDuration}</dt><dd>{formatDuration(analysis.durationSeconds)}</dd></div>
-            <div><dt>{words.playableRounds}</dt><dd>{analysis.rounds.length}</dd></div>
-            <div><dt>{words.demoFileTime}</dt><dd>{formatDate(analysis.sourceModifiedAtMs)}</dd></div>
-            <div><dt>{words.tickRate}</dt><dd>{Number.isInteger(analysis.tickRate) ? analysis.tickRate : analysis.tickRate.toFixed(2)}</dd></div>
-          </dl>
+        <div className="analysis-score-team is-team-b"><small>{words.teamB}</small><strong title={teamBName}>{teamBName}</strong></div>
+        <div className="analysis-matchmeta">
+          <span>{analysis.demoSource ? platformName(analysis.demoSource.name) : "—"}</span>
+          <span>{formatDuration(analysis.durationSeconds)}</span>
+          <span>{analysis.rounds.length} {words.roundsUnit}</span>
+          <span>{Number.isInteger(analysis.tickRate) ? analysis.tickRate : analysis.tickRate.toFixed(2)} tick</span>
         </div>
       </section>
 
       {sortedPlayers.length > 0 ? (
-        <section className="analysis-scoreboard" aria-labelledby="analysis-scoreboard-title">
-          <header><h2 id="analysis-scoreboard-title">{words.matchRoster}</h2><span>{words.rosterPlayerCount.replace("{count}", String(sortedPlayers.length))}</span></header>
-          <div className="analysis-scoreboard-columns" style={{ gridTemplateColumns: metricGrid }}>
-            <span>{words.playerColumn}</span>
-            {metricColumns.map((column) => <span key={column.key}>{column.label}</span>)}
+        <details className="analysis-scoreboard">
+          <summary>
+            <span>
+              <h2>{words.matchRoster}</h2>
+              <small>{words.rosterPlayerCount.replace("{count}", String(sortedPlayers.length))}</small>
+            </span>
+            <ChevronIcon size={15} />
+          </summary>
+          <div className="analysis-scoreboard-content">
+            <div className="analysis-scoreboard-columns" style={{ gridTemplateColumns: metricGrid }}>
+              <span>{words.playerColumn}</span>
+              {metricColumns.map((column) => <span key={column.key}>{column.label}</span>)}
+            </div>
+            <div className="analysis-scoreboard-teams">
+              <AnalysisTeamRows teamId="a" name={teamAName} score={analysis.score?.teamA.score} players={teamA} columns={metricColumns} matchRounds={matchRounds} steamProfiles={steamProfiles} words={words} onSelectPlayer={onSelectPlayer} />
+              <AnalysisTeamRows teamId="b" name={teamBName} score={analysis.score?.teamB.score} players={teamB} columns={metricColumns} matchRounds={matchRounds} steamProfiles={steamProfiles} words={words} onSelectPlayer={onSelectPlayer} />
+              {unassigned.length > 0 ? <AnalysisTeamRows teamId="unknown" name={words.unassignedPlayers} players={unassigned} columns={metricColumns} matchRounds={matchRounds} steamProfiles={steamProfiles} words={words} onSelectPlayer={onSelectPlayer} /> : null}
+            </div>
           </div>
-          <div className="analysis-scoreboard-teams">
-            <AnalysisTeamRows teamId="a" name={teamAName} score={analysis.score?.teamA.score} players={teamA} columns={metricColumns} matchRounds={matchRounds} steamProfiles={steamProfiles} words={words} onSelectPlayer={onSelectPlayer} />
-            <AnalysisTeamRows teamId="b" name={teamBName} score={analysis.score?.teamB.score} players={teamB} columns={metricColumns} matchRounds={matchRounds} steamProfiles={steamProfiles} words={words} onSelectPlayer={onSelectPlayer} />
-            {unassigned.length > 0 ? <AnalysisTeamRows teamId="unknown" name={words.unassignedPlayers} players={unassigned} columns={metricColumns} matchRounds={matchRounds} steamProfiles={steamProfiles} words={words} onSelectPlayer={onSelectPlayer} /> : null}
-          </div>
-        </section>
+        </details>
       ) : null}
     </div>
   );

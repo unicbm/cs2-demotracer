@@ -16,38 +16,12 @@
 
 .archive-toolbar {
   display: grid;
-  grid-template-columns: auto minmax(180px, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  min-height: 54px;
-  padding: 7px 13px;
+  min-height: 42px;
+  padding: 5px 13px 5px 18px;
   gap: 14px;
   border-bottom: 1px solid var(--divider);
-}
-
-.archive-back-button {
-  display: inline-flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 0 9px 0 7px;
-  gap: 6px;
-  color: var(--text-secondary);
-  background: transparent;
-  border: 0;
-  border-radius: 6px;
-  font-size: 11.5px;
-  font-weight: 650;
-}
-
-.archive-back-button svg { transform: rotate(180deg); }
-
-.archive-back-button:hover {
-  color: var(--text-primary);
-  background: var(--surface-subtle);
-}
-
-.archive-toolbar-title {
-  flex: 0 1 250px;
-  min-width: 0;
 }
 
 .archive-toolbar-context {
@@ -57,22 +31,12 @@
   gap: 14px;
 }
 
-.archive-toolbar-title > span {
-  display: block;
-  color: var(--trace);
-  font-size: 9px;
+.archive-toolbar-caption {
+  color: var(--text-tertiary);
+  font-size: 10px;
   font-weight: 750;
-  letter-spacing: 0.07em;
-  line-height: 13px;
-}
-
-.archive-toolbar-title h1 {
-  overflow: hidden;
-  font-size: 14px;
-  font-weight: 675;
-  line-height: 18px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .archive-series-switcher {
@@ -108,7 +72,7 @@
   overflow: hidden;
   color: var(--text-tertiary);
   background: transparent;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   text-align: center;
 }
 
@@ -150,16 +114,71 @@
 }
 
 .archive-toolbar-actions {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
 }
 
+.archive-actions-menu {
+  position: relative;
+}
+
+.archive-actions-menu > summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 31px;
+  padding: 0 9px;
+  gap: 6px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: 10.5px;
+  font-weight: 650;
+  list-style: none;
+}
+
+.archive-actions-menu > summary::-webkit-details-marker { display: none; }
+.archive-actions-menu > summary:hover,
+.archive-actions-menu[open] > summary { color: var(--text-primary); background: var(--surface-muted); border-color: var(--divider); }
+.archive-actions-menu[open] > summary svg { transform: rotate(180deg); }
+
+.archive-actions-menu > div {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 5px);
+  right: 0;
+  display: grid;
+  width: max-content;
+  min-width: 164px;
+  padding: 4px;
+  background: var(--surface-raised);
+  border: 1px solid var(--divider-strong);
+  border-radius: 7px;
+  box-shadow: var(--shadow-sheet);
+}
+
+.archive-actions-menu > div button {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 9px;
+  gap: 8px;
+  color: var(--text-secondary);
+  background: transparent;
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+
+.archive-actions-menu > div button:hover:not(:disabled) { color: var(--text-primary); background: var(--surface-muted); }
+.archive-actions-menu > div button:disabled { color: var(--text-disabled); }
+
 .archive-match-hero {
   display: grid;
   grid-template-columns: minmax(260px, 0.62fr) minmax(500px, 1.38fr);
-  min-height: 148px;
+  min-height: 132px;
   overflow: hidden;
   background: var(--surface-raised);
   border-bottom: 1px solid var(--divider-strong);
@@ -258,12 +277,11 @@
 
 .archive-score-team strong {
   max-width: 100%;
-  overflow: hidden;
   color: var(--text-primary);
   font-size: 17px;
   font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 20px;
+  overflow-wrap: anywhere;
 }
 
 .archive-score-team small {
@@ -272,10 +290,10 @@
   letter-spacing: 0.02em;
 }
 
-.archive-score-team.is-team-a small { color: #f0a23a; }
-.archive-score-team.is-team-b small { color: #55b8ec; }
-.archive-score-team.is-team-a .steam-avatar:not(.has-player-color) { border-color: #f0a23a; }
-.archive-score-team.is-team-b .steam-avatar:not(.has-player-color) { border-color: #55b8ec; }
+.archive-score-team.is-team-a small { color: var(--team-a); }
+.archive-score-team.is-team-b small { color: var(--team-b); }
+.archive-score-team.is-team-a .steam-avatar:not(.has-player-color) { border-color: var(--team-a); }
+.archive-score-team.is-team-b .steam-avatar:not(.has-player-color) { border-color: var(--team-b); }
 
 .archive-scoreline {
   display: grid;
@@ -366,36 +384,30 @@
   border-bottom: 1px solid var(--divider-strong);
 }
 
-.archive-roster > summary {
+.archive-roster-heading {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   min-height: 42px;
   padding: 7px 18px;
   gap: 10px;
-  cursor: pointer;
-  list-style: none;
 }
 
-.archive-roster > summary::-webkit-details-marker { display: none; }
-
-.archive-roster > summary:hover { background: var(--surface-subtle); }
-
-.archive-roster > summary > span {
+.archive-roster-heading > span {
   display: flex;
   min-width: 0;
   align-items: baseline;
   gap: 9px;
 }
 
-.archive-roster > summary strong {
+.archive-roster-heading strong {
   flex: none;
   color: var(--text-primary);
   font-size: 15px;
   font-weight: 700;
 }
 
-.archive-roster > summary small {
+.archive-roster-heading small {
   overflow: hidden;
   color: var(--text-tertiary);
   font-size: 13px;
@@ -403,18 +415,11 @@
   white-space: nowrap;
 }
 
-.archive-roster > summary > b {
+.archive-roster-heading > b {
   color: var(--text-secondary);
   font-size: 13px;
   font-weight: 650;
 }
-
-.archive-roster > summary > svg {
-  color: var(--text-tertiary);
-  transition: transform 150ms ease;
-}
-
-.archive-roster[open] > summary > svg { transform: rotate(180deg); }
 
 .archive-roster-grid {
   display: grid;
@@ -424,13 +429,13 @@
 }
 
 .archive-roster-team {
-  --roster-team-color: #f0a23a;
+  --roster-team-color: var(--team-a);
   min-width: 0;
   padding: 10px 16px 0 0;
 }
 
 .archive-roster-team.is-team-b {
-  --roster-team-color: #55b8ec;
+  --roster-team-color: var(--team-b);
   padding-right: 0;
   padding-left: 16px;
   border-left: 1px solid var(--divider);
@@ -583,7 +588,7 @@
 
 .roster-player-summary:hover {
   background: color-mix(in srgb, var(--roster-player-color, var(--trace)) 7%, transparent);
-  box-shadow: inset 2px 0 var(--roster-player-color, var(--roster-team-color));
+  box-shadow: inset var(--selection-rail-width) 0 var(--roster-player-color, var(--roster-team-color));
 }
 
 .roster-player-identity .steam-player-name-row > strong {
@@ -917,8 +922,8 @@
   border-radius: 50%;
 }
 
-.roster-side-markers .is-ct { border-color: #66c9ee; }
-.roster-side-markers .is-t { border-color: #f0c928; }
+.roster-side-markers .is-ct { border-color: var(--side-ct); }
+.roster-side-markers .is-t { border-color: var(--side-t); }
 
 .roster-inventory-simulator-action {
   position: absolute;
@@ -1033,7 +1038,7 @@
   color: #f1f4f7;
   background: rgba(31, 36, 43, 0.97);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   box-shadow: 0 22px 60px rgba(4, 7, 10, 0.46);
   backdrop-filter: blur(20px) saturate(1.08);
   pointer-events: none;
@@ -1267,7 +1272,7 @@
 
 .archive-split-view {
   display: grid;
-  grid-template-columns: minmax(330px, 0.38fr) minmax(520px, 1fr);
+  grid-template-columns: clamp(330px, 28vw, 560px) minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -1340,12 +1345,12 @@
 .archive-round-option.is-start {
   color: var(--text-primary);
   background: var(--selected-row);
-  box-shadow: inset 2px 0 var(--accent);
+  box-shadow: inset var(--selection-rail-width) 0 var(--accent);
 }
 
 .archive-round-option.is-continuation {
   background: color-mix(in srgb, var(--accent-soft) 38%, var(--workspace));
-  box-shadow: inset 2px 0 color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow: inset var(--selection-rail-width) 0 color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .archive-round-option.is-unavailable {
@@ -1426,7 +1431,8 @@
 }
 
 .archive-playback-pane .playback-command-builder {
-  max-width: 900px;
+  width: 100%;
+  max-width: none;
 }
 
 .archive-issues {
@@ -1520,7 +1526,7 @@
   gap: 8px;
   background: var(--surface-subtle);
   border: 1px solid var(--divider);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .archive-manifest-row > span {
@@ -1649,8 +1655,8 @@
   .archive-match-summary { padding-inline: 14px; }
   .archive-score-team strong { font-size: 13px; }
   .archive-score-numbers b { font-size: 24px; }
-  .archive-roster > summary { padding-inline: 14px; }
-  .archive-roster > summary small { display: none; }
+  .archive-roster-heading { padding-inline: 14px; }
+  .archive-roster-heading small { display: none; }
   .archive-roster-grid { grid-template-columns: 1fr; padding-inline: 14px; }
   .archive-roster-team,
   .archive-roster-team.is-team-b { padding: 10px 0 0; border-left: 0; }
@@ -1666,4 +1672,95 @@
   .playback-select-option { grid-template-columns: minmax(0, 1fr) minmax(112px, auto); }
   .archive-file-info-content dl { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }
   .archive-file-info-content dl > div:nth-child(3) { padding-left: 0; border-left: 0; }
+}
+
+@media (min-width: 1600px) {
+  .archive-toolbar {
+    min-height: 62px;
+    padding: 8px 18px;
+    gap: 18px;
+  }
+
+  .archive-back-button { min-height: 38px; padding-inline: 10px; font-size: 13px; }
+  .archive-toolbar-title > span { font-size: 11px; line-height: 15px; }
+  .archive-toolbar-title h1 { font-size: 17px; line-height: 22px; }
+  .archive-toolbar-actions .quiet-button { min-height: 38px; font-size: 13px; }
+
+  .archive-match-hero {
+    grid-template-columns: clamp(360px, 26vw, 540px) minmax(0, 1fr);
+    min-height: 158px;
+  }
+
+  .archive-map-panel > div { bottom: 17px; left: 21px; }
+  .archive-map-panel > div span { font-size: 11px; }
+  .archive-map-panel > div strong { font-size: 36px; }
+  .archive-match-summary { padding: 17px 24px 15px; gap: 14px; }
+  .archive-scoreboard { gap: 22px; }
+  .archive-score-team-identity { gap: 12px; }
+  .archive-score-team strong { font-size: 20px; }
+  .archive-score-numbers b { font-size: 36px; line-height: 40px; }
+  .archive-score-numbers i,
+  .archive-score-numbers em { font-size: 19px; }
+  .archive-scoreline small { font-size: 11px; }
+  .archive-match-facts { padding-top: 12px; }
+  .archive-match-facts dt { font-size: 11px; }
+  .archive-match-facts dd { font-size: 14px; }
+
+  .archive-roster-heading { min-height: 48px; padding: 8px 22px; }
+  .archive-roster-heading strong { font-size: 17px; }
+  .archive-roster-heading > b { font-size: 14px; }
+  .archive-roster-grid { padding: 0 22px 15px; }
+  .archive-roster-team { padding: 12px 18px 0 0; }
+  .archive-roster-team.is-team-b { padding-right: 0; padding-left: 18px; }
+  .archive-roster-team > header { margin-bottom: 7px; }
+  .archive-roster-team > header > div strong { font-size: 16px; }
+  .archive-roster-team > header > div small { font-size: 11px; }
+  .archive-roster-team > header > span { font-size: 13.5px; }
+  .archive-roster-stat-head { min-height: 28px; font-size: 11.5px; }
+  .archive-roster-team > ul > li { min-height: 42px; }
+  .roster-player-summary { min-height: 42px; }
+  .roster-player-identity .steam-player-name-row > strong { font-size: 14px; }
+  .archive-roster-stat { font-size: 12.5px; }
+  .archive-roster-stat.is-hs { font-size: 12px; }
+
+  .archive-split-view { grid-template-columns: clamp(420px, 27vw, 600px) minmax(0, 1fr); }
+  .archive-pane-heading { min-height: 56px; padding-inline: 20px 16px; }
+  .archive-pane-heading h2 { font-size: 15px; }
+  .archive-pane-heading > strong { font-size: 12px; }
+  .archive-round-list { padding-inline: 14px; }
+  .archive-round-option {
+    grid-template-columns: 48px 60px minmax(90px, 1fr) 20px;
+    min-height: 44px;
+    padding-inline: 9px;
+    gap: 9px;
+  }
+  .archive-round-number { font-size: 15px; }
+  .archive-round-score { font-size: 13px; }
+  .archive-round-meta b { font-size: 12.5px; }
+  .archive-round-meta small { font-size: 11px; }
+
+  .archive-playback-pane { padding: 18px 26px 24px; }
+  .playback-command-line { min-height: 66px; padding: 10px 11px 10px 15px; }
+  .playback-command-line code { padding: 8px 10px; font-size: 12px; line-height: 18px; }
+  .playback-command-line .primary-button { min-width: 176px; min-height: 42px; font-size: 13px; }
+  .playback-config-heading { min-height: 52px; padding-inline: 15px 12px; }
+  .playback-config-heading strong { font-size: 13px; }
+  .playback-config-heading code { font-size: 11px; }
+  .playback-option-grid { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); padding: 10px; gap: 8px; }
+  .playback-option { min-height: 64px; padding: 10px 12px; }
+  .playback-option strong { font-size: 12.5px; }
+  .playback-option small { font-size: 10.5px; line-height: 15px; }
+  .playback-advanced > summary { min-height: 44px; padding-inline: 15px; }
+  .playback-advanced > summary strong { font-size: 11px; }
+  .archive-issues summary,
+  .archive-file-info > summary { min-height: 44px; font-size: 11.5px; }
+}
+
+@media (max-height: 760px) and (min-width: 881px) {
+  .archive-workspace {
+    display: block;
+    overflow-y: auto;
+  }
+
+  .archive-split-view { min-height: 420px; }
 }

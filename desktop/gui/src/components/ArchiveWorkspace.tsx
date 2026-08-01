@@ -5,7 +5,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { useEffect, useState } from "react";
-import { AlertIcon, ArrowIcon, CheckIcon, ChevronIcon, CopyIcon, FolderIcon, RefreshIcon } from "../icons";
+import { AlertIcon, CheckIcon, ChevronIcon, CopyIcon, FolderIcon, RefreshIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
 import type { InventorySimulatorItem } from "../inventorySimulator";
 import { useInventorySimulatorSelection } from "../inventorySimulatorSelection";
@@ -50,7 +50,6 @@ interface ArchiveWorkspaceProps {
   onSelectSeriesMap: (manifestPath: string) => void;
   onReconvert: () => void;
   onChooseManifest: () => void;
-  onClose: () => void;
 }
 
 function fileName(path: string): string {
@@ -256,7 +255,6 @@ export function ArchiveWorkspace({
   onSelectSeriesMap,
   onReconvert,
   onChooseManifest,
-  onClose,
 }: ArchiveWorkspaceProps) {
   const playableRounds = archive.rounds.filter((round) => round.available);
   const selected = playableRounds.find((round) => round.round === selectedRound) ?? playableRounds[0];
@@ -360,16 +358,9 @@ export function ArchiveWorkspace({
   }
 
   return (
-    <section className="archive-workspace" aria-labelledby="archive-workspace-title" style={mapArtworkStyle(archive.map)}>
+    <section className="archive-workspace" aria-label={archiveTitle} style={mapArtworkStyle(archive.map)}>
       <header className="archive-toolbar">
-        <button className="archive-back-button" type="button" onClick={onClose}>
-          <ArrowIcon size={15} />{words.backToLibrary}
-        </button>
         <div className="archive-toolbar-context">
-          <div className="archive-toolbar-title">
-            <span>{words.preparePlayback}</span>
-            <h1 id="archive-workspace-title" title={archive.sourcePath || archive.demoPath} tabIndex={-1}>{archiveTitle}</h1>
-          </div>
           {seriesEntries.length > 1 ? (
             <nav className="archive-series-switcher" aria-label={words.seriesMapNavigation}>
               {seriesEntries.map((entry) => {
@@ -391,15 +382,22 @@ export function ArchiveWorkspace({
                 );
               })}
             </nav>
-          ) : null}
+          ) : <span className="archive-toolbar-caption">{words.archive}</span>}
         </div>
         <div className="archive-toolbar-actions">
-          <button className="quiet-button" type="button" onClick={onReconvert} disabled={busy} title={words.reconvertArchiveHelp}>
-            <RefreshIcon size={15} />{busy ? words.readingSourceDemo : words.reconvertArchive}
-          </button>
-          <button className="quiet-button archive-open-folder" type="button" onClick={onOpenFolder} disabled={busy}>
-            <FolderIcon size={15} />{words.openFolder}
-          </button>
+          <details className="archive-actions-menu">
+            <summary>
+              <span>{words.archiveContextMenu}</span><ChevronIcon size={14} />
+            </summary>
+            <div>
+              <button type="button" onClick={onOpenFolder} disabled={busy}>
+                <FolderIcon size={15} /><span>{words.openFolder}</span>
+              </button>
+              <button type="button" onClick={onReconvert} disabled={busy} title={words.reconvertArchiveHelp}>
+                <RefreshIcon size={15} /><span>{busy ? words.readingSourceDemo : words.reconvertArchive}</span>
+              </button>
+            </div>
+          </details>
         </div>
       </header>
 
@@ -445,14 +443,13 @@ export function ArchiveWorkspace({
       </section>
 
       {rosterPlayers.length > 0 ? (
-        <details className="archive-roster" open>
-          <summary>
+        <section className="archive-roster" aria-labelledby="archive-roster-title">
+          <header className="archive-roster-heading">
             <span>
-              <strong>{words.matchRoster}</strong>
+              <strong id="archive-roster-title">{words.matchRoster}</strong>
             </span>
             <b>{words.rosterPlayerCount.replace("{count}", String(rosterPlayers.length))}</b>
-            <ChevronIcon size={15} />
-          </summary>
+          </header>
           <div className="archive-roster-grid">
             <RosterTeam teamId="a" name={teamAName} players={teamARoster} words={words} countLabel={words.rosterPlayerCount} matchRounds={matchRounds} steamProfiles={steamProfiles} retentionPriority={canPrioritizeReplayRoster(teamASteamIds)} onSetPlayerPriority={(playerIndex, priority) => setRetentionPriority("a", playerIndex, priority)} onSelectPlayer={onSelectPlayer} onCopy={onCopy} onOpenExternal={onOpenExternal} />
             <RosterTeam teamId="b" name={teamBName} players={teamBRoster} words={words} countLabel={words.rosterPlayerCount} matchRounds={matchRounds} className="is-team-b" steamProfiles={steamProfiles} retentionPriority={canPrioritizeReplayRoster(teamBSteamIds)} onSetPlayerPriority={(playerIndex, priority) => setRetentionPriority("b", playerIndex, priority)} onSelectPlayer={onSelectPlayer} onCopy={onCopy} onOpenExternal={onOpenExternal} />
@@ -460,7 +457,7 @@ export function ArchiveWorkspace({
               <RosterTeam teamId="unknown" name={words.unassignedPlayers} players={unassignedRoster} words={words} countLabel={words.rosterPlayerCount} matchRounds={matchRounds} className="is-unassigned" steamProfiles={steamProfiles} onSelectPlayer={onSelectPlayer} onCopy={onCopy} onOpenExternal={onOpenExternal} />
             ) : null}
           </div>
-        </details>
+        </section>
       ) : null}
 
       <div className="archive-split-view">
