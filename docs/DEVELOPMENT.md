@@ -154,6 +154,22 @@ Delayed entity or inventory writes capture the registry epoch and verify it at
 execution time. Replay identity generation remains separate because identity
 metadata can change independently from the write-ownership lifecycle.
 
+Round-boundary writes use two coalescing lanes. Slot work is keyed by slot,
+operation kind, write epoch, and replay-identity generation, so spawn and
+companion-lease callbacks cannot queue duplicate reconciliation for the same
+owner. Global presentation and C4 reconciliation is coalesced across each burst
+of player-spawn events. A stale callback may still be delivered by
+CounterStrikeSharp, but it cannot consume work from a newer epoch or write to
+the newer slot incarnation.
+
+Round loading establishes ownership and companion writer leases before spawn
+callbacks, but defers pawn inventory and entity reconstruction until the live
+pawns are ready. Companion lease replacement is transactional across the roster:
+intermediate per-slot metadata changes do not publish partial claim sets. Freeze
+pre-roll performs full pawn preparation at most once for each pre-roll token.
+Remaining readiness checks use a bounded 50 ms cadence; polls must not perform
+full-roster inventory or entity reconstruction.
+
 `test-css.ps1` also enforces the managed-source boundaries: the
 CounterStrikeSharp entry point remains a small composition root and ordinary
 source files cannot grow past the maintained limit. Playback planning, playoff,
