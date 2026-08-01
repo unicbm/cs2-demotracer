@@ -115,7 +115,7 @@ The release truth source is
 | Manifest ABI | 17 |
 | BotController ABI | 16, minor 33+ |
 | BotHider API | 1 |
-| DemoTracer companion API | 6 |
+| DemoTracer companion API | 7 |
 
 See [.dtr Format Contract](docs/FORMAT.md) for the binary layout and limits.
 
@@ -135,8 +135,11 @@ See [.dtr Format Contract](docs/FORMAT.md) for the binary layout and limits.
 DemoTracer builds on
 [CS2-Bot-Controller](https://github.com/XBribo/CS2-Bot-Controller),
 [CS2-Bot-Hider](https://github.com/XBribo/CS2-Bot-Hider),
-[demoparser](https://github.com/LaihoE/demoparser), Metamod:Source, and
-CounterStrikeSharp.
+[demoparser](https://github.com/LaihoE/demoparser),
+[minidemo-encoder](https://github.com/csgowiki/minidemo-encoder),
+Metamod:Source, and CounterStrikeSharp. `minidemo-encoder` provided an early
+foundation for reconstructing continuous movement from discrete demo
+trajectories.
 
 First-party source is licensed under **AGPL-3.0-only**. Vendored components and
 datasets retain their recorded licenses and attribution. The code license does

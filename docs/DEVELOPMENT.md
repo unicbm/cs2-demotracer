@@ -47,7 +47,7 @@ CS2-Bot-Improver packages into a DemoTracer bundle.
 | Manifest ABI | 17 |
 | BotController native ABI | 16, minor 33+ |
 | BotHider / BotRandomizer API | 1 / 1 |
-| DemoTracer companion API | 6 |
+| DemoTracer companion API | 7 |
 
 ## Build and Test
 
@@ -116,6 +116,9 @@ measurements.
 - Cosmetic/econ export stays explicit opt-in.
 - Output contains `.dtr`, manifests, optional `.dtv` voice sidecars, and local
   GUI metadata—not CSV, Parquet, or raw debug dumps.
+- Output promotion holds a target-scoped cross-process lock. Local archive
+  sidecars use an archive-scoped lock plus monotonic `writeRevision`; metadata
+  refreshes must reject a stale revision instead of overwriting newer evidence.
 
 ## Runtime Invariants
 
