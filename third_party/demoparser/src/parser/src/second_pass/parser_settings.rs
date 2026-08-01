@@ -25,11 +25,13 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::env;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 const HUF_LOOKUPTABLE_MAXVALUE: u32 = (1 << 17) - 1;
 const DEFAULT_MAX_ENTITY_ID: usize = 1024;
 
 pub struct SecondPassParser<'a> {
+    pub cancelled: Option<&'a AtomicBool>,
     pub start_end_offset: Option<StartEndOffset>,
     pub qf_mapper: &'a QfMapper,
     pub prop_controller: &'a PropController,
@@ -199,6 +201,7 @@ impl<'a> SecondPassParser<'a> {
         let debug = if args.len() > 2 { args[2] == "true" } else { false };
 
         Ok(SecondPassParser {
+            cancelled: first_pass_output.settings.cancelled,
             uniq_prop_names: AHashSet::default(),
             parse_usercmd: contains_usercmd_prop(&first_pass_output.settings.wanted_player_props),
             last_tick: 0,

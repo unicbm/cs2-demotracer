@@ -20,6 +20,7 @@ use memmap2::Mmap;
 use memmap2::MmapOptions;
 use std::collections::BTreeMap;
 use std::fs::File;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -41,6 +42,8 @@ pub struct ParserInputs<'a> {
     pub order_by_steamid: bool,
     pub list_props: bool,
     pub fallback_bytes: Option<Vec<u8>>,
+    /// Optional cooperative cancellation flag checked between demo frames.
+    pub cancelled: Option<&'a AtomicBool>,
 }
 
 pub struct FirstPassParser<'a> {

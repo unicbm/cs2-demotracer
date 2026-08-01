@@ -34,6 +34,7 @@ use csgoproto::EDemoCommands::*;
 use prost::Message;
 use snap::raw::decompress_len;
 use snap::raw::Decoder as SnapDecoder;
+use std::sync::atomic::Ordering;
 
 use super::variants::{InputHistory, UserCmdSubtickMove};
 
@@ -338,6 +339,9 @@ impl<'a> SecondPassParser<'a> {
         let mut buf2 = vec![0_u8; OUTER_BUF_DEFAULT_LEN];
 
         loop {
+            if self.cancelled.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+                return Err(DemoParserError::Cancelled);
+            }
             // Need at least a few bytes to read frame header (3 varints, minimum 1 byte each)
             if self.ptr + 3 > demo_bytes.len() {
                 break;

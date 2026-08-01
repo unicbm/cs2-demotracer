@@ -36,6 +36,8 @@ pub(crate) struct DemoArchiveInfo {
     pub schema_version: u32,
     pub analysis_revision: u32,
     #[serde(default)]
+    pub write_revision: u64,
+    #[serde(default)]
     pub analysis_sections: DemoInfoAnalysisSections,
     pub demo_id: String,
     pub demo_sha256: String,
@@ -150,6 +152,7 @@ impl DemoArchiveInfo {
         Self {
             schema_version: DEMO_INFO_SCHEMA_VERSION,
             analysis_revision: DEMO_INFO_ANALYSIS_REVISION,
+            write_revision: 0,
             analysis_sections: DemoInfoAnalysisSections {
                 core: CORE_ANALYSIS_SECTION_REVISION,
                 player_evidence: PLAYER_EVIDENCE_SECTION_REVISION,
@@ -291,6 +294,15 @@ pub(crate) fn write_demo_source_pointer(
     demo_sha256: &str,
     source_path: &Path,
 ) -> io::Result<PathBuf> {
+    let _lock = acquire_archive_metadata_lock(root)?;
+    write_demo_source_pointer_unlocked(root, demo_sha256, source_path)
+}
+
+fn write_demo_source_pointer_unlocked(
+    root: &Path,
+    demo_sha256: &str,
+    source_path: &Path,
+) -> io::Result<PathBuf> {
     if demo_sha256.len() != 64
         || !demo_sha256
             .chars()
@@ -325,7 +337,7 @@ pub(crate) fn write_demo_source_pointer(
     let mut bytes = serde_json::to_vec_pretty(&pointer)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     bytes.push(b'\n');
-    write_local_json(
+    write_local_json_unlocked(
         root,
         DEMO_SOURCE_FILE_NAME,
         "demo-source.json",
@@ -446,10 +458,102 @@ pub(crate) fn read_matching_demo_info(
 }
 
 pub(crate) fn write_demo_info(root: &Path, info: &DemoArchiveInfo) -> io::Result<PathBuf> {
-    let mut bytes = serde_json::to_vec_pretty(info)
+    let _lock = acquire_archive_metadata_lock(root)?;
+    let current_revision = matching_demo_info_unlocked(root, &info.demo_sha256)?
+        .map(|current| current.write_revision)
+        .unwrap_or(0);
+    write_demo_info_unlocked(root, info, current_revision)
+}
+
+pub(crate) fn write_demo_source_and_info_if_revision(
+    root: &Path,
+    demo_sha256: &str,
+    source_path: &Path,
+    info: &DemoArchiveInfo,
+    expected_revision: u64,
+) -> io::Result<PathBuf> {
+    let _lock = acquire_archive_metadata_lock(root)?;
+    let current_revision = matching_demo_info_unlocked(root, demo_sha256)?
+        .map(|current| current.write_revision)
+        .unwrap_or(0);
+    if current_revision != expected_revision {
+        return Err(io::Error::new(
+            io::ErrorKind::WouldBlock,
+            format!(
+                "demo-info.json changed during metadata analysis (expected revision {expected_revision}, found {current_revision})"
+            ),
+        ));
+    }
+
+    write_demo_source_pointer_unlocked(root, demo_sha256, source_path)?;
+    write_demo_info_unlocked(root, info, current_revision)
+}
+
+pub(crate) fn update_demo_source_metadata(
+    root: &Path,
+    demo_sha256: &str,
+    source_path: &Path,
+) -> io::Result<()> {
+    let _lock = acquire_archive_metadata_lock(root)?;
+    let current = matching_demo_info_unlocked(root, demo_sha256)?;
+    write_demo_source_pointer_unlocked(root, demo_sha256, source_path)?;
+
+    if let Some(mut info) = current {
+        let source_metadata = fs::metadata(source_path).ok();
+        info.source_file_path = Some(source_path.display().to_string());
+        info.source_file_name = source_path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or(info.source_file_name);
+        info.source_file_modified_at_ms = source_metadata.as_ref().and_then(|metadata| {
+            metadata
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+                .map(|duration| duration.as_millis().min(u64::MAX as u128) as u64)
+        });
+        info.source_file_size_bytes = source_metadata.as_ref().map(fs::Metadata::len);
+        let current_revision = info.write_revision;
+        write_demo_info_unlocked(root, &info, current_revision)?;
+    }
+    Ok(())
+}
+
+fn matching_demo_info_unlocked(
+    root: &Path,
+    expected_sha256: &str,
+) -> io::Result<Option<Box<DemoArchiveInfo>>> {
+    match read_demo_info_file(root) {
+        DemoInfoFileRead::Found(info)
+            if info.schema_version == DEMO_INFO_SCHEMA_VERSION
+                && info
+                    .demo_sha256
+                    .eq_ignore_ascii_case(expected_sha256.trim()) =>
+        {
+            Ok(Some(info))
+        }
+        DemoInfoFileRead::Found(_) => Ok(None),
+        DemoInfoFileRead::Missing => Ok(None),
+        DemoInfoFileRead::Invalid => Ok(None),
+    }
+}
+
+fn write_demo_info_unlocked(
+    root: &Path,
+    info: &DemoArchiveInfo,
+    current_revision: u64,
+) -> io::Result<PathBuf> {
+    let mut next = info.clone();
+    next.write_revision = current_revision.checked_add(1).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "demo-info write revision overflow",
+        )
+    })?;
+    let mut bytes = serde_json::to_vec_pretty(&next)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     bytes.push(b'\n');
-    write_local_json(
+    write_local_json_unlocked(
         root,
         DEMO_INFO_FILE_NAME,
         "demo-info.json",
@@ -458,7 +562,18 @@ pub(crate) fn write_demo_info(root: &Path, info: &DemoArchiveInfo) -> io::Result
     )
 }
 
-fn write_local_json(
+fn acquire_archive_metadata_lock(root: &Path) -> io::Result<crate::target_lock::TargetFileLock> {
+    let metadata = fs::symlink_metadata(root)?;
+    if !metadata.is_dir() || crate::catalog::is_symlink_or_reparse(&metadata) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "archive root is not a normal folder",
+        ));
+    }
+    crate::target_lock::TargetFileLock::acquire(&root.join(".demotracer-metadata.lock"))
+}
+
+fn write_local_json_unlocked(
     root: &Path,
     file_name: &str,
     display_name: &str,
@@ -808,6 +923,7 @@ mod tests {
         let mut info = DemoArchiveInfo {
             schema_version: DEMO_INFO_SCHEMA_VERSION,
             analysis_revision: DEMO_INFO_ANALYSIS_REVISION,
+            write_revision: 0,
             analysis_sections: DemoInfoAnalysisSections {
                 core: CORE_ANALYSIS_SECTION_REVISION,
                 player_evidence: PLAYER_EVIDENCE_SECTION_REVISION,
@@ -863,6 +979,25 @@ mod tests {
             },
         };
         write_demo_info(&root, &info).unwrap();
+
+        let current = read_matching_demo_info(&root, &hash).unwrap();
+        assert_eq!(current.write_revision, 1);
+        let expected_revision = current.write_revision;
+        drop(current);
+
+        write_demo_info(&root, &info).unwrap();
+        let source = root.join("relocated.dem");
+        fs::write(&source, b"demo").unwrap();
+        let error =
+            write_demo_source_and_info_if_revision(&root, &hash, &source, &info, expected_revision)
+                .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+
+        update_demo_source_metadata(&root, &hash, &source).unwrap();
+        let current = read_matching_demo_info(&root, &hash).unwrap();
+        assert_eq!(current.write_revision, 3);
+        assert_eq!(current.source_file_path.as_deref(), source.to_str());
+        assert_eq!(current.display_name, "Alpha vs Bravo");
 
         let DemoInfoRead::Current(current) = read_demo_info(&root, &hash) else {
             panic!("stale cosmetic evidence must not invalidate core archive metadata");

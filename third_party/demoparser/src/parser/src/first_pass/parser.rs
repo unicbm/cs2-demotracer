@@ -29,6 +29,7 @@ use prost::Message;
 use snap::raw::decompress_len;
 use snap::raw::Decoder as SnapDecoder;
 use std::collections::BTreeMap;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 pub const HEADER_ENDS_AT_BYTE: usize = 16;
@@ -92,10 +93,16 @@ impl<'a> FirstPassParser<'a> {
         Ok(self.header.clone())
     }
     pub fn parse_demo(&mut self, demo_bytes: &'a [u8], exit_early: bool) -> Result<FirstPassOutput, DemoParserError> {
+        if self.settings.cancelled.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            return Err(DemoParserError::Cancelled);
+        }
         self.handle_short_header(demo_bytes.len(), &demo_bytes[..HEADER_ENDS_AT_BYTE])?;
         let mut reuseable_buffer = vec![0_u8; 100_000];
         // Loop that goes trough the entire file
         loop {
+            if self.settings.cancelled.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+                return Err(DemoParserError::Cancelled);
+            }
             // Need at least a few bytes to read frame header (3 varints, minimum 1 byte each)
             if self.ptr + 3 > demo_bytes.len() {
                 break;

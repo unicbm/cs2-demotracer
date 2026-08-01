@@ -214,6 +214,7 @@ impl<'a> Bitreader<'a> {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum DemoParserError {
+    Cancelled,
     ClassMapperNotFoundFirstPass,
     FieldNoDecoder,
     OutOfBitsError,

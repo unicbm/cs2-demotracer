@@ -13,6 +13,7 @@ mod inventory_simulator;
 mod playback_manager;
 mod server_config;
 mod steam_profile;
+mod target_lock;
 
 use batch::{
     cancel_batch_import, choose_demo_batch_dir, list_batch_imports, read_batch_import,
@@ -27,8 +28,8 @@ use cs2_demotracer::demo_reader::{
     demo_content_sha256, is_supported_demo_path, is_zstd_demo_path, ReadDemoOptions,
 };
 use cs2_demotracer::demo_series::{
-    demo_source_sha256, read_demo_source_with_options, resolve_demo_source,
-    resolve_demo_source_for_sha256, DemoSourceMetadata, DemoSourceSet,
+    demo_source_sha256, read_demo_source_with_options, read_demo_source_with_options_and_cancel,
+    resolve_demo_source, resolve_demo_source_for_sha256, DemoSourceMetadata, DemoSourceSet,
 };
 use cs2_demotracer::dtr::read_rec_file;
 use cs2_demotracer::export::{
@@ -952,6 +953,7 @@ struct CachedDemo {
 struct AppState {
     cached: Mutex<Option<CachedDemo>>,
     busy: AtomicBool,
+    analysis_cancel_requested: Arc<AtomicBool>,
     next_analysis_id: AtomicU64,
 }
 
@@ -960,6 +962,7 @@ impl Default for AppState {
         Self {
             cached: Mutex::new(None),
             busy: AtomicBool::new(false),
+            analysis_cancel_requested: Arc::new(AtomicBool::new(false)),
             next_analysis_id: AtomicU64::new(1),
         }
     }
@@ -1165,6 +1168,9 @@ async fn analyze_demo(
 ) -> CommandResult<AnalysisDto> {
     validate_max_round_seconds(request.max_round_seconds)?;
     let _busy = state.acquire_busy()?;
+    state
+        .analysis_cancel_requested
+        .store(false, Ordering::Release);
     let requested_path = validate_demo_path(&request.path)?;
     let expected_sha256 = request
         .expected_demo_sha256
@@ -1192,6 +1198,7 @@ async fn analyze_demo(
 
     let worker_source = source.clone();
     let worker_events = events.clone();
+    let worker_cancel = Arc::clone(&state.analysis_cancel_requested);
     let analysis_options = AnalysisOptions {
         max_round_seconds: request.max_round_seconds,
         ..AnalysisOptions::default()
@@ -1201,19 +1208,43 @@ async fn analyze_demo(
             emit_phase(&worker_events, TaskPhase::Decompressing);
         }
         emit_phase(&worker_events, TaskPhase::Parsing);
-        let parsed =
-            read_demo_source_with_options(&worker_source, INTERACTIVE_ANALYSIS_READ_OPTIONS)?;
+        let parsed = match read_demo_source_with_options_and_cancel(
+            &worker_source,
+            INTERACTIVE_ANALYSIS_READ_OPTIONS,
+            &worker_cancel,
+        ) {
+            Ok(parsed) => parsed,
+            Err(_) if worker_cancel.load(Ordering::Acquire) => {
+                return Err(CommandErrorDto::new(
+                    "analysis_cancelled",
+                    "Demo analysis was stopped.",
+                ));
+            }
+            Err(error) => {
+                emit_log(&worker_events, LogLevel::Error, error.to_string());
+                return Err(CommandErrorDto::from_core("analysis_failed", error));
+            }
+        };
+        if worker_cancel.load(Ordering::Acquire) {
+            return Err(CommandErrorDto::new(
+                "analysis_cancelled",
+                "Demo analysis was stopped.",
+            ));
+        }
         emit_phase(&worker_events, TaskPhase::Analyzing);
         let analysis = analyze_browser_demo(&parsed, analysis_options);
-        Ok::<_, cs2_demotracer::Error>((Arc::new(parsed), analysis))
+        if worker_cancel.load(Ordering::Acquire) {
+            return Err(CommandErrorDto::new(
+                "analysis_cancelled",
+                "Demo analysis was stopped.",
+            ));
+        }
+        Ok::<_, CommandErrorDto>((Arc::new(parsed), analysis))
     })
     .await
     .map_err(|error| CommandErrorDto::new("analysis_worker_failed", error.to_string()))?;
 
-    let (parsed, browser_analysis) = parsed_result.map_err(|error| {
-        emit_log(&events, LogLevel::Error, error.to_string());
-        CommandErrorDto::from_core("analysis_failed", error)
-    })?;
+    let (parsed, browser_analysis) = parsed_result?;
     if expected_sha256.is_some_and(|expected| !parsed.demo_sha256.eq_ignore_ascii_case(expected)) {
         return Err(CommandErrorDto::at_path(
             "analysis_demo_hash_mismatch",
@@ -1247,6 +1278,14 @@ async fn analyze_demo(
     });
     emit_phase(&events, TaskPhase::Complete);
     Ok(dto)
+}
+
+#[tauri::command]
+fn cancel_analysis(state: State<'_, AppState>) -> CommandResult<()> {
+    state
+        .analysis_cancel_requested
+        .store(true, Ordering::Release);
+    Ok(())
 }
 
 #[tauri::command]
@@ -1505,6 +1544,10 @@ fn refresh_archive_metadata_for(
         requested_demo_path,
     )?;
     let demo_path = source.primary_path().to_path_buf();
+    let expected_info_revision =
+        archive_info::read_matching_demo_info(archive_root, entry.demo_sha256.trim())
+            .map(|info| info.write_revision)
+            .unwrap_or(0);
     let previous_conversion =
         preserved_conversion_for_manifest(archive_root, entry.demo_sha256.trim(), manifest_path);
     let source_metadata = source.metadata().ok();
@@ -1552,21 +1595,20 @@ fn refresh_archive_metadata_for(
             .is_some_and(|conversion| conversion.charms),
     );
     info.conversion = previous_conversion;
-    archive_info::write_demo_source_pointer(
+    let info_path = archive_info::write_demo_source_and_info_if_revision(
         archive_root,
         entry.demo_sha256.trim(),
         source.primary_path(),
+        &info,
+        expected_info_revision,
     )
     .map_err(|error| {
         CommandErrorDto::at_path(
-            "demo_source_write_failed",
-            error.to_string(),
-            archive_info::demo_source_path(archive_root),
-        )
-    })?;
-    let info_path = archive_info::write_demo_info(archive_root, &info).map_err(|error| {
-        CommandErrorDto::at_path(
-            "demo_info_write_failed",
+            if error.kind() == std::io::ErrorKind::WouldBlock {
+                "demo_info_write_conflict"
+            } else {
+                "demo_info_write_failed"
+            },
             error.to_string(),
             archive_info::demo_info_path(archive_root),
         )
@@ -1607,35 +1649,17 @@ fn resolve_archive_source_for(
     )?;
     let source_path = source.primary_path().to_path_buf();
 
-    // Relocation should be remembered immediately. This updates only the
-    // desktop-local sidecar; manifest.json remains portable and sanitized.
-    archive_info::write_demo_source_pointer(archive_root, entry.demo_sha256.trim(), &source_path)
+    // Relocation should be remembered immediately. The pointer and any
+    // matching demo-info sidecar are updated under one archive-scoped lock;
+    // manifest.json remains portable and sanitized.
+    archive_info::update_demo_source_metadata(archive_root, entry.demo_sha256.trim(), &source_path)
         .map_err(|error| {
-        CommandErrorDto::at_path(
-            "demo_source_write_failed",
-            error.to_string(),
-            archive_info::demo_source_path(archive_root),
-        )
-    })?;
-    if let Some(mut info) =
-        archive_info::read_matching_demo_info(archive_root, entry.demo_sha256.trim())
-    {
-        let source_metadata = source.metadata().ok();
-        info.source_file_path = Some(source_path.display().to_string());
-        info.source_file_name = source_path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or(info.source_file_name);
-        info.source_file_modified_at_ms = source_metadata.and_then(source_metadata_modified_at_ms);
-        info.source_file_size_bytes = source_metadata.map(|metadata| metadata.size_bytes);
-        archive_info::write_demo_info(archive_root, &info).map_err(|error| {
             CommandErrorDto::at_path(
-                "demo_info_write_failed",
+                "demo_source_write_failed",
                 error.to_string(),
-                archive_info::demo_info_path(archive_root),
+                archive_info::demo_source_path(archive_root),
             )
         })?;
-    }
 
     Ok(ResolveArchiveSourceDto {
         source_path: source_path.display().to_string(),
@@ -1987,10 +2011,18 @@ fn refresh_metadata_entries_from_demo(
     let conversions = entries
         .iter()
         .map(|entry| {
-            preserved_conversion_for_manifest(
-                Path::new(&entry.root),
-                entry.demo_sha256.trim(),
-                Path::new(&entry.manifest_path),
+            let archive_root = Path::new(&entry.root);
+            let revision =
+                archive_info::read_matching_demo_info(archive_root, entry.demo_sha256.trim())
+                    .map(|info| info.write_revision)
+                    .unwrap_or(0);
+            (
+                preserved_conversion_for_manifest(
+                    archive_root,
+                    entry.demo_sha256.trim(),
+                    Path::new(&entry.manifest_path),
+                ),
+                revision,
             )
         })
         .collect::<Vec<_>>();
@@ -2000,7 +2032,7 @@ fn refresh_metadata_entries_from_demo(
             collect_voice: false,
             collect_cosmetics: conversions
                 .iter()
-                .flatten()
+                .filter_map(|(conversion, _)| conversion.as_ref())
                 .any(|conversion| conversion.cosmetics),
         },
     )
@@ -2014,7 +2046,7 @@ fn refresh_metadata_entries_from_demo(
     let browser = analyze_browser_demo(&parsed, AnalysisOptions::default());
     let source_metadata = source.metadata().ok();
     let mut updated = 0_usize;
-    for (entry, conversion) in entries.iter().zip(conversions) {
+    for (entry, (conversion, expected_info_revision)) in entries.iter().zip(conversions) {
         let archive_root = Path::new(&entry.root);
         let mut info = archive_info::DemoArchiveInfo::from_analysis(
             entry.demo_id.clone(),
@@ -2039,15 +2071,13 @@ fn refresh_metadata_entries_from_demo(
                 .is_some_and(|conversion| conversion.charms),
         );
         info.conversion = conversion;
-        if let Err(error) = archive_info::write_demo_source_pointer(
+        match archive_info::write_demo_source_and_info_if_revision(
             archive_root,
             entry.demo_sha256.trim(),
             source.primary_path(),
+            &info,
+            expected_info_revision,
         ) {
-            failures.push(format!("{}: {error}", entry.manifest_path));
-            continue;
-        }
-        match archive_info::write_demo_info(archive_root, &info) {
             Ok(_) => updated += 1,
             Err(error) => failures.push(format!("{}: {error}", entry.manifest_path)),
         }
@@ -4612,6 +4642,18 @@ fn output_backup_root(output_dir: &Path, final_root: &Path) -> CommandResult<Pat
     Ok(output_dir.join(format!(".{demo_id}.backup")))
 }
 
+fn output_lock_path(output_dir: &Path, final_root: &Path) -> CommandResult<PathBuf> {
+    if final_root.parent() != Some(output_dir) {
+        return Err(CommandErrorDto::at_path(
+            "unsafe_output_root",
+            "Refusing to lock transaction state outside the selected folder.",
+            final_root,
+        ));
+    }
+    let demo_id = output_root_name(final_root)?.to_string_lossy();
+    Ok(output_dir.join(format!(".{demo_id}.lock")))
+}
+
 fn output_root_name(final_root: &Path) -> CommandResult<&std::ffi::OsStr> {
     final_root
         .file_name()
@@ -4637,17 +4679,8 @@ where
     O: OutputFileOps,
 {
     let backup_root = output_backup_root(output_dir, final_root)?;
+    let lock_path = output_lock_path(output_dir, final_root)?;
     let demo_id = output_root_name(final_root)?.to_string_lossy();
-
-    recover_output_state(file_ops, final_root, &backup_root)?;
-    if let Some(metadata) = file_ops.metadata(final_root).map_err(|error| {
-        CommandErrorDto::at_path("output_inspect_failed", error.to_string(), final_root)
-    })? {
-        require_normal_output_directory(&metadata, final_root)?;
-        if overwrite == OverwriteModeDto::Deny {
-            return Err(output_exists_error(final_root));
-        }
-    }
 
     file_ops.create_dir_all(output_dir).map_err(|error| {
         CommandErrorDto::at_path("output_stage_failed", error.to_string(), output_dir)
@@ -4660,11 +4693,38 @@ where
         .ok_or_else(|| {
             CommandErrorDto::at_path(
                 "output_stage_failed",
-                "The output parent disappeared before staging.",
+                "The output parent disappeared before locking.",
                 output_dir,
             )
         })?;
     require_normal_output_directory(&output_dir_metadata, output_dir)?;
+    let _target_lock =
+        crate::target_lock::TargetFileLock::acquire(&lock_path).map_err(|error| {
+            CommandErrorDto::at_path(
+                if error.kind() == std::io::ErrorKind::WouldBlock {
+                    "output_locked"
+                } else {
+                    "output_lock_failed"
+                },
+                if error.kind() == std::io::ErrorKind::WouldBlock {
+                    format!("Another DemoTracer process is writing this output: {error}")
+                } else {
+                    error.to_string()
+                },
+                &lock_path,
+            )
+        })?;
+
+    recover_output_state(file_ops, final_root, &backup_root)?;
+    if let Some(metadata) = file_ops.metadata(final_root).map_err(|error| {
+        CommandErrorDto::at_path("output_inspect_failed", error.to_string(), final_root)
+    })? {
+        require_normal_output_directory(&metadata, final_root)?;
+        if overwrite == OverwriteModeDto::Deny {
+            return Err(output_exists_error(final_root));
+        }
+    }
+
     let staging_root = create_unique_staging_root(file_ops, output_dir, &demo_id)?;
     let value = match build(&staging_root) {
         Ok(value) => value,
@@ -5293,6 +5353,7 @@ pub fn run() {
             cancel_batch_import,
             preflight_demo_source,
             analyze_demo,
+            cancel_analysis,
             preflight_output,
             read_manifest,
             scan_demo_library,
@@ -6055,6 +6116,31 @@ mod tests {
             assert!(!backup_root.exists());
             assert_no_staging_directories(&output_dir);
         }
+    }
+
+    #[test]
+    fn output_transaction_rejects_a_second_target_writer_before_build() {
+        let temp = ManifestTestDir::new("output-lock");
+        let (output_dir, final_root, _) = output_transaction_paths(&temp);
+        fs::create_dir_all(&output_dir).unwrap();
+        let lock_path = output_lock_path(&output_dir, &final_root).unwrap();
+        let _lock = crate::target_lock::TargetFileLock::acquire(&lock_path).unwrap();
+        let mut file_ops = FaultInjectingOutputFileOps::default();
+        let build_called = std::cell::Cell::new(false);
+
+        let result: CommandResult<OutputTransaction<()>> = run_output_transaction(
+            &output_dir,
+            &final_root,
+            OverwriteModeDto::Replace,
+            &mut file_ops,
+            |_| {
+                build_called.set(true);
+                Ok(())
+            },
+        );
+
+        assert_eq!(result.unwrap_err().code, "output_locked");
+        assert!(!build_called.get());
     }
 
     #[test]
