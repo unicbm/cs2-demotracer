@@ -153,6 +153,19 @@ public sealed class CommandPolicyTests
             DemoTracerCommandCallerPolicy.InferDedicatedServer(arguments));
     }
 
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    public void RestartingPlanKeepsPresentationOwnershipUntilRoundStart(
+        bool restartRequested,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            ReplayPlanOverridePolicy.DeferExistingReplayCleanupUntilRoundStart(
+                restartRequested));
+    }
+
     private static IEnumerable<MethodInfo> DeclaredMethods(Type type)
         => type.GetMethods(
             BindingFlags.Instance |

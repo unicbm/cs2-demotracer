@@ -186,6 +186,21 @@ public sealed class BotRandomizerCosmeticLeaseTests
                 activeClaim));
     }
 
+    [Theory]
+    [InlineData(294910436u, 294910436u, true)]
+    [InlineData(294910436u, 1058568214u, false)]
+    public void KnifeSubclassRepairStopsAfterTheEngineSubclassTokenChanges(
+        uint initialSubclassId,
+        uint currentSubclassId,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            DemoTracerPlugin.ShouldReassertReplayKnifeSubclass(
+                initialSubclassId,
+                currentSubclassId));
+    }
+
     [Fact]
     public void LegacyCosmeticsKeepSeedEvidenceWhileExplicitlyUnknownSeedsDoNot()
     {
