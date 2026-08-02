@@ -32,6 +32,12 @@ document.documentElement.style.backgroundColor = initialBackground;
 document.body.style.backgroundColor = initialBackground;
 document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute("content", initialBackground);
 
+document.addEventListener("contextmenu", (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  const editable = target?.closest('input, textarea, [contenteditable]:not([contenteditable="false"])');
+  if (!editable) event.preventDefault();
+});
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />

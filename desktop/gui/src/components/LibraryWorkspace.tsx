@@ -260,6 +260,10 @@ function LibraryRow({
   const needsSourceLink = !entry.sourcePath || entry.sourceAvailable === false;
   const needsRepair = needsMetadata || needsSourceLink;
   const repairLabel = needsMetadata ? words.repairMetadata : words.linkSourceDemo;
+  const repairHelp = needsMetadata ? words.repairMetadataHelp : words.linkSourceDemoHelp;
+  const repairActionLabel = repairing
+    ? (needsMetadata ? words.repairingMetadata : words.linkingSourceDemo)
+    : repairLabel;
   const scoreTitle = scoreStatus === "snapshot"
     ? words.archiveScoreSnapshot
     : scoreStatus === "completed"
@@ -295,7 +299,7 @@ function LibraryRow({
         { label: words.openManifestLocation, icon: <FolderIcon size={15} />, onSelect: onRevealManifest },
         { label: words.openDemoLocation, icon: <FolderIcon size={15} />, disabled: needsSourceLink, onSelect: onRevealDemo },
         { label: words.reparseDemo, icon: <RefreshIcon size={15} />, dividerBefore: true, disabled: disabled || taskBusy, onSelect: onReparse },
-        ...(needsRepair ? [{ label: repairLabel, icon: <RefreshIcon size={15} />, disabled: repairing || disabled || taskBusy, onSelect: onRepair }] : []),
+        ...(needsRepair ? [{ label: repairActionLabel, icon: <RefreshIcon size={15} />, disabled: repairing || disabled || taskBusy, onSelect: onRepair }] : []),
         { label: words.deleteArchive, icon: <TrashIcon size={15} />, dividerBefore: true, danger: true, disabled: disabled || taskBusy, onSelect: onDelete },
       ],
     });
@@ -318,33 +322,43 @@ function LibraryRow({
           ref={rowRef}
           className="library-series-map-card"
           style={mapArtworkStyle(entry.map)}
-          tabIndex={disabled ? -1 : 0}
-          role="button"
-          aria-label={`${displayMap(entry.map)}: ${seriesScoreLabel}`}
-          aria-disabled={disabled}
-          onClick={activate}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter" && event.key !== " ") return;
-            event.preventDefault();
-            activate();
-          }}
           onContextMenu={openMenu}
         >
-          <div className="library-series-map-art">
-            <MapArtwork map={entry.map} className="library-series-map-artwork" />
-            <strong>{displayMap(entry.map)}</strong>
-            <div className="library-series-map-score" title={scoreTitle} aria-label={seriesScoreLabel}>
-              <b className={firstWon ? "is-winner" : firstLost ? "is-loser" : ""}>
-                {hasSeriesScore ? seriesFirstScore : "—"}
-              </b>
-              <i>:</i>
-              <b className={secondWon ? "is-winner" : secondLost ? "is-loser" : ""}>
-                {hasSeriesScore ? seriesSecondScore : "—"}
-              </b>
+          <button
+            className="library-series-map-open"
+            type="button"
+            disabled={disabled}
+            aria-label={`${displayMap(entry.map)}: ${seriesScoreLabel}`}
+            onClick={activate}
+          >
+            <div className="library-series-map-art">
+              <MapArtwork map={entry.map} className="library-series-map-artwork" />
+              <strong>{displayMap(entry.map)}</strong>
+              <div className="library-series-map-score" title={scoreTitle} aria-label={seriesScoreLabel}>
+                <b className={firstWon ? "is-winner" : firstLost ? "is-loser" : ""}>
+                  {hasSeriesScore ? seriesFirstScore : "—"}
+                </b>
+                <i>:</i>
+                <b className={secondWon ? "is-winner" : secondLost ? "is-loser" : ""}>
+                  {hasSeriesScore ? seriesSecondScore : "—"}
+                </b>
+              </div>
             </div>
+          </button>
+          <div className="library-series-map-badges">
+            {entry.compatibility !== "current" ? <em className={`library-series-map-warning is-${entry.compatibility}`}>{compatibilityLabel(entry, words)}</em> : null}
+            {needsRepair ? (
+              <button
+                className="library-series-map-warning is-action"
+                type="button"
+                disabled={repairing || disabled || taskBusy}
+                title={repairHelp}
+                onClick={onRepair}
+              >
+                {repairActionLabel}
+              </button>
+            ) : null}
           </div>
-          {entry.compatibility !== "current" ? <em className={`library-series-map-warning is-${entry.compatibility}`}>{compatibilityLabel(entry, words)}</em> : null}
-          {needsRepair ? <em className="library-series-map-warning">{repairLabel}</em> : null}
         </article>
         {menu ? <ContextMenu menu={menu} onClose={() => setMenu(null)} /> : null}
       </>
@@ -409,7 +423,7 @@ function LibraryRow({
           {duration ? <span>{duration}</span> : null}
         </small>
         {entry.compatibility !== "current" ? <em className={`is-${entry.compatibility}`}>{compatibilityLabel(entry, words)}</em> : null}
-        {needsRepair ? <em>{repairLabel}</em> : null}
+        {needsRepair ? <em title={repairHelp}>{repairActionLabel}</em> : null}
       </div>
       <div className="library-row-map">
         <MapArtwork map={entry.map} className="library-row-map-artwork" />
@@ -707,6 +721,9 @@ export function LibraryWorkspace({
   const hasRepairableArchives = (scan?.entries ?? []).some((entry) => (
     entry.metadataStatus !== "current" || !entry.sourcePath || entry.sourceAvailable === false
   ));
+  const hasMissingSourceArchives = (scan?.entries ?? []).some((entry) => (
+    !entry.sourcePath || entry.sourceAvailable === false
+  ));
   const entries = (scan?.entries ?? [])
     .filter((entry) => !normalizedQuery || entrySearchText(entry).includes(normalizedQuery))
     .filter((entry) => !mapFilter || entry.map === mapFilter)
@@ -888,6 +905,13 @@ export function LibraryWorkspace({
             {notice ? <em className="library-notice">{notice}</em>
               : scan && scan.skipped.length > 0 ? <em>{words.libraryScanNotes.replace("{count}", String(scan.skipped.length))}</em> : null}
           </div>
+
+          {hasMissingSourceArchives ? (
+            <aside className="library-source-link-note">
+              <FolderIcon size={16} />
+              <span><strong>{words.linkSourceDemo}</strong><small>{words.linkSourceDemoHelp}</small></span>
+            </aside>
+          ) : null}
 
           {isScanning ? <LibrarySkeleton /> : entries.length > 0 ? (
             <div className="library-list">

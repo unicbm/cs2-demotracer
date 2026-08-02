@@ -521,18 +521,18 @@
 }
 
 .player-analysis-dossier .roster-profile-facts small,
-.player-analysis-dossier .roster-command-list small {
+.player-analysis-dossier .player-config-command-list small {
   font-size: 12.5px;
 }
 
 .player-analysis-dossier .roster-profile-facts code,
-.player-analysis-dossier .roster-command-list code,
+.player-analysis-dossier .player-config-command-list code,
 .player-analysis-dossier .roster-attachments code {
   font-size: 12.5px;
   line-height: 19px;
 }
 
-.player-analysis-dossier .roster-command-list code {
+.player-analysis-dossier .player-config-command-list code {
   cursor: text;
   user-select: text;
 }
@@ -572,12 +572,12 @@
   line-height: 19px;
 }
 
-.player-analysis-dossier .roster-command-list,
+.player-analysis-dossier .player-config-command-list,
 .player-analysis-dossier .roster-cosmetic-list {
   gap: 7px;
 }
 
-.player-analysis-dossier .roster-command-list code {
+.player-analysis-dossier .player-config-command-list code {
   overflow: visible;
   overflow-wrap: anywhere;
   text-overflow: clip;
@@ -589,32 +589,8 @@
   gap: 11px;
 }
 
-.player-analysis-dossier .roster-command-list > li {
-  min-height: 48px;
-  padding: 8px 10px;
-  gap: 10px;
-  border: 1px solid var(--divider);
-  border-radius: 3px;
-}
-
 .crosshair-config-list {
-  display: grid;
-  margin: 0;
-  padding: 0;
   gap: 5px;
-  list-style: none;
-}
-
-.crosshair-config-list > li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  min-width: 0;
-  min-height: 58px;
-  gap: 8px;
-  background: color-mix(in srgb, var(--surface-raised) 78%, var(--workspace));
-  border: 1px solid var(--divider);
-  border-radius: 3px;
 }
 
 .crosshair-code-select {
@@ -785,10 +761,6 @@
 
 .crosshair-preview.is-unavailable .crosshair-preview-stage {
   font-size: 30px;
-}
-
-.crosshair-config-list .roster-copy-action {
-  margin-right: 9px;
 }
 
 .player-analysis-dossier .roster-cosmetic-card {

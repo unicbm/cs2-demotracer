@@ -262,14 +262,12 @@ function PathRow({
 function CreditsAvatar({
   name,
   avatarUrl,
-  large = false,
 }: {
   name: string;
   avatarUrl: string;
-  large?: boolean;
 }) {
   return (
-    <span className={`credits-avatar${large ? " is-large" : ""}`} title={name} aria-hidden="true">
+    <span className="credits-avatar" title={name} aria-hidden="true">
       <span>{name.slice(0, 1).toLocaleUpperCase()}</span>
       <img
         src={avatarUrl}
@@ -1189,97 +1187,67 @@ export function SettingsWorkspace({
     demoparser: words.creditsFoundationDemoparser,
     csgowiki: words.creditsFoundationCsgowiki,
   } as const;
+  const creditedPeople = [
+    { ...DEMOTRACER_CREDITS.creator, contribution: words.creditsCreatorRole },
+    ...DEMOTRACER_CREDITS.contributors.map((contributor) => ({
+      ...contributor,
+      contribution: words.creditsContributorRole,
+    })),
+  ];
   const aboutView = (
     <div className="settings-pane settings-about-pane">
-      <header className="credits-editorial-hero">
-        <div className="credits-trace-stage" aria-hidden="true">
-          <svg viewBox="0 0 960 360" preserveAspectRatio="none">
-            <path className="credits-trace-ghost" d="M-30 292 C120 292 110 72 278 92 S442 316 598 222 S756 34 996 78" />
-            <path className="credits-trace-live" pathLength="1" d="M-30 292 C120 292 110 72 278 92 S442 316 598 222 S756 34 996 78" />
-            <circle className="credits-trace-node is-one" cx="278" cy="92" r="5" />
-            <circle className="credits-trace-node is-two" cx="598" cy="222" r="5" />
-          </svg>
+      <header className="settings-pane-header credits-page-header">
+        <div>
+          <h2>{words.aboutTitle}</h2>
+          <p>{words.aboutSubtitle}</p>
         </div>
-        <div className="credits-hero-meta">
-          <span>{words.aboutKicker}</span>
-          <code>BUILD {aboutVersion}</code>
-        </div>
-        <div className="credits-hero-copy">
-          <span>{words.aboutTitle}</span>
-          <h2 id="credits-product-title"><b>{words.aboutHeroLine1}</b><b>{words.aboutHeroLine2}</b></h2>
-          <p>{words.aboutTagline}</p>
-        </div>
-        <button
-          className="credits-creator-line credits-link-card"
-          type="button"
-          title={`GitHub · ${DEMOTRACER_CREDITS.creator.githubHandle}`}
-          aria-label={`GitHub: ${DEMOTRACER_CREDITS.creator.githubHandle}`}
-          onClick={() => onOpenExternal(DEMOTRACER_CREDITS.creator.profileUrl)}
-        >
-          <CreditsAvatar name={DEMOTRACER_CREDITS.creator.name} avatarUrl={DEMOTRACER_CREDITS.creator.avatarUrl} large />
-          <div>
-            <span>{words.creditsCreatedBy}</span>
-            <strong>{DEMOTRACER_CREDITS.creator.name}</strong>
-            <small>{words.creditsCreatorRole}</small>
-          </div>
-          <ExternalLinkIcon className="credits-external-icon" size={13} />
-        </button>
+        <code className="credits-version">v{aboutVersion}</code>
       </header>
 
-      <section className="credits-editorial-section" aria-labelledby="credits-contributors-title">
+      <section className="credits-section" aria-labelledby="credits-contributors-title">
         <header className="credits-section-heading">
-          <span>01</span>
-          <div>
-            <h3 id="credits-contributors-title">{words.creditsContributorsTitle}</h3>
-            <p>{words.creditsContributorsHelp}</p>
-          </div>
+          <h3 id="credits-contributors-title">{words.creditsContributorsTitle}</h3>
+          <p>{words.creditsContributorsHelp}</p>
         </header>
-        <div className="credits-people-list">
-          {DEMOTRACER_CREDITS.contributors.map((contributor, index) => (
+        <div className="credits-list">
+          {creditedPeople.map((person) => (
             <button
-              className="credits-person-line credits-link-card"
+              className="credits-person-row"
               type="button"
-              key={contributor.githubHandle}
-              title={`GitHub · ${contributor.githubHandle}`}
-              aria-label={`GitHub: ${contributor.githubHandle}`}
-              onClick={() => onOpenExternal(contributor.profileUrl)}
+              key={person.githubHandle}
+              title={`GitHub · ${person.githubHandle}`}
+              aria-label={`GitHub: ${person.githubHandle}`}
+              onClick={() => onOpenExternal(person.profileUrl)}
             >
-              <span className="credits-row-index">{String(index + 1).padStart(2, "0")}</span>
-              <CreditsAvatar name={contributor.name} avatarUrl={contributor.avatarUrl} />
-              <span><strong>{contributor.name}</strong><small>@{contributor.githubHandle}</small></span>
+              <CreditsAvatar name={person.name} avatarUrl={person.avatarUrl} />
+              <span className="credits-person-identity"><strong>{person.name}</strong><small>@{person.githubHandle}</small></span>
+              <span className="credits-contribution">{person.contribution}</span>
               <ExternalLinkIcon className="credits-external-icon" size={14} />
             </button>
           ))}
         </div>
       </section>
 
-      <section className="credits-editorial-section credits-foundations" aria-labelledby="credits-foundations-title">
+      <section className="credits-section" aria-labelledby="credits-foundations-title">
         <header className="credits-section-heading">
-          <span>02</span>
-          <div>
-            <h3 id="credits-foundations-title">{words.creditsFoundationsTitle}</h3>
-            <p>{words.creditsFoundationsHelp}</p>
-          </div>
+          <h3 id="credits-foundations-title">{words.creditsFoundationsTitle}</h3>
+          <p>{words.creditsFoundationsHelp}</p>
         </header>
-        <div className="credits-foundation-list">
-          {DEMOTRACER_CREDITS.foundations.map((foundation, index) => (
-            <article className="credits-foundation" key={foundation.id}>
-              <span className="credits-foundation-index">{String(index + 1).padStart(2, "0")}</span>
-              <div className="credits-foundation-copy">
-                <button
-                  className="credits-foundation-profile credits-link-card"
-                  type="button"
-                  title={`GitHub · ${foundation.githubHandle}`}
-                  aria-label={`GitHub: ${foundation.githubHandle}`}
-                  onClick={() => onOpenExternal(foundation.profileUrl)}
-                >
-                  <CreditsAvatar name={foundation.githubHandle} avatarUrl={foundation.avatarUrl} />
-                  <span><strong>{foundation.author}</strong><small>@{foundation.githubHandle}</small></span>
-                  <ExternalLinkIcon className="credits-external-icon" size={13} />
-                </button>
-                <p>{foundationDescriptions[foundation.id]}</p>
-              </div>
-              <div className="credits-project-list">
+        <div className="credits-list">
+          {DEMOTRACER_CREDITS.foundations.map((foundation) => (
+            <article className="credits-foundation-row" key={foundation.id}>
+              <button
+                className="credits-foundation-profile"
+                type="button"
+                title={`GitHub · ${foundation.githubHandle}`}
+                aria-label={`GitHub: ${foundation.githubHandle}`}
+                onClick={() => onOpenExternal(foundation.profileUrl)}
+              >
+                <CreditsAvatar name={foundation.githubHandle} avatarUrl={foundation.avatarUrl} />
+                <span><strong>{foundation.author}</strong><small>@{foundation.githubHandle}</small></span>
+              </button>
+              <p className="credits-contribution">{foundationDescriptions[foundation.id]}</p>
+              <div className="credits-project-links">
                 {foundation.projects.map((project) => (
                   <button
                     type="button"
@@ -1287,7 +1255,7 @@ export function SettingsWorkspace({
                     title={`GitHub · ${project.repository}`}
                     onClick={() => onOpenExternal(project.url)}
                   >
-                    <span>{project.name}</span><code>{project.repository}</code><ExternalLinkIcon size={11} />
+                    <span>{project.name}</span><ExternalLinkIcon size={11} />
                   </button>
                 ))}
               </div>
@@ -1295,15 +1263,6 @@ export function SettingsWorkspace({
           ))}
         </div>
       </section>
-
-      <footer className="credits-finale">
-        <span aria-hidden="true"><TraceMark size={24} /></span>
-        <div>
-          <strong>{words.creditsThankYouTitle}</strong>
-          <p>{words.creditsThankYouBody}</p>
-        </div>
-        <code>GLHF / TRACE COMPLETE</code>
-      </footer>
     </div>
   );
 

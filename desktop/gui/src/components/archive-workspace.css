@@ -667,7 +667,7 @@
 .roster-profile-facts > span { gap: 6px; }
 
 .roster-profile-facts small,
-.roster-command-list small,
+.player-config-command-list small,
 .roster-cosmetic-card summary small {
   color: var(--text-tertiary);
   font-size: 12px;
@@ -676,7 +676,7 @@
 }
 
 .roster-profile-facts code,
-.roster-command-list code,
+.player-config-command-list code,
 .roster-attachments code {
   color: var(--text-secondary);
   font-family: var(--mono);
@@ -803,7 +803,7 @@
   line-height: 1.5;
 }
 
-.roster-command-list,
+.player-config-command-list,
 .roster-attachments ul {
   display: grid;
   margin: 0;
@@ -812,19 +812,44 @@
   list-style: none;
 }
 
-.roster-command-list > li {
+.player-config-command-list > li {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   min-width: 0;
-  padding: 6px 7px;
-  gap: 6px;
-  background: color-mix(in srgb, var(--workspace) 52%, transparent);
+  min-height: 58px;
+  gap: 8px;
+  background: color-mix(in srgb, var(--surface-raised) 78%, var(--workspace));
+  border: 1px solid var(--divider);
   border-radius: 3px;
 }
 
-.roster-command-list > li > span { display: grid; min-width: 0; gap: 1px; }
-.roster-command-list code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-config-command-list > li > span {
+  display: grid;
+  min-width: 0;
+  min-height: 56px;
+  align-content: center;
+  padding: 8px 4px 8px 11px;
+  gap: 3px;
+}
+
+.player-config-command-list small {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.player-config-command-list code {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-config-command-list .roster-copy-action {
+  margin-right: 9px;
+}
 
 .roster-cosmetic-list {
   display: grid;

@@ -404,6 +404,37 @@ function CopyAction({
   );
 }
 
+function ViewmodelEvidenceList({
+  commands,
+  playerKey,
+  words,
+  copiedTarget,
+  onCopy,
+}: {
+  commands: string[];
+  playerKey: string;
+  words: TextDictionary;
+  copiedTarget: CopyTarget | null;
+  onCopy: (value: string, target: CopyTarget) => void;
+}) {
+  return (
+    <section className="roster-evidence-section player-viewmodel-section">
+      <header><strong>{words.viewmodelProfiles}</strong></header>
+      <ul className="player-config-command-list viewmodel-config-list">
+        {commands.map((command, index) => (
+          <li key={`${command}:${index}`}>
+            <span>
+              <small>{words.viewmodelProfile} {index + 1}</small>
+              <code>{command}</code>
+            </span>
+            <CopyAction value={command} target={targetFor(playerKey, "viewmodel", index)} copiedTarget={copiedTarget} label={words.copyCommand} copiedLabel={words.copied} onCopy={onCopy} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function CosmeticCard({
   cosmetic,
   index,
@@ -598,7 +629,7 @@ function CrosshairEvidence({
       <div className="player-configuration-commands">
         <section className="roster-evidence-section player-crosshair-section">
           <header><strong>{words.crosshairCodes}</strong></header>
-          <ul className="crosshair-config-list">
+          <ul className="player-config-command-list crosshair-config-list">
             {codes.map((code, index) => (
               <li className={previewCode === code ? "is-selected" : ""} key={`${code}-${index}`}>
                 <button className="crosshair-code-select" type="button" onClick={() => setPreviewCode(code)}>
@@ -610,19 +641,7 @@ function CrosshairEvidence({
             ))}
           </ul>
         </section>
-        {viewmodels.length > 0 ? (
-          <section className="roster-evidence-section player-viewmodel-section">
-            <header><strong>{words.viewmodelProfiles}</strong></header>
-            <ul className="roster-command-list">
-              {viewmodels.map((command, index) => (
-                <li key={`${command}:${index}`}>
-                  <code>{command}</code>
-                  <CopyAction value={command} target={targetFor(playerKey, "viewmodel", index)} copiedTarget={copiedTarget} label={words.copyCommand} copiedLabel={words.copied} onCopy={onCopy} />
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
+        {viewmodels.length > 0 ? <ViewmodelEvidenceList commands={viewmodels} playerKey={playerKey} words={words} copiedTarget={copiedTarget} onCopy={onCopy} /> : null}
       </div>
     </div>
   );
@@ -723,17 +742,7 @@ export function PlayerDossier({
       ) : showConfiguration && viewmodels.length > 0 ? (
         <div className="player-setup-grid is-commands-only">
           <div className="player-configuration-commands">
-            <section className="roster-evidence-section player-viewmodel-section">
-              <header><strong>{words.viewmodelProfiles}</strong></header>
-              <ul className="roster-command-list">
-                {viewmodels.map((command, index) => (
-                  <li key={`${command}:${index}`}>
-                    <code>{command}</code>
-                    <CopyAction value={command} target={targetFor(playerKey, "viewmodel", index)} copiedTarget={copiedTarget} label={words.copyCommand} copiedLabel={words.copied} onCopy={onCopy} />
-                  </li>
-                ))}
-              </ul>
-            </section>
+            <ViewmodelEvidenceList commands={viewmodels} playerKey={playerKey} words={words} copiedTarget={copiedTarget} onCopy={onCopy} />
           </div>
         </div>
       ) : showConfiguration ? <p className="roster-evidence-empty">{words.playerConfigurationEmpty}</p> : null}
