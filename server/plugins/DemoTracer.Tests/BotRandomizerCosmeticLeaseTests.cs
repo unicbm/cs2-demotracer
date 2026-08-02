@@ -158,6 +158,34 @@ public sealed class BotRandomizerCosmeticLeaseTests
             DemoTracerCosmeticWriteField.Gloves));
     }
 
+    [Theory]
+    [InlineData(true, true, true, true, true, true, true)]
+    [InlineData(false, true, true, true, true, true, false)]
+    [InlineData(true, false, true, true, true, true, false)]
+    [InlineData(true, true, false, true, true, true, false)]
+    [InlineData(true, true, true, false, true, true, false)]
+    [InlineData(true, true, true, true, false, true, false)]
+    [InlineData(true, true, true, true, true, false, false)]
+    public void KnifeSubclassRepairRequiresTheSameOwnedLeasedEntity(
+        bool writeEpochCurrent,
+        bool samePlayer,
+        bool samePawn,
+        bool sameWeapon,
+        bool ownedKnife,
+        bool activeClaim,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            DemoTracerPlugin.CanReassertReplayKnifeSubclass(
+                writeEpochCurrent,
+                samePlayer,
+                samePawn,
+                sameWeapon,
+                ownedKnife,
+                activeClaim));
+    }
+
     [Fact]
     public void LegacyCosmeticsKeepSeedEvidenceWhileExplicitlyUnknownSeedsDoNot()
     {
