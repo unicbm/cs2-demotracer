@@ -35,11 +35,36 @@ public sealed class BotHiderCrosshairPresentationTests
     [InlineData("CSGO-test", "CSGO-test", true)]
     [InlineData("", "server-value", false)]
     [InlineData("CSGO-test", "CSGO-other", false)]
-    public void SynchronousApplyRequiresRequestedCrosshairReadback(
+    public void CrosshairReadbackComparisonRemainsExact(
         string? requested,
         string? actual,
         bool expected)
     {
         Assert.Equal(expected, BotHiderPresentationService.RequestedCrosshairMatches(requested, actual));
+    }
+
+    [Theory]
+    [InlineData(true, true, true, true, true, true)]
+    [InlineData(true, true, true, true, false, true)]
+    [InlineData(false, true, true, true, true, false)]
+    [InlineData(true, false, true, true, true, false)]
+    [InlineData(true, true, false, true, true, false)]
+    [InlineData(true, true, true, false, true, false)]
+    public void OptionalCrosshairMismatchNeverRollsBackCoreIdentityLease(
+        bool playerNameMatches,
+        bool steamIdMatches,
+        bool pingMatches,
+        bool scoreboardFlairMatches,
+        bool crosshairMatches,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            BotHiderPresentationService.CanCommitSynchronousPresentationLease(
+                playerNameMatches,
+                steamIdMatches,
+                pingMatches,
+                scoreboardFlairMatches,
+                crosshairMatches));
     }
 }
