@@ -112,6 +112,35 @@ public sealed class BotRandomizerCosmeticLeaseTests
     }
 
     [Fact]
+    public void AlignedTakeoverCanRetainTheExactAuthenticatedClaimWithoutLiveProviderQueries()
+    {
+        var apiClaim = Assert.IsType<BotRandomizerCosmeticWriteClaim>(BuildClaim(Evidence(
+            agent: true,
+            knife: true,
+            gloves: true,
+            musicKit: true,
+            weapons:
+            [
+                new DemoTracerBotRandomizerWeaponEvidence(7, true, true, true, false)
+            ])));
+        var snapshot = new DemoTracerBotRandomizerLeaseSnapshot();
+        snapshot.Activate("token", "epoch-a", [apiClaim]);
+
+        Assert.True(snapshot.TryBuildRetainedApiClaim(
+            Slot,
+            SubjectSteamId,
+            out var retained));
+        Assert.Equal(apiClaim.Slot, retained.Slot);
+        Assert.Equal(apiClaim.Incarnation, retained.Incarnation);
+        Assert.Equal(apiClaim.SubjectSteamId, retained.SubjectSteamId);
+        Assert.Equal(apiClaim.Agent, retained.Agent);
+        Assert.Equal(apiClaim.Knife, retained.Knife);
+        Assert.Equal(apiClaim.Gloves, retained.Gloves);
+        Assert.Equal(apiClaim.MusicKit, retained.MusicKit);
+        Assert.Equal(apiClaim.Weapons, retained.Weapons, BotRandomizerWeaponClaimComparer.Instance);
+    }
+
+    [Fact]
     public void ReleasedReplayLeaseAllowsRandomizerToOwnAgentKnifeAndGlovesAgain()
     {
         var apiClaim = Assert.IsType<BotRandomizerCosmeticWriteClaim>(BuildClaim(Evidence(
@@ -152,6 +181,23 @@ public sealed class BotRandomizerCosmeticLeaseTests
             DemoTracerPlugin.ShouldHoldBotRandomizerCosmeticLease(
                 canWriteReplaySlot,
                 currentPawnCosmeticsAligned));
+    }
+
+    [Theory]
+    [InlineData(true, "slot_not_managed:3", true)]
+    [InlineData(true, "stale_incarnation:3", true)]
+    [InlineData(true, "lease_not_found", false)]
+    [InlineData(false, "provider_unavailable", false)]
+    public void FailedReplacementKeepsAnExistingExclusionFenceUnlessProviderLostIt(
+        bool hadActiveLease,
+        string reason,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            DemoTracerPlugin.ShouldRetainActiveBotRandomizerLeaseAfterSyncFailure(
+                hadActiveLease,
+                reason));
     }
 
     [Fact]
@@ -229,4 +275,28 @@ public sealed class BotRandomizerCosmeticLeaseTests
     private const int Slot = 3;
     private const ulong Incarnation = 11;
     private const ulong SubjectSteamId = 76561198000000003;
+
+    private sealed class BotRandomizerWeaponClaimComparer : IEqualityComparer<BotRandomizerWeaponWriteClaim>
+    {
+        internal static BotRandomizerWeaponClaimComparer Instance { get; } = new();
+
+        public bool Equals(
+            BotRandomizerWeaponWriteClaim? left,
+            BotRandomizerWeaponWriteClaim? right)
+            => left is not null &&
+               right is not null &&
+               left.WeaponDefinitionIndex == right.WeaponDefinitionIndex &&
+               left.Paint == right.Paint &&
+               left.Stickers == right.Stickers &&
+               left.Keychain == right.Keychain &&
+               left.PaintUsesLegacyModel == right.PaintUsesLegacyModel;
+
+        public int GetHashCode(BotRandomizerWeaponWriteClaim value)
+            => HashCode.Combine(
+                value.WeaponDefinitionIndex,
+                value.Paint,
+                value.Stickers,
+                value.Keychain,
+                value.PaintUsesLegacyModel);
+    }
 }
