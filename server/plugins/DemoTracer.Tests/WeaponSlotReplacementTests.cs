@@ -29,6 +29,89 @@ public sealed class WeaponSlotReplacementTests
     }
 
     [Theory]
+    [InlineData("weapon_hkp2000", "weapon_usp_silencer")]
+    [InlineData("weapon_usp_silencer", "weapon_hkp2000")]
+    public void CtStarterSidearmsCanReplaceEachOther(
+        string currentItem,
+        string targetItem)
+    {
+        Assert.True(ReplayWeaponReplacementPolicy.IsCtStarterSidearmSwap(
+            ReplayWeaponSlot.Secondary,
+            currentItem,
+            targetItem));
+        Assert.Equal(
+            ReplayWeaponSlotPlanAction.ReplaceCtStarterSidearm,
+            ReplayWeaponReplacementPolicy.DecideSlotPlanAction(
+                hasTarget: true,
+                targetPresent: false,
+                anySlotWeapon: true,
+                canReplaceCtStarterSidearm: true));
+    }
+
+    [Theory]
+    [InlineData((int)ReplayWeaponSlot.Primary, "weapon_hkp2000", "weapon_usp_silencer")]
+    [InlineData((int)ReplayWeaponSlot.Secondary, "weapon_hkp2000", "weapon_fiveseven")]
+    [InlineData((int)ReplayWeaponSlot.Secondary, "weapon_deagle", "weapon_usp_silencer")]
+    public void OtherOccupiedWeaponsRemainOutsideTheReplacementPath(
+        int slot,
+        string currentItem,
+        string targetItem)
+    {
+        Assert.False(ReplayWeaponReplacementPolicy.IsCtStarterSidearmSwap(
+            (ReplayWeaponSlot)slot,
+            currentItem,
+            targetItem));
+        Assert.Equal(
+            ReplayWeaponSlotPlanAction.PreserveExisting,
+            ReplayWeaponReplacementPolicy.DecideSlotPlanAction(
+                hasTarget: true,
+                targetPresent: false,
+                anySlotWeapon: true));
+    }
+
+    [Fact]
+    public void CtStarterSidearmReplacementWaitsForTheOldPistolToClear()
+    {
+        Assert.Equal(
+            WeaponSlotReplacementAction.WaitForClear,
+            ReplayWeaponReplacementPolicy.DecideReplacementProgress(
+                targetPresent: false,
+                anySlotWeapon: true,
+                clearWaitFramesRemaining: 8));
+        Assert.Equal(
+            WeaponSlotReplacementAction.GrantTarget,
+            ReplayWeaponReplacementPolicy.DecideReplacementProgress(
+                targetPresent: false,
+                anySlotWeapon: false,
+                clearWaitFramesRemaining: 7));
+    }
+
+    [Theory]
+    [InlineData(true, false, false, 0, 8, (int)DetachedWeaponCleanupAction.Retry)]
+    [InlineData(true, false, false, 1, 8, (int)DetachedWeaponCleanupAction.Destroy)]
+    [InlineData(true, true, false, 1, 8, (int)DetachedWeaponCleanupAction.Retry)]
+    [InlineData(true, false, true, 1, 8, (int)DetachedWeaponCleanupAction.Retry)]
+    [InlineData(true, true, true, 9, 0, (int)DetachedWeaponCleanupAction.Abandon)]
+    [InlineData(false, false, false, 1, 8, (int)DetachedWeaponCleanupAction.Abandon)]
+    public void DetachedStarterSidearmCleanupWaitsForEngineReferences(
+        bool identityMatches,
+        bool ownedByPawn,
+        bool activeWeaponReference,
+        int framesSinceDetach,
+        int retriesRemaining,
+        int expected)
+    {
+        Assert.Equal(
+            (DetachedWeaponCleanupAction)expected,
+            ReplayWeaponReplacementPolicy.DecideDetachedWeaponCleanup(
+                identityMatches,
+                ownedByPawn,
+                activeWeaponReference,
+                framesSinceDetach,
+                retriesRemaining));
+    }
+
+    [Theory]
     [InlineData(true, true, 4, 1, (int)WeaponGrantVerificationAction.TargetReady)]
     [InlineData(false, true, 4, 1, (int)WeaponGrantVerificationAction.Conflict)]
     [InlineData(false, false, 4, 1, (int)WeaponGrantVerificationAction.WaitForAttachment)]
@@ -82,6 +165,23 @@ public sealed class WeaponSlotReplacementTests
                 foreignOwnerCount,
                 pendingDropCount,
                 grantPending));
+    }
+
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, false)]
+    public void C4CanUseTheActiveWeaponDropPathOnlyWhenItIsActuallyActive(
+        bool pawnOwnsC4,
+        bool c4IsActiveWeapon,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            ReplayWeaponReplacementPolicy.CanUseActiveWeaponDropForC4(
+                pawnOwnsC4,
+                c4IsActiveWeapon));
     }
 
     [Theory]

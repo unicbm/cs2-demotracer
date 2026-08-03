@@ -19,13 +19,39 @@ public sealed class ReplayUtilityGrantPolicyTests
     {
         var replayEvent = new ReplayHifiEvent
         {
+            TickIndex = 961,
             Kind = kind,
             TargetSteamId = ReplaySteamId,
             WeaponDefIndex = weaponDefIndex,
             TargetCountAfter = 1
         };
 
-        Assert.True(ReplayUtilityGrantPolicy.ShouldQueue(replayEvent, ReplaySteamId, Catalog));
+        Assert.True(ReplayUtilityGrantPolicy.ShouldQueue(
+            replayEvent,
+            ReplaySteamId,
+            inventoryBaselineTickIndex: 960,
+            Catalog));
+    }
+
+    [Theory]
+    [InlineData(959)]
+    [InlineData(960)]
+    public void AcquisitionsAlreadyRepresentedByTheLiveStartLoadoutAreRejected(uint tickIndex)
+    {
+        var replayEvent = new ReplayHifiEvent
+        {
+            TickIndex = tickIndex,
+            Kind = "item_pickup",
+            TargetSteamId = ReplaySteamId,
+            WeaponDefIndex = 46,
+            TargetCountAfter = 1
+        };
+
+        Assert.False(ReplayUtilityGrantPolicy.ShouldQueue(
+            replayEvent,
+            ReplaySteamId,
+            inventoryBaselineTickIndex: 960,
+            Catalog));
     }
 
     [Fact]
@@ -33,13 +59,18 @@ public sealed class ReplayUtilityGrantPolicyTests
     {
         var replayEvent = new ReplayHifiEvent
         {
+            TickIndex = 961,
             Kind = "item_pickup",
             TargetSteamId = ReplaySteamId,
             WeaponDefIndex = 36,
             TargetCountAfter = 1
         };
 
-        Assert.False(ReplayUtilityGrantPolicy.ShouldQueue(replayEvent, ReplaySteamId, Catalog));
+        Assert.False(ReplayUtilityGrantPolicy.ShouldQueue(
+            replayEvent,
+            ReplaySteamId,
+            inventoryBaselineTickIndex: 960,
+            Catalog));
     }
 
     [Theory]
@@ -52,12 +83,33 @@ public sealed class ReplayUtilityGrantPolicyTests
     {
         var replayEvent = new ReplayHifiEvent
         {
+            TickIndex = 961,
             Kind = kind,
             TargetSteamId = targetSteamId,
             WeaponDefIndex = weaponDefIndex,
             TargetCountAfter = 1
         };
 
-        Assert.False(ReplayUtilityGrantPolicy.ShouldQueue(replayEvent, ReplaySteamId, Catalog));
+        Assert.False(ReplayUtilityGrantPolicy.ShouldQueue(
+            replayEvent,
+            ReplaySteamId,
+            inventoryBaselineTickIndex: 960,
+            Catalog));
+    }
+
+    [Theory]
+    [InlineData(1, 2, 2)]
+    [InlineData(1, 1, 1)]
+    [InlineData(2, 1, 2)]
+    [InlineData(1, -1, 1)]
+    [InlineData(0, 2, 0)]
+    public void UtilityCountUsesAmmoForStackedFlashbangs(
+        int entityCount,
+        int ammoCount,
+        int expected)
+    {
+        Assert.Equal(
+            expected,
+            ReplayUtilityGrantPolicy.ObservedUtilityCount(entityCount, ammoCount));
     }
 }
