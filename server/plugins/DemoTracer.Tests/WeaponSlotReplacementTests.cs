@@ -113,6 +113,12 @@ public sealed class WeaponSlotReplacementTests
         Assert.False(ReplayWeaponReplacementPolicy.CanRemoveForReplacement(className));
     }
 
+    [Fact]
+    public void C4CanNeverEnterTheGenericDetachAndKillReplacementPath()
+    {
+        Assert.False(ReplayWeaponReplacementPolicy.CanRemoveForReplacement("weapon_c4"));
+    }
+
     [Theory]
     [InlineData("weapon_glock")]
     [InlineData("weapon_ak47")]
@@ -120,6 +126,28 @@ public sealed class WeaponSlotReplacementTests
     public void NonKnifeReplayEquipmentCanStillUseTheReplacementPath(string className)
     {
         Assert.True(ReplayWeaponReplacementPolicy.CanRemoveForReplacement(className));
+    }
+
+    [Theory]
+    [InlineData(false, 1, 0, false, (int)SafeC4AlignmentAction.DropForeignOwners)]
+    [InlineData(true, 0, 1, false, (int)SafeC4AlignmentAction.WaitForCleanup)]
+    [InlineData(true, 0, 0, false, (int)SafeC4AlignmentAction.TargetReady)]
+    [InlineData(false, 0, 0, true, (int)SafeC4AlignmentAction.WaitForCleanup)]
+    [InlineData(false, 0, 0, false, (int)SafeC4AlignmentAction.GrantTarget)]
+    public void SafeC4TransferNeverGrantsUntilForeignOwnershipAndCleanupAreClear(
+        bool targetHasC4,
+        int foreignOwnerCount,
+        int pendingDropCount,
+        bool grantPending,
+        int expected)
+    {
+        Assert.Equal(
+            (SafeC4AlignmentAction)expected,
+            ReplayWeaponReplacementPolicy.DecideSafeC4Alignment(
+                targetHasC4,
+                foreignOwnerCount,
+                pendingDropCount,
+                grantPending));
     }
 
     [Theory]
