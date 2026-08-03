@@ -280,6 +280,7 @@ public sealed class DtrReplayReaderLimitsTests : IDisposable
         artifact.VelY = 91_870.14f;
         artifact.VelZ = 256.0f;
         var after = before;
+        after.OriginX = 129.0f;
         after.VelX = 0.0f;
         after.VelY = 0.0f;
         after.VelZ = 0.0f;
@@ -303,13 +304,14 @@ public sealed class DtrReplayReaderLimitsTests : IDisposable
 
         var replay = DtrReplayReader.Read(path);
 
-        Assert.Equal(10.0f, replay.Ticks[0].Pre.VelX);
+        Assert.Equal(0.0f, replay.Ticks[0].Pre.VelX);
         Assert.Equal(0.0f, replay.Ticks[0].Post.VelX);
         Assert.Equal(0.0f, replay.Ticks[0].Post.VelY);
         Assert.Equal(0.0f, replay.Ticks[0].Post.VelZ);
         Assert.Equal(0.0f, replay.Ticks[1].Pre.VelX);
         Assert.Equal(0.0f, replay.Ticks[1].Pre.VelY);
         Assert.Equal(0.0f, replay.Ticks[1].Pre.VelZ);
+        Assert.Equal(128.0f, replay.Ticks[1].Post.VelX);
     }
 
     [Fact]
