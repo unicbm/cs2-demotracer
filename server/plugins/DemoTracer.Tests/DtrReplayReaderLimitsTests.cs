@@ -264,6 +264,55 @@ public sealed class DtrReplayReaderLimitsTests : IDisposable
     }
 
     [Fact]
+    public void ClearsImpossibleSharedSpawnTransitionVelocity()
+    {
+        var before = new NativeMovementSnapshot
+        {
+            OriginX = 128.0f,
+            OriginY = -64.0f,
+            OriginZ = 32.0f,
+            VelX = 10.0f,
+            VelY = 20.0f,
+            VelZ = 30.0f
+        };
+        var artifact = before;
+        artifact.VelX = 126_715.7f;
+        artifact.VelY = 91_870.14f;
+        artifact.VelZ = 256.0f;
+        var after = before;
+        after.VelX = 0.0f;
+        after.VelY = 0.0f;
+        after.VelZ = 0.0f;
+
+        var snapshotPayload = BuildV2SnapshotPayload([before, artifact, after]);
+        var tickMetadata = new byte[16];
+        var path = WriteFile(writer =>
+        {
+            WriteCompleteHeader(writer, version: 8, tickCount: 2, subtickCount: 0);
+            writer.Write(3U);
+            WriteSection(
+                writer,
+                sectionId: 1,
+                codec: CodecNone,
+                elementCount: 3,
+                payload: snapshotPayload,
+                sectionVersion: 2);
+            WriteSection(writer, sectionId: 2, codec: CodecNone, elementCount: 2, payload: tickMetadata);
+            WriteSection(writer, sectionId: 5, codec: CodecNone, elementCount: 0, payload: []);
+        });
+
+        var replay = DtrReplayReader.Read(path);
+
+        Assert.Equal(10.0f, replay.Ticks[0].Pre.VelX);
+        Assert.Equal(0.0f, replay.Ticks[0].Post.VelX);
+        Assert.Equal(0.0f, replay.Ticks[0].Post.VelY);
+        Assert.Equal(0.0f, replay.Ticks[0].Post.VelZ);
+        Assert.Equal(0.0f, replay.Ticks[1].Pre.VelX);
+        Assert.Equal(0.0f, replay.Ticks[1].Pre.VelY);
+        Assert.Equal(0.0f, replay.Ticks[1].Pre.VelZ);
+    }
+
+    [Fact]
     public void ReadsRoundStartBalanceFromHighFidelitySchemaFour()
     {
         var metadata = Encoding.UTF8.GetBytes(

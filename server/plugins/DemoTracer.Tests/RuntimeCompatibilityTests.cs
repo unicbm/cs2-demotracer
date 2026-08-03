@@ -43,18 +43,14 @@ public sealed class RuntimeCompatibilityTests
     }
 
     [Theory]
-    [InlineData(false, true, false)]
-    [InlineData(true, false, false)]
-    [InlineData(true, true, true)]
-    public void ScoreboardFlairRequiresMatchOptInAndSupportedIdentity(
-        bool scoreboardEnabled,
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public void ScoreboardFlairFollowsSupportedReplayIdentity(
         bool identitySupportsFlair,
         bool expected)
     {
         Assert.Equal(
             expected,
-            ReplayRuntimePolicy.ShouldApplyScoreboardFlair(
-                scoreboardEnabled,
-                identitySupportsFlair));
+            ReplayRuntimePolicy.ShouldApplyScoreboardFlair(identitySupportsFlair));
     }
 }
