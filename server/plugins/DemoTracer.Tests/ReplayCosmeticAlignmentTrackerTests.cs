@@ -42,6 +42,26 @@ public sealed class ReplayCosmeticAlignmentTrackerTests
     }
 
     [Fact]
+    public void ReleasedControlCanRetainTheSameReplayAlignmentWithoutResolvingTheBotPawn()
+    {
+        var tracker = new ReplayCosmeticAlignmentTracker();
+        tracker.MarkAligned(7, Identity);
+
+        Assert.True(tracker.HasReplayAlignment(
+            7,
+            Identity.ReplayIdentityGeneration,
+            Identity.ReplaySteamId));
+        Assert.False(tracker.HasReplayAlignment(
+            7,
+            Identity.ReplayIdentityGeneration + 1,
+            Identity.ReplaySteamId));
+        Assert.False(tracker.HasReplayAlignment(
+            7,
+            Identity.ReplayIdentityGeneration,
+            Identity.ReplaySteamId + 1));
+    }
+
+    [Fact]
     public void FailedEvidenceWritesNeverCompleteAlignment()
     {
         var tracker = new ReplayCosmeticAlignmentTracker();
