@@ -234,12 +234,28 @@ pub enum CoordinateAxis {
 
 // This file collects the data that is converted into a dataframe in the end in parser.parse_ticks()
 
+fn should_collect_player_rows(
+    all_player_rows: bool,
+    event_with_velocity: bool,
+    wanted_events_present: bool,
+    wanted_ticks_present: bool,
+    current_tick_wanted: bool,
+) -> bool {
+    all_player_rows
+        || event_with_velocity
+        || (!wanted_events_present && (!wanted_ticks_present || current_tick_wanted))
+}
+
 impl<'a> SecondPassParser<'a> {
     pub fn collect_entities(&mut self) {
-        if !self.prop_controller.event_with_velocity {
-            if !self.wanted_ticks.contains(&self.tick) && self.wanted_ticks.len() != 0 || self.wanted_events.len() != 0 {
-                return;
-            }
+        if !should_collect_player_rows(
+            self.decode_plan.all_player_rows,
+            self.prop_controller.event_with_velocity,
+            !self.wanted_events.is_empty(),
+            !self.wanted_ticks.is_empty(),
+            self.wanted_ticks.contains(&self.tick),
+        ) {
+            return;
         }
         if self.parse_projectiles {
             self.collect_projectiles(true);
@@ -2094,9 +2110,16 @@ mod tests {
     use super::{
         inventory_cosmetics_are_reusable, is_map_based_default_agent,
         refresh_owned_weapon_dynamic_fields, stable_owned_weapon_slot_key,
-        stickers_from_attributes, StickerAttribute, STEAM_ID64_BASE,
+        stickers_from_attributes, should_collect_player_rows, StickerAttribute, STEAM_ID64_BASE,
     };
     use crate::second_pass::variants::InventoryWeaponCosmetic;
+
+    #[test]
+    fn explicit_full_player_rows_do_not_depend_on_synthetic_velocity() {
+        assert!(should_collect_player_rows(true, false, true, false, false));
+        assert!(!should_collect_player_rows(false, false, true, false, false));
+        assert!(should_collect_player_rows(false, true, true, false, false));
+    }
 
     #[test]
     fn map_based_player_models_are_not_stable_agent_evidence() {

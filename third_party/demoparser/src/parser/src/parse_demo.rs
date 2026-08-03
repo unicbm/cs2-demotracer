@@ -29,6 +29,7 @@ pub struct DecodePlan {
     pub voice_data: bool,
     pub item_drops: bool,
     pub end_of_match: bool,
+    pub all_player_rows: bool,
 }
 
 impl DecodePlan {
@@ -37,6 +38,19 @@ impl DecodePlan {
         voice_data: true,
         item_drops: true,
         end_of_match: true,
+        all_player_rows: false,
+    };
+
+    /// Full side-channel decoding plus a complete player dataframe. This is
+    /// required by consumers that analyze movement and game events in the
+    /// same pass; the parser's legacy FULL plan treats events as event-only
+    /// unless synthetic velocity happens to be requested.
+    pub const FULL_PLAYER_ROWS: Self = Self {
+        game_events: true,
+        voice_data: true,
+        item_drops: true,
+        end_of_match: true,
+        all_player_rows: true,
     };
 
     /// Packet entities, string tables, server metadata, net ticks, and usercmds
@@ -47,6 +61,7 @@ impl DecodePlan {
         voice_data: false,
         item_drops: false,
         end_of_match: false,
+        all_player_rows: true,
     };
 }
 
@@ -570,10 +585,18 @@ mod decode_plan_tests {
         assert!(DecodePlan::FULL.voice_data);
         assert!(DecodePlan::FULL.item_drops);
         assert!(DecodePlan::FULL.end_of_match);
+        assert!(!DecodePlan::FULL.all_player_rows);
+
+        assert!(DecodePlan::FULL_PLAYER_ROWS.game_events);
+        assert!(DecodePlan::FULL_PLAYER_ROWS.voice_data);
+        assert!(DecodePlan::FULL_PLAYER_ROWS.item_drops);
+        assert!(DecodePlan::FULL_PLAYER_ROWS.end_of_match);
+        assert!(DecodePlan::FULL_PLAYER_ROWS.all_player_rows);
 
         assert!(!DecodePlan::PLAYER_ROWS_ONLY.game_events);
         assert!(!DecodePlan::PLAYER_ROWS_ONLY.voice_data);
         assert!(!DecodePlan::PLAYER_ROWS_ONLY.item_drops);
         assert!(!DecodePlan::PLAYER_ROWS_ONLY.end_of_match);
+        assert!(DecodePlan::PLAYER_ROWS_ONLY.all_player_rows);
     }
 }
