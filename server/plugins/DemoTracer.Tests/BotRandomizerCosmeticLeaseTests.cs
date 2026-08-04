@@ -18,6 +18,34 @@ public sealed class BotRandomizerCosmeticLeaseTests
         Assert.Null(claim);
     }
 
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, false)]
+    public void AgentAlignmentOwnsMissingEvidenceToPreserveTheMapDefault(
+        bool cosmeticAlignEnabled,
+        bool cosmeticAgentsEnabled,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            DemoTracerPlugin.ShouldClaimAgentOwnership(
+                cosmeticAlignEnabled,
+                cosmeticAgentsEnabled));
+    }
+
+    [Theory]
+    [InlineData("characters/models/tm_phoenix/tm_phoenix.vmdl", "characters\\models\\tm_phoenix\\tm_phoenix.vmdl")]
+    [InlineData("agents/models/professional/varf.vmdl", null)]
+    [InlineData("characters/models/../bad.vmdl", null)]
+    public void NativeAgentCaptureAcceptsOnlyMapDefaultModelPaths(
+        string input,
+        string? expected)
+    {
+        Assert.Equal(expected, DemoTracerPlugin.NormalizeNativeAgentModelPath(input));
+    }
+
     [Fact]
     public void KnifeAndGloveClaimsRequirePositiveEvidence()
     {
