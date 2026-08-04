@@ -1024,8 +1024,7 @@ mod tests {
     fn scan_exposes_the_local_archive_note() {
         let directory = TestDirectory::new("archive-note");
         let manifest = directory.write_manifest("output/match", &valid_manifest());
-        crate::archive_info::write_archive_note(manifest.parent().unwrap(), "Decider map")
-            .unwrap();
+        crate::archive_info::write_archive_note(manifest.parent().unwrap(), "Decider map").unwrap();
 
         let scan = scan_demo_library_for(directory.path.to_str().unwrap()).unwrap();
 

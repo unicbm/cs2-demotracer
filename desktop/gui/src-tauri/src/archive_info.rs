@@ -1123,10 +1123,15 @@ mod tests {
         let before = fs::read(&manifest).unwrap();
 
         assert_eq!(
-            write_archive_note(&root, "  Decider\n map   review  ").unwrap().as_deref(),
+            write_archive_note(&root, "  Decider\n map   review  ")
+                .unwrap()
+                .as_deref(),
             Some("Decider map review")
         );
-        assert_eq!(read_archive_note(&root).as_deref(), Some("Decider map review"));
+        assert_eq!(
+            read_archive_note(&root).as_deref(),
+            Some("Decider map review")
+        );
         assert_eq!(fs::read(&manifest).unwrap(), before);
 
         assert_eq!(write_archive_note(&root, "   ").unwrap(), None);
