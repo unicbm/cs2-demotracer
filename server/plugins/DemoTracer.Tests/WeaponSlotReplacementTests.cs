@@ -146,16 +146,18 @@ public sealed class WeaponSlotReplacementTests
     }
 
     [Theory]
-    [InlineData(false, 1, 0, false, (int)SafeC4AlignmentAction.DropForeignOwners)]
-    [InlineData(true, 0, 1, false, (int)SafeC4AlignmentAction.WaitForCleanup)]
-    [InlineData(true, 0, 0, false, (int)SafeC4AlignmentAction.TargetReady)]
-    [InlineData(false, 0, 0, true, (int)SafeC4AlignmentAction.WaitForCleanup)]
-    [InlineData(false, 0, 0, false, (int)SafeC4AlignmentAction.GrantTarget)]
+    [InlineData(false, 1, 0, false, false, (int)SafeC4AlignmentAction.DropForeignOwners)]
+    [InlineData(true, 0, 1, false, false, (int)SafeC4AlignmentAction.WaitForCleanup)]
+    [InlineData(true, 0, 0, false, false, (int)SafeC4AlignmentAction.TargetReady)]
+    [InlineData(false, 0, 0, true, true, (int)SafeC4AlignmentAction.WaitForCleanup)]
+    [InlineData(false, 0, 0, false, false, (int)SafeC4AlignmentAction.WaitForNativeAssignment)]
+    [InlineData(false, 0, 0, false, true, (int)SafeC4AlignmentAction.GrantTarget)]
     public void SafeC4TransferNeverGrantsUntilForeignOwnershipAndCleanupAreClear(
         bool targetHasC4,
         int foreignOwnerCount,
         int pendingDropCount,
         bool grantPending,
+        bool replacementAuthorized,
         int expected)
     {
         Assert.Equal(
@@ -164,7 +166,8 @@ public sealed class WeaponSlotReplacementTests
                 targetHasC4,
                 foreignOwnerCount,
                 pendingDropCount,
-                grantPending));
+                grantPending,
+                replacementAuthorized));
     }
 
     [Theory]
@@ -182,6 +185,26 @@ public sealed class WeaponSlotReplacementTests
             ReplayWeaponReplacementPolicy.CanUseActiveWeaponDropForC4(
                 pawnOwnsC4,
                 c4IsActiveWeapon));
+    }
+
+    [Theory]
+    [InlineData(false, false, false, false)]
+    [InlineData(false, true, true, false)]
+    [InlineData(true, true, false, false)]
+    [InlineData(true, true, true, true)]
+    [InlineData(true, false, false, true)]
+    public void C4AlignmentNeverMutatesHumanOrUnownedReplaySlots(
+        bool isSafeReplayTargetBot,
+        bool hasLoadedReplay,
+        bool replayOwnsSlot,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            ReplayWeaponReplacementPolicy.CanMutateForeignC4Owner(
+                isSafeReplayTargetBot,
+                hasLoadedReplay,
+                replayOwnsSlot));
     }
 
     [Theory]
