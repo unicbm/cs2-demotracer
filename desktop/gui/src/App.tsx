@@ -12,6 +12,7 @@ import { exit as exitApp } from "@tauri-apps/plugin-process";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import packageMetadata from "../package.json";
 import { AppChrome, AppSidebar, SIDEBAR_DEFAULT_WIDTH } from "./components/AppChrome";
+import { activeBatchItemCount, findRestorableBatch } from "./batchSession";
 import { ArchiveWorkspace } from "./components/ArchiveWorkspace";
 import type { InventorySimulatorItem } from "./inventorySimulator";
 import {
@@ -45,6 +46,7 @@ import { AlertIcon, ArrowIcon, CheckIcon, CloseIcon, CopyIcon, FolderIcon } from
 import { COSMETIC_PHRASE, TEXT } from "./i18n";
 import {
   normalizeTheme,
+  normalizeUiSkin,
   normalizeUiScale,
   resolveTheme,
   stepUiScale,
@@ -55,6 +57,7 @@ import {
   type UiScale,
 } from "./appearance";
 import {
+  isReusableDemoArchive,
   librarySeriesForManifest,
   mergeLibraryScans,
   normalizeLibraryRoot,
@@ -187,6 +190,11 @@ interface DuplicateDemoConflictState {
     mergedSegments: number;
     relinkedDuplicates: number;
   };
+}
+
+interface SaveArchiveNoteResult {
+  manifestPath: string;
+  note: string | null;
 }
 
 type ReparseTarget =
@@ -645,7 +653,7 @@ function useMediaQuery(query: string): boolean {
 function App() {
   const [language, setLanguage] = useState<Language>(storedLanguage);
   const [theme, setTheme] = useState<Theme>(() => normalizeTheme(localStorage.getItem(THEME_STORAGE_KEY)));
-  const [uiSkin] = useState<UiSkin>("trace");
+  const [uiSkin, setUiSkin] = useState<UiSkin>(() => normalizeUiSkin(localStorage.getItem(UI_SKIN_STORAGE_KEY)));
   const [uiScale, setUiScale] = useState<UiScale>(storedUiScale);
   const [sidebarWidth, setSidebarWidth] = useState(storedSidebarWidth);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storedSidebarCollapsed);
@@ -682,6 +690,7 @@ function App() {
   const [libraryMap, setLibraryMap] = useState("");
   const [libraryPlatform, setLibraryPlatform] = useState("");
   const [librarySort, setLibrarySort] = useState<LibrarySort>("recent");
+  const [savingArchiveNote, setSavingArchiveNote] = useState(false);
   const [batchFolderPath, setBatchFolderPath] = useState(() => storedBatchPreferences().folderPath);
   const [batchScanError, setBatchScanError] = useState("");
   const [batchScan, setBatchScan] = useState<DemoFolderScan | null>(null);
@@ -790,14 +799,15 @@ function App() {
   const inspectorVisible = selectedPlayer === null && (inspectorDocked || inspectorSheetOpen);
   const elapsedSeconds = useElapsed(singleTask === "analysis");
   const sourceFileName = analysis?.fileName || fileName(sourcePath);
-  const sessionTitle = phase === "archive" && archive
+  const sessionTitle = activeSection === "analysis" && phase === "archive" && archive
     ? archive.displayName || fileName(archive.demoPath) || archive.demoId
-    : sourceFileName;
-  const sessionMeta = phase === "archive" && archive
+    : activeSection === "analysis" ? sourceFileName : "";
+  const sessionMeta = activeSection === "analysis" && phase === "archive" && archive
     ? [fileName(archive.sourcePath || archive.demoPath), archive.map, `${archive.rounds.length} ${words.rounds}`].filter(Boolean).join(" · ")
-    : analysis
+    : activeSection === "analysis" && analysis
       ? [analysis.map || "—", `${analysis.rounds.length} ${words.rounds}`].join(" · ")
       : "";
+  const analysisAvailable = phase !== "idle" || archive !== null || analysis !== null || result !== null;
   soundNotificationsRef.current = localEnvironment.soundNotifications;
   const importedBatchSources = useMemo(() => new Set(
     (libraryScan?.entries ?? [])
@@ -881,6 +891,11 @@ function App() {
     : batchRunState(batchLedger?.status, batchInvocationActive);
   const canResumeBatch = !batchInvocationActive && Boolean(batchLedger?.items.some((item) =>
     item.status === "pending" || item.status === "running"));
+  const hasRetryableBatchJobs = !batchInvocationActive && Boolean(batchLedger?.items.some((item) =>
+    item.status === "failed"));
+  const batchActiveCount = batchLedger
+    ? activeBatchItemCount(batchLedger)
+    : batchStartingCandidates.length;
   const batchCosmeticOptionsLocked = batchInvocationActive || canResumeBatch;
   const batchCosmeticSettings = batchLedger && batchCosmeticOptionsLocked
     ? batchLedger.settings
@@ -1193,14 +1208,9 @@ function App() {
     const generation = batchGenerationRef.current;
     void invoke<BatchList>("list_batch_imports").then(({ batches }) => {
       if (disposed || generation !== batchGenerationRef.current || batches.length === 0) return;
-      const resumable = batches.find((ledger) =>
-        ledger.status === "pending"
-        || ledger.status === "paused"
-        || ledger.status === "running"
-        || ledger.status === "stopping"
-        || ledger.items.some((item) => item.status === "failed"),
-      );
-      const latest = resumable ?? batches[0];
+      const resumable = findRestorableBatch(batches);
+      if (!resumable) return;
+      const latest = resumable;
       batchIdRef.current = latest.batchId;
       setBatchLedger(latest);
       setBatchFolderPath((current) => current || latest.sourceRoot);
@@ -1386,6 +1396,7 @@ function App() {
     setAnalysis(null);
     setResult(null);
     if (!preserveArchive) dispatchLibraryWorkspace({ type: "clear" });
+    dispatchLibraryWorkspace({ type: "navigate", section: "analysis" });
     setOutputRoot("");
     setSelectedRounds(new Set());
     setInspectorSheetOpen(false);
@@ -1413,6 +1424,7 @@ function App() {
       setDemoSourceIndex((current) => rememberDemoSource(current, next.demoSha256, next.sourcePath));
       setAnalysis(next);
       dispatchLibraryWorkspace({ type: "clear" });
+      dispatchLibraryWorkspace({ type: "navigate", section: "analysis" });
       localStorage.removeItem(LIBRARY_SESSION_STORAGE_KEY);
       setSelectedRounds(new Set(next.rounds.filter((round) => round.selectedByDefault).map((round) => round.round)));
       setOutputDir((current) => current || libraryRoot);
@@ -1432,6 +1444,7 @@ function App() {
         } else {
           setPhase("idle");
           setSourcePath("");
+          dispatchLibraryWorkspace({ type: "navigate", section: "library" });
         }
         playTaskSound("stopped");
         return;
@@ -1444,6 +1457,7 @@ function App() {
         return;
       }
       dispatchLibraryWorkspace({ type: "clear" });
+      dispatchLibraryWorkspace({ type: "navigate", section: "analysis" });
       localStorage.removeItem(LIBRARY_SESSION_STORAGE_KEY);
       setAnalysisError(userFacingErrorMessage(error, language));
       setPhase("analysisFailed");
@@ -1482,8 +1496,11 @@ function App() {
       });
       setDemoPreflightActive(false);
       setDemoPreflightProgress(null);
-      if (preflight.matches.length > 0) {
-        setDuplicateDemoConflict({ primary: preflight });
+      const reusableMatches = preflight.matches.filter(isReusableDemoArchive);
+      if (reusableMatches.length > 0) {
+        setDuplicateDemoConflict({
+          primary: { ...preflight, matches: reusableMatches },
+        });
         return;
       }
       await runAnalysis(preflight.sourcePath);
@@ -1571,6 +1588,7 @@ function App() {
     try {
       const selections: DemoSourcePreflight[] = [];
       const duplicateMatches: DemoSourcePreflight[] = [];
+      const repairSourceIds: string[] = [];
       const seenSources = new Set<string>();
       let mergedSegments = 0;
       let relinkedDuplicates = 0;
@@ -1589,8 +1607,8 @@ function App() {
           continue;
         }
         seenSources.add(key);
+        const reusableMatches = preflight.matches.filter(isReusableDemoArchive);
         if (preflight.matches.length > 0) {
-          duplicateMatches.push(preflight);
           try {
             await invoke<ResolveArchiveSourceResult>("resolve_archive_source", {
               request: {
@@ -1604,6 +1622,11 @@ function App() {
             // archive cannot refresh its local source pointer.
           }
         }
+        if (reusableMatches.length > 0) {
+          duplicateMatches.push({ ...preflight, matches: reusableMatches });
+        } else if (preflight.matches.length > 0) {
+          repairSourceIds.push(key);
+        }
         selections.push(preflight);
       }
 
@@ -1616,7 +1639,10 @@ function App() {
           primary: duplicateMatches[0],
           batch: {
             selections,
-            replaceSourceIds: duplicateMatches.map((item) => normalizedDiagnosticPath(item.sourcePath)),
+            replaceSourceIds: [
+              ...repairSourceIds,
+              ...duplicateMatches.map((item) => normalizedDiagnosticPath(item.sourcePath)),
+            ],
             mergedSegments,
             relinkedDuplicates,
           },
@@ -1624,7 +1650,7 @@ function App() {
         return;
       }
 
-      stageBatchSelections(selections, [], mergedSegments, relinkedDuplicates);
+      stageBatchSelections(selections, repairSourceIds, mergedSegments, relinkedDuplicates);
     } catch (reason) {
       setGlobalError(parseCommandError(reason));
     } finally {
@@ -1661,7 +1687,6 @@ function App() {
     setGlobalError(null);
     dispatchLibraryWorkspace({ type: "opening", path });
     setInspectorSheetOpen(false);
-    dispatchLibraryWorkspace({ type: "navigate", section: "library" });
     if (cached) {
       showArchive(cached);
       return;
@@ -1685,6 +1710,34 @@ function App() {
       dispatchLibraryWorkspace({ type: "navigate", section: returnSection });
     }
   }, [activeSection, phase, words.invalidManifest]);
+
+  async function saveArchiveNote(note: string): Promise<boolean> {
+    if (!archive || savingArchiveNote) return false;
+    setSavingArchiveNote(true);
+    setGlobalError(null);
+    try {
+      const saved = await invoke<SaveArchiveNoteResult>("save_archive_note", {
+        request: { manifestPath: archive.manifestPath, note },
+      });
+      const updated = { ...archive, note: saved.note };
+      dispatchLibraryWorkspace({ type: "replaceArchive", archive: updated });
+      manifestCacheRef.current.set(normalizedDiagnosticPath(updated.manifestPath), updated);
+      setLibraryScan((current) => current ? {
+        ...current,
+        entries: current.entries.map((entry) => (
+          normalizedDiagnosticPath(entry.manifestPath) === normalizedDiagnosticPath(saved.manifestPath)
+            ? { ...entry, note: saved.note }
+            : entry
+        )),
+      } : current);
+      return true;
+    } catch (reason) {
+      setGlobalError(parseCommandError(reason));
+      return false;
+    } finally {
+      setSavingArchiveNote(false);
+    }
+  }
 
   useEffect(() => {
     const saved = libraryRestoreRef.current;
@@ -1935,6 +1988,9 @@ function App() {
       else if (next.items.some((item) => item.status === "failed")) playTaskSound("failure");
       else playTaskSound("success");
       await scanLibrary(withExportRoot(libraryRoots, destination));
+      if (next.status === "completed") {
+        finishBatchWorkspace(next.items.filter((item) => item.status === "completed").length);
+      }
     } catch (reason) {
       if (generation !== batchGenerationRef.current) return;
       setGlobalError(parseCommandError(reason));
@@ -1979,6 +2035,9 @@ function App() {
       else if (next.items.some((item) => item.status === "failed")) playTaskSound("failure");
       else playTaskSound("success");
       await scanLibrary(withExportRoot(libraryRoots, next.libraryRoot));
+      if (next.status === "completed") {
+        finishBatchWorkspace(next.items.filter((item) => item.status === "completed").length);
+      }
     } catch (reason) {
       if (generation !== batchGenerationRef.current) return;
       setGlobalError(parseCommandError(reason));
@@ -2020,6 +2079,31 @@ function App() {
     setBatchStopPending(true);
     const batchId = batchIdRef.current || batchLedger?.batchId;
     if (batchId) void requestBatchCancel(batchId, batchGenerationRef.current);
+  }
+
+  function finishBatchWorkspace(completed = 0) {
+    batchIdRef.current = "";
+    setBatchLedger(null);
+    setBatchProgressByItem({});
+    setBatchStartingCandidates([]);
+    setBatchScan(null);
+    setBatchScanError("");
+    setBatchSelectedIds([]);
+    setBatchReplaceSourceIds([]);
+    dispatchLibraryWorkspace({ type: "navigate", section: "library" });
+    if (completed > 0) {
+      setLibraryNotice(language === "zh"
+        ? `已导入 ${completed} 个 Demo。`
+        : `Imported ${completed} demos.`);
+    }
+  }
+
+  function leaveBatchWorkspace() {
+    if (batchInvocationActive || canResumeBatch) {
+      dispatchLibraryWorkspace({ type: "navigate", section: "library" });
+      return;
+    }
+    finishBatchWorkspace();
   }
 
   useEffect(() => {
@@ -3144,23 +3228,26 @@ function App() {
           collapsed={sidebarCollapsed}
           width={sidebarWidth}
           busy={isBusy}
-          libraryActive={activeSection === "library" && phase === "idle"}
-          workspaceActive={activeSection === "library" && phase !== "idle"}
-          batchActive={activeSection === "batch"}
+          importActive={activeSection === "batch"}
+          libraryActive={activeSection === "library"}
+          analysisActive={activeSection === "analysis"}
+          analysisAvailable={analysisAvailable}
           settingsActive={activeSection === "settings"}
           faqActive={activeSection === "faq"}
-          hasWorkspace={phase !== "idle"}
-          workspaceTitle={sessionTitle || (language === "zh" ? "当前任务" : "Current task")}
-          batchCount={batchSummary.total}
           onWidthChange={setSidebarWidth}
-          onOpenLibrary={resetSession}
-          onOpenWorkspace={() => dispatchLibraryWorkspace({ type: "navigate", section: "library" })}
-          onOpenBatch={() => dispatchLibraryWorkspace({ type: "navigate", section: "batch" })}
+          onOpenImport={() => {
+            if (batchInvocationActive || canResumeBatch || hasRetryableBatchJobs) {
+              dispatchLibraryWorkspace({ type: "navigate", section: "batch" });
+            } else {
+              void chooseDemos();
+            }
+          }}
+          onOpenLibrary={() => dispatchLibraryWorkspace({ type: "navigate", section: "library" })}
+          onOpenAnalysis={() => dispatchLibraryWorkspace({ type: "navigate", section: "analysis" })}
           onOpenSettings={() => dispatchLibraryWorkspace({ type: "navigate", section: "settings" })}
           onOpenFaq={() => dispatchLibraryWorkspace({ type: "navigate", section: "faq" })}
           onLanguageChange={setLanguage}
           onToggleTheme={() => setTheme(toggleResolvedTheme(theme, systemDark))}
-          onConvert={() => void chooseDemos()}
         />
         <main className="app-workspace">
         {globalError ? (
@@ -3182,14 +3269,14 @@ function App() {
             <code title={demoPreflightProgress.fileName}>{demoPreflightProgress.fileName}</code>
           </div>
         ) : null}
-        {!demoPreflightProgress && singleTask && !(activeSection === "library" && (phase === "analyzing" || phase === "converting")) ? (
+        {!demoPreflightProgress && singleTask && activeSection !== "analysis" ? (
           <div className="background-task-strip" role="status" aria-live="polite">
             <i aria-hidden="true" />
             <strong>{singleTask === "conversion" ? words.conversionTitle : words.analyzingTitle}</strong>
             <code title={activeTaskSourcePath}>{fileName(activeTaskSourcePath)}</code>
           </div>
         ) : null}
-        {!demoPreflightProgress && (batchInvocationActive || canResumeBatch) && activeSection !== "batch" ? (
+        {!demoPreflightProgress && (batchInvocationActive || canResumeBatch || hasRetryableBatchJobs) && activeSection !== "batch" ? (
           <button
             className="background-task-strip batch-task-return"
             type="button"
@@ -3198,8 +3285,10 @@ function App() {
             <i aria-hidden="true" />
             <strong>{language === "zh" ? "多个 Demo 入库" : "Multiple demo import"}</strong>
             <code>{batchInvocationActive
-              ? (language === "zh" ? `正在处理 ${batchSummary.total} 个 Demo` : `Processing ${batchSummary.total} demos`)
-              : (language === "zh" ? "有未完成任务，点击继续" : "Unfinished task — click to continue")}</code>
+              ? (language === "zh" ? `还有 ${batchActiveCount} 个` : `${batchActiveCount} remaining`)
+              : hasRetryableBatchJobs
+                ? (language === "zh" ? `${batchSummary.failed} 个需要处理` : `${batchSummary.failed} need attention`)
+                : (language === "zh" ? `${batchActiveCount} 个待继续` : `${batchActiveCount} ready to resume`)}</code>
           </button>
         ) : null}
 
@@ -3209,6 +3298,7 @@ function App() {
           <SettingsWorkspace
             words={words}
             language={language}
+            uiSkin={uiSkin}
             uiScale={uiScale}
             environment={localEnvironment}
             exportRoot={libraryRoot}
@@ -3231,6 +3321,7 @@ function App() {
             playbackReleaseError={playbackReleaseError}
             releaseAction={releaseAction}
             releaseNotice={releaseNotice}
+            onUiSkinChange={setUiSkin}
             onUiScaleChange={setUiScale}
             onCs2PathChange={(cs2Path) => {
               setLocalEnvironment((current) => ({ ...current, cs2Path }));
@@ -3283,7 +3374,7 @@ function App() {
             exportCharms={batchCosmeticSettings.exportCharms}
             cosmeticOptionsLocked={batchCosmeticOptionsLocked}
             onChooseDemos={() => void chooseDemos()}
-            onBack={() => dispatchLibraryWorkspace({ type: "navigate", section: "library" })}
+            onBack={leaveBatchWorkspace}
             onSelectionChange={setBatchSelectedIds}
             onConcurrencyChange={setBatchConcurrency}
             onRequestCosmetics={requestCosmeticExport}
@@ -3295,14 +3386,13 @@ function App() {
             onStart={(candidateIds) => void startBatchImport(candidateIds)}
             onResume={() => void resumeBatchImport()}
             onStop={() => void stopBatchImport()}
+            onFinish={() => finishBatchWorkspace(batchSummary.completed)}
             onRetryJob={(jobId) => void resumeBatchImport(jobId)}
             onOpenArchive={(job) => {
               if (job.outputPath) void runManifest(job.outputPath);
             }}
           />
-        ) : (
-          <>
-        {phase === "idle" ? (
+        ) : activeSection === "library" ? (
           <LibraryWorkspace
             words={words}
             language={language}
@@ -3338,7 +3428,8 @@ function App() {
             onReparseEntry={(entry: DemoLibraryEntry) => setReparseTarget({ kind: "library", entry })}
             onDeleteEntry={setArchiveDeleteTarget}
           />
-        ) : null}
+        ) : (
+          <>
         {phase === "openingArchive" ? <OpeningArchiveView words={words} manifestName={fileName(archivePath)} /> : null}
         {phase === "archive" && archive ? (
           <ArchiveWorkspace
@@ -3347,6 +3438,7 @@ function App() {
             archive={archive}
             seriesEntries={activeArchiveSeries}
             busy={Boolean(repairingManifest)}
+            savingNote={savingArchiveNote}
             selectedRound={selectedArchiveRound ?? -1}
             commandMode={commandMode}
             playbackPreset={playbackPreset}
@@ -3373,6 +3465,7 @@ function App() {
               }
             }}
             onReconvert={() => setReparseTarget({ kind: "archive", archive })}
+            onSaveNote={saveArchiveNote}
             onChooseManifest={() => void chooseManifest()}
           />
         ) : null}

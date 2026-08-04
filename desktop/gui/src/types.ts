@@ -8,7 +8,7 @@ export type Language = "zh" | "en";
 export type Theme = "system" | "light" | "dark";
 export type UiSkin = "trace" | "cobalt" | "ember" | "signal";
 export type SideChoice = "both" | "t" | "ct";
-export type WorkspaceSection = "library" | "batch" | "settings" | "faq";
+export type WorkspaceSection = "library" | "analysis" | "batch" | "settings" | "faq";
 export type SubtickMode = "auto" | "off";
 
 export type Phase =
@@ -191,6 +191,7 @@ export interface DemoLibraryEntry {
   demoId: string;
   demoSha256: string;
   displayName?: string | null;
+  note?: string | null;
   map: string;
   tickRate: number;
   abi: number;
@@ -414,6 +415,7 @@ export interface ManifestArchive {
   rounds: ManifestArchiveRound[];
   issues: ManifestArchiveIssue[];
   displayName: string;
+  note?: string | null;
   metadataStatus: string;
   sourcePath?: string | null;
   sourceModifiedAtMs?: number | null;

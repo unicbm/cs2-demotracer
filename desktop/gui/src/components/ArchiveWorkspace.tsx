@@ -5,7 +5,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { useEffect, useState } from "react";
-import { AlertIcon, CheckIcon, ChevronIcon, CopyIcon, FolderIcon, RefreshIcon } from "../icons";
+import { AlertIcon, CheckIcon, ChevronIcon, CopyIcon, FolderIcon, NoteIcon, RefreshIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
 import type { InventorySimulatorItem } from "../inventorySimulator";
 import { useInventorySimulatorSelection } from "../inventorySimulatorSelection";
@@ -33,6 +33,7 @@ interface ArchiveWorkspaceProps {
   archive: ManifestArchive;
   seriesEntries: readonly DemoLibraryEntry[];
   busy: boolean;
+  savingNote: boolean;
   selectedRound: number;
   commandMode: CommandMode;
   playbackPreset: PlaybackPresetOptions;
@@ -49,6 +50,7 @@ interface ArchiveWorkspaceProps {
   onClosePlayer: () => void;
   onSelectSeriesMap: (manifestPath: string) => void;
   onReconvert: () => void;
+  onSaveNote: (note: string) => Promise<boolean>;
   onChooseManifest: () => void;
 }
 
@@ -242,6 +244,7 @@ export function ArchiveWorkspace({
   archive,
   seriesEntries,
   busy,
+  savingNote,
   selectedRound,
   commandMode,
   playbackPreset,
@@ -258,6 +261,7 @@ export function ArchiveWorkspace({
   onClosePlayer,
   onSelectSeriesMap,
   onReconvert,
+  onSaveNote,
   onChooseManifest,
 }: ArchiveWorkspaceProps) {
   const playableRounds = archive.rounds.filter((round) => round.available);
@@ -293,6 +297,12 @@ export function ArchiveWorkspace({
   const teamBSignature = teamBSteamIds.join("|");
   const retentionKey = replayRetentionStorageKey(archive.demoSha256 || archive.demoId);
   const [retentionOrders, setRetentionOrders] = useState<ReplayRetentionOrders>({ a: [], b: [] });
+  const [noteEditing, setNoteEditing] = useState(false);
+  const [noteDraft, setNoteDraft] = useState(archive.note ?? "");
+  useEffect(() => {
+    setNoteDraft(archive.note ?? "");
+    setNoteEditing(false);
+  }, [archive.manifestPath, archive.note]);
   useEffect(() => {
     const stored = readReplayRetentionOrders(retentionKey);
     setRetentionOrders({
@@ -404,6 +414,43 @@ export function ArchiveWorkspace({
           </details>
         </div>
       </header>
+
+      <section className={`archive-note-panel${archive.note ? " has-note" : ""}`} aria-label={words.archiveCustomNote}>
+        <NoteIcon size={16} />
+        {noteEditing ? (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void onSaveNote(noteDraft).then((saved) => {
+                if (saved) setNoteEditing(false);
+              });
+            }}
+          >
+            <input
+              autoFocus
+              value={noteDraft}
+              maxLength={240}
+              disabled={savingNote}
+              aria-label={words.archiveCustomNote}
+              placeholder={words.archiveNotePlaceholder}
+              onChange={(event) => setNoteDraft(event.target.value)}
+            />
+            <small>{noteDraft.length}/240</small>
+            <button className="text-button" type="button" disabled={savingNote} onClick={() => {
+              setNoteDraft(archive.note ?? "");
+              setNoteEditing(false);
+            }}>{words.cancel}</button>
+            <button className="primary-button" type="submit" disabled={savingNote || noteDraft.trim() === (archive.note ?? "")}>
+              {savingNote ? words.savingArchiveNote : words.saveArchiveNote}
+            </button>
+          </form>
+        ) : (
+          <button className="archive-note-display" type="button" onClick={() => setNoteEditing(true)} title={words.archiveNoteHelp}>
+            <span><strong>{words.archiveCustomNote}</strong><small>{archive.note || words.archiveNoteEmpty}</small></span>
+            <em>{words.editArchiveNote}</em>
+          </button>
+        )}
+      </section>
 
       <section className="archive-match-hero">
         <div className="archive-map-panel">

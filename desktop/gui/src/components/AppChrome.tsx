@@ -7,8 +7,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
-  BatchIcon,
-  ChevronIcon,
   CloseIcon,
   HelpIcon,
   LanguageIcon,
@@ -19,6 +17,7 @@ import {
   PlusIcon,
   ReplayIcon,
   RestoreIcon,
+  SidebarIcon,
   SlidersIcon,
   SunIcon,
   TraceMark,
@@ -48,23 +47,20 @@ interface AppSidebarProps {
   collapsed: boolean;
   width: number;
   busy: boolean;
+  importActive: boolean;
   libraryActive: boolean;
-  workspaceActive: boolean;
-  batchActive: boolean;
+  analysisActive: boolean;
+  analysisAvailable: boolean;
   settingsActive: boolean;
   faqActive: boolean;
-  hasWorkspace: boolean;
-  workspaceTitle: string;
-  batchCount: number;
   onWidthChange: (width: number) => void;
+  onOpenImport: () => void;
   onOpenLibrary: () => void;
-  onOpenWorkspace: () => void;
-  onOpenBatch: () => void;
+  onOpenAnalysis: () => void;
   onOpenSettings: () => void;
   onOpenFaq: () => void;
   onLanguageChange: (language: Language) => void;
   onToggleTheme: () => void;
-  onConvert: () => void;
 }
 
 function clampSidebarWidth(width: number): number {
@@ -138,7 +134,7 @@ export function AppChrome({
             aria-label={sidebarCollapsed ? words.sidebarExpand : words.sidebarCollapse}
             title={sidebarCollapsed ? words.sidebarExpand : words.sidebarCollapse}
           >
-            <ChevronIcon size={14} />
+            <SidebarIcon size={17} />
           </button>
         </div>
         {sessionTitle ? (
@@ -172,23 +168,20 @@ export function AppSidebar({
   collapsed,
   width,
   busy,
+  importActive,
   libraryActive,
-  workspaceActive,
-  batchActive,
+  analysisActive,
+  analysisAvailable,
   settingsActive,
   faqActive,
-  hasWorkspace,
-  workspaceTitle,
-  batchCount,
   onWidthChange,
+  onOpenImport,
   onOpenLibrary,
-  onOpenWorkspace,
-  onOpenBatch,
+  onOpenAnalysis,
   onOpenSettings,
   onOpenFaq,
   onLanguageChange,
   onToggleTheme,
-  onConvert,
 }: AppSidebarProps) {
   const languageOption = LANGUAGE_OPTIONS[language];
   const nextLanguageOption = LANGUAGE_OPTIONS[languageOption.next];
@@ -223,38 +216,27 @@ export function AppSidebar({
       style={{ width: collapsed ? 64 : width }}
       aria-label={words.mainNavigation}
     >
-      <div className="sidebar-primary-action">
-        <button type="button" disabled={busy} onClick={onConvert} title={collapsed ? words.convertDemo : undefined}>
-          <PlusIcon size={17} />
-          {!collapsed ? <span>{words.convertDemo}</span> : null}
-        </button>
-      </div>
-
       <nav className="sidebar-navigation" aria-label={words.mainNavigation}>
         {!collapsed ? <span className="sidebar-group-label">{words.navGroupWorkspace}</span> : null}
-        <button className={itemClass(libraryActive)} type="button" disabled={busy} onClick={onOpenLibrary} aria-current={libraryActive ? "page" : undefined} title={collapsed ? words.navLibrary : undefined}>
+        <button className={itemClass(importActive)} type="button" disabled={busy} onClick={onOpenImport} aria-current={importActive ? "page" : undefined} title={collapsed ? words.navImport : undefined}>
+          <PlusIcon size={17} />
+          {!collapsed ? <span>{words.navImport}</span> : null}
+        </button>
+        <button className={itemClass(libraryActive)} type="button" onClick={onOpenLibrary} aria-current={libraryActive ? "page" : undefined} title={collapsed ? words.navLibrary : undefined}>
           <LibraryIcon size={17} />
           {!collapsed ? <span>{words.navLibrary}</span> : null}
         </button>
-        {hasWorkspace ? (
-          <button className={itemClass(workspaceActive)} type="button" disabled={busy} onClick={onOpenWorkspace} aria-current={workspaceActive ? "page" : undefined} title={collapsed ? words.navWorkspace : workspaceTitle}>
-            <ReplayIcon size={17} />
-            {!collapsed ? <span><b>{words.navWorkspace}</b><small>{workspaceTitle}</small></span> : null}
-            {!collapsed ? <i className="sidebar-live-dot" aria-hidden="true" /> : null}
-          </button>
-        ) : null}
-        <button className={itemClass(batchActive)} type="button" disabled={busy && !batchActive} onClick={onOpenBatch} aria-current={batchActive ? "page" : undefined} title={collapsed ? words.navBatch : undefined}>
-          <BatchIcon size={17} />
-          {!collapsed ? <span>{words.navBatch}</span> : null}
-          {batchCount > 0 ? <em>{Math.min(99, batchCount)}</em> : null}
+        <button className={itemClass(analysisActive)} type="button" disabled={!analysisAvailable} onClick={onOpenAnalysis} aria-current={analysisActive ? "page" : undefined} title={!analysisAvailable ? words.navAnalysisUnavailable : collapsed ? words.navAnalysis : undefined}>
+          <ReplayIcon size={17} />
+          {!collapsed ? <span>{words.navAnalysis}</span> : null}
         </button>
 
         {!collapsed ? <span className="sidebar-group-label sidebar-system-label">{words.navGroupSystem}</span> : <span className="sidebar-section-divider" />}
-        <button className={itemClass(settingsActive)} type="button" disabled={busy} onClick={onOpenSettings} aria-current={settingsActive ? "page" : undefined} title={collapsed ? words.navSettings : undefined}>
+        <button className={itemClass(settingsActive)} type="button" onClick={onOpenSettings} aria-current={settingsActive ? "page" : undefined} title={collapsed ? words.navSettings : undefined}>
           <SlidersIcon size={17} />
           {!collapsed ? <span>{words.navSettings}</span> : null}
         </button>
-        <button className={itemClass(faqActive)} type="button" disabled={busy} onClick={onOpenFaq} aria-current={faqActive ? "page" : undefined} title={collapsed ? words.navFaq : undefined}>
+        <button className={itemClass(faqActive)} type="button" onClick={onOpenFaq} aria-current={faqActive ? "page" : undefined} title={collapsed ? words.navFaq : undefined}>
           <HelpIcon size={17} />
           {!collapsed ? <span>{words.navFaq}</span> : null}
         </button>
@@ -274,7 +256,6 @@ export function AppSidebar({
           </span>
           {!collapsed ? (
             <span className="sidebar-language-copy">
-              <small>{words.language}</small>
               <strong>{languageOption.label}</strong>
             </span>
           ) : null}

@@ -23,17 +23,17 @@ const base = (size: number): SVGProps<SVGSVGElement> => ({
 export function TraceMark({ size = 34, ...props }: IconProps) {
   return (
     <svg {...base(size)} viewBox="0 0 1024 1024" {...props}>
-      <rect x="40" y="40" width="944" height="944" rx="220" fill="#19201c" stroke="none" />
+      <rect x="40" y="40" width="944" height="944" rx="220" fill="#171a18" stroke="none" />
       <path
         d="M178 630C290 630 282 367 401 367S505 660 624 660 729 394 846 394"
         fill="none"
-        stroke="#70e3b5"
+        stroke="currentColor"
         strokeWidth="64"
         strokeLinecap="round"
       />
       <g
-        fill="#171c19"
-        stroke="#86f0c5"
+        fill="#171a18"
+        stroke="currentColor"
         strokeWidth="32"
       >
         <circle cx="178" cy="630" r="42" />
@@ -82,6 +82,25 @@ export function ChevronIcon({ size = 17, ...props }: IconProps) {
   return (
     <svg {...base(size)} {...props}>
       <path d="m7.5 9.5 4.5 4.5 4.5-4.5" />
+    </svg>
+  );
+}
+
+export function SidebarIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg {...base(size)} {...props}>
+      <rect x="3.5" y="4" width="17" height="16" rx="2.2" />
+      <path d="M9 4v16" />
+      <path d="M6.2 8h.1M6.2 11.2h.1M6.2 14.4h.1" />
+    </svg>
+  );
+}
+
+export function NoteIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg {...base(size)} {...props}>
+      <path d="M5 4.5h14v15H5z" />
+      <path d="M8.5 8h7M8.5 11.5h7M8.5 15h4.5" />
     </svg>
   );
 }

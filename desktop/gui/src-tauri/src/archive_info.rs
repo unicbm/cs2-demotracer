@@ -18,6 +18,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(crate) const DEMO_INFO_FILE_NAME: &str = "demo-info.json";
 pub(crate) const DEMO_SOURCE_FILE_NAME: &str = "demo-source.json";
+pub(crate) const ARCHIVE_NOTE_FILE_NAME: &str = "archive-note.json";
 pub(crate) const DEMO_INFO_SCHEMA_VERSION: u32 = 1;
 pub(crate) const DEMO_INFO_ANALYSIS_REVISION: u32 = 4;
 const MIN_COMPATIBLE_ANALYSIS_REVISION: u32 = 2;
@@ -27,6 +28,8 @@ const PLAYER_EVIDENCE_SECTION_REVISION: u32 = 1;
 const COSMETIC_EVIDENCE_SECTION_REVISION: u32 = 2;
 const MAX_DEMO_INFO_BYTES: u64 = 1024 * 1024;
 const MAX_DEMO_SOURCE_BYTES: u64 = 64 * 1024;
+const MAX_ARCHIVE_NOTE_BYTES: u64 = 4096;
+pub(crate) const MAX_ARCHIVE_NOTE_CHARS: usize = 240;
 
 static NEXT_INFO_NONCE: AtomicU64 = AtomicU64::new(1);
 
@@ -128,6 +131,14 @@ struct DemoSourcePointer {
     source_file_modified_at_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     source_file_size_bytes: Option<u64>,
+    updated_at_ms: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ArchiveNoteFile {
+    schema_version: u32,
+    note: String,
     updated_at_ms: u64,
 }
 
@@ -268,6 +279,58 @@ pub(crate) fn demo_info_path(root: &Path) -> PathBuf {
 
 pub(crate) fn demo_source_path(root: &Path) -> PathBuf {
     root.join(DEMO_SOURCE_FILE_NAME)
+}
+
+pub(crate) fn archive_note_path(root: &Path) -> PathBuf {
+    root.join(ARCHIVE_NOTE_FILE_NAME)
+}
+
+pub(crate) fn read_archive_note(root: &Path) -> Option<String> {
+    let path = archive_note_path(root);
+    let metadata = fs::symlink_metadata(&path).ok()?;
+    if !metadata.is_file()
+        || crate::catalog::is_symlink_or_reparse(&metadata)
+        || metadata.len() > MAX_ARCHIVE_NOTE_BYTES
+    {
+        return None;
+    }
+    let value = serde_json::from_slice::<ArchiveNoteFile>(&fs::read(path).ok()?).ok()?;
+    let note = normalize_archive_note(&value.note);
+    (value.schema_version == 1
+        && !note.is_empty()
+        && note.chars().count() <= MAX_ARCHIVE_NOTE_CHARS)
+        .then_some(note)
+}
+
+pub(crate) fn write_archive_note(root: &Path, value: &str) -> io::Result<Option<String>> {
+    let note = normalize_archive_note(value);
+    if note.chars().count() > MAX_ARCHIVE_NOTE_CHARS {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("archive note exceeds {MAX_ARCHIVE_NOTE_CHARS} characters"),
+        ));
+    }
+    let document = ArchiveNoteFile {
+        schema_version: 1,
+        note: note.clone(),
+        updated_at_ms: unix_time_ms(SystemTime::now()),
+    };
+    let mut bytes = serde_json::to_vec_pretty(&document)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    bytes.push(b'\n');
+    let _lock = acquire_archive_metadata_lock(root)?;
+    write_local_json_unlocked(
+        root,
+        ARCHIVE_NOTE_FILE_NAME,
+        "archive-note.json",
+        MAX_ARCHIVE_NOTE_BYTES,
+        &bytes,
+    )?;
+    Ok((!note.is_empty()).then_some(note))
+}
+
+fn normalize_archive_note(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 pub(crate) fn read_demo_source_path(root: &Path, expected_sha256: &str) -> Option<String> {
@@ -1049,6 +1112,25 @@ mod tests {
 
         fs::write(demo_source_path(&root), b"not json").unwrap();
         assert!(read_demo_source_path(&root, &"ab".repeat(32)).is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn archive_note_round_trips_without_touching_the_manifest() {
+        let root = test_directory("archive-note");
+        let manifest = root.join("manifest.json");
+        fs::write(&manifest, b"{\"files\":[]}").unwrap();
+        let before = fs::read(&manifest).unwrap();
+
+        assert_eq!(
+            write_archive_note(&root, "  Decider\n map   review  ").unwrap().as_deref(),
+            Some("Decider map review")
+        );
+        assert_eq!(read_archive_note(&root).as_deref(), Some("Decider map review"));
+        assert_eq!(fs::read(&manifest).unwrap(), before);
+
+        assert_eq!(write_archive_note(&root, "   ").unwrap(), None);
+        assert_eq!(read_archive_note(&root), None);
         fs::remove_dir_all(root).unwrap();
     }
 }

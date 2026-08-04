@@ -72,10 +72,11 @@ function archive(): ManifestArchive {
 }
 
 describe("library workspace session", () => {
-  it("keeps the opened archive while navigating through FAQ", () => {
+  it("opens an archive in analysis and keeps it while navigating through the library", () => {
     const opened = libraryWorkspaceReducer(EMPTY_LIBRARY_WORKSPACE, { type: "open", archive: archive() });
-    const faq = libraryWorkspaceReducer(opened, { type: "navigate", section: "faq" });
-    const returned = libraryWorkspaceReducer(faq, { type: "navigate", section: "library" });
+    assert.equal(opened.activeSection, "analysis");
+    const library = libraryWorkspaceReducer(opened, { type: "navigate", section: "library" });
+    const returned = libraryWorkspaceReducer(library, { type: "navigate", section: "analysis" });
 
     assert.equal(returned.archive?.manifestPath, archive().manifestPath);
     assert.equal(returned.selectedRound, 0);

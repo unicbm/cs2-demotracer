@@ -97,6 +97,7 @@ export interface BatchWorkspaceProps {
   onStart: (candidateIds: string[]) => void;
   onResume: () => void;
   onStop: () => void;
+  onFinish: () => void;
   onRetryJob?: (jobId: string) => void;
   onOpenArchive?: (job: BatchJobItem) => void;
 }
@@ -132,6 +133,7 @@ interface BatchCopy {
   resume: string;
   stop: string;
   stopping: string;
+  finish: string;
 }
 
 const COPY: Record<Language, BatchCopy> = {
@@ -182,6 +184,7 @@ const COPY: Record<Language, BatchCopy> = {
     resume: "继续",
     stop: "停止派发",
     stopping: "正在停止",
+    finish: "结束并返回回放库",
   },
   en: {
     title: "Import multiple demos",
@@ -230,6 +233,7 @@ const COPY: Record<Language, BatchCopy> = {
     resume: "Resume",
     stop: "Stop dispatch",
     stopping: "Stopping",
+    finish: "Finish and return to library",
   },
 };
 
@@ -297,6 +301,7 @@ export function BatchWorkspace({
   onStart,
   onResume,
   onStop,
+  onFinish,
   onRetryJob,
   onOpenArchive,
 }: BatchWorkspaceProps) {
@@ -519,6 +524,10 @@ export function BatchWorkspace({
         ) : canResume ? (
           <button className="secondary-button" type="button" onClick={onResume}>
             <ReplayIcon size={15} />{copy.resume}
+          </button>
+        ) : jobs.length > 0 && selected.size === 0 ? (
+          <button className="primary-button" type="button" onClick={onFinish}>
+            {copy.finish}<ArrowIcon size={15} />
           </button>
         ) : (
           <button className="primary-button" type="button" disabled={startDisabled || selected.size === 0} onClick={() => onStart([...selected])}>

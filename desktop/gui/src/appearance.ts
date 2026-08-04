@@ -11,10 +11,10 @@ export const UI_SKINS: readonly UiSkin[] = ["trace", "cobalt", "ember", "signal"
 export const THEME_STORAGE_KEY = "demotracer.theme";
 export const UI_SKIN_STORAGE_KEY = "demotracer.ui-skin.v1";
 export const THEME_BACKGROUNDS: Record<UiSkin, Record<ResolvedTheme, string>> = {
-  trace: { light: "#e7e5e0", dark: "#0b0d0c" },
-  cobalt: { light: "#e9edf2", dark: "#0b1018" },
-  ember: { light: "#ece9e4", dark: "#12100e" },
-  signal: { light: "#e9ebe4", dark: "#090b08" },
+  trace: { light: "#e8e6e1", dark: "#10110f" },
+  cobalt: { light: "#e7ebf0", dark: "#0f141b" },
+  ember: { light: "#ece7e6", dark: "#151011" },
+  signal: { light: "#e5eae7", dark: "#0e1412" },
 };
 export const UI_SCALE_STEPS = [0.9, 1, 1.1, 1.25] as const;
 export type UiScale = (typeof UI_SCALE_STEPS)[number];

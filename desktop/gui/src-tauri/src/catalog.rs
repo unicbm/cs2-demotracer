@@ -46,6 +46,7 @@ pub(crate) struct LibraryEntryDto {
     pub demo_id: String,
     pub demo_sha256: String,
     pub display_name: Option<String>,
+    pub note: Option<String>,
     pub map: String,
     pub tick_rate: f32,
     pub abi: i32,
@@ -440,6 +441,7 @@ pub(crate) fn summarize_manifest(path: &Path) -> Result<LibraryEntryDto, String>
         demo_id,
         demo_sha256,
         display_name: None,
+        note: super::archive_info::read_archive_note(archive_root),
         map,
         tick_rate: tick_rate.unwrap_or(0.0),
         abi,
@@ -1019,6 +1021,18 @@ mod tests {
     }
 
     #[test]
+    fn scan_exposes_the_local_archive_note() {
+        let directory = TestDirectory::new("archive-note");
+        let manifest = directory.write_manifest("output/match", &valid_manifest());
+        crate::archive_info::write_archive_note(manifest.parent().unwrap(), "Decider map")
+            .unwrap();
+
+        let scan = scan_demo_library_for(directory.path.to_str().unwrap()).unwrap();
+
+        assert_eq!(scan.entries[0].note.as_deref(), Some("Decider map"));
+    }
+
+    #[test]
     fn current_demo_info_replaces_legacy_snapshot_with_stable_metadata() {
         let directory = TestDirectory::new("demo-info");
         let manifest_path = directory.write_manifest("output/de_mirage/match", &valid_manifest());
@@ -1383,6 +1397,7 @@ mod tests {
             demo_id: demo_sha256.to_string(),
             demo_sha256: demo_sha256.to_string(),
             display_name: Some("OG vs Spirit".to_string()),
+            note: None,
             map: map.to_string(),
             tick_rate: 64.0,
             abi: DEMOTRACER_ABI,

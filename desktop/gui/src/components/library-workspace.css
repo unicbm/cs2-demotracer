@@ -539,7 +539,7 @@
 .library-series-map-art {
   position: relative;
   display: grid;
-  grid-template-rows: auto auto;
+  grid-template-rows: auto auto auto;
   align-content: center;
   justify-items: center;
   width: 100%;
@@ -549,6 +549,17 @@
   overflow: hidden;
   color: #fff;
   isolation: isolate;
+}
+
+.library-series-map-note {
+  max-width: calc(100% - 8px);
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 8.5px;
+  line-height: 10px;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 6px #000;
+  white-space: nowrap;
 }
 
 .library-series-map-art::after {
@@ -726,7 +737,9 @@
 .library-row-map { position: relative; display: flex; align-items: center; justify-content: flex-end; min-height: 74px; overflow: hidden; color: #fff; isolation: isolate; }
 .library-row-map::before { position: absolute; z-index: -1; inset: 0; content: ""; background: linear-gradient(90deg, transparent 0 48%, rgba(6, 9, 12, 0.16) 68%, rgba(6, 9, 12, 0.58) 100%); }
 .library-row-map-artwork { position: absolute; z-index: -2; inset: 0; width: 100%; height: 100%; }
-.library-row-map strong { overflow: hidden; padding: 3px 0; font-family: var(--library-display); font-size: 12px; font-weight: 730; text-overflow: ellipsis; text-shadow: 0 1px 5px #000, 0 0 12px rgba(0, 0, 0, 0.55); white-space: nowrap; }
+.library-row-map > span { display: grid; justify-items: end; min-width: 0; max-width: 100%; gap: 2px; }
+.library-row-map strong { overflow: hidden; max-width: 100%; padding: 3px 0; font-family: var(--library-display); font-size: 12px; font-weight: 730; text-overflow: ellipsis; text-shadow: 0 1px 5px #000, 0 0 12px rgba(0, 0, 0, 0.55); white-space: nowrap; }
+.library-row-map small { overflow: hidden; max-width: 100%; color: rgba(255, 255, 255, 0.82); font-size: 9px; text-overflow: ellipsis; text-shadow: 0 1px 6px #000; white-space: nowrap; }
 .library-row-arrow { margin-right: 10px; color: var(--text-tertiary); }
 
 .library-first-run {

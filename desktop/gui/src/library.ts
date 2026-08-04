@@ -77,6 +77,14 @@ function manifestPathKey(path: string): string {
   return path.trim().replace(/\\/g, "/").toLocaleLowerCase();
 }
 
+export function isReusableDemoArchive(entry: DemoLibraryEntry): boolean {
+  return entry.metadataStatus === "current"
+    && entry.compatibility !== "unsupported"
+    && entry.sourceAvailable !== false
+    && entry.rounds > 0
+    && entry.files > 0;
+}
+
 export function librarySeriesForManifest(
   entries: readonly DemoLibraryEntry[],
   manifestPath: string,

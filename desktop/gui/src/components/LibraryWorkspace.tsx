@@ -115,6 +115,7 @@ function entrySearchText(entry: DemoLibraryEntry): string {
     entry.sourcePath,
     entry.demoId,
     entry.displayName,
+    entry.note,
     entry.map,
     entry.demoSource?.name,
     entry.serverName,
@@ -343,6 +344,7 @@ function LibraryRow({
                   {hasSeriesScore ? seriesSecondScore : "—"}
                 </b>
               </div>
+              {entry.note ? <small className="library-series-map-note" title={entry.note}>{entry.note}</small> : null}
             </div>
           </button>
           <div className="library-series-map-badges">
@@ -427,7 +429,10 @@ function LibraryRow({
       </div>
       <div className="library-row-map">
         <MapArtwork map={entry.map} className="library-row-map-artwork" />
-        <strong>{displayMap(entry.map)}</strong>
+        <span>
+          <strong>{displayMap(entry.map)}</strong>
+          {entry.note ? <small title={entry.note}>{entry.note}</small> : null}
+        </span>
       </div>
       <ArrowIcon className="library-row-arrow" size={14} />
 

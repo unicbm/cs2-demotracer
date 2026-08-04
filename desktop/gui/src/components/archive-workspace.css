@@ -7,7 +7,7 @@
 .archive-workspace {
   display: grid;
   flex: 1;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -120,6 +120,65 @@
   justify-content: flex-end;
   gap: 6px;
 }
+
+.archive-note-panel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  min-height: 38px;
+  padding: 4px 18px;
+  gap: 9px;
+  color: var(--text-tertiary);
+  background: color-mix(in srgb, var(--surface-subtle) 58%, var(--workspace));
+  border-bottom: 1px solid var(--divider);
+}
+
+.archive-note-panel.has-note > svg { color: var(--accent); }
+
+.archive-note-display {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  min-height: 28px;
+  padding: 0 7px;
+  gap: 14px;
+  color: var(--text-secondary);
+  background: transparent;
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+
+.archive-note-display:hover { background: var(--hover-row); }
+.archive-note-display > span { display: flex; align-items: baseline; min-width: 0; gap: 9px; }
+.archive-note-display strong { flex: none; color: var(--text-tertiary); font-size: 10px; font-weight: 680; }
+.archive-note-display small { overflow: hidden; color: var(--text-secondary); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.archive-note-display em { flex: none; color: var(--accent); font-size: 10.5px; font-style: normal; opacity: 0; transition: opacity var(--duration-fast) ease; }
+.archive-note-display:hover em,
+.archive-note-display:focus-visible em { opacity: 1; }
+
+.archive-note-panel form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto auto;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
+}
+
+.archive-note-panel input {
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px;
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid var(--divider-strong);
+  border-radius: var(--radius-sm);
+  outline: 0;
+}
+
+.archive-note-panel input:focus { border-color: var(--focus-ring); box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus-ring) 14%, transparent); }
+.archive-note-panel form > small { min-width: 42px; color: var(--text-tertiary); font: 9.5px var(--mono); text-align: right; }
+.archive-note-panel form > button { min-height: 28px; padding-inline: 9px; font-size: 10.5px; }
 
 .archive-actions-menu {
   position: relative;
@@ -1297,6 +1356,7 @@
 
 .archive-split-view {
   display: grid;
+  grid-row: 5;
   grid-template-columns: clamp(330px, 28vw, 560px) minmax(0, 1fr);
   min-width: 0;
   min-height: 0;

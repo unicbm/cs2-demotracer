@@ -53,14 +53,14 @@ describe("appearance preferences", () => {
   });
 
   it("uses a native background matched to both skin and theme", () => {
-    assert.equal(themeBackground("trace", "light"), "#e7e5e0");
-    assert.equal(themeBackground("trace", "dark"), "#0b0d0c");
-    assert.equal(themeBackground("cobalt", "light"), "#e9edf2");
-    assert.equal(themeBackground("cobalt", "dark"), "#0b1018");
-    assert.equal(themeBackground("ember", "light"), "#ece9e4");
-    assert.equal(themeBackground("ember", "dark"), "#12100e");
-    assert.equal(themeBackground("signal", "light"), "#e9ebe4");
-    assert.equal(themeBackground("signal", "dark"), "#090b08");
+    assert.equal(themeBackground("trace", "light"), "#e8e6e1");
+    assert.equal(themeBackground("trace", "dark"), "#10110f");
+    assert.equal(themeBackground("cobalt", "light"), "#e7ebf0");
+    assert.equal(themeBackground("cobalt", "dark"), "#0f141b");
+    assert.equal(themeBackground("ember", "light"), "#ece7e6");
+    assert.equal(themeBackground("ember", "dark"), "#151011");
+    assert.equal(themeBackground("signal", "light"), "#e5eae7");
+    assert.equal(themeBackground("signal", "dark"), "#0e1412");
   });
 
   it("normalizes and steps persistent UI scale values", () => {

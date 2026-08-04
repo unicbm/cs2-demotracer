@@ -6,7 +6,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { librarySeriesForManifest } from "./library.ts";
+import { isReusableDemoArchive, librarySeriesForManifest } from "./library.ts";
 import type { DemoLibraryEntry } from "./types.ts";
 
 function seriesEntry(
@@ -42,4 +42,20 @@ test("library series navigation resolves the active series and sorts by MAP inde
     librarySeriesForManifest(entries, "C:\\archive\\single\\manifest.json"),
     [],
   );
+});
+
+test("only a healthy archive suppresses re-importing the same demo", () => {
+  const healthy = {
+    metadataStatus: "current",
+    compatibility: "current",
+    sourceAvailable: true,
+    rounds: 22,
+    files: 220,
+  } as DemoLibraryEntry;
+
+  assert.equal(isReusableDemoArchive(healthy), true);
+  assert.equal(isReusableDemoArchive({ ...healthy, metadataStatus: "stale" }), false);
+  assert.equal(isReusableDemoArchive({ ...healthy, compatibility: "unsupported" }), false);
+  assert.equal(isReusableDemoArchive({ ...healthy, sourceAvailable: false }), false);
+  assert.equal(isReusableDemoArchive({ ...healthy, files: 0 }), false);
 });

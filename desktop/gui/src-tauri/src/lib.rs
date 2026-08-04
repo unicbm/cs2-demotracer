@@ -600,6 +600,20 @@ pub struct DeleteArchiveRequest {
     pub library_roots: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveArchiveNoteRequest {
+    pub manifest_path: String,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveArchiveNoteDto {
+    pub manifest_path: String,
+    pub note: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManifestArchiveDto {
@@ -623,6 +637,7 @@ pub struct ManifestArchiveDto {
     pub issues: Vec<ManifestIssueDto>,
     pub playable: bool,
     pub display_name: String,
+    pub note: Option<String>,
     pub metadata_status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_path: Option<String>,
@@ -1336,6 +1351,18 @@ async fn read_manifest(path: String) -> CommandResult<ManifestArchiveDto> {
     tauri::async_runtime::spawn_blocking(move || read_manifest_for(&path))
         .await
         .map_err(|error| CommandErrorDto::new("manifest_worker_failed", error.to_string()))?
+}
+
+#[tauri::command]
+async fn save_archive_note(request: SaveArchiveNoteRequest) -> CommandResult<SaveArchiveNoteDto> {
+    tauri::async_runtime::spawn_blocking(move || save_archive_note_for(&request))
+        .await
+        .map_err(|_| {
+            CommandErrorDto::new(
+                "archive_note_worker_failed",
+                "The note could not be saved. Try again.",
+            )
+        })?
 }
 
 #[tauri::command]
@@ -3108,6 +3135,7 @@ fn read_manifest_for(value: &str) -> CommandResult<ManifestArchiveDto> {
         issues,
         playable,
         display_name,
+        note: archive_info::read_archive_note(&root),
         metadata_status,
         source_path,
         source_modified_at_ms,
@@ -3117,6 +3145,29 @@ fn read_manifest_for(value: &str) -> CommandResult<ManifestArchiveDto> {
         demo_source,
         score,
         converter_version,
+    })
+}
+
+fn save_archive_note_for(request: &SaveArchiveNoteRequest) -> CommandResult<SaveArchiveNoteDto> {
+    let manifest_path = validate_manifest_input_path(&request.manifest_path)?;
+    catalog::summarize_manifest(&manifest_path).map_err(|_| {
+        CommandErrorDto::at_path(
+            "archive_note_manifest_invalid",
+            "This archive could not be opened, so its note was not changed.",
+            &manifest_path,
+        )
+    })?;
+    let root = manifest_path.parent().unwrap_or_else(|| Path::new("."));
+    let note = archive_info::write_archive_note(root, &request.note).map_err(|_| {
+        CommandErrorDto::at_path(
+            "archive_note_save_failed",
+            "The note could not be saved. Check that the archive folder is writable.",
+            &manifest_path,
+        )
+    })?;
+    Ok(SaveArchiveNoteDto {
+        manifest_path: manifest_path.display().to_string(),
+        note,
     })
 }
 
@@ -5356,6 +5407,7 @@ pub fn run() {
             cancel_analysis,
             preflight_output,
             read_manifest,
+            save_archive_note,
             scan_demo_library,
             delete_archive,
             refresh_archive_metadata,

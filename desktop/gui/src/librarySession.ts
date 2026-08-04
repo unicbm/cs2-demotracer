@@ -57,6 +57,7 @@ export function libraryWorkspaceReducer(
     case "opening":
       return {
         ...state,
+        activeSection: "analysis",
         archivePath: action.path,
         selectedPlayer: null,
       };
@@ -75,7 +76,7 @@ export function libraryWorkspaceReducer(
       const commandMode = restored?.commandMode
         ?? (availableRounds.length > 1 && (firstAvailableRound?.sequenceLength ?? 0) > 0 ? "sequence" : "round");
       return {
-        activeSection: "library",
+        activeSection: "analysis",
         archive: action.archive,
         archivePath: action.archive.manifestPath,
         selectedRound,

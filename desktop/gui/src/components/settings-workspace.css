@@ -1140,10 +1140,10 @@
 .settings-skin-swatches i:nth-child(1) { background: var(--skin-preview-canvas); }
 .settings-skin-swatches i:nth-child(2) { background: var(--skin-preview-surface); }
 .settings-skin-swatches i:nth-child(3) { background: var(--skin-preview-accent); }
-.settings-skin-choice[data-skin-preview="trace"] { --skin-preview-canvas: #0e1211; --skin-preview-surface: #f4f5f2; --skin-preview-accent: #58d0ab; }
-.settings-skin-choice[data-skin-preview="cobalt"] { --skin-preview-canvas: #0b1018; --skin-preview-surface: #f4f7fa; --skin-preview-accent: #6ea8ff; }
-.settings-skin-choice[data-skin-preview="ember"] { --skin-preview-canvas: #12100e; --skin-preview-surface: #f7f4ef; --skin-preview-accent: #ff8a4c; }
-.settings-skin-choice[data-skin-preview="signal"] { --skin-preview-canvas: #090b08; --skin-preview-surface: #f4f6ef; --skin-preview-accent: #b7f34a; }
+.settings-skin-choice[data-skin-preview="trace"] { --skin-preview-canvas: #10110f; --skin-preview-surface: #f3f1ed; --skin-preview-accent: #b56532; }
+.settings-skin-choice[data-skin-preview="cobalt"] { --skin-preview-canvas: #0f141b; --skin-preview-surface: #f2f5f8; --skin-preview-accent: #4679b8; }
+.settings-skin-choice[data-skin-preview="ember"] { --skin-preview-canvas: #151011; --skin-preview-surface: #f6f2f1; --skin-preview-accent: #a95065; }
+.settings-skin-choice[data-skin-preview="signal"] { --skin-preview-canvas: #0e1412; --skin-preview-surface: #f1f5f3; --skin-preview-accent: #3f7d6e; }
 
 @media (max-width: 760px) {
   .settings-skin-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
