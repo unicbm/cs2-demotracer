@@ -2988,6 +2988,70 @@ fn read_manifest_for(value: &str) -> CommandResult<ManifestArchiveDto> {
             }
         })
         .collect::<Vec<_>>();
+    if let (Some(first_round), Some(last_round)) = (
+        rounds.first().map(|round| round.round),
+        rounds.last().map(|round| round.round),
+    ) {
+        let mut rounds_by_number = rounds
+            .into_iter()
+            .map(|round| (round.round, round))
+            .collect::<BTreeMap<_, _>>();
+        rounds = (first_round..=last_round)
+            .map(|round| {
+                if let Some(existing) = rounds_by_number.remove(&round) {
+                    return existing;
+                }
+
+                issues.push(
+                    ManifestIssueDto::warning(
+                        "manifest_round_gap",
+                        format!(
+                            "Round {round} has no replay files; sequence playback cannot cross this source-round gap."
+                        ),
+                    )
+                    .at_round(round),
+                );
+                let metadata = metadata_by_round.get(&round);
+                ManifestArchiveRoundDto {
+                    round,
+                    files: 0,
+                    t_files: 0,
+                    ct_files: 0,
+                    t_steam_ids: Vec::new(),
+                    ct_steam_ids: Vec::new(),
+                    cosmetic_files: 0,
+                    sticker_files: 0,
+                    charm_files: 0,
+                    duration_seconds: metadata.and_then(|value| value.duration_seconds),
+                    pistol_round: metadata.and_then(|value| value.pistol_round),
+                    cut_reason: metadata.and_then(|value| value.cut_reason.clone()),
+                    t_economy: metadata
+                        .and_then(|value| value.t_economy.clone())
+                        .map(Into::into),
+                    ct_economy: metadata
+                        .and_then(|value| value.ct_economy.clone())
+                        .map(Into::into),
+                    scoreboard: metadata
+                        .and_then(|value| value.scoreboard.clone())
+                        .map(Into::into),
+                    bomb_planted_seconds: metadata
+                        .and_then(|value| value.bomb_planted_seconds_after_live),
+                    ticks: 0,
+                    subticks: 0,
+                    hifi_events: 0,
+                    inventory_snapshots: 0,
+                    sequence_length: 0,
+                    available: false,
+                    commands: build_commands(
+                        &manifest_path,
+                        Some(round),
+                        voice_rounds.len(),
+                        cosmetic_preset.as_deref(),
+                    ),
+                }
+            })
+            .collect();
+    }
     let sequence_lengths = (0..rounds.len())
         .map(|index| {
             let suffix = &rounds[index..];
@@ -3576,11 +3640,12 @@ fn analysis_dto(
                 valid_rows: round.valid_rows,
                 status: match round.status {
                     RoundStatus::Recommended => "recommended",
+                    RoundStatus::Partial => "partial",
                     RoundStatus::Suspicious => "suspicious",
                 }
                 .to_string(),
                 problems: round.problems.clone(),
-                selected_by_default: round.status == RoundStatus::Recommended,
+                selected_by_default: round.selected_by_default(),
             })
             .collect(),
     }
@@ -4409,9 +4474,7 @@ fn process_batch_demo(
         .analysis
         .rounds
         .iter()
-        .filter(|round| {
-            request.settings.include_suspicious || round.status == RoundStatus::Recommended
-        })
+        .filter(|round| request.settings.include_suspicious || round.selected_by_default())
         .map(|round| round.round)
         .collect::<Vec<_>>();
     if selected_rounds.is_empty() {
@@ -5571,7 +5634,8 @@ mod tests {
             row_count: 1000,
             rounds: vec![
                 round(1, RoundStatus::Recommended),
-                round(2, RoundStatus::Suspicious),
+                round(2, RoundStatus::Partial),
+                round(3, RoundStatus::Suspicious),
             ],
         }
     }
@@ -5936,7 +6000,7 @@ mod tests {
     }
 
     #[test]
-    fn analysis_dto_selects_recommended_rounds_only() {
+    fn analysis_dto_selects_recommended_and_partial_rounds() {
         let dto = analysis_dto(
             "analysis-1",
             Path::new("C:/demos/match.dem"),
@@ -5944,8 +6008,10 @@ mod tests {
             &analysis(),
         );
         assert!(dto.rounds[0].selected_by_default);
-        assert!(!dto.rounds[1].selected_by_default);
-        assert_eq!(dto.rounds[1].status, "suspicious");
+        assert!(dto.rounds[1].selected_by_default);
+        assert_eq!(dto.rounds[1].status, "partial");
+        assert!(!dto.rounds[2].selected_by_default);
+        assert_eq!(dto.rounds[2].status, "suspicious");
     }
 
     #[test]
@@ -6510,10 +6576,16 @@ mod tests {
 
     #[test]
     fn suspicious_rounds_require_explicit_opt_in() {
-        let selected = BTreeSet::from([2]);
+        let selected = BTreeSet::from([3]);
         let error = validate_round_selection(&analysis(), &selected, false).unwrap_err();
         assert_eq!(error.code, "suspicious_rounds_not_allowed");
         validate_round_selection(&analysis(), &selected, true).unwrap();
+    }
+
+    #[test]
+    fn partial_rounds_do_not_require_suspicious_opt_in() {
+        let selected = BTreeSet::from([2]);
+        validate_round_selection(&analysis(), &selected, false).unwrap();
     }
 
     #[test]
@@ -7208,6 +7280,35 @@ mod tests {
         assert_eq!(result.rounds[1].sequence_length, 0);
         assert!(result.rounds[2].available);
         assert_eq!(result.rounds[2].sequence_length, 1);
+    }
+
+    #[test]
+    fn read_manifest_materializes_a_missing_round_number_as_an_unavailable_gap() {
+        let temp = ManifestTestDir::new("sequence-number-gap");
+        temp.write_dtr("round10/t/a.dtr", 10, "t", 101);
+        temp.write_dtr("round12/ct/c.dtr", 12, "ct", 103);
+        let manifest_path = temp.write_manifest(manifest_json(
+            vec![manifest_round(10, 1), manifest_round(12, 1)],
+            vec![
+                manifest_file("round10/t/a.dtr", 10, "t", 101),
+                manifest_file("round12/ct/c.dtr", 12, "ct", 103),
+            ],
+        ));
+
+        let result = read_manifest_for(&manifest_path.display().to_string()).unwrap();
+        assert!(result.playable);
+        assert_eq!(result.rounds.len(), 3);
+        assert_eq!(result.rounds[0].round, 10);
+        assert!(result.rounds[0].available);
+        assert_eq!(result.rounds[0].sequence_length, 0);
+        assert_eq!(result.rounds[1].round, 11);
+        assert!(!result.rounds[1].available);
+        assert_eq!(result.rounds[1].files, 0);
+        assert_eq!(result.rounds[1].sequence_length, 0);
+        assert_eq!(result.rounds[2].round, 12);
+        assert!(result.rounds[2].available);
+        assert_eq!(result.rounds[2].sequence_length, 1);
+        assert!(issue_codes(&result).contains("manifest_round_gap"));
     }
 
     #[test]

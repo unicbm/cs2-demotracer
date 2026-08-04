@@ -19,7 +19,7 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $outputRootPath = Join-Path $repoRoot $OutputRoot
 $desktopRoot = Join-Path $repoRoot "desktop\gui"
 $bundleRoot = Join-Path $desktopRoot "src-tauri\target\x86_64-pc-windows-msvc\release\bundle\nsis"
-$packageName = "DemoTracer-GUI-v$Version-windows-x64"
+$packageName = "demotracer-gui-v$Version"
 $installerPath = Join-Path $outputRootPath "$packageName.exe"
 
 & (Join-Path $PSScriptRoot "assert-clean-worktree.ps1") -RepoRoot $repoRoot

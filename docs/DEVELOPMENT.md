@@ -185,8 +185,8 @@ separate files. Armed, sequence, and playoff reset invariants belong to
 
 The public release contains exactly two Windows x64 assets:
 
-- `DemoTracer-GUI-vVERSION-windows-x64.exe`: NSIS desktop installer.
-- `DemoTracer-CSS-vVERSION-windows-x64.zip`: matched CS2 plugin bundle.
+- `demotracer-gui-vVERSION.exe`: NSIS desktop installer.
+- `demotracer-css-vVERSION.zip`: matched CS2 plugin bundle.
 
 The desktop app has no remote updater. Users download new installers and CSS
 bundles from this repository's GitHub Releases. Local CSS installation still

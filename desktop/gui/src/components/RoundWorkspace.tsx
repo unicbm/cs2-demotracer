@@ -91,7 +91,8 @@ export function RoundWorkspace({
     });
   }, [analysis.analysisId, analysis.rounds, selectedRounds]);
   const recommendedCount = useMemo(() => analysis.rounds.filter((round) => round.status === "recommended").length, [analysis.rounds]);
-  const suspiciousCount = analysis.rounds.length - recommendedCount;
+  const partialCount = useMemo(() => analysis.rounds.filter((round) => round.status === "partial").length, [analysis.rounds]);
+  const suspiciousCount = analysis.rounds.length - recommendedCount - partialCount;
   const labels: RoundTableLabels = {
     caption: words.rounds,
     select: words.selectColumn,
@@ -102,6 +103,7 @@ export function RoundWorkspace({
     validRows: words.validRowsColumn,
     problems: words.issuesColumn,
     recommended: words.recommended,
+    partial: words.partial,
     suspicious: words.suspicious,
     noProblems: words.noIssues,
     suspiciousLocked: words.suspiciousLocked,
@@ -109,6 +111,7 @@ export function RoundWorkspace({
   const summary = words.roundSummary
     .replace("{total}", formatNumber(analysis.rounds.length))
     .replace("{recommended}", formatNumber(recommendedCount))
+    .replace("{partial}", formatNumber(partialCount))
     .replace("{suspicious}", formatNumber(suspiciousCount));
   const canConvert = selectedRounds.size > 0 && Boolean(outputDir) && !convertPending;
   const roster = analysisRoster(analysis, words);

@@ -17,6 +17,7 @@ export interface RoundTableLabels {
   validRows: string;
   problems: string;
   recommended: string;
+  partial: string;
   suspicious: string;
   noProblems: string;
   suspiciousLocked: string;
@@ -98,10 +99,15 @@ export function RoundTable({
             <tbody>
               {rounds.map((round) => {
                 const suspicious = round.status === "suspicious";
+                const partial = round.status === "partial";
                 const selectionDisabled = suspicious && !allowSuspicious;
                 const selected = selectedRounds.has(round.round);
                 const current = inspectedRound?.round === round.round;
-                const statusLabel = suspicious ? labels.suspicious : labels.recommended;
+                const statusLabel = suspicious
+                  ? labels.suspicious
+                  : partial
+                    ? labels.partial
+                    : labels.recommended;
 
                 return (
                   <tr
@@ -135,7 +141,7 @@ export function RoundTable({
                     </th>
                     <td>
                       <span className={`round-status round-status-${round.status}`}>
-                        <span className="round-status-icon" aria-hidden="true">{suspicious ? "!" : "✓"}</span>
+                        <span className="round-status-icon" aria-hidden="true">{suspicious ? "!" : partial ? "9" : "✓"}</span>
                         {statusLabel}
                       </span>
                     </td>
@@ -157,8 +163,14 @@ export function RoundTable({
                 <h2>{labels.round} {String(inspectedRound.round).padStart(2, "0")}</h2>
               </div>
               <span className={`round-status round-status-${inspectedRound.status}`}>
-                <span className="round-status-icon" aria-hidden="true">{inspectedRound.status === "suspicious" ? "!" : "✓"}</span>
-                {inspectedRound.status === "suspicious" ? labels.suspicious : labels.recommended}
+                <span className="round-status-icon" aria-hidden="true">
+                  {inspectedRound.status === "suspicious" ? "!" : inspectedRound.status === "partial" ? "9" : "✓"}
+                </span>
+                {inspectedRound.status === "suspicious"
+                  ? labels.suspicious
+                  : inspectedRound.status === "partial"
+                    ? labels.partial
+                    : labels.recommended}
               </span>
             </header>
 

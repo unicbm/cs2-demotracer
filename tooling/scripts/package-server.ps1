@@ -23,7 +23,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $outputRootPath = Join-Path $repoRoot $OutputRoot
-$packageName = "DemoTracer-CSS-v$Version-windows-x64"
+$packageName = "demotracer-css-v$Version"
 $stageRoot = Join-Path $outputRootPath $packageName
 $zipPath = Join-Path $outputRootPath "$packageName.zip"
 $runtimeRoot = if ([System.IO.Path]::IsPathRooted($RuntimePackage)) {

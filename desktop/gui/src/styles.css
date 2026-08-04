@@ -1670,6 +1670,10 @@ input[type="radio"] {
   color: var(--trace);
 }
 
+.round-status-partial {
+  color: var(--accent);
+}
+
 .round-status-suspicious {
   color: var(--warning);
 }

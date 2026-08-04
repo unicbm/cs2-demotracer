@@ -42,7 +42,7 @@ export interface RoundInfo {
   ctPlayers: number;
   totalPlayers: number;
   validRows: number;
-  status: "recommended" | "suspicious";
+  status: "recommended" | "partial" | "suspicious";
   problems: string[];
   selectedByDefault: boolean;
 }

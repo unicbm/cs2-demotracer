@@ -24,8 +24,8 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $outputRootPath = Join-Path $repoRoot $OutputRoot
 $publishRootPath = Join-Path $outputRootPath "release-v$Version"
-$guiName = "DemoTracer-GUI-v$Version-windows-x64.exe"
-$cssName = "DemoTracer-CSS-v$Version-windows-x64.zip"
+$guiName = "demotracer-gui-v$Version.exe"
+$cssName = "demotracer-css-v$Version.zip"
 
 & (Join-Path $PSScriptRoot "assert-clean-worktree.ps1") -RepoRoot $repoRoot
 & (Join-Path $PSScriptRoot "check-release-contract.ps1") -Version $Version

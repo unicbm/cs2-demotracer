@@ -74,8 +74,8 @@ toolchain. See [Development](docs/DEVELOPMENT.md#dependencies-and-provenance).
 Use the artifacts attached to the
 [latest official release](https://github.com/unicbm/demotracer/releases/latest):
 
-- `DemoTracer-GUI-vVERSION-windows-x64.exe`: NSIS desktop installer.
-- `DemoTracer-CSS-vVERSION-windows-x64.zip`: matched CS2 playback plugins.
+- `demotracer-gui-vVERSION.exe`: NSIS desktop installer.
+- `demotracer-css-vVERSION.zip`: matched CS2 playback plugins.
 
 Only artifacts attached by unicbm to this repository's GitHub Releases are
 official DemoTracer builds. See
