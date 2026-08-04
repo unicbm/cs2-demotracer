@@ -229,14 +229,19 @@ public sealed class WeaponSlotReplacementTests
                 anySlotWeapon));
     }
 
-    [Fact]
-    public void EmptyCtSidearmSlotFallsBackToP2000InsteadOfKnife()
+    [Theory]
+    [InlineData(true, "weapon_usp_silencer")]
+    [InlineData(true, "weapon_hkp2000")]
+    [InlineData(false, "weapon_glock")]
+    public void EmptySidearmSlotRetriesTheRequestedModel(
+        bool counterTerrorist,
+        string targetItem)
     {
         Assert.Equal(
-            "weapon_hkp2000",
+            targetItem,
             ReplayWeaponReplacementPolicy.EmptySlotFallbackItem(
                 ReplayWeaponSlot.Secondary,
-                counterTerrorist: true,
-                targetItem: "weapon_usp_silencer"));
+                counterTerrorist,
+                targetItem));
     }
 }
