@@ -53,8 +53,8 @@ describe("appearance preferences", () => {
   });
 
   it("uses a native background matched to both skin and theme", () => {
-    assert.equal(themeBackground("trace", "light"), "#e8ebe8");
-    assert.equal(themeBackground("trace", "dark"), "#0e1211");
+    assert.equal(themeBackground("trace", "light"), "#e7e5e0");
+    assert.equal(themeBackground("trace", "dark"), "#0b0d0c");
     assert.equal(themeBackground("cobalt", "light"), "#e9edf2");
     assert.equal(themeBackground("cobalt", "dark"), "#0b1018");
     assert.equal(themeBackground("ember", "light"), "#ece9e4");

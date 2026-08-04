@@ -15,7 +15,7 @@ import {
   ReplayIcon,
 } from "../icons";
 import type { TextDictionary } from "../i18n";
-import type { ConversionSummary, ProgressPhase, ProgressState } from "../types";
+import type { ConversionSummary, Language, ProgressPhase, ProgressState } from "../types";
 
 export type CopyTarget =
   | "playback"
@@ -183,15 +183,6 @@ export function ConversionProgressView({ words, progress, outputRoot }: Conversi
         <code title={outputRoot}>{outputRoot}</code>
       </div>
 
-      {progress.log.length > 0 ? (
-        <details className="activity-disclosure">
-          <summary>{words.activityDetails}<ChevronIcon size={15} /></summary>
-          <div className="activity-log">
-            {progress.log.map((entry, index) => <p className={`log-${entry.level}`} key={`${entry.message}-${index}`}>{entry.message}</p>)}
-          </div>
-        </details>
-      ) : null}
-
       <span className="sr-only" role="status" aria-live="polite">{progress.announcement}</span>
     </section>
   );
@@ -211,7 +202,7 @@ export function ValidationFailedView({ words, error, outputRoot, onOpenFolder, o
       <span className="failure-symbol" aria-hidden="true"><AlertIcon size={22} /></span>
       <h1 id="validation-failed-title" tabIndex={-1}>{words.validationFailedTitle}</h1>
       <p>{words.validationFailedBody}</p>
-      <code className="failure-detail">{error}</code>
+      <p className="failure-detail">{error}</p>
       <div className="path-readout"><span>{words.outputTarget}</span><code>{outputRoot}</code></div>
       <div className="view-actions">
         <button className="secondary-button" type="button" onClick={onOpenFolder}><FolderIcon size={16} />{words.openFolder}</button>
@@ -223,6 +214,7 @@ export function ValidationFailedView({ words, error, outputRoot, onOpenFolder, o
 
 interface ResultViewProps {
   words: TextDictionary;
+  language: Language;
   result: ConversionSummary;
   warnings: string[];
   copiedTarget: CopyTarget | null;
@@ -238,6 +230,7 @@ interface ResultViewProps {
 
 export function ResultView({
   words,
+  language,
   result,
   warnings,
   copiedTarget,
@@ -281,7 +274,9 @@ export function ResultView({
           <AlertIcon size={17} />
           <div>
             <strong>{words.resultWarningsTitle}</strong>
-            {visibleWarnings.map((warning) => <p key={warning}>{warning}</p>)}
+            <p>{language === "zh"
+              ? `${visibleWarnings.length} 项附加内容未生成。`
+              : `${visibleWarnings.length} optional item(s) were not generated.`}</p>
           </div>
         </div>
       ) : null}

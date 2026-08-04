@@ -784,10 +784,7 @@ export function LibraryWorkspace({
   return (
     <section className="library-workspace" aria-labelledby="library-title">
       <header className="library-heading">
-        <div>
-          <h1 id="library-title">{words.libraryTitle}</h1>
-          <p>{words.librarySubtitle}</p>
-        </div>
+        <h1 id="library-title">{words.libraryTitle}</h1>
       </header>
 
       {!exportRoot ? (
@@ -808,7 +805,7 @@ export function LibraryWorkspace({
               <summary className="library-root-button" title={exportRoot}>
                 <FolderIcon size={16} />
                 <span><small>{words.exportFolder}</small><code>{exportRoot}</code></span>
-                <b>{words.libraryFolderCount.replace("{count}", String(roots.length))}</b>
+                <b>{(roots.length === 1 ? words.libraryFolderCountOne : words.libraryFolderCountMany).replace("{count}", String(roots.length))}</b>
               </summary>
               <div className="library-roots-popover">
                 <header>
@@ -901,7 +898,7 @@ export function LibraryWorkspace({
               : repairingLibrary
               ? words.repairingLibrary
               : isScanning ? words.scanningLibrary : words.libraryCount.replace("{count}", String(entries.length))}</strong>
-            <span>{words.indexedFolderSummary.replace("{count}", String(roots.length))}</span>
+            <span>{(roots.length === 1 ? words.indexedFolderSummaryOne : words.indexedFolderSummaryMany).replace("{count}", String(roots.length))}</span>
             {notice ? <em className="library-notice">{notice}</em>
               : scan && scan.skipped.length > 0 ? <em>{words.libraryScanNotes.replace("{count}", String(scan.skipped.length))}</em> : null}
           </div>

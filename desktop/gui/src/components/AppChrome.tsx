@@ -5,62 +5,79 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
+  BatchIcon,
+  ChevronIcon,
   CloseIcon,
   HelpIcon,
+  LanguageIcon,
   LibraryIcon,
   MaximizeIcon,
   MinimizeIcon,
   MoonIcon,
   PlusIcon,
+  ReplayIcon,
   RestoreIcon,
   SlidersIcon,
   SunIcon,
   TraceMark,
 } from "../icons";
-import type { TextDictionary } from "../i18n";
+import { LANGUAGE_OPTIONS, type TextDictionary } from "../i18n";
 import type { Language } from "../types";
+
+const SIDEBAR_MIN_WIDTH = 184;
+const SIDEBAR_MAX_WIDTH = 320;
+export const SIDEBAR_DEFAULT_WIDTH = 224;
 
 interface AppChromeProps {
   words: TextDictionary;
-  sourcePath: string;
   sessionTitle: string;
   sessionMeta: string;
+  sidebarCollapsed: boolean;
+  sidebarWidth: number;
+  onToggleSidebar: () => void;
+  onRequestClose: () => void;
+}
+
+interface AppSidebarProps {
+  words: TextDictionary;
   language: Language;
   resolvedTheme: "light" | "dark";
+  appVersion: string;
+  collapsed: boolean;
+  width: number;
+  busy: boolean;
   libraryActive: boolean;
+  workspaceActive: boolean;
+  batchActive: boolean;
   settingsActive: boolean;
   faqActive: boolean;
-  busy: boolean;
+  hasWorkspace: boolean;
+  workspaceTitle: string;
+  batchCount: number;
+  onWidthChange: (width: number) => void;
   onOpenLibrary: () => void;
-  onExitSession: () => void;
-  onToggleSettings: () => void;
-  onToggleFaq: () => void;
+  onOpenWorkspace: () => void;
+  onOpenBatch: () => void;
+  onOpenSettings: () => void;
+  onOpenFaq: () => void;
   onLanguageChange: (language: Language) => void;
   onToggleTheme: () => void;
   onConvert: () => void;
-  onRequestClose: () => void;
+}
+
+function clampSidebarWidth(width: number): number {
+  return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)));
 }
 
 export function AppChrome({
   words,
-  sourcePath,
   sessionTitle,
   sessionMeta,
-  language,
-  resolvedTheme,
-  libraryActive,
-  settingsActive,
-  faqActive,
-  busy,
-  onOpenLibrary,
-  onExitSession,
-  onToggleSettings,
-  onToggleFaq,
-  onLanguageChange,
-  onToggleTheme,
-  onConvert,
+  sidebarCollapsed,
+  sidebarWidth,
+  onToggleSidebar,
   onRequestClose,
 }: AppChromeProps) {
   const [maximized, setMaximized] = useState(false);
@@ -87,8 +104,7 @@ export function AppChrome({
   }, []);
 
   const minimizeWindow = () => {
-    if (!("__TAURI_INTERNALS__" in window)) return;
-    void getCurrentWindow().minimize().catch(() => undefined);
+    if ("__TAURI_INTERNALS__" in window) void getCurrentWindow().minimize().catch(() => undefined);
   };
 
   const toggleMaximizeWindow = () => {
@@ -103,78 +119,35 @@ export function AppChrome({
   return (
     <header className="app-chrome">
       <div className="application-toolbar">
-        <div className="product-lockup" aria-label={words.appName} data-tauri-drag-region="deep">
+        <div
+          className={`product-lockup${sidebarCollapsed ? " is-collapsed" : ""}`}
+          style={{ width: sidebarCollapsed ? 64 : sidebarWidth }}
+          aria-label={words.appName}
+          data-tauri-drag-region="deep"
+        >
           <TraceMark size={24} />
-          <span className="product-lockup-copy">
-            <strong>{words.appName}</strong>
-            <small>{words.appSubtitle}</small>
-          </span>
+          {!sidebarCollapsed ? (
+            <span className="product-lockup-copy">
+              <strong>{words.appName}</strong>
+            </span>
+          ) : null}
+          <button
+            className="sidebar-toggle-button"
+            type="button"
+            onClick={onToggleSidebar}
+            aria-label={sidebarCollapsed ? words.sidebarExpand : words.sidebarCollapse}
+            title={sidebarCollapsed ? words.sidebarExpand : words.sidebarCollapse}
+          >
+            <ChevronIcon size={14} />
+          </button>
         </div>
-        <nav className="application-navigation" aria-label={words.mainNavigation}>
-          <button
-            className={`application-nav-button${libraryActive ? " is-active" : ""}`}
-            type="button"
-            disabled={busy}
-            onClick={onOpenLibrary}
-            aria-current={libraryActive ? "page" : undefined}
-          >
-            <LibraryIcon size={15} />
-            <span>{words.navLibrary}</span>
-          </button>
-          <button
-            className={`application-nav-button${settingsActive ? " is-active" : ""}`}
-            type="button"
-            disabled={busy}
-            onClick={onToggleSettings}
-            aria-current={settingsActive ? "page" : undefined}
-          >
-            <SlidersIcon size={15} />
-            <span>{words.navSettings}</span>
-          </button>
-        </nav>
+        {sessionTitle ? (
+          <div className="titlebar-context" data-tauri-drag-region="deep">
+            <strong title={sessionTitle}>{sessionTitle}</strong>
+            {sessionMeta ? <span title={sessionMeta}>{sessionMeta}</span> : null}
+          </div>
+        ) : null}
         <div className="titlebar-drag-surface" data-tauri-drag-region />
-        <div className="application-actions">
-          <button
-            className="chrome-import-button"
-            type="button"
-            onClick={onConvert}
-            disabled={busy}
-          >
-            <PlusIcon size={14} />
-            <span>{words.convertDemo}</span>
-          </button>
-          <button
-            className={`chrome-button application-help-button${faqActive ? " is-active" : ""}`}
-            type="button"
-            onClick={onToggleFaq}
-            disabled={busy}
-            aria-label={words.navFaq}
-            aria-pressed={faqActive}
-            title={words.navFaq}
-          >
-            <HelpIcon size={16} />
-          </button>
-          <label className="chrome-language-control" title={words.language}>
-            <span className="sr-only">{words.language}</span>
-            <select
-              value={language}
-              aria-label={words.language}
-              onChange={(event) => onLanguageChange(event.target.value as Language)}
-            >
-              <option value="zh">中文</option>
-              <option value="en">EN</option>
-            </select>
-          </label>
-          <button
-            className="chrome-button chrome-theme-button"
-            type="button"
-            onClick={onToggleTheme}
-            aria-label={resolvedTheme === "dark" ? words.lightTheme : words.darkTheme}
-            title={resolvedTheme === "dark" ? words.lightTheme : words.darkTheme}
-          >
-            {resolvedTheme === "dark" ? <SunIcon size={16} /> : <MoonIcon size={16} />}
-          </button>
-        </div>
         <div className="window-controls" role="group" aria-label={words.windowControls}>
           <button className="window-control" type="button" onClick={minimizeWindow} aria-label={words.minimizeWindow} title={words.minimizeWindow}>
             <MinimizeIcon />
@@ -187,22 +160,152 @@ export function AppChrome({
           </button>
         </div>
       </div>
-
-      {sourcePath ? (
-        <div className="session-header">
-          <button className="session-back-button" type="button" disabled={busy} onClick={onExitSession}>
-            <LibraryIcon size={14} />
-            <span>{words.backToLibrary}</span>
-          </button>
-          <span className="session-divider" aria-hidden="true" />
-          <div className="source-identity">
-            <div className="source-title-row">
-              <strong title={sessionTitle}>{sessionTitle}</strong>
-              {sessionMeta ? <span className="source-meta" title={sessionMeta}>{sessionMeta}</span> : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
     </header>
+  );
+}
+
+export function AppSidebar({
+  words,
+  language,
+  resolvedTheme,
+  appVersion,
+  collapsed,
+  width,
+  busy,
+  libraryActive,
+  workspaceActive,
+  batchActive,
+  settingsActive,
+  faqActive,
+  hasWorkspace,
+  workspaceTitle,
+  batchCount,
+  onWidthChange,
+  onOpenLibrary,
+  onOpenWorkspace,
+  onOpenBatch,
+  onOpenSettings,
+  onOpenFaq,
+  onLanguageChange,
+  onToggleTheme,
+  onConvert,
+}: AppSidebarProps) {
+  const languageOption = LANGUAGE_OPTIONS[language];
+  const nextLanguageOption = LANGUAGE_OPTIONS[languageOption.next];
+
+  const beginResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (collapsed || event.button !== 0) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = width;
+    const pointerId = event.pointerId;
+    event.currentTarget.setPointerCapture(pointerId);
+    document.documentElement.dataset.sidebarResizing = "true";
+
+    const move = (moveEvent: PointerEvent) => {
+      onWidthChange(clampSidebarWidth(startWidth + moveEvent.clientX - startX));
+    };
+    const stop = () => {
+      delete document.documentElement.dataset.sidebarResizing;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+    window.addEventListener("pointercancel", stop, { once: true });
+  };
+
+  const itemClass = (active: boolean) => `sidebar-nav-item${active ? " is-active" : ""}`;
+  return (
+    <aside
+      className={`app-sidebar${collapsed ? " is-collapsed" : ""}`}
+      style={{ width: collapsed ? 64 : width }}
+      aria-label={words.mainNavigation}
+    >
+      <div className="sidebar-primary-action">
+        <button type="button" disabled={busy} onClick={onConvert} title={collapsed ? words.convertDemo : undefined}>
+          <PlusIcon size={17} />
+          {!collapsed ? <span>{words.convertDemo}</span> : null}
+        </button>
+      </div>
+
+      <nav className="sidebar-navigation" aria-label={words.mainNavigation}>
+        {!collapsed ? <span className="sidebar-group-label">{words.navGroupWorkspace}</span> : null}
+        <button className={itemClass(libraryActive)} type="button" disabled={busy} onClick={onOpenLibrary} aria-current={libraryActive ? "page" : undefined} title={collapsed ? words.navLibrary : undefined}>
+          <LibraryIcon size={17} />
+          {!collapsed ? <span>{words.navLibrary}</span> : null}
+        </button>
+        {hasWorkspace ? (
+          <button className={itemClass(workspaceActive)} type="button" disabled={busy} onClick={onOpenWorkspace} aria-current={workspaceActive ? "page" : undefined} title={collapsed ? words.navWorkspace : workspaceTitle}>
+            <ReplayIcon size={17} />
+            {!collapsed ? <span><b>{words.navWorkspace}</b><small>{workspaceTitle}</small></span> : null}
+            {!collapsed ? <i className="sidebar-live-dot" aria-hidden="true" /> : null}
+          </button>
+        ) : null}
+        <button className={itemClass(batchActive)} type="button" disabled={busy && !batchActive} onClick={onOpenBatch} aria-current={batchActive ? "page" : undefined} title={collapsed ? words.navBatch : undefined}>
+          <BatchIcon size={17} />
+          {!collapsed ? <span>{words.navBatch}</span> : null}
+          {batchCount > 0 ? <em>{Math.min(99, batchCount)}</em> : null}
+        </button>
+
+        {!collapsed ? <span className="sidebar-group-label sidebar-system-label">{words.navGroupSystem}</span> : <span className="sidebar-section-divider" />}
+        <button className={itemClass(settingsActive)} type="button" disabled={busy} onClick={onOpenSettings} aria-current={settingsActive ? "page" : undefined} title={collapsed ? words.navSettings : undefined}>
+          <SlidersIcon size={17} />
+          {!collapsed ? <span>{words.navSettings}</span> : null}
+        </button>
+        <button className={itemClass(faqActive)} type="button" disabled={busy} onClick={onOpenFaq} aria-current={faqActive ? "page" : undefined} title={collapsed ? words.navFaq : undefined}>
+          <HelpIcon size={17} />
+          {!collapsed ? <span>{words.navFaq}</span> : null}
+        </button>
+      </nav>
+
+      <div className="sidebar-footer">
+        {!collapsed ? <span className="sidebar-version">v{appVersion}</span> : null}
+        <button
+          className="sidebar-language"
+          type="button"
+          onClick={() => onLanguageChange(languageOption.next)}
+          aria-label={languageOption.switchLabel}
+          title={languageOption.switchLabel}
+        >
+          <span className="sidebar-language-icon" aria-hidden="true">
+            <LanguageIcon size={16} />
+          </span>
+          {!collapsed ? (
+            <span className="sidebar-language-copy">
+              <small>{words.language}</small>
+              <strong>{languageOption.label}</strong>
+            </span>
+          ) : null}
+          {!collapsed ? <span className="sidebar-language-target" aria-hidden="true">{nextLanguageOption.shortLabel}</span> : null}
+        </button>
+        <button className="sidebar-theme" type="button" onClick={onToggleTheme} title={resolvedTheme === "dark" ? words.lightTheme : words.darkTheme}>
+          {resolvedTheme === "dark" ? <SunIcon size={16} /> : <MoonIcon size={16} />}
+          {!collapsed ? <span>{resolvedTheme === "dark" ? words.lightTheme : words.darkTheme}</span> : null}
+        </button>
+      </div>
+
+      {!collapsed ? (
+        <div
+          className="sidebar-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={words.sidebarResize}
+          aria-valuemin={SIDEBAR_MIN_WIDTH}
+          aria-valuemax={SIDEBAR_MAX_WIDTH}
+          aria-valuenow={width}
+          tabIndex={0}
+          onDoubleClick={() => onWidthChange(SIDEBAR_DEFAULT_WIDTH)}
+          onPointerDown={beginResize}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowLeft") onWidthChange(clampSidebarWidth(width - 8));
+            if (event.key === "ArrowRight") onWidthChange(clampSidebarWidth(width + 8));
+            if (event.key === "Home") onWidthChange(SIDEBAR_MIN_WIDTH);
+            if (event.key === "End") onWidthChange(SIDEBAR_MAX_WIDTH);
+          }}
+        />
+      ) : null}
+    </aside>
   );
 }

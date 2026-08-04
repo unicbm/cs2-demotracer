@@ -11,7 +11,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { exit as exitApp } from "@tauri-apps/plugin-process";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import packageMetadata from "../package.json";
-import { AppChrome } from "./components/AppChrome";
+import { AppChrome, AppSidebar, SIDEBAR_DEFAULT_WIDTH } from "./components/AppChrome";
 import { ArchiveWorkspace } from "./components/ArchiveWorkspace";
 import type { InventorySimulatorItem } from "./inventorySimulator";
 import {
@@ -46,7 +46,6 @@ import { COSMETIC_PHRASE, TEXT } from "./i18n";
 import {
   normalizeTheme,
   normalizeUiScale,
-  normalizeUiSkin,
   resolveTheme,
   stepUiScale,
   themeBackground,
@@ -127,6 +126,20 @@ const DEFAULT_SETTINGS: ConverterSettings = {
   exportCharms: false,
   includeSuspicious: false,
 };
+
+const SIDEBAR_WIDTH_STORAGE_KEY = "demotracer.sidebar-width.v1";
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "demotracer.sidebar-collapsed.v1";
+
+function storedSidebarWidth(): number {
+  const saved = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+  if (saved === null || saved === "") return SIDEBAR_DEFAULT_WIDTH;
+  const value = Number(saved);
+  return Number.isFinite(value) ? Math.min(320, Math.max(184, value)) : SIDEBAR_DEFAULT_WIDTH;
+}
+
+function storedSidebarCollapsed(): boolean {
+  return localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "true";
+}
 
 const INITIAL_LIBRARY_PREFERENCES = storedLibraryPreferences();
 
@@ -327,7 +340,7 @@ function storedLanguage(): Language {
 }
 
 function storedUiScale(): UiScale {
-  return normalizeUiScale(localStorage.getItem(UI_SCALE_STORAGE_KEY));
+  return normalizeUiScale(localStorage.getItem(UI_SCALE_STORAGE_KEY)) === 1.1 ? 1.1 : 1;
 }
 
 function storedCosmeticConsent(): boolean {
@@ -556,6 +569,39 @@ function parseCommandError(error: unknown): CommandErrorDto {
   return { code: "unknown", message: String(error) };
 }
 
+function userFacingErrorMessage(error: { code: string; message: string; path?: string | null }, language: Language): string {
+  const code = error.code.toLocaleLowerCase();
+  const zh = language === "zh";
+  if (code.includes("cancel") || code.includes("stopping")) {
+    return zh ? "任务已停止。已完成的输出会保留。" : "Task stopped. Completed output is kept.";
+  }
+  if (code.includes("not_found") || code.includes("unavailable") || code.includes("missing")) {
+    return zh ? "找不到所选文件，请重新选择。" : "The selected file was not found. Choose it again.";
+  }
+  if (code.includes("permission") || code.includes("denied") || code.includes("unsafe") || code.includes("write")) {
+    return zh ? "无法写入所选目录，请选择其他目录。" : "The selected folder is not writable. Choose another folder.";
+  }
+  if (code.includes("invalid") || code.includes("unsupported") || code.includes("validation")) {
+    return zh ? "文件或设置未通过检查。" : "The file or settings did not pass validation.";
+  }
+  if (code.includes("dialog")) {
+    return zh ? "系统选择窗口暂时无法打开，请稍后再试。" : "The system picker could not be opened. Try again in a moment.";
+  }
+  if (code.includes("copy")) {
+    return zh ? "没有复制成功，请再试一次。" : "The content was not copied. Try again.";
+  }
+  if (code.includes("inventory_simulator")) {
+    return zh ? "无法打开饰品预览。" : "The inventory preview could not be opened.";
+  }
+  if (code.includes("playback")) {
+    return zh ? "回放组件操作失败，请检查 CS2 路径。" : "Playback component operation failed. Check the CS2 path.";
+  }
+  if (code.includes("analysis") || code.includes("demo") || code.includes("parse")) {
+    return zh ? "无法分析此 Demo。请重试或选择其他文件。" : "This demo could not be analyzed. Retry or choose another file.";
+  }
+  return zh ? "操作失败，请重试。" : "Operation failed. Try again.";
+}
+
 function phaseFromBackend(phase: TaskPhase, current: ProgressPhase): ProgressPhase {
   if (phase === "decompressing") return "decompressing";
   if (phase === "parsing") return "parsing";
@@ -599,8 +645,10 @@ function useMediaQuery(query: string): boolean {
 function App() {
   const [language, setLanguage] = useState<Language>(storedLanguage);
   const [theme, setTheme] = useState<Theme>(() => normalizeTheme(localStorage.getItem(THEME_STORAGE_KEY)));
-  const [uiSkin, setUiSkin] = useState<UiSkin>(() => normalizeUiSkin(localStorage.getItem(UI_SKIN_STORAGE_KEY)));
+  const [uiSkin] = useState<UiSkin>("trace");
   const [uiScale, setUiScale] = useState<UiScale>(storedUiScale);
+  const [sidebarWidth, setSidebarWidth] = useState(storedSidebarWidth);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(storedSidebarCollapsed);
   const [phase, setPhase] = useState<Phase>("idle");
   const [singleTask, setSingleTask] = useState<"analysis" | "conversion" | null>(null);
   const [activeTaskSourcePath, setActiveTaskSourcePath] = useState("");
@@ -812,13 +860,12 @@ function App() {
         fileName: item.fileName,
         phase,
         progress: phase === "completed" ? 1 : transient?.progress ?? null,
-        stage: transient?.stage,
         elapsedSeconds: elapsed,
-        error: item.error?.message ?? null,
+        error: item.error ? userFacingErrorMessage(item.error, language) : null,
         outputPath: item.manifestPath ?? null,
       };
     });
-  }, [batchClock, batchLedger, batchProgressByItem, batchStartingCandidates]);
+  }, [batchClock, batchLedger, batchProgressByItem, batchStartingCandidates, language]);
   const batchSummary = useMemo(() => {
     const items = batchLedger?.items;
     if (!items) return { total: batchStartingCandidates.length, completed: 0, failed: 0, skipped: 0 };
@@ -911,6 +958,11 @@ function App() {
       ]).catch(() => undefined);
     }
   }, [language, resolvedTheme, theme, uiSkin]);
+
+  useEffect(() => {
+    localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
+    localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(sidebarCollapsed));
+  }, [sidebarCollapsed, sidebarWidth]);
 
   useEffect(() => {
     localStorage.setItem(UI_SCALE_STORAGE_KEY, String(uiScale));
@@ -1080,10 +1132,10 @@ function App() {
       if (disposed) return;
       setPlaybackRelease(status);
     }).catch((reason) => {
-      if (!disposed) setPlaybackReleaseError(parseCommandError(reason).message);
+      if (!disposed) setPlaybackReleaseError(userFacingErrorMessage(parseCommandError(reason), language));
     });
     return () => { disposed = true; };
-  }, [localEnvironment.cs2Path]);
+  }, [language, localEnvironment.cs2Path]);
 
   useEffect(() => {
     if (!archivePath || !archive) return;
@@ -1158,9 +1210,7 @@ function App() {
     }).catch((reason) => {
       if (!disposed && generation === batchGenerationRef.current) {
         const error = parseCommandError(reason);
-        setBatchScanError(language === "zh"
-          ? `无法检查上次批量队列：${error.message}`
-          : `Could not inspect the previous batch queue: ${error.message}`);
+        setBatchScanError(userFacingErrorMessage(error, language));
       }
     });
     return () => { disposed = true; };
@@ -1395,7 +1445,7 @@ function App() {
       }
       dispatchLibraryWorkspace({ type: "clear" });
       localStorage.removeItem(LIBRARY_SESSION_STORAGE_KEY);
-      setAnalysisError(error.message);
+      setAnalysisError(userFacingErrorMessage(error, language));
       setPhase("analysisFailed");
       setSingleTask(null);
       playTaskSound("failure");
@@ -1682,7 +1732,7 @@ function App() {
           return {
             root,
             entries: [],
-            skipped: [{ path: error.path ?? root, message: error.message }],
+            skipped: [{ path: error.path ?? root, message: userFacingErrorMessage(error, language) }],
           };
         }
       }));
@@ -1697,7 +1747,7 @@ function App() {
       setLibraryScan((current) => current ?? {
         root: paths[0],
         entries: [],
-        skipped: [{ path: error.path ?? paths[0], message: error.message }],
+        skipped: [{ path: error.path ?? paths[0], message: userFacingErrorMessage(error, language) }],
       });
     } finally {
       if (token === libraryScanTokenRef.current) setLibraryLoading(false);
@@ -2319,7 +2369,7 @@ function App() {
         );
       };
       const failedRootResult = (
-        root: string,
+        _root: string,
         reason: unknown,
         fallback?: RefreshLibraryMetadataResult,
       ): RefreshLibraryMetadataResult => {
@@ -2332,7 +2382,7 @@ function App() {
           archivesUnmatched: fallback?.archivesUnmatched ?? 0,
           sourceUnmatched: fallback?.sourceUnmatched ?? 0,
           sourcePaths: {},
-          failures: [`${root}: ${error.message}`],
+          failures: [userFacingErrorMessage(error, language)],
         };
       };
       const firstPass = new Map<string, RefreshLibraryMetadataResult>();
@@ -2533,7 +2583,7 @@ function App() {
       const result = await invoke<PlaybackInstallResult>("install_playback_bundle", { cs2Path, packagePath });
       await finishPlaybackChange(result, "install");
     } catch (reason) {
-      setPlaybackReleaseError(parseCommandError(reason).message);
+      setPlaybackReleaseError(userFacingErrorMessage(parseCommandError(reason), language));
     } finally {
       setReleaseAction(null);
     }
@@ -2549,7 +2599,7 @@ function App() {
       const result = await invoke<PlaybackInstallResult>("rollback_playback_install", { cs2Path });
       await finishPlaybackChange(result, "rollback");
     } catch (reason) {
-      setPlaybackReleaseError(parseCommandError(reason).message);
+      setPlaybackReleaseError(userFacingErrorMessage(parseCommandError(reason), language));
     } finally {
       setReleaseAction(null);
     }
@@ -2854,7 +2904,7 @@ function App() {
         setOverwriteConflict({ root: error.path || outputRoot, exists: true });
         setPhase("selecting");
       } else if (error.code === "validation_failed") {
-        setValidationError(error.message);
+        setValidationError(userFacingErrorMessage(error, language));
         setPhase("validationFailed");
       } else {
         setGlobalError(error);
@@ -3077,37 +3127,46 @@ function App() {
     <div className="app-shell">
       <AppChrome
         words={words}
-        sourcePath={phase === "archive" && archive ? archive.manifestPath : sourcePath}
         sessionTitle={sessionTitle}
         sessionMeta={sessionMeta}
-        language={language}
-        resolvedTheme={resolvedTheme}
-        libraryActive={activeSection === "library" || activeSection === "batch"}
-        settingsActive={activeSection === "settings"}
-        faqActive={activeSection === "faq"}
-        busy={isBusy}
-        onOpenLibrary={() => dispatchLibraryWorkspace({ type: "navigate", section: "library" })}
-        onExitSession={resetSession}
-        onToggleSettings={() => dispatchLibraryWorkspace({
-          type: "navigate",
-          section: activeSection === "settings" ? "library" : "settings",
-        })}
-        onToggleFaq={() => dispatchLibraryWorkspace({
-          type: "navigate",
-          section: activeSection === "faq" ? "library" : "faq",
-        })}
-        onLanguageChange={setLanguage}
-        onToggleTheme={() => setTheme(toggleResolvedTheme(theme, systemDark))}
-        onConvert={() => void chooseDemos()}
+        sidebarCollapsed={sidebarCollapsed}
+        sidebarWidth={sidebarWidth}
+        onToggleSidebar={() => setSidebarCollapsed((current) => !current)}
         onRequestClose={() => void requestWindowClose()}
       />
 
       <div className="app-body">
+        <AppSidebar
+          words={words}
+          language={language}
+          resolvedTheme={resolvedTheme}
+          appVersion={appVersion}
+          collapsed={sidebarCollapsed}
+          width={sidebarWidth}
+          busy={isBusy}
+          libraryActive={activeSection === "library" && phase === "idle"}
+          workspaceActive={activeSection === "library" && phase !== "idle"}
+          batchActive={activeSection === "batch"}
+          settingsActive={activeSection === "settings"}
+          faqActive={activeSection === "faq"}
+          hasWorkspace={phase !== "idle"}
+          workspaceTitle={sessionTitle || (language === "zh" ? "当前任务" : "Current task")}
+          batchCount={batchSummary.total}
+          onWidthChange={setSidebarWidth}
+          onOpenLibrary={resetSession}
+          onOpenWorkspace={() => dispatchLibraryWorkspace({ type: "navigate", section: "library" })}
+          onOpenBatch={() => dispatchLibraryWorkspace({ type: "navigate", section: "batch" })}
+          onOpenSettings={() => dispatchLibraryWorkspace({ type: "navigate", section: "settings" })}
+          onOpenFaq={() => dispatchLibraryWorkspace({ type: "navigate", section: "faq" })}
+          onLanguageChange={setLanguage}
+          onToggleTheme={() => setTheme(toggleResolvedTheme(theme, systemDark))}
+          onConvert={() => void chooseDemos()}
+        />
         <main className="app-workspace">
         {globalError ? (
-          <div className="error-strip" role="alert">
+          <div className="error-strip system-feedback-toast" role="status" aria-live="polite">
             <AlertIcon size={17} />
-            <div><strong>{words.errorTitle}</strong><span>{globalError.message}</span></div>
+            <div><strong>{words.errorTitle}</strong><span>{userFacingErrorMessage(globalError, language)}</span></div>
             <button className="icon-button" type="button" onClick={() => setGlobalError(null)} aria-label={words.dismiss}><CloseIcon size={15} /></button>
           </div>
         ) : null}
@@ -3150,7 +3209,6 @@ function App() {
           <SettingsWorkspace
             words={words}
             language={language}
-            uiSkin={uiSkin}
             uiScale={uiScale}
             environment={localEnvironment}
             exportRoot={libraryRoot}
@@ -3173,7 +3231,6 @@ function App() {
             playbackReleaseError={playbackReleaseError}
             releaseAction={releaseAction}
             releaseNotice={releaseNotice}
-            onUiSkinChange={setUiSkin}
             onUiScaleChange={setUiScale}
             onCs2PathChange={(cs2Path) => {
               setLocalEnvironment((current) => ({ ...current, cs2Path }));
@@ -3340,6 +3397,7 @@ function App() {
         {phase === "complete" && result ? (
           <ResultView
             words={words}
+            language={language}
             result={result}
             warnings={conversionWarnings}
             copiedTarget={copiedTarget}

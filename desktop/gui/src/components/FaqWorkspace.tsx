@@ -23,7 +23,6 @@ interface FaqEntry {
 
 interface FaqCopy {
   title: string;
-  subtitle: string;
   searchPlaceholder: string;
   searchLabel: string;
   allCategories: string;
@@ -39,7 +38,6 @@ interface FaqCopy {
 const FAQ_COPY: Record<Language, FaqCopy> = {
   zh: {
     title: "常见问题",
-    subtitle: "关于 Demo 扫描、生成结果与本地回放环境的简明说明。",
     searchPlaceholder: "搜索问题，例如“为什么要完整解析”",
     searchLabel: "搜索常见问题",
     allCategories: "全部",
@@ -180,7 +178,6 @@ const FAQ_COPY: Record<Language, FaqCopy> = {
   },
   en: {
     title: "Frequently asked questions",
-    subtitle: "Straightforward answers about demo scanning, generated replays, and the local playback environment.",
     searchPlaceholder: "Search, for example “why is a full parse required?”",
     searchLabel: "Search frequently asked questions",
     allCategories: "All",
@@ -352,7 +349,6 @@ export function FaqWorkspace({ language }: FaqWorkspaceProps) {
         <div className="faq-hero-mark" aria-hidden="true"><TraceMark size={30} /></div>
         <div className="faq-hero-copy">
           <h1 id="faq-workspace-title">{copy.title}</h1>
-          <p>{copy.subtitle}</p>
         </div>
       </header>
 

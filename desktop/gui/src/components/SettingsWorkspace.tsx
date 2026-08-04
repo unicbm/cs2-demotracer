@@ -19,7 +19,7 @@ import {
   SunIcon,
   TraceMark,
 } from "../icons";
-import { UI_SCALE_STEPS, UI_SKINS, type UiScale } from "../appearance";
+import { type UiScale } from "../appearance";
 import { DEMOTRACER_CREDITS } from "../credits";
 import type { TextDictionary } from "../i18n";
 import type {
@@ -35,7 +35,6 @@ import type {
   RuntimeVerificationStatus,
   ServerConfigDocument,
   ServerConfigValidation,
-  UiSkin,
 } from "../types";
 import { SERVER_CONFIG_GUIDE, type ServerConfigGuideGroup } from "../serverConfigGuide";
 import type {
@@ -46,12 +45,11 @@ import type {
 } from "./PlaybackCommandBuilder";
 import "./settings-workspace.css";
 
-type SettingsSection = "appearance" | "environment" | "updates" | "paths" | "export" | "playback" | "serverConfig" | "about";
+type SettingsSection = "general" | "local" | "conversion" | "playback" | "advanced" | "about";
 
 interface SettingsWorkspaceProps {
   words: TextDictionary;
   language: Language;
-  uiSkin: UiSkin;
   uiScale: UiScale;
   environment: LocalEnvironmentSettings;
   exportRoot: string;
@@ -74,7 +72,6 @@ interface SettingsWorkspaceProps {
   playbackReleaseError: string;
   releaseAction: "installingFile" | "rollingBack" | null;
   releaseNotice: string;
-  onUiSkinChange: (skin: UiSkin) => void;
   onUiScaleChange: (scale: UiScale) => void;
   onCs2PathChange: (path: string) => void;
   onBrowseCs2: () => void;
@@ -192,7 +189,7 @@ function SettingLine({
   onChange,
 }: {
   title: string;
-  description: string;
+  description?: string;
   checked: boolean;
   disabled?: boolean;
   onChange: (checked: boolean) => void;
@@ -201,7 +198,7 @@ function SettingLine({
     <div className={`settings-toggle-line${disabled ? " is-disabled" : ""}`}>
       <div>
         <strong>{title}</strong>
-        <small>{description}</small>
+        {description ? <small>{description}</small> : null}
       </div>
       <SwitchControl checked={checked} disabled={disabled} label={title} onChange={onChange} />
     </div>
@@ -216,14 +213,14 @@ function SettingSelectLine({
   onChange,
 }: {
   title: string;
-  description: string;
+  description?: string;
   value: string;
   children: ReactNode;
   onChange: (value: string) => void;
 }) {
   return (
     <label className="settings-select-line">
-      <span><strong>{title}</strong><small>{description}</small></span>
+      <span><strong>{title}</strong>{description ? <small>{description}</small> : null}</span>
       <select value={value} onChange={(event) => onChange(event.target.value)}>{children}</select>
     </label>
   );
@@ -259,31 +256,9 @@ function PathRow({
   );
 }
 
-function CreditsAvatar({
-  name,
-  avatarUrl,
-}: {
-  name: string;
-  avatarUrl: string;
-}) {
-  return (
-    <span className="credits-avatar" title={name} aria-hidden="true">
-      <span>{name.slice(0, 1).toLocaleUpperCase()}</span>
-      <img
-        src={avatarUrl}
-        alt=""
-        loading="lazy"
-        referrerPolicy="no-referrer"
-        onError={({ currentTarget }) => { currentTarget.hidden = true; }}
-      />
-    </span>
-  );
-}
-
 export function SettingsWorkspace({
   words,
   language,
-  uiSkin,
   uiScale,
   environment,
   exportRoot,
@@ -306,7 +281,6 @@ export function SettingsWorkspace({
   playbackReleaseError,
   releaseAction,
   releaseNotice,
-  onUiSkinChange,
   onUiScaleChange,
   onCs2PathChange,
   onBrowseCs2,
@@ -331,7 +305,7 @@ export function SettingsWorkspace({
   onRequestCosmetics,
   onPlaybackChange,
 }: SettingsWorkspaceProps) {
-  const [section, setSection] = useState<SettingsSection>("appearance");
+  const [section, setSection] = useState<SettingsSection>("general");
   const [serverGuideQuery, setServerGuideQuery] = useState("");
   const autoLoadedConfigPath = useRef("");
   const reportCopy = report ? overallCopy(words, report.overall) : null;
@@ -358,7 +332,7 @@ export function SettingsWorkspace({
 
   useEffect(() => {
     const path = environment.cs2Path.trim();
-    if (section !== "serverConfig" || !path || serverConfigDocument || loadingServerConfig) return;
+    if (section !== "advanced" || !path || serverConfigDocument || loadingServerConfig) return;
     if (autoLoadedConfigPath.current === path) return;
     autoLoadedConfigPath.current = path;
     onLoadServerConfig();
@@ -372,52 +346,34 @@ export function SettingsWorkspace({
     return words.serverConfigGroupCosmetics;
   };
 
-  const skinLabels: Record<UiSkin, readonly [string, string]> = {
-    trace: [words.skinTrace, words.skinTracePalette],
-    cobalt: [words.skinCobalt, words.skinCobaltPalette],
-    ember: [words.skinEmber, words.skinEmberPalette],
-    signal: [words.skinSignal, words.skinSignalPalette],
-  };
-
   const appearanceView = (
     <div className="settings-pane settings-appearance-pane">
       <header className="settings-pane-header">
-        <div>
-          <h2>{words.appearanceTitle}</h2>
-          <p>{words.appearanceSubtitle}</p>
-        </div>
+        <h2>{words.appearanceTitle}</h2>
       </header>
 
-      <section className="settings-card" aria-label={words.appearanceTitle}>
-        <div className="settings-skin-line">
-          <span className="settings-skin-copy"><strong>{words.uiSkin}</strong><small>{words.uiSkinHelp}</small></span>
-          <div className="settings-skin-grid" role="group" aria-label={words.uiSkin}>
-            {UI_SKINS.map((skin) => (
+      <section className="settings-card settings-form-card" aria-label={words.appearanceTitle}>
+        <div className="settings-choice-row">
+          <div><strong>{words.uiScale}</strong></div>
+          <div className="segmented-control" role="group" aria-label={words.uiScale}>
+            {([1, 1.1] as const).map((scale) => (
               <button
-                className={`settings-skin-choice${uiSkin === skin ? " is-selected" : ""}`}
+                className={uiScale === scale ? "is-selected" : ""}
                 type="button"
-                data-skin-preview={skin}
-                aria-pressed={uiSkin === skin}
-                onClick={() => onUiSkinChange(skin)}
-                key={skin}
+                aria-pressed={uiScale === scale}
+                key={scale}
+                onClick={() => onUiScaleChange(scale)}
               >
-                <span className="settings-skin-swatches" aria-hidden="true"><i /><i /><i /></span>
-                <span><strong>{skinLabels[skin][0]}</strong><small>{skinLabels[skin][1]}</small></span>
-                {uiSkin === skin ? <CheckIcon size={14} /> : null}
+                {scale === 1 ? words.uiScaleStandard : words.uiScaleLarge}
               </button>
             ))}
           </div>
         </div>
-        <SettingSelectLine
-          title={words.uiScale}
-          description={words.uiScaleHelp}
-          value={String(uiScale)}
-          onChange={(value) => onUiScaleChange(Number(value) as UiScale)}
-        >
-          {UI_SCALE_STEPS.map((scale) => (
-            <option value={scale} key={scale}>{Math.round(scale * 100)}%</option>
-          ))}
-        </SettingSelectLine>
+        <SettingLine
+          title={words.soundNotifications}
+          checked={environment.soundNotifications}
+          onChange={(soundNotifications) => onEnvironmentChange({ soundNotifications })}
+        />
       </section>
     </div>
   );
@@ -425,10 +381,7 @@ export function SettingsWorkspace({
   const environmentView = (
     <div className="settings-pane settings-environment-pane">
       <header className="settings-pane-header">
-        <div>
-          <h2>{words.environmentTitle}</h2>
-          <p>{words.environmentSubtitle}</p>
-        </div>
+        <h2>{words.environmentTitle}</h2>
         <div className="settings-header-actions">
           <button className="secondary-button" type="button" disabled={detecting || inspecting} onClick={onDetectCs2}>
             <SearchIcon size={16} />{detecting ? words.detectingCs2 : words.autoDetectCs2}
@@ -460,8 +413,6 @@ export function SettingsWorkspace({
             <FolderIcon size={15} />{words.browseFolder}
           </button>
         </div>
-        <p className="settings-inline-help">{words.manualCs2PathHelp}</p>
-
         {candidates.length > 0 ? (
           <div className="detected-install-list">
             <div className="detected-install-heading">
@@ -507,7 +458,6 @@ export function SettingsWorkspace({
           <span><SearchIcon size={22} /></span>
           <div>
             <h3>{words.diagnosticNotRunTitle}</h3>
-            <p>{words.diagnosticNotRunBody}</p>
           </div>
         </section>
       ) : (
@@ -683,12 +633,7 @@ export function SettingsWorkspace({
   const updatesView = (
     <div className="settings-pane release-manager-pane">
       <header className="settings-pane-header">
-        <div>
-          <h2>{language === "zh" ? "DemoTracer 组件管理" : "DemoTracer component management"}</h2>
-          <p>{language === "zh"
-            ? "桌面应用通过 NSIS 安装；CS2 插件从本地 CSS ZIP 安装。"
-            : "Install the desktop app with NSIS and CS2 components from a local CSS ZIP."}</p>
-        </div>
+        <h2>{words.releaseComponents}</h2>
       </header>
 
       {releaseNotice ? <div className="release-notice" role="status"><CheckIcon size={16} /><span>{releaseNotice}</span></div> : null}
@@ -696,16 +641,13 @@ export function SettingsWorkspace({
       <section className="settings-card release-card" aria-labelledby="desktop-release-title">
         <div className="settings-card-heading">
           <div>
-            <h3 id="desktop-release-title">{language === "zh" ? "桌面应用" : "Desktop application"}</h3>
-            <p>{language === "zh"
-              ? "DemoTracer-GUI 版本。新版本请从 GitHub Releases 下载 NSIS 安装器。"
-              : "DemoTracer-GUI version. Download new NSIS installers from GitHub Releases."}</p>
+            <h3 id="desktop-release-title">{words.releaseDesktopApp}</h3>
           </div>
           <span className="count-badge">v{appVersion || playbackRelease?.appVersion || "1.0.0"}</span>
         </div>
         <div className="release-actions">
           <button className="secondary-button" type="button" onClick={() => onOpenExternal("https://github.com/unicbm/demotracer/releases")}>
-            <ExternalLinkIcon size={15} />{language === "zh" ? "打开 GitHub Releases" : "Open GitHub Releases"}
+            <ExternalLinkIcon size={15} />{words.releaseOpenGithub}
           </button>
         </div>
       </section>
@@ -713,32 +655,29 @@ export function SettingsWorkspace({
       <section className="settings-card release-card" aria-labelledby="playback-release-title">
         <div className="settings-card-heading">
           <div>
-            <h3 id="playback-release-title">{language === "zh" ? "CS2 回放组件" : "CS2 playback components"}</h3>
-            <p>{language === "zh"
-              ? "选择已下载的 DemoTracer-CSS ZIP；安装前验证 receipt 和内部文件哈希，并保留一次安全回滚。"
-              : "Choose a downloaded DemoTracer-CSS ZIP; its receipt and internal file hashes are verified before installation, with one safe rollback retained."}</p>
+            <h3 id="playback-release-title">{words.releasePlayback}</h3>
           </div>
           <span className="count-badge">
-            {playbackRelease?.currentVersion ? `v${playbackRelease.currentVersion}` : (language === "zh" ? "未验证" : "Unverified")}
+            {playbackRelease?.currentVersion ? `v${playbackRelease.currentVersion}` : words.releaseUnverified}
           </span>
         </div>
 
         {!environment.cs2Path.trim() ? (
-          <div className="release-callout"><FolderIcon size={18} /><span>{language === "zh" ? "先在“本地环境”中自动检测或选择 CS2。" : "Auto-detect or choose CS2 in Local environment first."}</span></div>
+          <div className="release-callout"><FolderIcon size={18} /><span>{words.releaseChooseCs2Folder}</span></div>
         ) : (
           <>
             <code className="release-target-path">{environment.cs2Path}</code>
             <div className="release-version-grid">
-              <div><span>{language === "zh" ? "已安装" : "Installed"}</span><strong>{playbackRelease?.currentVersion ? `v${playbackRelease.currentVersion}` : (language === "zh" ? "未安装/旧版" : "Missing / legacy")}</strong></div>
-              <div><span>{language === "zh" ? "安装方式" : "Install source"}</span><strong>{language === "zh" ? "本地 ZIP" : "Local ZIP"}</strong></div>
+              <div><span>{words.releaseInstalled}</span><strong>{playbackRelease?.currentVersion ? `v${playbackRelease.currentVersion}` : words.releaseMissingLegacy}</strong></div>
+              <div><span>{words.releaseInstallSource}</span><strong>{words.releaseLocalZip}</strong></div>
             </div>
             {playbackReleaseError ? <p className="release-error"><AlertIcon size={15} />{playbackReleaseError}</p> : null}
             <div className="release-actions">
               <button className="primary-button" type="button" disabled={releaseBusy} onClick={onInstallPlaybackBundle}>
-                <FolderIcon size={15} />{releaseAction === "installingFile" ? (language === "zh" ? "正在安装" : "Installing") : (language === "zh" ? "从 CSS ZIP 安装" : "Install from CSS ZIP")}
+                <FolderIcon size={15} />{releaseAction === "installingFile" ? words.releaseInstalling : words.releaseInstallFromZip}
               </button>
               <button className="text-button" type="button" disabled={releaseBusy || !playbackRelease?.canRollback} onClick={onRollbackPlayback}>
-                {releaseAction === "rollingBack" ? (language === "zh" ? "正在回滚" : "Rolling back") : (language === "zh" ? "回滚上次安装" : "Rollback last install")}
+                {releaseAction === "rollingBack" ? words.releaseRollingBack : words.releaseRollback}
               </button>
             </div>
           </>
@@ -747,7 +686,7 @@ export function SettingsWorkspace({
 
       <aside className="safe-defaults-note">
         <span><AlertIcon size={17} /></span>
-        <div><strong>{language === "zh" ? "安装前必须关闭 CS2" : "CS2 must be closed"}</strong><p>{language === "zh" ? "管理器不会在 cs2.exe 运行时覆盖 DLL；本地 demotracer.config.json 不在发布包内，也不会被更新覆盖。" : "The manager never replaces DLLs while cs2.exe is running. Local demotracer.config.json is not part of the release payload and is preserved."}</p></div>
+        <div><strong>{words.releaseCloseCs2}</strong><p>{words.releaseConfigPreserved}</p></div>
       </aside>
     </div>
   );
@@ -755,17 +694,13 @@ export function SettingsWorkspace({
   const pathsView = (
     <div className="settings-pane">
       <header className="settings-pane-header">
-        <div>
-          <h2>{words.pathsSettingsTitle}</h2>
-          <p>{words.pathsSettingsSubtitle}</p>
-        </div>
+        <h2>{words.pathsSettingsTitle}</h2>
       </header>
 
       <section className="settings-card" aria-labelledby="default-output-title">
         <div className="settings-card-heading">
           <div>
             <h3 id="default-output-title">{words.defaultOutputDirectory}</h3>
-            <p>{words.defaultOutputDirectoryHelp}</p>
           </div>
           <button className="secondary-button" type="button" onClick={onChooseExportRoot}>
             <FolderIcon size={15} />{words.changeFolder}
@@ -781,7 +716,6 @@ export function SettingsWorkspace({
         <div className="settings-card-heading">
           <div>
             <h3 id="archive-roots-title">{words.archiveLibraryDirectories}</h3>
-            <p>{words.archiveLibraryDirectoriesHelp}</p>
           </div>
           <button className="secondary-button" type="button" onClick={onAddArchiveRoot}>
             <FolderIcon size={15} />{words.addFolder}
@@ -810,7 +744,6 @@ export function SettingsWorkspace({
         <div className="settings-card-heading">
           <div>
             <h3 id="demo-roots-title">{words.rawDemoDirectories}</h3>
-            <p>{words.rawDemoDirectoriesHelp}</p>
           </div>
           <button className="secondary-button" type="button" onClick={onAddDemoRoot}>
             <FolderIcon size={15} />{words.addDemoDirectory}
@@ -825,36 +758,22 @@ export function SettingsWorkspace({
         ) : <p className="settings-empty-list">{words.noDemoDirectories}</p>}
       </section>
 
-      <section className="settings-card settings-form-card" aria-labelledby="feedback-settings-title">
-        <div className="settings-card-heading">
-          <div>
-            <h3 id="feedback-settings-title">{words.taskFeedbackTitle}</h3>
-            <p>{words.taskFeedbackHelp}</p>
-          </div>
-        </div>
-        <SettingLine
-          title={words.soundNotifications}
-          description={words.soundNotificationsHelp}
-          checked={environment.soundNotifications}
-          onChange={(soundNotifications) => onEnvironmentChange({ soundNotifications })}
-        />
-      </section>
     </div>
   );
 
   const exportView = (
     <div className="settings-pane">
       <header className="settings-pane-header">
-        <div>
-          <h2>{words.exportDefaultsTitle}</h2>
-          <p>{words.exportDefaultsSubtitle}</p>
+        <h2>{words.exportDefaultsTitle}</h2>
+        <div className="settings-header-actions">
+          <span className="autosave-note"><CheckIcon size={14} />{words.settingsSavedAutomatically}</span>
+          <button className="text-button" type="button" onClick={() => onConverterChange({ side: "both", fullRound: false, freezePrerollSeconds: 10, subtickMode: "auto", maxRoundSeconds: 240, exportVoice: true, exportCosmetics: false, exportStickers: false, exportCharms: false })}>{words.restoreSafeDefaults}</button>
         </div>
-        <span className="autosave-note"><CheckIcon size={14} />{words.settingsSavedAutomatically}</span>
       </header>
 
       <section className="settings-card settings-form-card">
         <div className="settings-choice-row">
-          <div><strong>{words.side}</strong><small>{words.defaultSideHelp}</small></div>
+          <div><strong>{words.side}</strong></div>
           <div className="segmented-control" role="group" aria-label={words.side}>
             {(["both", "t", "ct"] as const).map((side) => (
               <button key={side} className={converter.side === side ? "is-selected" : ""} type="button" aria-pressed={converter.side === side} onClick={() => onConverterChange({ side })}>
@@ -865,14 +784,14 @@ export function SettingsWorkspace({
         </div>
 
         <div className="settings-choice-row">
-          <div><strong>{words.playbackRange}</strong><small>{words.defaultPlaybackRangeHelp}</small></div>
+          <div><strong>{words.playbackRange}</strong></div>
           <div className="segmented-control" role="group" aria-label={words.playbackRange}>
             <button className={!converter.fullRound ? "is-selected" : ""} type="button" aria-pressed={!converter.fullRound} onClick={() => onConverterChange({ fullRound: false })}>{words.cutBeforePlant}</button>
             <button className={converter.fullRound ? "is-selected" : ""} type="button" aria-pressed={converter.fullRound} onClick={() => onConverterChange({ fullRound: true })}>{words.fullRoundLabel}</button>
           </div>
         </div>
 
-        <SettingLine title={words.exportVoice} description={words.voiceHelp} checked={converter.exportVoice} onChange={(exportVoice) => onConverterChange({ exportVoice })} />
+        <SettingLine title={words.exportVoice} checked={converter.exportVoice} onChange={(exportVoice) => onConverterChange({ exportVoice })} />
 
         <SettingLine
           title={words.exportCosmetics}
@@ -891,106 +810,98 @@ export function SettingsWorkspace({
           </div>
         ) : null}
 
-        <div className="settings-number-row">
-          <div><strong>{words.freezePreroll}</strong><small>{words.freezePrerollDefaultHelp}</small></div>
-          <label>
-            <input
-              type="number"
-              min={0}
-              max={120}
-              step={1}
-              value={converter.freezePrerollSeconds}
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                if (Number.isFinite(value) && value >= 0 && value <= 120) {
-                  onConverterChange({ freezePrerollSeconds: value });
-                }
-              }}
-            />
-            <span>{words.seconds}</span>
-          </label>
-        </div>
-
-        <div className="settings-choice-row">
-          <div><strong>{words.subtickCapture}</strong><small>{words.subtickCaptureHelp}</small></div>
-          <div className="segmented-control" role="group" aria-label={words.subtickCapture}>
-            <button className={converter.subtickMode === "auto" ? "is-selected" : ""} type="button" aria-pressed={converter.subtickMode === "auto"} onClick={() => onConverterChange({ subtickMode: "auto" })}>{words.subtickAuto}</button>
-            <button className={converter.subtickMode === "off" ? "is-selected" : ""} type="button" aria-pressed={converter.subtickMode === "off"} onClick={() => onConverterChange({ subtickMode: "off" })}>{words.subtickOff}</button>
+        <details className="playback-settings-advanced conversion-settings-advanced">
+          <summary>
+            <strong>{words.compatibilityOptions}</strong>
+            <ChevronIcon size={15} />
+          </summary>
+          <div className="playback-settings-advanced-body">
+            <div className="settings-number-row">
+              <div><strong>{words.freezePreroll}</strong><small>{words.freezePrerollDefaultHelp}</small></div>
+              <label>
+                <input
+                  type="number"
+                  min={0}
+                  max={120}
+                  step={1}
+                  value={converter.freezePrerollSeconds}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (Number.isFinite(value) && value >= 0 && value <= 120) onConverterChange({ freezePrerollSeconds: value });
+                  }}
+                />
+                <span>{words.seconds}</span>
+              </label>
+            </div>
+            <div className="settings-choice-row">
+              <div><strong>{words.subtickCapture}</strong><small>{words.subtickCaptureHelp}</small></div>
+              <div className="segmented-control" role="group" aria-label={words.subtickCapture}>
+                <button className={converter.subtickMode === "auto" ? "is-selected" : ""} type="button" aria-pressed={converter.subtickMode === "auto"} onClick={() => onConverterChange({ subtickMode: "auto" })}>{words.subtickAuto}</button>
+                <button className={converter.subtickMode === "off" ? "is-selected" : ""} type="button" aria-pressed={converter.subtickMode === "off"} onClick={() => onConverterChange({ subtickMode: "off" })}>{words.subtickOff}</button>
+              </div>
+            </div>
+            <div className="settings-number-row">
+              <div><strong>{words.maxRoundDuration}</strong><small>{words.maxRoundDurationHelp}</small></div>
+              <label>
+                <input
+                  type="number"
+                  min={30}
+                  max={1800}
+                  step={10}
+                  value={converter.maxRoundSeconds}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (Number.isFinite(value) && value >= 30 && value <= 1800) onConverterChange({ maxRoundSeconds: value });
+                  }}
+                />
+                <span>{words.seconds}</span>
+              </label>
+            </div>
           </div>
-        </div>
-
-        <div className="settings-number-row">
-          <div><strong>{words.maxRoundDuration}</strong><small>{words.maxRoundDurationHelp}</small></div>
-          <label>
-            <input
-              type="number"
-              min={30}
-              max={1800}
-              step={10}
-              value={converter.maxRoundSeconds}
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                if (Number.isFinite(value) && value >= 30 && value <= 1800) {
-                  onConverterChange({ maxRoundSeconds: value });
-                }
-              }}
-            />
-            <span>{words.seconds}</span>
-          </label>
-        </div>
+        </details>
       </section>
 
-      <aside className="safe-defaults-note">
-        <span><AlertIcon size={17} /></span>
-        <div><strong>{words.sessionOnlySettingsTitle}</strong><p>{words.sessionOnlySettingsBody}</p></div>
-        <button className="text-button" type="button" onClick={() => onConverterChange({ side: "both", fullRound: false, freezePrerollSeconds: 10, subtickMode: "auto", maxRoundSeconds: 240, exportVoice: true, exportCosmetics: false, exportStickers: false, exportCharms: false })}>{words.restoreSafeDefaults}</button>
-      </aside>
     </div>
   );
 
   const playbackView = (
     <div className="settings-pane">
       <header className="settings-pane-header">
-        <div>
-          <h2>{words.playbackDefaultsTitle}</h2>
-          <p>{words.playbackDefaultsSubtitle}</p>
-        </div>
+        <h2>{words.playbackDefaultsTitle}</h2>
         <span className="autosave-note"><CheckIcon size={14} />{words.settingsSavedAutomatically}</span>
       </header>
 
       <section className="settings-card settings-form-card playback-defaults-card">
         <SettingLine
           title={words.syncWeapons}
-          description={words.syncWeaponsHelp}
           checked={playback.weapons || playback.cosmetics}
           onChange={(weapons) => onPlaybackChange(weapons ? { weapons: true } : { weapons: false, cosmetics: false })}
         />
         <SettingLine
           title={words.syncSteamIdentity}
-          description={words.syncSteamIdentityHelp}
           checked={playback.steamIdentity || playback.avatar}
           onChange={(steamIdentity) => onPlaybackChange(steamIdentity ? { steamIdentity: true } : { steamIdentity: false, avatar: false })}
         />
-        <SettingLine title={words.syncVoice} description={words.syncVoiceHelp} checked={playback.voice} onChange={(voice) => onPlaybackChange({ voice })} />
+        <SettingLine title={words.syncVoice} checked={playback.voice} onChange={(voice) => onPlaybackChange({ voice })} />
         <SettingLine
           title={words.syncCosmetics}
           description={words.playbackCosmeticsDefaultHelp}
           checked={playback.cosmetics}
           onChange={(cosmetics) => onPlaybackChange(cosmetics ? { cosmetics: true, weapons: true } : { cosmetics: false })}
         />
-        <SettingLine
-          title={words.syncAvatar}
-          description={words.syncAvatarHelp}
-          checked={playback.avatar}
-          onChange={(avatar) => onPlaybackChange(avatar ? { avatar: true, steamIdentity: true } : { avatar: false })}
-        />
-        <SettingLine title={words.playoffBeta} description={words.playoffHelp} checked={playback.playoff} onChange={(playoff) => onPlaybackChange({ playoff })} />
         <details className="playback-settings-advanced">
           <summary>
             <strong>{words.playbackAdvancedOverrides}</strong>
             <ChevronIcon size={15} />
           </summary>
           <div className="playback-settings-advanced-body">
+            <SettingLine
+              title={words.syncAvatar}
+              description={words.syncAvatarHelp}
+              checked={playback.avatar}
+              onChange={(avatar) => onPlaybackChange(avatar ? { avatar: true, steamIdentity: true } : { avatar: false })}
+            />
+            <SettingLine title={words.playoffBeta} description={words.playoffHelp} checked={playback.playoff} onChange={(playoff) => onPlaybackChange({ playoff })} />
             <SettingSelectLine title={words.projectileAlignment} description={words.projectileAlignmentHelp} value={playback.projectileAlignment} onChange={(value) => onPlaybackChange({ projectileAlignment: value as PlaybackToggleOverride })}>
               <option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
             </SettingSelectLine>
@@ -1042,7 +953,6 @@ export function SettingsWorkspace({
         </details>
       </section>
 
-      <p className="settings-footnote">{words.playbackDefaultsFootnote}</p>
     </div>
   );
 
@@ -1050,10 +960,7 @@ export function SettingsWorkspace({
   const serverConfigView = (
     <div className="settings-pane server-config-pane">
       <header className="settings-pane-header">
-        <div>
-          <h2>{words.serverConfigTitle}</h2>
-          <p>{words.serverConfigSubtitle}</p>
-        </div>
+        <h2>{words.serverConfigTitle}</h2>
         <div className="settings-header-actions">
           <button className="secondary-button" type="button" disabled={!environment.cs2Path.trim() || loadingServerConfig || savingServerConfig} onClick={onLoadServerConfig}>
             <RefreshIcon size={16} />{loadingServerConfig ? words.loadingServerConfig : words.loadServerConfig}
@@ -1155,7 +1062,7 @@ export function SettingsWorkspace({
                 <ul className="server-config-issues">
                   {[...effectiveServerValidation.errors, ...effectiveServerValidation.warnings].map((issue) => (
                     <li key={`${issue.code}:${issue.path}:${issue.message}`}>
-                      <AlertIcon size={15} /><div><code>{issue.path || "$"}</code><span>{issue.message}</span></div>
+                      <AlertIcon size={15} /><div><code>{issue.path || "$"}</code><span>{words.serverConfigFieldIssue}</span></div>
                     </li>
                   ))}
                 </ul>
@@ -1181,33 +1088,20 @@ export function SettingsWorkspace({
   );
 
   const aboutVersion = appVersion || playbackRelease?.appVersion || "1.0.0";
-  const foundationDescriptions = {
-    xbribo: words.creditsFoundationXBribo,
-    ianLucas: words.creditsFoundationIanLucas,
-    demoparser: words.creditsFoundationDemoparser,
-    csgowiki: words.creditsFoundationCsgowiki,
-  } as const;
   const creditedPeople = [
-    { ...DEMOTRACER_CREDITS.creator, contribution: words.creditsCreatorRole },
-    ...DEMOTRACER_CREDITS.contributors.map((contributor) => ({
-      ...contributor,
-      contribution: words.creditsContributorRole,
-    })),
+    DEMOTRACER_CREDITS.creator,
+    ...DEMOTRACER_CREDITS.contributors,
   ];
   const aboutView = (
     <div className="settings-pane settings-about-pane">
       <header className="settings-pane-header credits-page-header">
-        <div>
-          <h2>{words.aboutTitle}</h2>
-          <p>{words.aboutSubtitle}</p>
-        </div>
+        <h2>{words.aboutTitle}</h2>
         <code className="credits-version">v{aboutVersion}</code>
       </header>
 
       <section className="credits-section" aria-labelledby="credits-contributors-title">
         <header className="credits-section-heading">
           <h3 id="credits-contributors-title">{words.creditsContributorsTitle}</h3>
-          <p>{words.creditsContributorsHelp}</p>
         </header>
         <div className="credits-list">
           {creditedPeople.map((person) => (
@@ -1219,9 +1113,8 @@ export function SettingsWorkspace({
               aria-label={`GitHub: ${person.githubHandle}`}
               onClick={() => onOpenExternal(person.profileUrl)}
             >
-              <CreditsAvatar name={person.name} avatarUrl={person.avatarUrl} />
               <span className="credits-person-identity"><strong>{person.name}</strong><small>@{person.githubHandle}</small></span>
-              <span className="credits-contribution">{person.contribution}</span>
+              <span className="credits-contribution">{person.githubHandle === DEMOTRACER_CREDITS.creator.githubHandle ? words.creditsCreatorRole : ""}</span>
               <ExternalLinkIcon className="credits-external-icon" size={14} />
             </button>
           ))}
@@ -1231,7 +1124,6 @@ export function SettingsWorkspace({
       <section className="credits-section" aria-labelledby="credits-foundations-title">
         <header className="credits-section-heading">
           <h3 id="credits-foundations-title">{words.creditsFoundationsTitle}</h3>
-          <p>{words.creditsFoundationsHelp}</p>
         </header>
         <div className="credits-list">
           {DEMOTRACER_CREDITS.foundations.map((foundation) => (
@@ -1243,10 +1135,8 @@ export function SettingsWorkspace({
                 aria-label={`GitHub: ${foundation.githubHandle}`}
                 onClick={() => onOpenExternal(foundation.profileUrl)}
               >
-                <CreditsAvatar name={foundation.githubHandle} avatarUrl={foundation.avatarUrl} />
                 <span><strong>{foundation.author}</strong><small>@{foundation.githubHandle}</small></span>
               </button>
-              <p className="credits-contribution">{foundationDescriptions[foundation.id]}</p>
               <div className="credits-project-links">
                 {foundation.projects.map((project) => (
                   <button
@@ -1269,40 +1159,35 @@ export function SettingsWorkspace({
   return (
     <section className="settings-workspace" aria-labelledby="settings-workspace-title">
       <div className="settings-titlebar">
-        <div>
-          <h1 id="settings-workspace-title">{words.settingsTitle}</h1>
-          <p>{words.settingsSubtitle}</p>
-        </div>
+        <h1 id="settings-workspace-title">{words.settingsTitle}</h1>
       </div>
       <div className="settings-layout">
         <nav className="settings-section-nav" aria-label={words.settingsSections}>
-          <button className={section === "appearance" ? "is-active" : ""} type="button" aria-current={section === "appearance" ? "page" : undefined} onClick={() => setSection("appearance")}>
-            <SunIcon size={17} /><span><strong>{words.settingsNavAppearance}</strong><small>{words.settingsNavAppearanceHelp}</small></span>
+          <button className={section === "general" ? "is-active" : ""} type="button" aria-current={section === "general" ? "page" : undefined} onClick={() => setSection("general")}>
+            <SunIcon size={17} /><span><strong>{words.settingsNavAppearance}</strong></span>
           </button>
-          <button className={section === "paths" ? "is-active" : ""} type="button" aria-current={section === "paths" ? "page" : undefined} onClick={() => setSection("paths")}>
-            <FolderIcon size={17} /><span><strong>{words.settingsNavPaths}</strong><small>{words.settingsNavPathsHelp}</small></span>
+          <button className={section === "local" ? "is-active" : ""} type="button" aria-current={section === "local" ? "page" : undefined} onClick={() => setSection("local")}>
+            <FolderIcon size={17} /><span><strong>{words.settingsNavEnvironment}</strong></span>
           </button>
-          <button className={section === "export" ? "is-active" : ""} type="button" aria-current={section === "export" ? "page" : undefined} onClick={() => setSection("export")}>
-            <SlidersIcon size={17} /><span><strong>{words.settingsNavExport}</strong><small>{words.settingsNavExportHelp}</small></span>
+          <button className={section === "conversion" ? "is-active" : ""} type="button" aria-current={section === "conversion" ? "page" : undefined} onClick={() => setSection("conversion")}>
+            <SlidersIcon size={17} /><span><strong>{words.settingsNavExport}</strong></span>
           </button>
           <button className={section === "playback" ? "is-active" : ""} type="button" aria-current={section === "playback" ? "page" : undefined} onClick={() => setSection("playback")}>
-            <ReplayIcon size={17} /><span><strong>{words.settingsNavPlayback}</strong><small>{words.settingsNavPlaybackHelp}</small></span>
+            <ReplayIcon size={17} /><span><strong>{words.settingsNavPlayback}</strong></span>
           </button>
-          <button className={section === "serverConfig" ? "is-active" : ""} type="button" aria-current={section === "serverConfig" ? "page" : undefined} onClick={() => setSection("serverConfig")}>
-            <LibraryIcon size={17} /><span><strong>{words.settingsNavServerConfig}</strong><small>{words.settingsNavServerConfigHelp}</small></span>
+          <button className={section === "advanced" ? "is-active" : ""} type="button" aria-current={section === "advanced" ? "page" : undefined} onClick={() => setSection("advanced")}>
+            <LibraryIcon size={17} /><span><strong>{words.settingsNavServerConfig}</strong></span>
           </button>
           <button className={section === "about" ? "is-active" : ""} type="button" aria-current={section === "about" ? "page" : undefined} onClick={() => setSection("about")}>
-            <TraceMark size={17} /><span><strong>{words.settingsNavAbout}</strong><small>{words.settingsNavAboutHelp}</small></span>
+            <TraceMark size={17} /><span><strong>{words.settingsNavAbout}</strong></span>
           </button>
         </nav>
         <div className="settings-content">
-          {section === "appearance" ? appearanceView : null}
-          {section === "environment" ? environmentView : null}
-          {section === "updates" ? updatesView : null}
-          {section === "paths" ? pathsView : null}
-          {section === "export" ? exportView : null}
+          {section === "general" ? appearanceView : null}
+          {section === "local" ? <div className="settings-combined-pane">{environmentView}{updatesView}{pathsView}</div> : null}
+          {section === "conversion" ? exportView : null}
           {section === "playback" ? playbackView : null}
-          {section === "serverConfig" ? serverConfigView : null}
+          {section === "advanced" ? serverConfigView : null}
           {section === "about" ? aboutView : null}
         </div>
       </div>

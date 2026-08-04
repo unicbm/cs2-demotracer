@@ -211,7 +211,7 @@ function adaptArchiveResult(
   };
 }
 
-function ArchiveIssues({ archive, words }: { archive: ManifestArchive; words: TextDictionary }) {
+function ArchiveIssues({ archive, words, language }: { archive: ManifestArchive; words: TextDictionary; language: Language }) {
   if (archive.issues.length === 0) return null;
   return (
     <details className="archive-issues">
@@ -224,7 +224,11 @@ function ArchiveIssues({ archive, words }: { archive: ManifestArchive; words: Te
         {archive.issues.map((issue, index) => (
           <li className={`is-${issue.severity}`} key={`${issue.code}-${issue.round ?? "all"}-${index}`}>
             {issue.round !== undefined && issue.round !== null ? <b>Round {issue.round}</b> : null}
-            <span>{issue.message}</span>
+            <span>{issue.code.toLocaleLowerCase().includes("missing") || issue.code.toLocaleLowerCase().includes("unavailable")
+              ? (language === "zh" ? "部分回放内容不可用。" : "Some replay content is unavailable.")
+              : issue.code.toLocaleLowerCase().includes("version") || issue.code.toLocaleLowerCase().includes("compat")
+                ? (language === "zh" ? "归档版本不兼容，相关内容已跳过。" : "Incompatible archive content was skipped.")
+                : (language === "zh" ? "归档包含警告。" : "The archive contains a warning.")}</span>
           </li>
         ))}
       </ul>
@@ -539,7 +543,7 @@ export function ArchiveWorkspace({
                 onCopy={(command) => onCopy(command, "playback")}
               />
 
-              <ArchiveIssues archive={archive} words={words} />
+              <ArchiveIssues archive={archive} words={words} language={language} />
 
               <details className="archive-file-info">
                 <summary>{words.technicalDetails}<ChevronIcon size={14} /></summary>
@@ -568,7 +572,7 @@ export function ArchiveWorkspace({
               <button className="secondary-button" type="button" onClick={onChooseManifest}>
                 {words.openAnotherArchive}
               </button>
-              <ArchiveIssues archive={archive} words={words} />
+              <ArchiveIssues archive={archive} words={words} language={language} />
             </div>
           )}
         </aside>

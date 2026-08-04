@@ -112,6 +112,15 @@ export function MoonIcon({ size = 18, ...props }: IconProps) {
   );
 }
 
+export function LanguageIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg {...base(size)} {...props}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M3.8 12h16.4M12 3.5c2.1 2.3 3.2 5.1 3.2 8.5S14.1 18.2 12 20.5M12 3.5C9.9 5.8 8.8 8.6 8.8 12s1.1 6.2 3.2 8.5" />
+    </svg>
+  );
+}
+
 export function CloseIcon({ size = 18, ...props }: IconProps) {
   return (
     <svg {...base(size)} {...props}>

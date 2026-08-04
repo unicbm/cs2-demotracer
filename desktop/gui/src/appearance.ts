@@ -11,7 +11,7 @@ export const UI_SKINS: readonly UiSkin[] = ["trace", "cobalt", "ember", "signal"
 export const THEME_STORAGE_KEY = "demotracer.theme";
 export const UI_SKIN_STORAGE_KEY = "demotracer.ui-skin.v1";
 export const THEME_BACKGROUNDS: Record<UiSkin, Record<ResolvedTheme, string>> = {
-  trace: { light: "#e8ebe8", dark: "#0e1211" },
+  trace: { light: "#e7e5e0", dark: "#0b0d0c" },
   cobalt: { light: "#e9edf2", dark: "#0b1018" },
   ember: { light: "#ece9e4", dark: "#12100e" },
   signal: { light: "#e9ebe4", dark: "#090b08" },
