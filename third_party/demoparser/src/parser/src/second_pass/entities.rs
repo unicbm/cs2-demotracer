@@ -85,32 +85,6 @@ fn is_cosmetic_prop(prop_id: u32, special_ids: &SpecialIDs) -> bool {
         .any(|id| id == prop_id)
 }
 
-fn is_personalized_econ_prop(prop_id: u32, special_ids: &SpecialIDs) -> bool {
-    const ECON_ATTRIBUTE_SLOTS: u32 = 64;
-
-    (WEAPON_SKIN_ID..WEAPON_SKIN_ID + ECON_ATTRIBUTE_SLOTS).contains(&prop_id)
-        || (WEAPON_ATTRIBUTE_DEF_INDEX_ID
-            ..WEAPON_ATTRIBUTE_DEF_INDEX_ID + ECON_ATTRIBUTE_SLOTS)
-            .contains(&prop_id)
-        || (GLOVE_PAINT_ID..GLOVE_PAINT_ID + ECON_ATTRIBUTE_SLOTS).contains(&prop_id)
-        || (GLOVE_ATTRIBUTE_DEF_INDEX_ID
-            ..GLOVE_ATTRIBUTE_DEF_INDEX_ID + ECON_ATTRIBUTE_SLOTS)
-            .contains(&prop_id)
-        || [
-            special_ids.item_id_high,
-            special_ids.item_id_low,
-            special_ids.item_account_id,
-            special_ids.orig_own_low,
-            special_ids.orig_own_high,
-            special_ids.entity_quality,
-            special_ids.fallback_stattrak,
-            special_ids.custom_name,
-        ]
-        .into_iter()
-        .flatten()
-        .any(|id| id == prop_id)
-}
-
 impl<'a> SecondPassParser<'a> {
     pub fn parse_packet_ents(&mut self, bytes: &[u8], is_fullpacket: bool) -> Result<(), DemoParserError> {
         if !self.parse_entities {
@@ -347,17 +321,10 @@ impl<'a> SecondPassParser<'a> {
             let updates_cosmetics = field_info
                 .map(|fi| is_cosmetic_prop(fi.prop_id, &self.prop_controller.special_ids))
                 .unwrap_or(false);
-            // A class baseline is shared by every entity of that class. Some demos include
-            // one player's econ attributes in a knife baseline; treating those as entity
-            // state assigns the same finish to unrelated players. Only an entity update can
-            // provide trustworthy per-item econ values.
-            if !is_baseline
-                || field_info.is_none_or(|fi| {
-                    !is_personalized_econ_prop(fi.prop_id, &self.prop_controller.special_ids)
-                })
-            {
-                SecondPassParser::insert_field(entity, result, field_info, updates_cosmetics);
-            }
+            // Source 2 entity updates are deltas against the class baseline. Econ fields
+            // that equal the baseline are intentionally omitted from the entity delta, so
+            // the baseline must be applied before the entity-specific values overwrite it.
+            SecondPassParser::insert_field(entity, result, field_info, updates_cosmetics);
         }
         Ok(n_updates)
     }
@@ -516,26 +483,54 @@ mod tests {
     }
 
     #[test]
-    fn personalized_econ_values_are_not_safe_class_baseline_state() {
-        let mut special_ids = SpecialIDs::new();
-        special_ids.item_def = Some(41);
-        special_ids.item_id_high = Some(42);
-        special_ids.item_account_id = Some(43);
-        special_ids.orig_own_low = Some(44);
-        special_ids.custom_name = Some(45);
+    fn entity_delta_preserves_untouched_baseline_econ_fields() {
+        let mut entity = Entity {
+            cls_id: 0,
+            entity_id: 1,
+            serial: 1,
+            props: AHashMap::with_capacity(0),
+            entity_type: EntityType::Normal,
+            cosmetic_revision: 0,
+        };
+        let field = |prop_id| FieldInfo {
+            decoder: crate::second_pass::decoder::Decoder::NoscaleDecoder,
+            should_parse: true,
+            prop_id,
+        };
 
-        assert!(is_personalized_econ_prop(WEAPON_SKIN_ID, &special_ids));
-        assert!(is_personalized_econ_prop(
-            WEAPON_ATTRIBUTE_DEF_INDEX_ID + 63,
-            &special_ids
-        ));
-        assert!(is_personalized_econ_prop(42, &special_ids));
-        assert!(is_personalized_econ_prop(43, &special_ids));
-        assert!(is_personalized_econ_prop(44, &special_ids));
-        assert!(is_personalized_econ_prop(45, &special_ids));
-        assert!(!is_personalized_econ_prop(41, &special_ids));
-        assert!(!is_personalized_econ_prop(46, &special_ids));
+        SecondPassParser::insert_field(
+            &mut entity,
+            Variant::U32(6),
+            Some(field(WEAPON_ATTRIBUTE_DEF_INDEX_ID)),
+            true,
+        );
+        SecondPassParser::insert_field(
+            &mut entity,
+            Variant::F32(415.0),
+            Some(field(WEAPON_SKIN_ID)),
+            true,
+        );
+        SecondPassParser::insert_field(
+            &mut entity,
+            Variant::F32(602.0),
+            Some(field(WEAPON_SKIN_ID + 1)),
+            true,
+        );
+
+        assert_eq!(
+            entity.props.get(&WEAPON_ATTRIBUTE_DEF_INDEX_ID),
+            Some(&Variant::U32(6))
+        );
+        assert_eq!(
+            entity.props.get(&WEAPON_SKIN_ID),
+            Some(&Variant::F32(415.0))
+        );
+        assert_eq!(
+            entity.props.get(&(WEAPON_SKIN_ID + 1)),
+            Some(&Variant::F32(602.0))
+        );
     }
+
 }
 
 fn should_emit_prop_to_listen(prop_name: &str) -> bool {

@@ -14,7 +14,7 @@ public sealed class WeaponSlotReplacementTests
     [InlineData(false, false, true, (int)ReplayWeaponSlotPlanAction.PreserveExisting)]
     [InlineData(true, false, false, (int)ReplayWeaponSlotPlanAction.GrantIntoEmptySlot)]
     [InlineData(false, false, false, (int)ReplayWeaponSlotPlanAction.Complete)]
-    public void PreparationNeverDetachesAnOccupiedPrimaryOrSecondary(
+    public void PreparationPreservesOccupiedSlotsWithoutReplacementAuthorization(
         bool hasTarget,
         bool targetPresent,
         bool anySlotWeapon,
@@ -29,35 +29,39 @@ public sealed class WeaponSlotReplacementTests
     }
 
     [Theory]
-    [InlineData("weapon_hkp2000", "weapon_usp_silencer")]
-    [InlineData("weapon_usp_silencer", "weapon_hkp2000")]
-    public void CtStarterSidearmsCanReplaceEachOther(
-        string currentItem,
-        string targetItem)
-    {
-        Assert.True(ReplayWeaponReplacementPolicy.IsCtStarterSidearmSwap(
-            ReplayWeaponSlot.Secondary,
-            currentItem,
-            targetItem));
-        Assert.Equal(
-            ReplayWeaponSlotPlanAction.ReplaceCtStarterSidearm,
-            ReplayWeaponReplacementPolicy.DecideSlotPlanAction(
-                hasTarget: true,
-                targetPresent: false,
-                anySlotWeapon: true,
-                canReplaceCtStarterSidearm: true));
-    }
-
-    [Theory]
-    [InlineData((int)ReplayWeaponSlot.Primary, "weapon_hkp2000", "weapon_usp_silencer")]
-    [InlineData((int)ReplayWeaponSlot.Secondary, "weapon_hkp2000", "weapon_fiveseven")]
+    [InlineData((int)ReplayWeaponSlot.Primary, "weapon_ak47", "weapon_awp")]
+    [InlineData((int)ReplayWeaponSlot.Primary, "weapon_awp", "weapon_ak47")]
+    [InlineData((int)ReplayWeaponSlot.Secondary, "weapon_hkp2000", "weapon_elite")]
     [InlineData((int)ReplayWeaponSlot.Secondary, "weapon_deagle", "weapon_usp_silencer")]
-    public void OtherOccupiedWeaponsRemainOutsideTheReplacementPath(
+    public void OccupiedWeaponSlotsCanUseAConflictingManifestTarget(
         int slot,
         string currentItem,
         string targetItem)
     {
-        Assert.False(ReplayWeaponReplacementPolicy.IsCtStarterSidearmSwap(
+        Assert.True(ReplayWeaponReplacementPolicy.CanReplaceOccupiedWeaponSlot(
+            (ReplayWeaponSlot)slot,
+            currentItem,
+            targetItem));
+        Assert.Equal(
+            ReplayWeaponSlotPlanAction.ReplaceOccupiedSlot,
+            ReplayWeaponReplacementPolicy.DecideSlotPlanAction(
+                hasTarget: true,
+                targetPresent: false,
+                anySlotWeapon: true,
+                canReplaceOccupiedSlot: true));
+    }
+
+    [Theory]
+    [InlineData((int)ReplayWeaponSlot.Utility, "weapon_smokegrenade", "weapon_flashbang")]
+    [InlineData((int)ReplayWeaponSlot.Secondary, "weapon_hkp2000", "weapon_hkp2000")]
+    [InlineData((int)ReplayWeaponSlot.Primary, "", "weapon_awp")]
+    [InlineData((int)ReplayWeaponSlot.Primary, "weapon_ak47", "")]
+    public void UnsupportedOrIdenticalOccupiedWeaponsRemainOutsideTheReplacementPath(
+        int slot,
+        string currentItem,
+        string targetItem)
+    {
+        Assert.False(ReplayWeaponReplacementPolicy.CanReplaceOccupiedWeaponSlot(
             (ReplayWeaponSlot)slot,
             currentItem,
             targetItem));
@@ -70,7 +74,7 @@ public sealed class WeaponSlotReplacementTests
     }
 
     [Fact]
-    public void CtStarterSidearmReplacementWaitsForTheOldPistolToClear()
+    public void OccupiedWeaponReplacementWaitsForTheOldWeaponToClear()
     {
         Assert.Equal(
             WeaponSlotReplacementAction.WaitForClear,
@@ -93,7 +97,7 @@ public sealed class WeaponSlotReplacementTests
     [InlineData(true, false, true, 1, 8, (int)DetachedWeaponCleanupAction.Retry)]
     [InlineData(true, true, true, 9, 0, (int)DetachedWeaponCleanupAction.Abandon)]
     [InlineData(false, false, false, 1, 8, (int)DetachedWeaponCleanupAction.Abandon)]
-    public void DetachedStarterSidearmCleanupWaitsForEngineReferences(
+    public void DetachedWeaponCleanupWaitsForEngineReferences(
         bool identityMatches,
         bool ownedByPawn,
         bool activeWeaponReference,
