@@ -188,10 +188,13 @@ The public release contains exactly two Windows x64 assets:
 - `demotracer-gui-vVERSION.exe`: NSIS desktop installer.
 - `demotracer-css-vVERSION.zip`: matched CS2 plugin bundle.
 
-The desktop app has no remote updater. Users download new installers and CSS
-bundles from this repository's GitHub Releases. Local CSS installation still
-validates the bundle receipt and every recorded file hash before changing CS2,
-and preserves one rollback.
+The desktop app checks the signed stable GUI manifest at
+`https://releases.detr.site/channels/stable/latest.json` on startup. A newer
+version is shown with localized release notes and is installed only after user
+confirmation. Tauri verifies the updater signature before starting the passive
+NSIS install. CSS bundles remain explicit local installs; their receipt and
+every recorded file hash are validated before changing CS2, with one rollback
+preserved.
 
 ```powershell
 .\tooling\scripts\package-release.ps1 `
@@ -199,10 +202,27 @@ and preserves one rollback.
   -CertificateThumbprint <code-signing-certificate-thumbprint>
 ```
 
-The release contract check verifies package versions and ABI/API gates before
-packaging. `package-release.ps1` rebuilds the NSIS installer and CSS bundle, then
-creates a clean `dist/release-v<version>` directory containing only those two
-files.
+The release contract check verifies package versions, updater configuration,
+and ABI/API gates before packaging. `package-release.ps1` rebuilds the NSIS
+installer and CSS bundle, then creates two deliberately separate directories:
+
+- `dist/release-v<version>` contains only the public GitHub assets: the GUI EXE
+  and CSS ZIP.
+- `dist/updater-v<version>` contains the signed GUI updater payload,
+  `latest.json`, and checksums for R2 publishing.
+
+Pass localized release notes while packaging, then publish only the updater
+directory to R2:
+
+```powershell
+.\tooling\scripts\package-release.ps1 `
+  -Version <version> `
+  -CertificateThumbprint <code-signing-certificate-thumbprint> `
+  -ReleaseNotesZh "<简体中文更新说明>" `
+  -ReleaseNotes "<English release notes>"
+
+.\tooling\scripts\publish-r2.ps1 -Version <version>
+```
 
 An Authenticode code-signing certificate can reduce Windows reputation
 warnings. Pass its SHA-1 certificate-store thumbprint when available. Without a

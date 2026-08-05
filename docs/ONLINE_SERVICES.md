@@ -6,6 +6,7 @@ local paths, or logs.
 
 | Trigger | Request | Data sent |
 | --- | --- | --- |
+| The desktop app starts, or the user clicks **Check for updates** | `releases.detr.site/channels/stable/latest.json` | Current app version, Windows updater target/architecture, and normal request metadata |
 | A roster is visible | `steamcommunity.com/profiles/<steamid>?xml=1` | SteamID64 and normal request metadata |
 | **About & credits** is opened | `avatars.githubusercontent.com` | Public GitHub avatar identifier and normal request metadata |
 | A cosmetic image is opened | `cdn.cstrike.app` | Catalog image key and normal request metadata |
@@ -53,11 +54,17 @@ name, including the Chinese fullwidth punctuation accepted by current cs2-lib
 and Inventory Simulator releases. Other item types remain unnamed because the
 simulator accepts custom names only on name-tag-compatible item types.
 
-GUI and CSS releases are downloaded manually from this repository's GitHub
-Releases. The application contains no remote update checker or release download
-client. Choosing the GitHub Releases link opens the system browser under the
-normal browser privacy policy. A local CSS ZIP is validated against its embedded
-receipt and per-file hashes before installation.
+The desktop app checks the signed stable GUI release manifest when it starts.
+The check is best-effort, does not upload local paths or application data, and
+does not interrupt local work when the release service is offline. When a newer
+version exists, the app shows the current version, latest version, and localized
+release notes before the user chooses whether to download and install it. The
+Tauri updater verifies the package signature before the passive NSIS install.
+
+CSS releases remain explicit local installs from this repository's GitHub
+Releases. A local CSS ZIP is validated against its embedded receipt and per-file
+hashes before installation. Choosing any GitHub Releases link opens the system
+browser under the normal browser privacy policy.
 
 DemoTracer 1.0 has no telemetry, cloud conversion, replay upload, account
 system, or remote player catalog.

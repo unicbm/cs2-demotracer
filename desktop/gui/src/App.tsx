@@ -8,7 +8,8 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { exit as exitApp } from "@tauri-apps/plugin-process";
+import { exit as exitApp, relaunch } from "@tauri-apps/plugin-process";
+import { check, type Update } from "@tauri-apps/plugin-updater";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import packageMetadata from "../package.json";
 import { AppChrome, AppSidebar, SIDEBAR_DEFAULT_WIDTH } from "./components/AppChrome";
@@ -29,6 +30,7 @@ import { ExportInspector } from "./components/ExportInspector";
 import { FaqWorkspace } from "./components/FaqWorkspace";
 import { LibraryWorkspace, type LibrarySort } from "./components/LibraryWorkspace";
 import { InventorySimulatorPanel } from "./components/InventorySimulatorPanel";
+import { releaseNotesForLanguage } from "./releaseNotes";
 import { DEFAULT_PLAYBACK_ADVANCED_OPTIONS, type PlaybackPresetOptions } from "./components/PlaybackCommandBuilder";
 import { playerSelectionKey } from "./components/PlayerRoster";
 import { RoundWorkspace } from "./components/RoundWorkspace";
@@ -94,6 +96,7 @@ import type {
   DemoFolderScan,
   DemoSourcePreflight,
   EnvironmentDiagnosticReport,
+  GuiUpdateStatus,
   ImportArchivesResult,
   Language,
   LocalEnvironmentSettings,
@@ -718,6 +721,11 @@ function App() {
   const [detectingInstallations, setDetectingInstallations] = useState(false);
   const [inspectingEnvironment, setInspectingEnvironment] = useState(false);
   const [appVersion, setAppVersion] = useState(packageMetadata.version);
+  const [guiUpdate, setGuiUpdate] = useState<GuiUpdateStatus>({
+    phase: "idle",
+    currentVersion: packageMetadata.version,
+  });
+  const [guiUpdateDialogOpen, setGuiUpdateDialogOpen] = useState(false);
   const [playbackRelease, setPlaybackRelease] = useState<PlaybackReleaseStatus | null>(null);
   const [playbackReleaseError, setPlaybackReleaseError] = useState("");
   const [releaseAction, setReleaseAction] = useState<"installingFile" | "rollingBack" | null>(null);
@@ -762,6 +770,7 @@ function App() {
   const conversionStartLockRef = useRef(false);
   const analyzedMaxRoundSecondsRef = useRef(DEFAULT_SETTINGS.maxRoundSeconds);
   const environmentInspectionTokenRef = useRef(0);
+  const pendingGuiUpdateRef = useRef<Update | null>(null);
   const batchIdRef = useRef("");
   const batchGenerationRef = useRef(0);
   const batchStopPendingRef = useRef(false);
@@ -776,6 +785,7 @@ function App() {
   const chooseOtherOutputRef = useRef<HTMLButtonElement | null>(null);
   const openExistingArchiveRef = useRef<HTMLButtonElement | null>(null);
   const keepWorkingRef = useRef<HTMLButtonElement | null>(null);
+  const guiUpdateLaterRef = useRef<HTMLButtonElement | null>(null);
   const cancelArchiveDeleteRef = useRef<HTMLButtonElement | null>(null);
   const inventorySimulatorHostRef = useRef<HTMLDivElement | null>(null);
 
@@ -1108,9 +1118,17 @@ function App() {
     if (!("__TAURI_INTERNALS__" in window)) return;
     let disposed = false;
     void getVersion().then((currentVersion) => {
-      if (!disposed) setAppVersion(currentVersion);
+      if (disposed) return;
+      setAppVersion(currentVersion);
+      setGuiUpdate((current) => ({ ...current, currentVersion }));
+      void checkGuiApplicationUpdate(false, currentVersion);
     }).catch(() => undefined);
-    return () => { disposed = true; };
+    return () => {
+      disposed = true;
+      const pending = pendingGuiUpdateRef.current;
+      pendingGuiUpdateRef.current = null;
+      if (pending) void pending.close().catch(() => undefined);
+    };
   }, []);
 
   useEffect(() => {
@@ -2642,6 +2660,94 @@ function App() {
     }
   }
 
+  async function checkGuiApplicationUpdate(manual = true, knownCurrentVersion?: string) {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    if (guiUpdate.phase === "checking" || guiUpdate.phase === "downloading" || guiUpdate.phase === "installing") return;
+    setReleaseNotice("");
+    const currentVersion = knownCurrentVersion
+      ?? await getVersion().catch(() => guiUpdate.currentVersion || appVersion || packageMetadata.version);
+    setGuiUpdate({ phase: "checking", currentVersion });
+    try {
+      const previous = pendingGuiUpdateRef.current;
+      pendingGuiUpdateRef.current = null;
+      if (previous) await previous.close().catch(() => undefined);
+
+      const update = await check({ timeout: 15_000 });
+      if (!update) {
+        setGuiUpdate({
+          phase: "current",
+          currentVersion,
+          availableVersion: currentVersion,
+        });
+        setGuiUpdateDialogOpen(false);
+        if (manual) setReleaseNotice(words.releaseUpToDate);
+        return;
+      }
+
+      pendingGuiUpdateRef.current = update;
+      setGuiUpdate({
+        phase: "available",
+        currentVersion,
+        availableVersion: update.version,
+        notes: update.body ?? undefined,
+      });
+      setGuiUpdateDialogOpen(true);
+    } catch {
+      setGuiUpdate({
+        phase: "error",
+        currentVersion,
+      });
+    }
+  }
+
+  async function installGuiApplicationUpdate() {
+    const update = pendingGuiUpdateRef.current;
+    if (!update || guiUpdate.phase !== "available") return;
+    let downloadedBytes = 0;
+    let totalBytes: number | undefined;
+    setReleaseNotice("");
+    setGuiUpdate((current) => ({
+      ...current,
+      phase: "downloading",
+      downloadedBytes: 0,
+    }));
+    try {
+      await update.downloadAndInstall((event) => {
+        if (event.event === "Started") {
+          totalBytes = event.data.contentLength ?? undefined;
+          setGuiUpdate((current) => ({
+            ...current,
+            phase: "downloading",
+            downloadedBytes: 0,
+            totalBytes,
+          }));
+        } else if (event.event === "Progress") {
+          downloadedBytes += event.data.chunkLength;
+          setGuiUpdate((current) => ({
+            ...current,
+            phase: "downloading",
+            downloadedBytes,
+            totalBytes,
+          }));
+        } else if (event.event === "Finished") {
+          setGuiUpdate((current) => ({
+            ...current,
+            phase: "installing",
+            downloadedBytes,
+            totalBytes,
+          }));
+        }
+      }, { timeout: 120_000 });
+      pendingGuiUpdateRef.current = null;
+      await relaunch();
+    } catch {
+      setGuiUpdate((current) => ({
+        ...current,
+        phase: "error",
+      }));
+    }
+  }
+
   async function finishPlaybackChange(result: PlaybackInstallResult, action: "install" | "rollback") {
     setReleaseNotice(action === "install"
       ? (language === "zh"
@@ -3317,6 +3423,7 @@ function App() {
             detectionCompleted={installDetectionCompleted}
             inspecting={inspectingEnvironment}
             appVersion={appVersion}
+            guiUpdate={guiUpdate}
             playbackRelease={playbackRelease}
             playbackReleaseError={playbackReleaseError}
             releaseAction={releaseAction}
@@ -3334,6 +3441,8 @@ function App() {
             onDetectCs2={() => void detectCs2Installations()}
             onUseCandidate={useCs2Candidate}
             onInspectEnvironment={() => void runEnvironmentInspection()}
+            onCheckGuiUpdate={() => void checkGuiApplicationUpdate()}
+            onInstallGuiUpdate={() => setGuiUpdateDialogOpen(true)}
             onInstallPlaybackBundle={() => void installPlaybackBundle()}
             onRollbackPlayback={() => void rollbackPlaybackInstall()}
             onLoadServerConfig={() => void loadServerConfig()}
@@ -3534,6 +3643,92 @@ function App() {
           <strong>{words.dropDemo}</strong>
           <span>{words.dropTypes}</span>
         </div>
+      ) : null}
+
+      {guiUpdateDialogOpen ? (
+        <DialogPrimitive
+          labelledBy="gui-update-title"
+          describedBy="gui-update-description"
+          onDismiss={() => {
+            if (guiUpdate.phase !== "downloading" && guiUpdate.phase !== "installing") {
+              setGuiUpdateDialogOpen(false);
+            }
+          }}
+          initialFocusRef={guiUpdateLaterRef}
+          dismissOnScrimClick={false}
+          className="dialog-surface gui-update-dialog"
+        >
+          <header className="dialog-header update-dialog-header">
+            <div>
+              <span className="dialog-eyebrow">{words.releaseUpdateStatus}</span>
+              <h2 id="gui-update-title">{words.releaseUpdateTitle}</h2>
+            </div>
+            <button
+              className="icon-button"
+              type="button"
+              disabled={guiUpdate.phase === "downloading" || guiUpdate.phase === "installing"}
+              onClick={() => setGuiUpdateDialogOpen(false)}
+              aria-label={words.close}
+            >
+              <CloseIcon size={16} />
+            </button>
+          </header>
+
+          <div className="update-dialog-version" aria-label={words.releaseUpdateTitle}>
+            <div><span>{words.releaseCurrentVersion}</span><strong>v{guiUpdate.currentVersion || "—"}</strong></div>
+            <ArrowIcon size={18} />
+            <div><span>{words.releaseLatestVersion}</span><strong>v{guiUpdate.availableVersion || "—"}</strong></div>
+          </div>
+
+          <section className="update-dialog-release-notes" aria-labelledby="gui-update-notes-title">
+            <h3 id="gui-update-notes-title">{words.releaseUpdateNotes}</h3>
+            <p>{releaseNotesForLanguage(guiUpdate.notes, language) || words.releaseGenericNotes}</p>
+          </section>
+
+          <p id="gui-update-description" className="update-dialog-scope">{words.releaseUpdateScope}</p>
+
+          {guiUpdate.totalBytes && guiUpdate.downloadedBytes != null ? (
+            <div className="update-dialog-progress" role="status" aria-live="polite">
+              <div>
+                <span>{words.releaseDownloading}</span>
+                <strong>{Math.min(100, Math.round((guiUpdate.downloadedBytes / guiUpdate.totalBytes) * 100))}%</strong>
+              </div>
+              <div className="release-progress"><span style={{ width: `${Math.min(100, Math.round((guiUpdate.downloadedBytes / guiUpdate.totalBytes) * 100))}%` }} /></div>
+            </div>
+          ) : null}
+
+          {guiUpdate.phase === "installing" ? (
+            <p className="update-dialog-status" role="status">{words.releaseInstallingDesktop}</p>
+          ) : null}
+          {guiUpdate.phase === "error" ? <p className="release-error update-dialog-error"><AlertIcon size={15} />{words.releaseCheckUnavailable}</p> : null}
+
+          <footer className="dialog-actions">
+            <button
+              ref={guiUpdateLaterRef}
+              className="secondary-button"
+              type="button"
+              disabled={guiUpdate.phase === "downloading" || guiUpdate.phase === "installing"}
+              onClick={() => setGuiUpdateDialogOpen(false)}
+            >
+              {words.releaseLater}
+            </button>
+            <button
+              className="primary-button"
+              type="button"
+              disabled={guiUpdate.phase === "checking" || guiUpdate.phase === "downloading" || guiUpdate.phase === "installing"}
+              onClick={() => {
+                if (guiUpdate.phase === "error") void checkGuiApplicationUpdate();
+                else void installGuiApplicationUpdate();
+              }}
+            >
+              {guiUpdate.phase === "checking" ? words.releaseChecking
+                : guiUpdate.phase === "downloading" ? words.releaseDownloading
+                  : guiUpdate.phase === "installing" ? words.releaseInstalling
+                    : guiUpdate.phase === "error" ? words.releaseCheckNow
+                      : words.releaseInstallNow}
+            </button>
+          </footer>
+        </DialogPrimitive>
       ) : null}
 
       {overwriteConflict ? (

@@ -467,6 +467,24 @@ export interface PlaybackInstallResult {
   gameCsgoPath: string;
 }
 
+export type GuiUpdatePhase =
+  | "idle"
+  | "checking"
+  | "current"
+  | "available"
+  | "downloading"
+  | "installing"
+  | "error";
+
+export interface GuiUpdateStatus {
+  phase: GuiUpdatePhase;
+  currentVersion: string;
+  availableVersion?: string;
+  notes?: string;
+  downloadedBytes?: number;
+  totalBytes?: number;
+}
+
 export type EnvironmentOverallStatus = "pass" | "warning" | "error" | "unverified";
 export type EnvironmentCheckStatus = EnvironmentOverallStatus | "notApplicable";
 export type RuntimeVerificationStatus = "verified" | "notRunning" | "unavailable" | "unknown";

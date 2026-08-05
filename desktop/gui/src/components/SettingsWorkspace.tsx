@@ -29,6 +29,7 @@ import type {
   EnvironmentDiagnosticReport,
   EnvironmentOverallStatus,
   EnvironmentPluginClassification,
+  GuiUpdateStatus,
   Language,
   LocalEnvironmentSettings,
   PlaybackReleaseStatus,
@@ -37,6 +38,7 @@ import type {
   ServerConfigValidation,
   UiSkin,
 } from "../types";
+import { releaseNotesForLanguage } from "../releaseNotes";
 import { SERVER_CONFIG_GUIDE, type ServerConfigGuideGroup } from "../serverConfigGuide";
 import type {
   PlaybackHandoffMode,
@@ -70,6 +72,7 @@ interface SettingsWorkspaceProps {
   detectionCompleted: boolean;
   inspecting: boolean;
   appVersion: string;
+  guiUpdate: GuiUpdateStatus;
   playbackRelease: PlaybackReleaseStatus | null;
   playbackReleaseError: string;
   releaseAction: "installingFile" | "rollingBack" | null;
@@ -81,6 +84,8 @@ interface SettingsWorkspaceProps {
   onDetectCs2: () => void;
   onUseCandidate: (candidate: Cs2InstallCandidate) => void;
   onInspectEnvironment: () => void;
+  onCheckGuiUpdate: () => void;
+  onInstallGuiUpdate: () => void;
   onInstallPlaybackBundle: () => void;
   onRollbackPlayback: () => void;
   onLoadServerConfig: () => void;
@@ -281,6 +286,7 @@ export function SettingsWorkspace({
   detectionCompleted,
   inspecting,
   appVersion,
+  guiUpdate,
   playbackRelease,
   playbackReleaseError,
   releaseAction,
@@ -292,6 +298,8 @@ export function SettingsWorkspace({
   onDetectCs2,
   onUseCandidate,
   onInspectEnvironment,
+  onCheckGuiUpdate,
+  onInstallGuiUpdate,
   onInstallPlaybackBundle,
   onRollbackPlayback,
   onLoadServerConfig,
@@ -664,6 +672,17 @@ export function SettingsWorkspace({
   );
 
   const releaseBusy = releaseAction !== null;
+  const guiUpdateBusy = guiUpdate.phase === "checking"
+    || guiUpdate.phase === "downloading"
+    || guiUpdate.phase === "installing";
+  const guiStatus = guiUpdate.phase === "checking" ? words.releaseChecking
+    : guiUpdate.phase === "current" ? words.releaseUpToDate
+      : guiUpdate.phase === "available" ? words.releaseUpdateAvailable
+        : guiUpdate.phase === "downloading" ? words.releaseDownloading
+          : guiUpdate.phase === "installing" ? words.releaseInstalling
+            : guiUpdate.phase === "error" ? words.releaseCheckUnavailable
+              : words.releaseNotChecked;
+  const guiReleaseNotes = releaseNotesForLanguage(guiUpdate.notes, language);
   const updatesView = (
     <div className="settings-pane release-manager-pane">
       <header className="settings-pane-header">
@@ -677,12 +696,30 @@ export function SettingsWorkspace({
           <div>
             <h3 id="desktop-release-title">{words.releaseDesktopApp}</h3>
           </div>
-          <span className="count-badge">v{appVersion || playbackRelease?.appVersion || "1.0.0"}</span>
+          <span className={`count-badge${guiUpdate.phase === "available" ? " is-warning" : ""}`}>
+            v{guiUpdate.currentVersion || appVersion || playbackRelease?.appVersion || "1.0.0"}
+          </span>
         </div>
+        <div className="release-version-grid desktop-update-version-grid">
+          <div><span>{words.releaseCurrentVersion}</span><strong>v{guiUpdate.currentVersion || appVersion || "—"}</strong></div>
+          <div><span>{words.releaseLatestVersion}</span><strong>{guiUpdate.availableVersion ? `v${guiUpdate.availableVersion}` : "—"}</strong></div>
+          <div><span>{words.releaseUpdateStatus}</span><strong>{guiStatus}</strong></div>
+        </div>
+        {guiReleaseNotes ? <p className="release-notes">{guiReleaseNotes}</p> : null}
+        {guiUpdate.phase === "error" ? <p className="release-error"><AlertIcon size={15} />{words.releaseCheckUnavailable}</p> : null}
         <div className="release-actions">
-          <button className="secondary-button" type="button" onClick={() => onOpenExternal("https://github.com/unicbm/demotracer/releases")}>
-            <ExternalLinkIcon size={15} />{words.releaseOpenGithub}
+          <button className="secondary-button" type="button" disabled={guiUpdateBusy} onClick={onCheckGuiUpdate}>
+            <RefreshIcon size={15} />{guiUpdate.phase === "checking" ? words.releaseChecking : words.releaseCheckNow}
           </button>
+          {guiUpdate.phase === "available" ? (
+            <button className="primary-button" type="button" onClick={onInstallGuiUpdate}>
+              <ReplayIcon size={15} />{words.releaseInstallNow}
+            </button>
+          ) : (
+            <button className="text-button" type="button" onClick={() => onOpenExternal("https://github.com/unicbm/demotracer/releases")}>
+              <ExternalLinkIcon size={15} />{words.releaseOpenGithub}
+            </button>
+          )}
         </div>
       </section>
 

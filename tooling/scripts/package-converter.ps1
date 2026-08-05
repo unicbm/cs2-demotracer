@@ -7,6 +7,7 @@
 param(
     [string]$Version = "1.0.0",
     [string]$OutputRoot = "dist",
+    [string]$UpdaterPublicKeyPath = "tooling\release\updater-public-key.txt",
     [string]$CertificateThumbprint = "",
     [string]$TimestampUrl = "http://timestamp.digicert.com",
     [switch]$AllowUnsignedInstaller,
@@ -21,6 +22,12 @@ $desktopRoot = Join-Path $repoRoot "desktop\gui"
 $bundleRoot = Join-Path $desktopRoot "src-tauri\target\x86_64-pc-windows-msvc\release\bundle\nsis"
 $packageName = "demotracer-gui-v$Version"
 $installerPath = Join-Path $outputRootPath "$packageName.exe"
+$signaturePath = "$installerPath.sig"
+$publicKeyPath = if ([System.IO.Path]::IsPathRooted($UpdaterPublicKeyPath)) {
+    $UpdaterPublicKeyPath
+} else {
+    Join-Path $repoRoot $UpdaterPublicKeyPath
+}
 
 & (Join-Path $PSScriptRoot "assert-clean-worktree.ps1") -RepoRoot $repoRoot
 & (Join-Path $PSScriptRoot "check-release-contract.ps1") -Version $Version
@@ -35,6 +42,17 @@ function Invoke-Checked([string]$Command, [string[]]$Arguments) {
     & $Command @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw "$Command failed with exit code $LASTEXITCODE"
+    }
+}
+
+Require-Path $publicKeyPath "Tauri updater public key"
+if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY) -and
+    [string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY_PATH)) {
+    $defaultPrivateKey = Join-Path $env:USERPROFILE ".tauri\cs2-demotracer.key"
+    if (Test-Path -LiteralPath $defaultPrivateKey -PathType Leaf) {
+        $env:TAURI_SIGNING_PRIVATE_KEY_PATH = $defaultPrivateKey
+    } else {
+        throw "Tauri updater private key is unavailable. Set TAURI_SIGNING_PRIVATE_KEY_PATH or TAURI_SIGNING_PRIVATE_KEY."
     }
 }
 
@@ -98,6 +116,19 @@ if ($builtInstallers.Count -ne 1) {
 New-Item -ItemType Directory -Force -Path $outputRootPath | Out-Null
 Copy-Item -LiteralPath $builtInstallers[0].FullName -Destination $installerPath -Force
 
+Push-Location $desktopRoot
+try {
+    $signerArgs = @("tauri", "signer", "sign")
+    if ([string]::IsNullOrEmpty($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)) {
+        $signerArgs += "--password="
+    }
+    $signerArgs += $installerPath
+    Invoke-Checked "pnpm.cmd" $signerArgs
+} finally {
+    Pop-Location
+}
+Require-Path $signaturePath "Tauri updater signature"
+
 $authenticode = Get-AuthenticodeSignature -LiteralPath $installerPath
 if (-not [string]::IsNullOrWhiteSpace($CertificateThumbprint)) {
     if ($authenticode.Status -ne "Valid") {
@@ -109,6 +140,7 @@ if (-not [string]::IsNullOrWhiteSpace($CertificateThumbprint)) {
 }
 
 Write-Host "Wrote $installerPath"
+Write-Host "Wrote $signaturePath"
 if ($authenticode.Status -ne "Valid") {
     Write-Warning "Created an unsigned NSIS installer. Windows SmartScreen may warn."
 }

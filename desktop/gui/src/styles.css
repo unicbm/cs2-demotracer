@@ -2776,6 +2776,110 @@ input[type="radio"] {
   width: min(590px, calc(100vw - 48px));
 }
 
+.gui-update-dialog {
+  width: min(500px, calc(100vw - 48px));
+  padding: 22px;
+}
+
+.update-dialog-header > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.dialog-eyebrow {
+  color: var(--text-tertiary);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.update-dialog-version {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  margin-top: 18px;
+  padding: 14px 16px;
+  gap: 14px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+}
+
+.update-dialog-version > div {
+  display: grid;
+  gap: 4px;
+}
+
+.update-dialog-version > div:last-child {
+  text-align: right;
+}
+
+.update-dialog-version span {
+  color: var(--text-tertiary);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.update-dialog-version strong {
+  font-family: var(--mono);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.update-dialog-version > svg {
+  color: var(--text-tertiary);
+}
+
+.update-dialog-release-notes {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+}
+
+.update-dialog-release-notes h3 {
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.update-dialog-release-notes p {
+  margin-top: 8px;
+  font-size: var(--type-body);
+  line-height: 21px;
+  white-space: pre-wrap;
+}
+
+.update-dialog-scope,
+.update-dialog-status {
+  margin-top: 12px;
+  color: var(--text-tertiary);
+  font-size: var(--type-support);
+  line-height: 18px;
+}
+
+.update-dialog-progress {
+  display: grid;
+  margin-top: 14px;
+  gap: 7px;
+}
+
+.update-dialog-progress > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.update-dialog-error {
+  margin: 14px 0 0;
+}
+
 .dialog-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

@@ -114,20 +114,24 @@ Assert-Equal "NSIS install mode" ([string]$tauriConfig.bundle.windows.nsis.insta
 if (@($tauriCapability.permissions) -notcontains "process:default") {
     throw "desktop process permission is missing"
 }
-if (@($tauriCapability.permissions) -contains "updater:default") {
-    throw "desktop updater permission must not be present"
+if (@($tauriCapability.permissions) -notcontains "updater:default") {
+    throw "desktop updater permission is missing"
 }
-Assert-TextAbsent "desktop\gui\package.json" '"@tauri-apps/plugin-updater"\s*:' "desktop updater dependency"
+Assert-TextPresent "desktop\gui\package.json" '"@tauri-apps/plugin-updater"\s*:\s*"2\.10\.1"' "desktop updater dependency"
 Assert-TextPresent "desktop\gui\package.json" '"@tauri-apps/plugin-process"\s*:' "desktop process dependency"
-Assert-TextAbsent "desktop\gui\src-tauri\Cargo.toml" '^tauri-plugin-updater\s*=' "Tauri updater dependency"
+Assert-TextPresent "desktop\gui\src-tauri\Cargo.toml" '^tauri-plugin-updater\s*=\s*"=2\.10\.1"' "Tauri updater dependency"
 Assert-TextAbsent "desktop\gui\src-tauri\Cargo.toml" '^minisign-verify\s*=' "playback signature verifier"
-Assert-TextAbsent "desktop\gui\src-tauri\tauri.conf.json" 'releases\.detr\.site|"updater"\s*:|latest\.json|playback\.json' "remote updater configuration"
+Assert-TextPresent "desktop\gui\src-tauri\tauri.conf.json" 'https://releases\.detr\.site/channels/stable/latest\.json' "stable updater endpoint"
+Assert-Equal "updater install mode" ([string]$tauriConfig.plugins.updater.windows.installMode) "passive"
+$updaterPublicKey = (Read-Text "tooling\release\updater-public-key.txt").Trim()
+Assert-Equal "Tauri updater public key" ([string]$tauriConfig.plugins.updater.pubkey) $updaterPublicKey
 Assert-TextPresent "tooling\scripts\package-converter.ps1" 'CertificateThumbprint' "Authenticode configuration"
 Assert-TextPresent "tooling\scripts\package-converter.ps1" 'demotracer-gui-v\$Version' "GUI release asset name"
 Assert-TextPresent "tooling\scripts\package-server.ps1" 'demotracer-css-v\$Version' "CSS release asset name"
-Assert-PathAbsent "tooling\scripts\publish-r2.ps1" "R2 updater publisher"
 Assert-PathAbsent "tooling\scripts\package-gui-update-test.ps1" "GUI updater test packager"
-Assert-PathAbsent "tooling\release\updater-public-key.txt" "updater public key"
+if (-not (Test-Path -LiteralPath (Join-Path $repoRoot "tooling\scripts\publish-r2.ps1") -PathType Leaf)) {
+    throw "R2 updater publisher is missing"
+}
 
 & (Join-Path $PSScriptRoot "check-first-party-headers.ps1") -RepoRoot $repoRoot
 

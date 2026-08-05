@@ -493,6 +493,29 @@
   gap: 8px;
 }
 
+.release-progress {
+  height: 4px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--trace) 12%, var(--surface-subtle));
+  border-radius: 999px;
+}
+
+.release-progress span {
+  display: block;
+  height: 100%;
+  background: var(--trace);
+  border-radius: inherit;
+  transition: width 120ms linear;
+}
+
+.release-notes {
+  margin: 10px 14px 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: pre-line;
+}
+
 .release-error,
 .release-callout,
 .release-target-path {
