@@ -1342,7 +1342,7 @@ fn inspect_install_receipt(game_csgo: &Path, checks: &mut Vec<DiagnosticCheckDto
                 .collect::<Vec<_>>()
                 .join("; ")
         },
-        expected: Some("DemoTracer ABI 16/minor 33+, BotHider API 1, matching component hashes".to_string()),
+        expected: Some("DemoTracer ABI 18/minor 33+, BotHider API 1, matching component hashes".to_string()),
         actual: Some(format!(
             "ABI {}/{}, BotHider API {}, mismatched files {}",
             receipt.compatibility.bot_controller.abi_major,
@@ -1730,7 +1730,7 @@ fn detect_conflicts(
             confidence: "certain".to_string(),
             title: "CS2-Bot-Improver native vendor files are installed".to_string(),
             summary: format!(
-                "Exact known CS2-Bot-Improver release fingerprints were found: {}. Its native vendor set is not the DemoTracer contract; the v1.4.2 BotController specifically uses ABI 14 instead of DemoTracer's ABI 16/minor 33. Reinstall DemoTracer's complete playback bundle, then keep only compatible post-handoff behavior plugins.",
+                "Exact known CS2-Bot-Improver release fingerprints were found: {}. Its native vendor set is not the DemoTracer contract; the v1.4.2 BotController specifically uses ABI 14 instead of DemoTracer's ABI 18/minor 33. Reinstall DemoTracer's complete playback bundle, then keep only compatible post-handoff behavior plugins.",
                 matched.join(", ")
             ),
             evidence_path: if known_improver_controller {
@@ -1766,9 +1766,9 @@ fn detect_conflicts(
             }
             .to_string(),
             summary: if known_abi14_bridge {
-                "This exact BotControllerImpl build expects ABI 14 and disables itself against DemoTracer's ABI 16 runtime, so Improver behavior plugins cannot obtain their botcontroller:api dependency. Remove BotControllerImpl when using DemoTracer's bundled native runtime."
+                "This exact BotControllerImpl build expects ABI 14 and disables itself against DemoTracer's ABI 18 runtime, so Improver behavior plugins cannot obtain their botcontroller:api dependency. Remove BotControllerImpl when using DemoTracer's bundled native runtime."
             } else {
-                "BotControllerImpl uses the same managed capability surface as post-handoff behavior plugins. Its ABI contract could not be proven; verify that it explicitly supports DemoTracer BotController ABI 16/minor 33 before use."
+                "BotControllerImpl uses the same managed capability surface as post-handoff behavior plugins. Its ABI contract could not be proven; verify that it explicitly supports DemoTracer BotController ABI 18/minor 33 before use."
             }
             .to_string(),
             evidence_path: controller_impl_path
@@ -2448,7 +2448,7 @@ mod tests {
             "demoTracerApi": 7,
             "counterStrikeSharpVersion": "1.0.371.0",
             "botController": {
-                "abiMajor": 16,
+                "abiMajor": 18,
                 "abiMinor": 33,
                 "capabilities": "0x7fff",
                 "buildId": "fixture",
@@ -2512,7 +2512,7 @@ mod tests {
             "demoTracerApi": 7,
             "counterStrikeSharpVersion": "1.0.371.0",
             "botController": {
-                "abiMajor": 16,
+                "abiMajor": 18,
                 "abiMinor": 33,
                 "capabilities": "0x7fff",
                 "buildId": "fixture",

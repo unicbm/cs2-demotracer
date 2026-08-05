@@ -9,7 +9,7 @@
     "max": 8
   },
   "bot_controller": {
-    "abi_major": 16,
+    "abi_major": 18,
     "min_abi_minor": 33,
     "required_capabilities_hex": "0x41ff"
   },
