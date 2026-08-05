@@ -1,0 +1,65 @@
+name: Release NSIS
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-nsis-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-windows-nsis:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore desktop Release cache
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          workspaces: desktop/gui/src-tauri -> target
+          shared-key: desktop-release
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: desktop/gui/pnpm-lock.yaml
+
+      - name: Install desktop dependencies
+        working-directory: desktop/gui
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Windows NSIS installer
+        working-directory: desktop/gui
+        run: pnpm run tauri:build --target x86_64-pc-windows-msvc -- --locked
+
+      - name: Upload unsigned NSIS installer
+        uses: actions/upload-artifact@v6
+        with:
+          name: demotracer-gui-${{ github.ref_name }}-windows-x64
+          path: desktop/gui/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          compression-level: 0
