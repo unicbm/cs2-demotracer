@@ -159,10 +159,13 @@ fn trusted_avatar_url(value: &str) -> bool {
 }
 
 fn parse_animated_avatar_url(html: &str) -> Option<String> {
-    let avatar_start = ["profile_small_header_avatar", "playerAvatar profile_header_size"]
-        .into_iter()
-        .filter_map(|marker| html.find(marker))
-        .min()?;
+    let avatar_start = [
+        "profile_small_header_avatar",
+        "playerAvatar profile_header_size",
+    ]
+    .into_iter()
+    .filter_map(|marker| html.find(marker))
+    .min()?;
     let avatar_html = &html[avatar_start..html.len().min(avatar_start.saturating_add(8 * 1024))];
     let image_start = avatar_html.find("<img")?;
     let image_html = &avatar_html[image_start..];
