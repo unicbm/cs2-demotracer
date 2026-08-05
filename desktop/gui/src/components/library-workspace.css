@@ -886,6 +886,61 @@
 .library-card-skeleton > span:nth-child(3) { width: 88%; }
 .library-card-skeleton > span:nth-child(4) { width: 52%; }
 
+/* Insight skin keeps the dense DemoTracer row layout while borrowing the
+ * authorized black-gold depth and interaction cadence of CS2 Insight. */
+:root[data-skin="insight"] :is(.library-series-group, .library-row) {
+  background:
+    linear-gradient(125deg, color-mix(in srgb, var(--trace) 4%, var(--surface-raised)), var(--surface-raised) 46%);
+  border-color: color-mix(in srgb, var(--trace) 12%, var(--divider));
+  border-left-color: color-mix(in srgb, var(--map-accent) 66%, var(--trace));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent),
+    0 5px 18px color-mix(in srgb, #000 12%, transparent);
+  transition:
+    background var(--duration-base) ease,
+    border-color var(--duration-base) ease,
+    box-shadow var(--duration-slow) ease,
+    transform var(--duration-base) cubic-bezier(.2, .75, .25, 1);
+}
+
+:root[data-skin="insight"] .library-row:hover,
+:root[data-skin="insight"] .library-row:focus-visible,
+:root[data-skin="insight"] .library-series-group:hover,
+:root[data-skin="insight"] .library-series-group:focus-within {
+  animation: none;
+  border-color: color-mix(in srgb, var(--map-accent) 42%, var(--trace));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 7%, transparent),
+    0 11px 30px color-mix(in srgb, #000 22%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--trace) 8%, transparent);
+  transform: translateY(-2px);
+}
+
+:root[data-skin="insight"] :is(.library-row-map-artwork, .library-series-map-artwork) .map-artwork-image {
+  filter: saturate(.94) contrast(1.06) brightness(.92);
+  transition:
+    filter var(--duration-slow) ease,
+    transform 360ms cubic-bezier(.2, .75, .25, 1);
+}
+
+:root[data-skin="insight"] .library-row:hover .library-row-map-artwork .map-artwork-image,
+:root[data-skin="insight"] .library-row:focus-visible .library-row-map-artwork .map-artwork-image,
+:root[data-skin="insight"] .library-series-map-card:hover .map-artwork-image,
+:root[data-skin="insight"] .library-series-map-card:focus-within .map-artwork-image {
+  filter: saturate(1.08) contrast(1.08) brightness(1);
+  transform: scale(1.065);
+}
+
+:root[data-skin="insight"] .library-row-arrow {
+  transition: color var(--duration-fast) ease, transform var(--duration-base) ease;
+}
+
+:root[data-skin="insight"] .library-row:hover .library-row-arrow,
+:root[data-skin="insight"] .library-row:focus-visible .library-row-arrow {
+  color: var(--trace);
+  transform: translateX(3px);
+}
+
 @keyframes library-card-enter {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }

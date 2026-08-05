@@ -59,6 +59,10 @@ test("credits retain the foundational upstream projects", () => {
         id: "csgowiki",
         repositories: ["csgowiki/minidemo-encoder"],
       },
+      {
+        id: "cs2Insight",
+        repositories: ["DrEAmSs59/CS2-insight-agent"],
+      },
     ],
   );
 

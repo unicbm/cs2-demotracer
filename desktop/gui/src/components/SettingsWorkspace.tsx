@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AlertIcon,
+  ArrowIcon,
   CheckIcon,
   ChevronIcon,
   ExternalLinkIcon,
@@ -332,6 +333,7 @@ export function SettingsWorkspace({
   const defaultRootKey = exportRoot.replace(/\\/g, "/").toLocaleLowerCase();
   const normalizedGuideQuery = serverGuideQuery.trim().toLocaleLowerCase();
   const skinOptions = {
+    insight: { label: words.skinInsight, palette: words.skinInsightPalette },
     trace: { label: words.skinTrace, palette: words.skinTracePalette },
     cobalt: { label: words.skinCobalt, palette: words.skinCobaltPalette },
     ember: { label: words.skinEmber, palette: words.skinEmberPalette },
@@ -683,6 +685,9 @@ export function SettingsWorkspace({
             : guiUpdate.phase === "error" ? words.releaseCheckUnavailable
               : words.releaseNotChecked;
   const guiReleaseNotes = releaseNotesForLanguage(guiUpdate.notes, language);
+  const guiProgressPercent = guiUpdate.totalBytes && guiUpdate.downloadedBytes != null
+    ? Math.min(100, Math.round((guiUpdate.downloadedBytes / guiUpdate.totalBytes) * 100))
+    : null;
   const updatesView = (
     <div className="settings-pane release-manager-pane">
       <header className="settings-pane-header">
@@ -691,25 +696,51 @@ export function SettingsWorkspace({
 
       {releaseNotice ? <div className="release-notice" role="status"><CheckIcon size={16} /><span>{releaseNotice}</span></div> : null}
 
-      <section className="settings-card release-card" aria-labelledby="desktop-release-title">
-        <div className="settings-card-heading">
-          <div>
-            <h3 id="desktop-release-title">{words.releaseDesktopApp}</h3>
+      <section
+        className={`settings-card release-card desktop-release-card is-${guiUpdate.phase}`}
+        data-update-phase={guiUpdate.phase}
+        aria-labelledby="desktop-release-title"
+      >
+        <div className="release-product-hero">
+          <span className="release-product-mark" aria-hidden="true"><TraceMark size={27} /></span>
+          <div className="release-product-copy">
+            <span>{words.releaseDesktopApp}</span>
+            <h3 id="desktop-release-title">DemoTracer <code>v{guiUpdate.currentVersion || appVersion || playbackRelease?.appVersion || "1.0.0"}</code></h3>
+            <p>{words.releaseAutomaticUpdates}</p>
           </div>
-          <span className={`count-badge${guiUpdate.phase === "available" ? " is-warning" : ""}`}>
-            v{guiUpdate.currentVersion || appVersion || playbackRelease?.appVersion || "1.0.0"}
+          <span className={`release-status-pill is-${guiUpdate.phase}`} role="status">
+            <i aria-hidden="true" />{guiStatus}
           </span>
         </div>
-        <div className="release-version-grid desktop-update-version-grid">
+
+        <div className="release-version-route" aria-label={words.releaseUpdateStatus}>
           <div><span>{words.releaseCurrentVersion}</span><strong>v{guiUpdate.currentVersion || appVersion || "—"}</strong></div>
+          <span className="release-version-arrow" aria-hidden="true"><ArrowIcon size={17} /></span>
           <div><span>{words.releaseLatestVersion}</span><strong>{guiUpdate.availableVersion ? `v${guiUpdate.availableVersion}` : "—"}</strong></div>
-          <div><span>{words.releaseUpdateStatus}</span><strong>{guiStatus}</strong></div>
         </div>
-        {guiReleaseNotes ? <p className="release-notes">{guiReleaseNotes}</p> : null}
+
+        {guiReleaseNotes ? (
+          <section className="release-notes-panel" aria-label={words.releaseUpdateNotes}>
+            <strong>{words.releaseUpdateNotes}</strong>
+            <p>{guiReleaseNotes}</p>
+          </section>
+        ) : null}
+        {guiUpdate.phase === "downloading" || guiUpdate.phase === "installing" ? (
+          <div className="release-download-feedback" role="status" aria-live="polite">
+            <div>
+              <span>{guiUpdate.phase === "installing" ? words.releaseInstalling : words.releaseDownloading}</span>
+              <strong>{guiProgressPercent != null ? `${guiProgressPercent}%` : "…"}</strong>
+            </div>
+            <div className={`release-progress${guiProgressPercent == null ? " is-indeterminate" : ""}`}>
+              <span style={{ width: `${guiProgressPercent ?? 36}%` }} />
+            </div>
+          </div>
+        ) : null}
         {guiUpdate.phase === "error" ? <p className="release-error"><AlertIcon size={15} />{words.releaseCheckUnavailable}</p> : null}
-        <div className="release-actions">
+        <footer className="release-actions">
           <button className="secondary-button" type="button" disabled={guiUpdateBusy} onClick={onCheckGuiUpdate}>
-            <RefreshIcon size={15} />{guiUpdate.phase === "checking" ? words.releaseChecking : words.releaseCheckNow}
+            <RefreshIcon className={guiUpdate.phase === "checking" ? "release-spin" : undefined} size={15} />
+            {guiUpdate.phase === "checking" ? words.releaseChecking : words.releaseCheckNow}
           </button>
           {guiUpdate.phase === "available" ? (
             <button className="primary-button" type="button" onClick={onInstallGuiUpdate}>
@@ -720,7 +751,7 @@ export function SettingsWorkspace({
               <ExternalLinkIcon size={15} />{words.releaseOpenGithub}
             </button>
           )}
-        </div>
+        </footer>
       </section>
 
       <section className="settings-card release-card" aria-labelledby="playback-release-title">
@@ -1230,7 +1261,18 @@ export function SettingsWorkspace({
   return (
     <section className="settings-workspace" aria-labelledby="settings-workspace-title">
       <div className="settings-titlebar">
-        <h1 id="settings-workspace-title">{words.settingsTitle}</h1>
+        <div className="settings-titlebar-copy">
+          <span className="settings-titlebar-mark" aria-hidden="true"><SlidersIcon size={18} /></span>
+          <div>
+            <h1 id="settings-workspace-title">{words.settingsTitle}</h1>
+            <p>{words.settingsSubtitle}</p>
+          </div>
+        </div>
+        {guiUpdate.phase === "available" ? (
+          <button className="settings-update-shortcut" type="button" onClick={() => setSection("local")}>
+            <i aria-hidden="true" /><span>{words.releaseUpdateAvailable}</span><strong>v{guiUpdate.availableVersion || ""}</strong>
+          </button>
+        ) : null}
       </div>
       <div className="settings-layout">
         <nav className="settings-section-nav" aria-label={words.settingsSections}>
@@ -1239,6 +1281,7 @@ export function SettingsWorkspace({
           </button>
           <button className={section === "local" ? "is-active" : ""} type="button" aria-current={section === "local" ? "page" : undefined} onClick={() => setSection("local")}>
             <FolderIcon size={17} /><span><strong>{words.settingsNavEnvironment}</strong></span>
+            {guiUpdate.phase === "available" ? <i className="settings-nav-update-dot" title={words.releaseUpdateAvailable} aria-hidden="true" /> : null}
           </button>
           <button className={section === "conversion" ? "is-active" : ""} type="button" aria-current={section === "conversion" ? "page" : undefined} onClick={() => setSection("conversion")}>
             <SlidersIcon size={17} /><span><strong>{words.settingsNavExport}</strong></span>
@@ -1255,7 +1298,7 @@ export function SettingsWorkspace({
         </nav>
         <div className="settings-content">
           {section === "general" ? appearanceView : null}
-          {section === "local" ? <div className="settings-combined-pane">{environmentView}{updatesView}{pathsView}</div> : null}
+          {section === "local" ? <div className="settings-combined-pane">{updatesView}{environmentView}{pathsView}</div> : null}
           {section === "conversion" ? exportView : null}
           {section === "playback" ? playbackView : null}
           {section === "advanced" ? serverConfigView : null}

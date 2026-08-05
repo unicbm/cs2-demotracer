@@ -44,7 +44,7 @@ import {
   ResultView,
   ValidationFailedView,
 } from "./components/TaskViews";
-import { AlertIcon, ArrowIcon, CheckIcon, CloseIcon, CopyIcon, FolderIcon } from "./icons";
+import { AlertIcon, ArrowIcon, CheckIcon, CloseIcon, CopyIcon, FolderIcon, RefreshIcon, ReplayIcon } from "./icons";
 import { COSMETIC_PHRASE, TEXT } from "./i18n";
 import {
   normalizeTheme,
@@ -3313,6 +3313,17 @@ function App() {
     </div>
   ) : null;
 
+  const guiUpdateDialogStatus = guiUpdate.phase === "checking" ? words.releaseChecking
+    : guiUpdate.phase === "current" ? words.releaseUpToDate
+      : guiUpdate.phase === "available" ? words.releaseUpdateAvailable
+        : guiUpdate.phase === "downloading" ? words.releaseDownloading
+          : guiUpdate.phase === "installing" ? words.releaseInstalling
+            : guiUpdate.phase === "error" ? words.releaseCheckUnavailable
+              : words.releaseNotChecked;
+  const guiUpdateDialogProgress = guiUpdate.totalBytes && guiUpdate.downloadedBytes != null
+    ? Math.min(100, Math.round((guiUpdate.downloadedBytes / guiUpdate.totalBytes) * 100))
+    : null;
+
   return (
     <div className="app-shell">
       <AppChrome
@@ -3656,22 +3667,30 @@ function App() {
           }}
           initialFocusRef={guiUpdateLaterRef}
           dismissOnScrimClick={false}
-          className="dialog-surface gui-update-dialog"
+          className={`dialog-surface gui-update-dialog is-${guiUpdate.phase}`}
         >
           <header className="dialog-header update-dialog-header">
-            <div>
-              <span className="dialog-eyebrow">{words.releaseUpdateStatus}</span>
-              <h2 id="gui-update-title">{words.releaseUpdateTitle}</h2>
+            <div className="update-dialog-heading">
+              <span className="update-dialog-mark" aria-hidden="true"><ReplayIcon size={20} /></span>
+              <div>
+                <span className="dialog-eyebrow">{words.releaseUpdateStatus}</span>
+                <h2 id="gui-update-title">{words.releaseUpdateTitle}</h2>
+              </div>
             </div>
-            <button
-              className="icon-button"
-              type="button"
-              disabled={guiUpdate.phase === "downloading" || guiUpdate.phase === "installing"}
-              onClick={() => setGuiUpdateDialogOpen(false)}
-              aria-label={words.close}
-            >
-              <CloseIcon size={16} />
-            </button>
+            <div className="update-dialog-header-actions">
+              <span className={`update-dialog-state is-${guiUpdate.phase}`} role="status">
+                <i aria-hidden="true" />{guiUpdateDialogStatus}
+              </span>
+              <button
+                className="icon-button"
+                type="button"
+                disabled={guiUpdate.phase === "downloading" || guiUpdate.phase === "installing"}
+                onClick={() => setGuiUpdateDialogOpen(false)}
+                aria-label={words.close}
+              >
+                <CloseIcon size={16} />
+              </button>
+            </div>
           </header>
 
           <div className="update-dialog-version" aria-label={words.releaseUpdateTitle}>
@@ -3687,13 +3706,15 @@ function App() {
 
           <p id="gui-update-description" className="update-dialog-scope">{words.releaseUpdateScope}</p>
 
-          {guiUpdate.totalBytes && guiUpdate.downloadedBytes != null ? (
+          {guiUpdate.phase === "downloading" || guiUpdate.phase === "installing" ? (
             <div className="update-dialog-progress" role="status" aria-live="polite">
               <div>
-                <span>{words.releaseDownloading}</span>
-                <strong>{Math.min(100, Math.round((guiUpdate.downloadedBytes / guiUpdate.totalBytes) * 100))}%</strong>
+                <span>{guiUpdate.phase === "installing" ? words.releaseInstalling : words.releaseDownloading}</span>
+                <strong>{guiUpdateDialogProgress != null ? `${guiUpdateDialogProgress}%` : "…"}</strong>
               </div>
-              <div className="release-progress"><span style={{ width: `${Math.min(100, Math.round((guiUpdate.downloadedBytes / guiUpdate.totalBytes) * 100))}%` }} /></div>
+              <div className={`release-progress${guiUpdateDialogProgress == null ? " is-indeterminate" : ""}`}>
+                <span style={{ width: `${guiUpdateDialogProgress ?? 36}%` }} />
+              </div>
             </div>
           ) : null}
 
@@ -3721,6 +3742,7 @@ function App() {
                 else void installGuiApplicationUpdate();
               }}
             >
+              {guiUpdate.phase === "checking" ? <RefreshIcon className="release-spin" size={15} /> : <ReplayIcon size={15} />}
               {guiUpdate.phase === "checking" ? words.releaseChecking
                 : guiUpdate.phase === "downloading" ? words.releaseDownloading
                   : guiUpdate.phase === "installing" ? words.releaseInstalling

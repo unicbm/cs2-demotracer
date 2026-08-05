@@ -7,7 +7,7 @@ local paths, or logs.
 | Trigger | Request | Data sent |
 | --- | --- | --- |
 | The desktop app starts, or the user clicks **Check for updates** | `releases.detr.site/channels/stable/latest.json` | Current app version, Windows updater target/architecture, and normal request metadata |
-| A roster is visible | `steamcommunity.com/profiles/<steamid>?xml=1` | SteamID64 and normal request metadata |
+| A roster is visible | `steamcommunity.com/profiles/<steamid>?xml=1` and the public profile page | SteamID64 and normal request metadata |
 | **About & credits** is opened | `avatars.githubusercontent.com` | Public GitHub avatar identifier and normal request metadata |
 | A cosmetic image is opened | `cdn.cstrike.app` | Catalog image key and normal request metadata |
 | The optional 3D preview is opened | `3d.cstrike.app` | Cosmetic render parameters and normal request metadata |
@@ -15,9 +15,10 @@ local paths, or logs.
 | An external link is opened | System browser | Normal browser request metadata under the destination's policy |
 
 Steam profile enhancement is automatic, best-effort, and cached for 24 hours.
-Failure is silent and never blocks parsing, conversion, or validation. Cosmetic
-requests occur only for separately enabled/exported evidence and user-opened
-previews.
+The XML response supplies identity and a static avatar fallback; the public
+profile page may supply an official animated avatar. Failure is silent and
+never blocks parsing, conversion, or validation. Cosmetic requests occur only
+for separately enabled/exported evidence and user-opened previews.
 
 GitHub avatars are requested only while the user-visible credits board is open.
 They identify the already public GitHub accounts named on that page. An offline

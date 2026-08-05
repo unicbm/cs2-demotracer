@@ -222,6 +222,60 @@
   --motion-fast: var(--duration-fast);
 }
 
+/* Authorized adaptation of the CS2 Insight black-gold visual language.
+ * Source and authorization scope: docs/CS2_INSIGHT_GUI_REFERENCE.md */
+:root[data-skin="insight"] {
+  --skin-app-light: #e9e5dc;
+  --skin-workspace-light: #f3efe6;
+  --skin-surface-light: #fbf8f0;
+  --skin-subtle-light: #ede7db;
+  --skin-muted-light: #dfd6c6;
+  --skin-divider-light: #c9bda8;
+  --skin-divider-strong-light: #8f7a55;
+  --skin-text-light: #201b12;
+  --skin-text-secondary-light: #5d5342;
+  --skin-text-tertiary-light: #7d6e56;
+  --skin-text-disabled-light: #a99c87;
+  --skin-accent-light: #a96608;
+  --skin-accent-hover-light: #8e5505;
+  --skin-accent-pressed-light: #744403;
+  --skin-accent-soft-light: #f2dfb8;
+  --skin-accent-ink-light: #fffaf0;
+  --skin-focus-light: #c88718;
+  --skin-selection-light: #f0dfbe;
+  --skin-hover-light: #eee6d6;
+
+  --skin-app-dark: #090a08;
+  --skin-workspace-dark: #0d0e0b;
+  --skin-surface-dark: #151611;
+  --skin-subtle-dark: #1b1c16;
+  --skin-muted-dark: #24241c;
+  --skin-divider-dark: #343226;
+  --skin-divider-strong-dark: #6f633f;
+  --skin-text-dark: #f6f0e3;
+  --skin-text-secondary-dark: #c8bda6;
+  --skin-text-tertiary-dark: #91856e;
+  --skin-text-disabled-dark: #625b4c;
+  --skin-accent-dark: #e6a229;
+  --skin-accent-hover-dark: #f5b947;
+  --skin-accent-pressed-dark: #c88314;
+  --skin-accent-soft-dark: #2c2414;
+  --skin-accent-ink-dark: #160d02;
+  --skin-focus-dark: #ffd06a;
+  --skin-selection-dark: #272113;
+  --skin-hover-dark: #1c1b14;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --selection-rail-width: 3px;
+  --surface-shadow: 0 8px 24px color-mix(in srgb, #000 18%, transparent);
+  --duration-fast: 130ms;
+  --duration-base: 190ms;
+  --duration-slow: 260ms;
+  --motion-fast: var(--duration-fast);
+}
+
 :root {
   font-family: "Noto Sans SC Local", "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
   color: var(--text-primary);
@@ -2777,14 +2831,90 @@ input[type="radio"] {
 }
 
 .gui-update-dialog {
-  width: min(500px, calc(100vw - 48px));
-  padding: 22px;
+  position: relative;
+  width: min(560px, calc(100vw - 48px));
+  padding: 0;
+  overflow: hidden;
 }
 
-.update-dialog-header > div:first-child {
+.gui-update-dialog::before {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--trace) 68%, transparent), transparent);
+  content: "";
+}
+
+.update-dialog-header {
+  padding: 17px 18px;
+  background:
+    radial-gradient(circle at 7% 0%, color-mix(in srgb, var(--trace) 11%, transparent), transparent 44%),
+    color-mix(in srgb, var(--surface-raised) 94%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--trace) 10%, var(--divider));
+}
+
+.update-dialog-heading {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 11px;
+}
+
+.update-dialog-heading > div {
   display: grid;
+  min-width: 0;
   gap: 4px;
 }
+
+.update-dialog-mark {
+  display: grid;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  color: var(--trace);
+  background: color-mix(in srgb, var(--trace) 11%, var(--surface-subtle));
+  border: 1px solid color-mix(in srgb, var(--trace) 30%, var(--divider));
+  border-radius: 11px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent), 0 7px 20px color-mix(in srgb, var(--trace) 11%, transparent);
+}
+
+.update-dialog-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.update-dialog-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 9px;
+  gap: 7px;
+  color: var(--trace);
+  background: color-mix(in srgb, var(--trace) 9%, var(--surface-subtle));
+  border: 1px solid color-mix(in srgb, var(--trace) 32%, var(--divider));
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.update-dialog-state i {
+  width: 6px;
+  height: 6px;
+  background: var(--trace);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--trace) 13%, transparent);
+}
+
+.update-dialog-state.is-error { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--surface-subtle)); border-color: color-mix(in srgb, var(--danger) 34%, var(--divider)); }
+.update-dialog-state.is-error i { background: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 13%, transparent); }
+.update-dialog-state:is(.is-available, .is-checking, .is-downloading, .is-installing) i { animation: update-dialog-pulse 1.8s ease-in-out infinite; }
 
 .dialog-eyebrow {
   color: var(--text-tertiary);
@@ -2798,10 +2928,10 @@ input[type="radio"] {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  margin-top: 18px;
-  padding: 14px 16px;
+  margin: 16px 18px 0;
+  padding: 13px 14px;
   gap: 14px;
-  background: var(--surface-subtle);
+  background: color-mix(in srgb, var(--surface-subtle) 76%, transparent);
   border: 1px solid var(--divider);
   border-radius: var(--radius-md);
 }
@@ -2829,19 +2959,30 @@ input[type="radio"] {
   font-weight: 700;
 }
 
+.update-dialog-version > div:last-child strong { color: var(--trace); }
+
 .update-dialog-version > svg {
-  color: var(--text-tertiary);
+  width: 30px;
+  height: 30px;
+  padding: 6px;
+  color: var(--trace);
+  background: color-mix(in srgb, var(--trace) 9%, transparent);
+  border-radius: 50%;
 }
 
 .update-dialog-release-notes {
-  margin-top: 14px;
-  padding: 14px 16px;
+  max-height: 230px;
+  margin: 12px 18px 0;
+  padding: 12px 14px;
+  overflow-y: auto;
+  background: color-mix(in srgb, var(--workspace) 56%, transparent);
   border: 1px solid var(--divider);
-  border-radius: var(--radius-md);
+  border-left: 2px solid color-mix(in srgb, var(--trace) 64%, var(--divider));
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
 }
 
 .update-dialog-release-notes h3 {
-  color: var(--text-secondary);
+  color: var(--trace);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -2856,7 +2997,7 @@ input[type="radio"] {
 
 .update-dialog-scope,
 .update-dialog-status {
-  margin-top: 12px;
+  margin: 12px 18px 0;
   color: var(--text-tertiary);
   font-size: var(--type-support);
   line-height: 18px;
@@ -2864,8 +3005,12 @@ input[type="radio"] {
 
 .update-dialog-progress {
   display: grid;
-  margin-top: 14px;
+  margin: 14px 18px 0;
+  padding: 11px 12px;
   gap: 7px;
+  background: color-mix(in srgb, var(--trace) 6%, var(--surface-subtle));
+  border: 1px solid color-mix(in srgb, var(--trace) 20%, var(--divider));
+  border-radius: var(--radius-md);
 }
 
 .update-dialog-progress > div:first-child {
@@ -2876,8 +3021,25 @@ input[type="radio"] {
   font-size: 10px;
 }
 
+.update-dialog-progress strong { color: var(--trace); font: 720 10px/1 var(--mono); }
+
 .update-dialog-error {
-  margin: 14px 0 0;
+  margin: 14px 18px 0;
+}
+
+.gui-update-dialog .dialog-actions {
+  justify-content: flex-end;
+  margin: 16px 0 0;
+  padding: 13px 18px;
+  background: color-mix(in srgb, var(--surface-subtle) 58%, transparent);
+  border-top: 1px solid var(--divider);
+}
+
+.gui-update-dialog .dialog-actions .primary-button { min-width: 116px; }
+
+@keyframes update-dialog-pulse {
+  0%, 100% { opacity: .72; transform: scale(.88); }
+  50% { opacity: 1; transform: scale(1.12); }
 }
 
 .dialog-header {
@@ -3582,6 +3744,97 @@ input[type="radio"] {
 .sidebar-resize-handle:hover::after,
 .sidebar-resize-handle:focus-visible::after,
 :root[data-sidebar-resizing="true"] .sidebar-resize-handle::after { opacity: 1; }
+
+/* Insight feedback language: low-amplitude motion, luminous selection, tactile controls. */
+:root[data-skin="insight"] .application-toolbar {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--trace) 5%, var(--app-bg)), var(--app-bg) 38%);
+  border-bottom-color: color-mix(in srgb, var(--trace) 14%, var(--divider));
+}
+
+:root[data-skin="insight"] .app-sidebar {
+  background:
+    radial-gradient(circle at 18% 4%, color-mix(in srgb, var(--trace) 7%, transparent), transparent 30%),
+    var(--app-bg);
+  border-right-color: color-mix(in srgb, var(--trace) 14%, var(--divider));
+}
+
+:root[data-skin="insight"] .product-lockup > svg {
+  filter: drop-shadow(0 0 12px color-mix(in srgb, var(--trace) 34%, transparent));
+}
+
+:root[data-skin="insight"] .sidebar-nav-item {
+  border: 1px solid transparent;
+  transition:
+    color var(--duration-fast) ease,
+    background-color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-base) ease,
+    transform var(--duration-fast) ease;
+}
+
+:root[data-skin="insight"] .sidebar-nav-item:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--trace) 16%, transparent);
+  transform: translateX(2px);
+}
+
+:root[data-skin="insight"] .sidebar-nav-item:active:not(:disabled) {
+  transform: translateX(1px) scale(.985);
+}
+
+:root[data-skin="insight"] .sidebar-nav-item.is-active {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--trace) 18%, transparent), color-mix(in srgb, var(--trace) 5%, transparent));
+  border-color: color-mix(in srgb, var(--trace) 26%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent),
+    0 5px 18px color-mix(in srgb, var(--trace) 9%, transparent);
+}
+
+:root[data-skin="insight"] .sidebar-nav-item.is-active::before {
+  box-shadow: 0 0 12px color-mix(in srgb, var(--trace) 54%, transparent);
+}
+
+:root[data-skin="insight"] :is(
+  .primary-button,
+  .secondary-button,
+  .quiet-button,
+  .text-button,
+  .icon-button,
+  .sidebar-primary-action > button
+) {
+  transition:
+    color var(--duration-fast) ease,
+    background-color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-base) ease,
+    transform var(--duration-fast) ease;
+}
+
+:root[data-skin="insight"] :is(.primary-button, .sidebar-primary-action > button) {
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 24%, transparent),
+    0 6px 18px color-mix(in srgb, var(--trace) 20%, transparent);
+}
+
+:root[data-skin="insight"] :is(.primary-button, .sidebar-primary-action > button):hover:not(:disabled) {
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 30%, transparent),
+    0 9px 24px color-mix(in srgb, var(--trace) 28%, transparent);
+  transform: translateY(-1px);
+}
+
+:root[data-skin="insight"] :is(.primary-button, .sidebar-primary-action > button):active:not(:disabled) {
+  box-shadow: inset 0 2px 5px color-mix(in srgb, #000 24%, transparent);
+  transform: translateY(0) scale(.98);
+}
+
+:root[data-skin="insight"] :is(.secondary-button, .quiet-button, .text-button, .icon-button):hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+:root[data-skin="insight"] :is(.secondary-button, .quiet-button, .text-button, .icon-button):active:not(:disabled) {
+  transform: translateY(0) scale(.98);
+}
 
 .system-feedback-toast {
   position: absolute;

@@ -41,18 +41,21 @@ describe("appearance preferences", () => {
     assert.equal(resolveTheme("system", true), "dark");
   });
 
-  it("normalizes the four persistent UI skins", () => {
-    assert.deepEqual(UI_SKINS, ["trace", "cobalt", "ember", "signal"]);
+  it("normalizes the five persistent UI skins and defaults to Insight", () => {
+    assert.deepEqual(UI_SKINS, ["insight", "trace", "cobalt", "ember", "signal"]);
     assert.notEqual(UI_SKIN_STORAGE_KEY, THEME_STORAGE_KEY);
+    assert.equal(normalizeUiSkin("insight"), "insight");
     assert.equal(normalizeUiSkin("trace"), "trace");
     assert.equal(normalizeUiSkin("cobalt"), "cobalt");
     assert.equal(normalizeUiSkin("ember"), "ember");
     assert.equal(normalizeUiSkin("signal"), "signal");
-    assert.equal(normalizeUiSkin("invalid"), "trace");
-    assert.equal(normalizeUiSkin(null), "trace");
+    assert.equal(normalizeUiSkin("invalid"), "insight");
+    assert.equal(normalizeUiSkin(null), "insight");
   });
 
   it("uses a native background matched to both skin and theme", () => {
+    assert.equal(themeBackground("insight", "light"), "#e9e5dc");
+    assert.equal(themeBackground("insight", "dark"), "#090a08");
     assert.equal(themeBackground("trace", "light"), "#e8e6e1");
     assert.equal(themeBackground("trace", "dark"), "#10110f");
     assert.equal(themeBackground("cobalt", "light"), "#e7ebf0");

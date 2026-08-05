@@ -4,7 +4,7 @@
  * See LICENSE in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-export type CreditFoundationId = "xbribo" | "ianLucas" | "demoparser" | "csgowiki";
+export type CreditFoundationId = "xbribo" | "ianLucas" | "demoparser" | "csgowiki" | "cs2Insight";
 
 export interface CreditPerson {
   name: string;
@@ -136,6 +136,20 @@ export const DEMOTRACER_CREDITS = {
           name: "Mini Demo Encoder",
           repository: "csgowiki/minidemo-encoder",
           url: "https://github.com/csgowiki/minidemo-encoder",
+        },
+      ],
+    },
+    {
+      id: "cs2Insight",
+      author: "DrEAmSs59",
+      githubHandle: "DrEAmSs59",
+      avatarUrl: "https://avatars.githubusercontent.com/u/50258081?v=4",
+      profileUrl: "https://github.com/DrEAmSs59",
+      projects: [
+        {
+          name: "CS2 Insight Agent · Authorized UI Reference",
+          repository: "DrEAmSs59/CS2-insight-agent",
+          url: "https://github.com/DrEAmSs59/CS2-insight-agent",
         },
       ],
     },

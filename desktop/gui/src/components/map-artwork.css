@@ -20,4 +20,5 @@
   object-position: var(--map-position, center);
   filter: saturate(0.9) contrast(1.04);
   transform: scale(1.002);
+  transition: filter var(--duration-slow) ease, transform var(--duration-slow) ease;
 }
