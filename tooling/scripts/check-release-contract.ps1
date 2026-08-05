@@ -128,6 +128,8 @@ Assert-Equal "Tauri updater public key" ([string]$tauriConfig.plugins.updater.pu
 Assert-TextPresent "tooling\scripts\package-converter.ps1" 'CertificateThumbprint' "Authenticode configuration"
 Assert-TextPresent "tooling\scripts\package-converter.ps1" 'demotracer-gui-v\$Version' "GUI release asset name"
 Assert-TextPresent "tooling\scripts\package-server.ps1" 'demotracer-css-v\$Version' "CSS release asset name"
+Assert-TextPresent "tooling\scripts\package-server.ps1" 'addons\\counterstrikesharp\\shared\\BotRandomizerApi' "packaged BotRandomizer API directory"
+Assert-TextPresent "tooling\scripts\package-server.ps1" 'Copy-RequiredFile[^\r\n]+BotRandomizerApi\.dll[^\r\n]+BotRandomizerApi\.dll' "packaged BotRandomizer API assembly"
 Assert-PathAbsent "tooling\scripts\package-gui-update-test.ps1" "GUI updater test packager"
 if (-not (Test-Path -LiteralPath (Join-Path $repoRoot "tooling\scripts\publish-r2.ps1") -PathType Leaf)) {
     throw "R2 updater publisher is missing"

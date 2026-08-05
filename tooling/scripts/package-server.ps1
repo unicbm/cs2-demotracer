@@ -38,6 +38,7 @@ $botHiderRuntimeRoot = if ([System.IO.Path]::IsPathRooted($BotHiderRuntimePackag
 }
 $cssOut = Join-Path $repoRoot "server\plugins\DemoTracer\bin\$Configuration\net10.0"
 $apiOut = Join-Path $repoRoot "server\plugins\DemoTracerApi\bin\$Configuration\net10.0"
+$botRandomizerApiOut = Join-Path $repoRoot "server\vendor\BotRandomizerApi\bin\$Configuration\net10.0"
 $botHiderCssOut = Join-Path $repoRoot "server\runtime\BotHider\csharp\BotHiderImpl\bin\$Configuration\net10.0"
 $botHiderApiOut = Join-Path $repoRoot "server\runtime\BotHider\csharp\BotHiderApi\bin\$Configuration\net10.0"
 $playbackContractPath = Join-Path $repoRoot "shared\contracts\playback-contract.v1.json"
@@ -247,6 +248,7 @@ Require-Path (Join-Path $botHiderRuntimeRoot "addons\BotHider\gamedata.json") "D
 Require-Path (Join-Path $botHiderRuntimeRoot "addons\metamod\BotHider.vdf") "DemoTracer BotHider Metamod VDF"
 Require-Path (Join-Path $cssOut "DemoTracer.dll") "DemoTracer CSS plugin"
 Require-Path (Join-Path $apiOut "DemoTracerApi.dll") "DemoTracer API assembly"
+Require-Path (Join-Path $botRandomizerApiOut "BotRandomizerApi.dll") "BotRandomizer API assembly"
 Require-Path (Join-Path $botHiderCssOut "DemoTracerBotHider.dll") "DemoTracer BotHider CSS plugin"
 Require-Path (Join-Path $botHiderApiOut "DemoTracerBotHiderApi.dll") "DemoTracer BotHider API assembly"
 
@@ -283,6 +285,8 @@ Copy-RequiredFile (Join-Path $cssOut "cs2-lib-econ-index.v1.json") (Join-Path $p
 Copy-RequiredFile (Join-Path $repoRoot "server\plugins\DemoTracer\demotracer.config.example.json") (Join-Path $pluginOut "demotracer.config.example.json")
 $demoTracerApiSharedOut = Join-Path $stageRoot "addons\counterstrikesharp\shared\DemoTracerApi"
 Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.dll") (Join-Path $demoTracerApiSharedOut "DemoTracerApi.dll")
+$botRandomizerApiSharedOut = Join-Path $stageRoot "addons\counterstrikesharp\shared\BotRandomizerApi"
+Copy-RequiredFile (Join-Path $botRandomizerApiOut "BotRandomizerApi.dll") (Join-Path $botRandomizerApiSharedOut "BotRandomizerApi.dll")
 
 $botHiderPluginOut = Join-Path $stageRoot "addons\counterstrikesharp\plugins\DemoTracerBotHider"
 Copy-RequiredFile (Join-Path $botHiderCssOut "DemoTracerBotHider.deps.json") (Join-Path $botHiderPluginOut "DemoTracerBotHider.deps.json")
@@ -294,6 +298,7 @@ Copy-RequiredFile $harmonySource (Join-Path $stageRoot "addons\counterstrikeshar
 if ($IncludeSymbols) {
     Copy-RequiredFile (Join-Path $cssOut "DemoTracer.pdb") (Join-Path $pluginOut "DemoTracer.pdb")
     Copy-RequiredFile (Join-Path $apiOut "DemoTracerApi.pdb") (Join-Path $demoTracerApiSharedOut "DemoTracerApi.pdb")
+    Copy-RequiredFile (Join-Path $botRandomizerApiOut "BotRandomizerApi.pdb") (Join-Path $botRandomizerApiSharedOut "BotRandomizerApi.pdb")
     Copy-RequiredFile (Join-Path $botHiderCssOut "DemoTracerBotHider.pdb") (Join-Path $botHiderPluginOut "DemoTracerBotHider.pdb")
     Copy-RequiredFile (Join-Path $botHiderApiOut "DemoTracerBotHiderApi.pdb") (Join-Path $botHiderSharedOut "DemoTracerBotHiderApi.pdb")
 }
@@ -423,6 +428,7 @@ through CS2's native `say` / `say_team` path when `dtr_chat_auto on` is enabled
 - `addons/demotracer-install.v1.json` (component contract and file hashes for desktop diagnostics)
 - `addons/counterstrikesharp/plugins/DemoTracerBotHider/`
 - `addons/counterstrikesharp/shared/DemoTracerBotHiderApi/`
+- `addons/counterstrikesharp/shared/BotRandomizerApi/`
 - `addons/counterstrikesharp/shared/DemoTracerApi/`
 - `addons/counterstrikesharp/plugins/DemoTracer/`
   - `demotracer.config.example.json` sanitized local runtime defaults
@@ -454,6 +460,7 @@ Included in this bundle:
 - `DemoTracer` CounterStrikeSharp plugin
 - `DemoTracerBotHider` CounterStrikeSharp plugin
 - `DemoTracerBotHiderApi.dll`
+- `BotRandomizerApi.dll`
 - `DemoTracerApi.dll`
 - `cs2-lib-econ-index.v1.json`
 - `demotracer.config.example.json`

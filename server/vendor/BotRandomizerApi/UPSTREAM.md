@@ -9,6 +9,7 @@
   root `LICENSE` file
 
 The snapshot keeps DemoTracer source builds self-contained. Runtime deployment
-still uses the single canonical `BotRandomizerApi.dll` installed under
-`addons/counterstrikesharp/shared/BotRandomizerApi/`; the playback bundle does
-not package a second copy.
+uses the single canonical `BotRandomizerApi.dll` installed by the playback
+bundle under `addons/counterstrikesharp/shared/BotRandomizerApi/`. Compatible
+BotRandomizer providers must reference that same API v1 contract rather than
+shipping a private plugin-local copy.
