@@ -101,25 +101,10 @@ export function teamRepresentative<T extends { name: string; steamId: string }>(
     ?? [...players].sort((left, right) => left.name.localeCompare(right.name))[0];
 }
 
-export function SteamAvatar({
-  profile,
-  fallbackName,
-  playerColor,
-  size = "normal",
-}: {
-  profile?: SteamProfile;
-  fallbackName: string;
-  playerColor?: string | null;
-  size?: "compact" | "normal" | "hero" | "large";
-}) {
+function useRetryingImage(url: string | null | undefined) {
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const retryTimer = useRef<number | null>(null);
-  const initial = Array.from(fallbackName.trim())[0]?.toLocaleUpperCase() || "?";
-  const accent = demoPlayerColorValue(playerColor);
-  const avatarStyle = accent
-    ? ({ "--steam-avatar-accent": accent } as CSSProperties)
-    : undefined;
 
   useEffect(() => {
     if (retryTimer.current !== null) window.clearTimeout(retryTimer.current);
@@ -129,9 +114,9 @@ export function SteamAvatar({
     return () => {
       if (retryTimer.current !== null) window.clearTimeout(retryTimer.current);
     };
-  }, [profile?.avatarUrl]);
+  }, [url]);
 
-  const retryAvatar = () => {
+  const retry = () => {
     if (retryTimer.current !== null) return;
     if (attempt >= 2) {
       setFailed(true);
@@ -143,18 +128,57 @@ export function SteamAvatar({
     }, 750 * (attempt + 1));
   };
 
+  if (!url || failed) return { src: null, retry };
+  const separator = url.includes("?") ? "&" : "?";
+  return {
+    src: attempt === 0 ? url : `${url}${separator}demotracer-retry=${attempt}`,
+    retry,
+  };
+}
+
+export function SteamAvatar({
+  profile,
+  fallbackName,
+  playerColor,
+  size = "normal",
+}: {
+  profile?: SteamProfile;
+  fallbackName: string;
+  playerColor?: string | null;
+  size?: "compact" | "normal" | "hero" | "large" | "profile";
+}) {
+  const initial = Array.from(fallbackName.trim())[0]?.toLocaleUpperCase() || "?";
+  const accent = demoPlayerColorValue(playerColor);
+  const avatarStyle = accent
+    ? ({ "--steam-avatar-accent": accent } as CSSProperties)
+    : undefined;
+  const avatarImage = useRetryingImage(profile?.avatarUrl);
+  const frameImage = useRetryingImage(profile?.avatarFrameUrl);
+  const loading = size === "compact" || size === "hero" || size === "profile" ? "eager" : "lazy";
+
   return (
-    <span className={`steam-avatar is-${size}${accent ? " has-player-color" : ""}`} style={avatarStyle} title={profile?.personaName} aria-hidden="true">
+    <span className={`steam-avatar is-${size}${accent ? " has-player-color" : ""}${frameImage.src ? " has-profile-frame" : ""}`} style={avatarStyle} title={profile?.personaName} aria-hidden="true">
       <span>{initial}</span>
-      {profile && !failed ? (
+      {avatarImage.src ? (
         <img
-          key={`${profile.avatarUrl}:${attempt}`}
-          src={attempt === 0 ? profile.avatarUrl : `${profile.avatarUrl}?demotracer-retry=${attempt}`}
+          className="steam-avatar-image"
+          src={avatarImage.src}
           alt=""
-          loading={size === "compact" || size === "hero" ? "eager" : "lazy"}
+          loading={loading}
           draggable={false}
           referrerPolicy="no-referrer"
-          onError={retryAvatar}
+          onError={avatarImage.retry}
+        />
+      ) : null}
+      {frameImage.src ? (
+        <img
+          className="steam-avatar-frame"
+          src={frameImage.src}
+          alt=""
+          loading={loading}
+          draggable={false}
+          referrerPolicy="no-referrer"
+          onError={frameImage.retry}
         />
       ) : null}
     </span>
@@ -173,7 +197,7 @@ export function SteamPlayerIdentity({
   demoName: string;
   steamId: string;
   playerColor?: string | null;
-  size?: "compact" | "normal" | "hero" | "large";
+  size?: "compact" | "normal" | "hero" | "large" | "profile";
   className?: string;
 }) {
   const alias = currentSteamAlias(profile, demoName);

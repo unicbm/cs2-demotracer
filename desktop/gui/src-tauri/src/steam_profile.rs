@@ -8,10 +8,11 @@ use quick_xml::{de::from_str, events::Event, Reader};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fs;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const CACHE_DIRECTORY: &str = "steam-profiles-v2";
+const CACHE_DIRECTORY: &str = "steam-profiles-v3";
 const CACHE_TTL_MS: u64 = 24 * 60 * 60 * 1_000;
 const MAX_PROFILES: usize = 32;
 const MAX_PARALLEL_REQUESTS: usize = 4;
@@ -24,6 +25,8 @@ pub(crate) struct SteamProfileDto {
     pub steam_id: String,
     pub persona_name: String,
     pub avatar_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar_frame_url: Option<String>,
     pub profile_url: String,
 }
 
@@ -40,7 +43,15 @@ struct SteamCommunityProfileXml {
     #[serde(rename = "steamID")]
     persona_name: String,
     #[serde(rename = "avatarMedium")]
-    avatar_url: String,
+    avatar_medium_url: String,
+    #[serde(default, rename = "avatarFull")]
+    avatar_full_url: Option<String>,
+}
+
+#[derive(Debug, Default, Eq, PartialEq)]
+struct ProfileAvatarAssets {
+    animated_avatar_url: Option<String>,
+    avatar_frame_url: Option<String>,
 }
 
 pub(crate) fn resolve_profiles(
@@ -128,14 +139,23 @@ fn parse_profile_xml(steam_id: &str, xml: &str) -> Option<SteamProfileDto> {
         return None;
     }
     let persona_name = profile.persona_name.trim();
-    let avatar_url = profile.avatar_url.trim();
-    if persona_name.is_empty() || !trusted_avatar_url(avatar_url) {
+    let avatar_url = profile
+        .avatar_full_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| trusted_avatar_url(value))
+        .or_else(|| {
+            let value = profile.avatar_medium_url.trim();
+            trusted_avatar_url(value).then_some(value)
+        })?;
+    if persona_name.is_empty() {
         return None;
     }
     Some(SteamProfileDto {
         steam_id: steam_id.to_string(),
         persona_name: persona_name.to_string(),
         avatar_url: avatar_url.to_string(),
+        avatar_frame_url: None,
         profile_url: format!("https://steamcommunity.com/profiles/{steam_id}"),
     })
 }
@@ -158,43 +178,100 @@ fn trusted_avatar_url(value: &str) -> bool {
         && PREFIXES.iter().any(|prefix| value.starts_with(prefix))
 }
 
-fn parse_animated_avatar_url(html: &str) -> Option<String> {
+fn parse_profile_avatar_assets(html: &str) -> ProfileAvatarAssets {
     let avatar_start = [
         "profile_small_header_avatar",
         "playerAvatar profile_header_size",
     ]
     .into_iter()
     .filter_map(|marker| html.find(marker))
-    .min()?;
-    let avatar_html = &html[avatar_start..html.len().min(avatar_start.saturating_add(8 * 1024))];
-    let image_start = avatar_html.find("<img")?;
-    let image_html = &avatar_html[image_start..];
-    let image_end = image_html.find('>')?;
-    let mut reader = Reader::from_str(&image_html[..=image_end]);
-    let image = match reader.read_event().ok()? {
-        Event::Start(image) | Event::Empty(image) => image,
-        _ => return None,
+    .min();
+    let Some(avatar_start) = avatar_start else {
+        return ProfileAvatarAssets::default();
+    };
+    let avatar_tail = &html[avatar_start..html.len().min(avatar_start.saturating_add(8 * 1024))];
+    let avatar_end = [
+        "profile_header_centered_col",
+        "profile_small_header_persona",
+    ]
+    .into_iter()
+    .filter_map(|marker| avatar_tail.find(marker))
+    .min()
+    .unwrap_or(avatar_tail.len());
+    let avatar_html = &avatar_tail[..avatar_end];
+    let frame_range = div_element_range(avatar_html, "profile_avatar_frame");
+    let avatar_frame_url = frame_range
+        .as_ref()
+        .and_then(|range| parse_image_url(&avatar_html[range.clone()], trusted_avatar_frame_url));
+    let animated_avatar_url = match frame_range {
+        Some(range) => parse_image_url(&avatar_html[range.end..], trusted_animated_avatar_url)
+            .or_else(|| parse_image_url(&avatar_html[..range.start], trusted_animated_avatar_url)),
+        None => parse_image_url(avatar_html, trusted_animated_avatar_url),
     };
 
-    for expected_name in ["srcset", "data-srcset", "src", "data-src"] {
-        for attribute in image.attributes().flatten() {
-            if attribute
-                .key
-                .as_ref()
-                .eq_ignore_ascii_case(expected_name.as_bytes())
-            {
-                let Ok(value) = attribute.unescape_value() else {
-                    continue;
-                };
-                if let Some(candidate) = value
-                    .split(',')
-                    .filter_map(|candidate| candidate.split_ascii_whitespace().next())
-                    .find(|candidate| trusted_animated_avatar_url(candidate))
+    ProfileAvatarAssets {
+        animated_avatar_url,
+        avatar_frame_url,
+    }
+}
+
+fn div_element_range(html: &str, class_marker: &str) -> Option<Range<usize>> {
+    let marker = html.find(class_marker)?;
+    let start = html[..marker].rfind("<div")?;
+    let mut cursor = start;
+    let mut depth = 0_u32;
+    loop {
+        let next_open = html[cursor..].find("<div").map(|offset| cursor + offset);
+        let next_close = html[cursor..].find("</div>").map(|offset| cursor + offset);
+        match (next_open, next_close) {
+            (Some(open), Some(close)) if open < close => {
+                depth = depth.saturating_add(1);
+                cursor = open.saturating_add(4);
+            }
+            (_, Some(close)) => {
+                depth = depth.checked_sub(1)?;
+                cursor = close.saturating_add("</div>".len());
+                if depth == 0 {
+                    return Some(start..cursor);
+                }
+            }
+            _ => return None,
+        }
+    }
+}
+
+fn parse_image_url(html: &str, trusted_url: fn(&str) -> bool) -> Option<String> {
+    let mut cursor = 0;
+    while let Some(image_offset) = html[cursor..].find("<img") {
+        let image_start = cursor.saturating_add(image_offset);
+        let image_end = image_start.saturating_add(html[image_start..].find('>')?);
+        let mut reader = Reader::from_str(&html[image_start..=image_end]);
+        let image = match reader.read_event().ok()? {
+            Event::Start(image) | Event::Empty(image) => image,
+            _ => return None,
+        };
+
+        for expected_name in ["srcset", "data-srcset", "src", "data-src"] {
+            for attribute in image.attributes().flatten() {
+                if attribute
+                    .key
+                    .as_ref()
+                    .eq_ignore_ascii_case(expected_name.as_bytes())
                 {
-                    return Some(candidate.to_string());
+                    let Ok(value) = attribute.unescape_value() else {
+                        continue;
+                    };
+                    if let Some(candidate) = value
+                        .split(',')
+                        .filter_map(|candidate| candidate.split_ascii_whitespace().next())
+                        .find(|candidate| trusted_url(candidate))
+                    {
+                        return Some(candidate.to_string());
+                    }
                 }
             }
         }
+        cursor = image_end.saturating_add(1);
     }
     None
 }
@@ -205,6 +282,14 @@ fn trusted_animated_avatar_url(value: &str) -> bool {
         && !value.contains(['?', '#'])
         && value.starts_with(PREFIX)
         && value.ends_with(".gif")
+}
+
+fn trusted_avatar_frame_url(value: &str) -> bool {
+    const PREFIX: &str = "https://shared.fastly.steamstatic.com/community_assets/images/items/";
+    value.len() <= 512
+        && !value.contains(['?', '#'])
+        && value.starts_with(PREFIX)
+        && (value.ends_with(".gif") || value.ends_with(".png"))
 }
 
 fn now_ms() -> u64 {
@@ -228,9 +313,11 @@ fn fetch_profile(steam_id: &str) -> Option<SteamProfileDto> {
         crate::http_client::get_https(&profile.profile_url, MAX_PROFILE_HTML_BYTES, 5_000)
     {
         if let Ok(html) = String::from_utf8(bytes) {
-            if let Some(avatar_url) = parse_animated_avatar_url(&html) {
+            let assets = parse_profile_avatar_assets(&html);
+            if let Some(avatar_url) = assets.animated_avatar_url {
                 profile.avatar_url = avatar_url;
             }
+            profile.avatar_frame_url = assets.avatar_frame_url;
         }
     }
     Some(profile)
@@ -253,10 +340,16 @@ mod tests {
             <steamID64>76561198147750283</steamID64>
             <steamID><![CDATA[21baz]]></steamID>
             <avatarMedium><![CDATA[https://avatars.akamai.steamstatic.com/abc_medium.jpg]]></avatarMedium>
+            <avatarFull><![CDATA[https://avatars.akamai.steamstatic.com/abc_full.jpg]]></avatarFull>
         </profile>"#;
         let profile = parse_profile_xml(STEAM_ID, xml).unwrap();
         assert_eq!(profile.persona_name, "21baz");
         assert_eq!(profile.steam_id, STEAM_ID);
+        assert_eq!(
+            profile.avatar_url,
+            "https://avatars.akamai.steamstatic.com/abc_full.jpg"
+        );
+        assert_eq!(profile.avatar_frame_url, None);
         assert_eq!(
             profile.profile_url,
             "https://steamcommunity.com/profiles/76561198147750283"
@@ -285,9 +378,39 @@ mod tests {
                 </div>
             </div>
         "#;
+        let assets = parse_profile_avatar_assets(html);
         assert_eq!(
-            parse_animated_avatar_url(html).as_deref(),
+            assets.animated_avatar_url.as_deref(),
             Some("https://shared.fastly.steamstatic.com/community_assets/images/items/2928650/119373dde20ed21e9e784e98323cfd6ee4ef264d.gif")
+        );
+        assert_eq!(assets.avatar_frame_url, None);
+    }
+
+    #[test]
+    fn separates_profile_frame_from_static_avatar() {
+        let html = r#"
+            <div class="profile_header_content">
+                <div class="playerAvatar profile_header_size online">
+                    <div class="playerAvatarAutoSizeInner">
+                        <div class="profile_avatar_frame">
+                            <picture>
+                                <source media="(prefers-reduced-motion: reduce)" srcset="https://shared.fastly.steamstatic.com/community_assets/images/items/212070/static-frame.png"></source>
+                                <img src="https://shared.fastly.steamstatic.com/community_assets/images/items/212070/animated-frame.gif">
+                            </picture>
+                        </div>
+                        <picture>
+                            <img srcset="https://avatars.fastly.steamstatic.com/static_full.jpg">
+                        </picture>
+                    </div>
+                </div>
+                <div class="profile_header_centered_col"></div>
+            </div>
+        "#;
+        let assets = parse_profile_avatar_assets(html);
+        assert_eq!(assets.animated_avatar_url, None);
+        assert_eq!(
+            assets.avatar_frame_url.as_deref(),
+            Some("https://shared.fastly.steamstatic.com/community_assets/images/items/212070/animated-frame.gif")
         );
     }
 
@@ -300,8 +423,9 @@ mod tests {
                      data-srcset="https://shared.fastly.steamstatic.com/community_assets/images/items/1/animated.gif 1x">
             </div>
         "#;
+        let assets = parse_profile_avatar_assets(html);
         assert_eq!(
-            parse_animated_avatar_url(html).as_deref(),
+            assets.animated_avatar_url.as_deref(),
             Some("https://shared.fastly.steamstatic.com/community_assets/images/items/1/animated.gif")
         );
     }
@@ -310,8 +434,14 @@ mod tests {
     fn rejects_untrusted_or_non_gif_profile_images() {
         let untrusted = r#"<div class="profile_small_header_avatar"><img srcset="https://example.com/avatar.gif"></div>"#;
         let static_image = r#"<div class="profile_small_header_avatar"><img srcset="https://shared.fastly.steamstatic.com/community_assets/images/items/1/avatar.jpg"></div>"#;
-        assert!(parse_animated_avatar_url(untrusted).is_none());
-        assert!(parse_animated_avatar_url(static_image).is_none());
+        assert_eq!(
+            parse_profile_avatar_assets(untrusted),
+            ProfileAvatarAssets::default()
+        );
+        assert_eq!(
+            parse_profile_avatar_assets(static_image),
+            ProfileAvatarAssets::default()
+        );
     }
 
     #[test]

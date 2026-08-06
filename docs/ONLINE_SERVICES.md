@@ -15,9 +15,10 @@ local paths, or logs.
 | An external link is opened | System browser | Normal browser request metadata under the destination's policy |
 
 Steam profile enhancement is automatic, best-effort, and cached for 24 hours.
-The XML response supplies identity and a static avatar fallback; the public
-profile page may supply an official animated avatar. Failure is silent and
-never blocks parsing, conversion, or validation. Cosmetic requests occur only
+The XML response supplies identity and a full-size static avatar fallback; the
+public profile page may supply an official animated avatar and a separate
+profile frame. Failure is silent and never blocks parsing, conversion, or
+validation. Cosmetic requests occur only
 for separately enabled/exported evidence and user-opened previews.
 
 GitHub avatars are requested only while the user-visible credits board is open.

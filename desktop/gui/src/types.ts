@@ -89,6 +89,7 @@ export interface SteamProfile {
   steamId: string;
   personaName: string;
   avatarUrl: string;
+  avatarFrameUrl?: string | null;
   profileUrl: string;
 }
 

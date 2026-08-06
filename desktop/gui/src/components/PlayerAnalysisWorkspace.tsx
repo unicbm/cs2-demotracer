@@ -229,7 +229,7 @@ export function PlayerAnalysisWorkspace({
           <article className="player-analysis-main" aria-labelledby="player-analysis-title">
             <header className="player-analysis-heading">
               <div className="player-analysis-heading-identity">
-                <SteamAvatar profile={steamProfile} fallbackName={player.name} playerColor={player.playerColor} size="hero" />
+                <SteamAvatar profile={steamProfile} fallbackName={player.name} playerColor={player.playerColor} size="profile" />
                 <div>
                   <span>{team.name}</span>
                   <h1 id="player-analysis-title" ref={headingRef} tabIndex={-1}>
