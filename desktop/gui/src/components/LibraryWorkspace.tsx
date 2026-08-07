@@ -71,6 +71,16 @@ function formatDateParts(value: number, language: Language): { date: string; tim
   return { date, time, iso: new Date(value).toISOString() };
 }
 
+function playedAtTimestamp(value: string | null | undefined): number {
+  if (!value?.trim()) return 0;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function librarySortTimestamp(entry: DemoLibraryEntry): number {
+  return playedAtTimestamp(entry.playedAt) || entry.sourceModifiedAtMs || entry.modifiedAtMs;
+}
+
 function formatDuration(value: number | null | undefined): string | null {
   if (!value || !Number.isFinite(value)) return null;
   const totalSeconds = Math.max(0, Math.round(value));
@@ -254,7 +264,7 @@ function LibraryRow({
   const firstPlayerNames = firstPlayers.map((player) => player.name);
   const secondPlayerNames = secondPlayers.map((player) => player.name);
   const duration = formatDuration(entry.durationSeconds);
-  const demoDate = formatDateParts(entry.sourceModifiedAtMs ?? 0, language);
+  const demoDate = formatDateParts(playedAtTimestamp(entry.playedAt), language);
   const sourceName = entry.demoSource ? platformName(entry.demoSource.name) : words.unknownPlatform;
   const scoreStatus = entry.score?.status || (entry.scoreIsSnapshot ? "snapshot" : "final");
   const needsMetadata = entry.metadataStatus !== "current";
@@ -385,7 +395,7 @@ function LibraryRow({
       onContextMenu={openMenu}
     >
       <div className="library-row-date" title={entry.serverName ? `${words.demoServerName}: ${entry.serverName}` : undefined}>
-        <time dateTime={demoDate.iso}>
+        <time dateTime={demoDate.iso} title={demoDate.iso ? undefined : words.matchTimeUnknown}>
           <strong>{demoDate.date}</strong>
           <small>
             <span>{demoDate.time || words.timeUnknown}</span>
@@ -561,7 +571,11 @@ function LibrarySeriesGroup({
       : ordered.length === 1
         ? "BO1"
         : `${ordered.length} MAPS`;
-  const date = formatDateParts(ordered[0].sourceModifiedAtMs ?? 0, language);
+  const playedAt = ordered
+    .map((entry) => playedAtTimestamp(entry.playedAt))
+    .filter((timestamp) => timestamp > 0)
+    .sort((left, right) => left - right)[0] ?? 0;
+  const date = formatDateParts(playedAt, language);
   const source = ordered.find((entry) => entry.demoSource)?.demoSource?.name;
   const firstWonSeries = decidedMaps > 0 && wins.first > wins.second;
   const secondWonSeries = decidedMaps > 0 && wins.second > wins.first;
@@ -591,7 +605,7 @@ function LibrarySeriesGroup({
         onClick={activatePrimary}
         onKeyDown={activatePrimaryFromKeyboard}
       >
-        <time dateTime={date.iso}>
+        <time dateTime={date.iso} title={date.iso ? undefined : words.matchTimeUnknown}>
           <strong>{date.date}</strong>
           <small>
             <span>{format}</span>
@@ -734,8 +748,8 @@ export function LibraryWorkspace({
     .filter((entry) => !mapFilter || entry.map === mapFilter)
     .filter((entry) => !platformFilter || entry.demoSource?.name === platformFilter)
     .sort((left, right) => {
-      const leftDate = left.sourceModifiedAtMs ?? left.modifiedAtMs;
-      const rightDate = right.sourceModifiedAtMs ?? right.modifiedAtMs;
+      const leftDate = librarySortTimestamp(left);
+      const rightDate = librarySortTimestamp(right);
       if (sort === "map") return left.map.localeCompare(right.map) || rightDate - leftDate;
       if (sort === "platform") return (left.demoSource?.name ?? "").localeCompare(right.demoSource?.name ?? "") || rightDate - leftDate;
       return rightDate - leftDate;

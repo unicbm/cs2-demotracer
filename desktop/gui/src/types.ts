@@ -207,6 +207,7 @@ export interface DemoLibraryEntry {
   sourcePath?: string | null;
   sourceAvailable?: boolean;
   sourceModifiedAtMs?: number | null;
+  playedAt?: string | null;
   sourceSizeBytes?: number | string | null;
   durationSeconds?: number | null;
   demoPatchVersion?: number | string | null;

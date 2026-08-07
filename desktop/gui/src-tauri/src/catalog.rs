@@ -64,6 +64,7 @@ pub(crate) struct LibraryEntryDto {
     pub source_path: Option<String>,
     pub source_available: bool,
     pub source_modified_at_ms: Option<u64>,
+    pub played_at: Option<String>,
     pub source_size_bytes: Option<u64>,
     pub duration_seconds: Option<f32>,
     pub demo_patch_version: Option<i32>,
@@ -457,6 +458,7 @@ pub(crate) fn summarize_manifest(path: &Path) -> Result<LibraryEntryDto, String>
         source_path,
         source_available,
         source_modified_at_ms: None,
+        played_at: None,
         source_size_bytes: None,
         duration_seconds: None,
         demo_patch_version: None,
@@ -560,6 +562,7 @@ fn apply_demo_info(
         .as_deref()
         .is_some_and(source_demo_path_is_available);
     entry.source_modified_at_ms = info.source_file_modified_at_ms;
+    entry.played_at = info.played_at;
     entry.source_size_bytes = info.source_file_size_bytes;
     entry.duration_seconds = Some(info.duration_seconds);
     entry.demo_patch_version = info.demo_patch_version;
@@ -626,21 +629,6 @@ fn assign_strict_hltv_series(entries: &mut [LibraryEntryDto]) {
                     .as_deref()
                     .is_some_and(strict_hltv_bundle_path)
         }) {
-            continue;
-        }
-        let timestamps = group
-            .iter()
-            .filter_map(|(index, _)| entries[*index].source_modified_at_ms)
-            .collect::<Vec<_>>();
-        if timestamps.len() != group.len() {
-            continue;
-        }
-        let time_span = timestamps
-            .iter()
-            .max()
-            .unwrap_or(&0)
-            .saturating_sub(*timestamps.iter().min().unwrap_or(&0));
-        if time_span > 36 * 60 * 60 * 1000 {
             continue;
         }
         let maps = group
@@ -1428,6 +1416,7 @@ mod tests {
             source_path: Some(source_path.to_string()),
             source_available: true,
             source_modified_at_ms: Some(modified_at_ms),
+            played_at: None,
             source_size_bytes: Some(1),
             duration_seconds: Some(1.0),
             demo_patch_version: None,
@@ -1521,5 +1510,42 @@ mod tests {
         assign_strict_hltv_series(&mut entries);
 
         assert!(entries.iter().all(|entry| entry.series.is_some()));
+    }
+
+    #[test]
+    fn strict_hltv_series_ignores_download_time_skew() {
+        let parent =
+            r"C:\demos\iem-cologne-major-2026-spirit-vs-falcons-bo3-wEPPcZigNVs8eZdF9kjqcz";
+        let mut entries = vec![
+            strict_series_entry(
+                &format!(r"{parent}\spirit-vs-falcons-m1-anubis.dem"),
+                "de_anubis",
+                "a",
+                1_753_157_168_000,
+            ),
+            strict_series_entry(
+                &format!(r"{parent}\spirit-vs-falcons-m2-mirage.dem"),
+                "de_mirage",
+                "b",
+                1_750_469_653_000,
+            ),
+            strict_series_entry(
+                &format!(r"{parent}\spirit-vs-falcons-m3-dust2.dem"),
+                "de_dust2",
+                "c",
+                1_750_474_435_000,
+            ),
+        ];
+
+        assign_strict_hltv_series(&mut entries);
+
+        assert!(entries.iter().all(|entry| entry.series.is_some()));
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.series.as_ref().unwrap().order)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
     }
 }
