@@ -48,9 +48,11 @@ import { AlertIcon, ArrowIcon, CheckIcon, CloseIcon, CopyIcon, FolderIcon, Refre
 import { COSMETIC_PHRASE, TEXT } from "./i18n";
 import {
   LEGACY_APPEARANCE_STORAGE_KEYS,
+  normalizeSidebarCollapsed,
   normalizeTheme,
   normalizeUiScale,
   resolveTheme,
+  SIDEBAR_COLLAPSED_STORAGE_KEY,
   stepUiScale,
   themeBackground,
   THEME_STORAGE_KEY,
@@ -640,6 +642,9 @@ function useMediaQuery(query: string): boolean {
 function App() {
   const [language, setLanguage] = useState<Language>(storedLanguage);
   const [theme, setTheme] = useState<Theme>(() => normalizeTheme(localStorage.getItem(THEME_STORAGE_KEY)));
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => (
+    normalizeSidebarCollapsed(localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY))
+  ));
   const [uiScale, setUiScale] = useState<UiScale>(storedUiScale);
   const [phase, setPhase] = useState<Phase>("idle");
   const [singleTask, setSingleTask] = useState<"analysis" | "conversion" | null>(null);
@@ -966,6 +971,10 @@ function App() {
   useEffect(() => {
     for (const key of LEGACY_APPEARANCE_STORAGE_KEYS) localStorage.removeItem(key);
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
 
   useEffect(() => {
     localStorage.setItem(UI_SCALE_STORAGE_KEY, String(uiScale));
@@ -3303,7 +3312,7 @@ function App() {
     : null;
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
       <AppChrome
         words={words}
         sessionTitle={sessionTitle}
@@ -3324,6 +3333,7 @@ function App() {
           analysisAvailable={analysisAvailable}
           settingsActive={activeSection === "settings"}
           faqActive={activeSection === "faq"}
+          collapsed={sidebarCollapsed}
           onOpenImport={() => {
             if (batchInvocationActive || canResumeBatch || hasRetryableBatchJobs) {
               dispatchLibraryWorkspace({ type: "navigate", section: "batch" });
@@ -3337,6 +3347,7 @@ function App() {
           onOpenFaq={() => dispatchLibraryWorkspace({ type: "navigate", section: "faq" })}
           onLanguageChange={setLanguage}
           onToggleTheme={() => setTheme(toggleResolvedTheme(theme, systemDark))}
+          onToggleCollapsed={() => setSidebarCollapsed((collapsed) => !collapsed)}
         />
         <main className="app-workspace">
         {globalError ? (

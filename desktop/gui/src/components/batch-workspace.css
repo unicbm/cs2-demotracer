@@ -71,7 +71,7 @@
   background: var(--surface-subtle);
   border: 1px solid var(--divider);
   border-left: 1px solid var(--divider);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   font-size: 12px;
   line-height: 1.45;
 }
@@ -148,7 +148,7 @@
   gap: 10px;
   padding: 8px 10px;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: var(--radius-lg);
   cursor: pointer;
   transition: border-color 120ms ease, background 120ms ease;
 }
@@ -186,7 +186,7 @@
   place-items: center;
   color: white;
   border: 1px solid var(--divider-strong);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--workspace);
 }
 
@@ -255,7 +255,7 @@
   padding: 3px;
   background: var(--surface-subtle);
   border: 1px solid var(--divider);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 
 .batch-concurrency-options button {
@@ -264,7 +264,7 @@
   color: var(--text-tertiary);
   background: transparent;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   font: inherit;
   font-size: 10px;
   font-weight: 700;
@@ -342,7 +342,7 @@
   height: 2px;
   overflow: hidden;
   background: var(--surface-subtle);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .batch-overall-progress > span {
@@ -374,14 +374,14 @@
   margin-top: 1px;
   color: var(--trace);
   border: 1px solid var(--divider-strong);
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
 }
 
 .batch-job-state > i {
   width: 6px;
   height: 6px;
   background: currentColor;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
 }
 
 .batch-job.is-completed .batch-job-state {
@@ -423,7 +423,7 @@
   overflow: hidden;
   margin-top: 8px;
   background: var(--surface-subtle);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .batch-job-progress > span {

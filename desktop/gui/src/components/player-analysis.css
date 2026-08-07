@@ -39,7 +39,7 @@
   color: var(--text-secondary);
   background: transparent;
   border: 1px solid var(--divider);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   font-size: 12.5px;
   font-weight: 650;
 }
@@ -215,7 +215,7 @@
   background: var(--surface-raised);
   border: 1px solid var(--divider-strong);
   border-top: 3px solid var(--selected-team-color);
-  border-radius: 4px 4px 0 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
 }
 
 .player-analysis-heading-identity {
@@ -350,7 +350,7 @@
   color: var(--text-secondary);
   background: color-mix(in srgb, var(--surface-raised) 85%, transparent);
   border: 1px solid var(--divider-strong);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   font-size: 12px;
   font-weight: 680;
 }
@@ -400,7 +400,7 @@
   overflow: hidden;
   background: color-mix(in srgb, var(--surface-raised) 96%, var(--workspace));
   border: 1px solid var(--divider-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .player-analysis-overview-panel > header {
@@ -528,7 +528,7 @@
 .player-analysis-dossier .roster-external-action {
   min-height: 31px;
   padding-inline: 10px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   font-size: 12.5px;
 }
 
@@ -623,7 +623,7 @@
   color: rgba(255, 255, 255, 0.6);
   background: #111820;
   border: 1px solid var(--divider-strong);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 
 .crosshair-preview-stage::after {
@@ -662,7 +662,7 @@
   color: rgba(255, 255, 255, 0.9);
   background: rgba(6, 10, 14, 0.5);
   border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   font-size: 9px;
   font-weight: 760;
   letter-spacing: 0.06em;
@@ -723,7 +723,7 @@
   gap: 5px;
   padding: 4px 6px;
   background: rgba(5, 9, 13, 0.38);
-  border-radius: 9px;
+  border-radius: var(--radius-pill);
   transform: translateX(-50%);
 }
 
@@ -733,13 +733,13 @@
   padding: 0;
   background: rgba(255, 255, 255, 0.48);
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
 }
 
 .crosshair-scene-dots button.is-active {
   width: 12px;
   background: #fff;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 
 .crosshair-preview.is-unavailable .crosshair-preview-stage {
@@ -747,7 +747,7 @@
 }
 
 .player-analysis-dossier .roster-cosmetic-card {
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 
 .player-analysis-dossier .roster-cosmetic-card .roster-cosmetic-title strong {

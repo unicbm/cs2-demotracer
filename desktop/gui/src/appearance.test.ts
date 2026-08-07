@@ -9,10 +9,12 @@ import { describe, it } from "node:test";
 import {
   cycleUiScale,
   LEGACY_APPEARANCE_STORAGE_KEYS,
+  normalizeSidebarCollapsed,
   normalizeUiScale,
   normalizeTheme,
   resolveTheme,
   stepUiScale,
+  SIDEBAR_COLLAPSED_STORAGE_KEY,
   themeBackground,
   toggleResolvedTheme,
 } from "./appearance.ts";
@@ -44,6 +46,14 @@ describe("appearance preferences", () => {
       "demotracer.sidebar-width.v1",
       "demotracer.sidebar-collapsed.v1",
     ]);
+  });
+
+  it("normalizes the persisted sidebar state without reviving the legacy key", () => {
+    assert.equal(SIDEBAR_COLLAPSED_STORAGE_KEY, "demotracer.sidebar-collapsed.v2");
+    assert.equal(normalizeSidebarCollapsed("true"), true);
+    assert.equal(normalizeSidebarCollapsed(true), true);
+    assert.equal(normalizeSidebarCollapsed("false"), false);
+    assert.equal(normalizeSidebarCollapsed(null), false);
   });
 
   it("uses one native background per color mode", () => {

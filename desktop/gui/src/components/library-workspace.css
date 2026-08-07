@@ -95,7 +95,7 @@
   padding: 12px;
   background: var(--surface-raised);
   border: 1px solid var(--divider-strong);
-  border-radius: 9px;
+  border-radius: var(--radius-lg);
   box-shadow: 0 18px 46px color-mix(in srgb, #000 28%, transparent);
 }
 
@@ -368,7 +368,7 @@
   background: color-mix(in srgb, var(--warning) 5%, var(--surface-raised));
   border: 1px solid color-mix(in srgb, var(--warning) 28%, var(--divider));
   border-left-width: 3px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .library-source-link-note > svg {
@@ -652,7 +652,7 @@
   color: var(--warning);
   background: color-mix(in srgb, var(--surface-raised) 91%, transparent);
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 10.5px;
   font-style: normal;
   text-overflow: ellipsis;
@@ -766,7 +766,7 @@
   color: var(--trace);
   background: var(--trace-soft);
   border: 1px solid color-mix(in srgb, var(--trace) 18%, transparent);
-  border-radius: 18px;
+  border-radius: var(--radius-xl);
 }
 
 .library-first-run > div:nth-child(2) > span {
@@ -830,7 +830,7 @@
   color: var(--trace);
   background: color-mix(in srgb, var(--trace) 10%, var(--surface-raised));
   border: 1px solid color-mix(in srgb, var(--trace) 20%, var(--divider));
-  border-radius: 16px;
+  border-radius: var(--radius-xl);
 }
 
 .library-no-results > small {
@@ -917,7 +917,7 @@
   padding: 5px;
   gap: 5px;
   background: var(--surface-raised);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .library-root-button,
@@ -946,7 +946,7 @@
   overflow: hidden;
   background: var(--surface-raised);
   border: 1px solid var(--divider);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .library-row,
@@ -976,8 +976,8 @@
 .library-row-team strong { font-family: inherit; font-size: 12px; font-weight: 600; }
 .library-row-score-numbers strong { font-size: 17px; }
 .library-row-map { min-height: 57px; padding: 0 10px; }
-.library-row-map::before { background: rgba(7, 8, 10, .48); }
-.library-row-map-artwork .map-artwork-image { filter: saturate(.62) brightness(.72); transform: none; }
+.library-row-map::before { background: transparent; }
+.library-row-map-artwork .map-artwork-image { transform: none; }
 .library-row-map strong { font-family: inherit; font-size: 11px; font-weight: 600; text-shadow: 0 1px 3px #000; }
 .library-row-arrow { margin-right: 6px; }
 
@@ -1004,7 +1004,7 @@
   padding: 24px;
   gap: 18px;
   background: var(--surface-raised);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .library-empty-mark {
@@ -1013,7 +1013,7 @@
   color: var(--accent);
   background: var(--surface-subtle);
   border: 1px solid var(--divider);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .library-first-run h2 { font-family: inherit; font-size: 18px; }
@@ -1026,9 +1026,9 @@
   margin: 0;
   background: var(--surface-subtle);
   border: 1px solid var(--divider);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
-.library-blank-mark { border-radius: 4px; }
+.library-blank-mark { border-radius: var(--radius-sm); }
 
 @keyframes library-skeleton-pulse {
   0%, 100% { opacity: 0.58; }

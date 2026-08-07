@@ -34,6 +34,8 @@ export const LANGUAGE_OPTIONS: Record<Language, LanguageOption> = {
 const zh = {
   appName: "CS2 DemoTracer",
   mainNavigation: "主导航",
+  collapseSidebar: "收起侧栏",
+  expandSidebar: "展开侧栏",
   navImport: "导入 Demo",
   navLibrary: "回放库",
   navAnalysis: "Demo 分析",
@@ -676,6 +678,8 @@ const zh = {
 const en: typeof zh = {
   appName: "CS2 DemoTracer",
   mainNavigation: "Main navigation",
+  collapseSidebar: "Collapse sidebar",
+  expandSidebar: "Expand sidebar",
   navImport: "Import demo",
   navLibrary: "Library",
   navAnalysis: "Demo analysis",

@@ -33,7 +33,7 @@
   color: var(--trace);
   background: color-mix(in srgb, var(--trace) 9%, var(--surface-raised));
   border: 1px solid color-mix(in srgb, var(--trace) 24%, var(--divider));
-  border-radius: 7px;
+  border-radius: var(--radius-md);
 }
 
 .faq-hero-copy {
@@ -204,7 +204,7 @@
   text-align: left;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
 }
 
 .faq-question-list button + button {

@@ -7,6 +7,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
 import {
+  ChevronIcon,
   CloseIcon,
   HelpIcon,
   LanguageIcon,
@@ -17,6 +18,7 @@ import {
   PlusIcon,
   ReplayIcon,
   RestoreIcon,
+  SidebarIcon,
   SlidersIcon,
   SunIcon,
   TraceMark,
@@ -43,6 +45,7 @@ interface AppSidebarProps {
   analysisAvailable: boolean;
   settingsActive: boolean;
   faqActive: boolean;
+  collapsed: boolean;
   onOpenImport: () => void;
   onOpenLibrary: () => void;
   onOpenAnalysis: () => void;
@@ -50,6 +53,7 @@ interface AppSidebarProps {
   onOpenFaq: () => void;
   onLanguageChange: (language: Language) => void;
   onToggleTheme: () => void;
+  onToggleCollapsed: () => void;
 }
 
 export function AppChrome({
@@ -140,6 +144,7 @@ export function AppSidebar({
   analysisAvailable,
   settingsActive,
   faqActive,
+  collapsed,
   onOpenImport,
   onOpenLibrary,
   onOpenAnalysis,
@@ -147,33 +152,49 @@ export function AppSidebar({
   onOpenFaq,
   onLanguageChange,
   onToggleTheme,
+  onToggleCollapsed,
 }: AppSidebarProps) {
   const languageOption = LANGUAGE_OPTIONS[language];
   const nextLanguageOption = LANGUAGE_OPTIONS[languageOption.next];
 
   const itemClass = (active: boolean) => `sidebar-nav-item${active ? " is-active" : ""}`;
   return (
-    <aside className="app-sidebar" aria-label={words.mainNavigation}>
-      <nav className="sidebar-navigation" aria-label={words.mainNavigation}>
-        <button className={itemClass(importActive)} type="button" disabled={busy} onClick={onOpenImport} aria-current={importActive ? "page" : undefined}>
+    <aside className={`app-sidebar${collapsed ? " is-collapsed" : ""}`} aria-label={words.mainNavigation}>
+      <div className="sidebar-collapse-row">
+        <button
+          className="sidebar-collapse-button"
+          type="button"
+          onClick={onToggleCollapsed}
+          aria-label={collapsed ? words.expandSidebar : words.collapseSidebar}
+          aria-controls="app-sidebar-navigation"
+          aria-expanded={!collapsed}
+          title={collapsed ? words.expandSidebar : words.collapseSidebar}
+        >
+          <SidebarIcon size={17} />
+          <span>{words.collapseSidebar}</span>
+          <ChevronIcon className="sidebar-collapse-chevron" size={14} />
+        </button>
+      </div>
+      <nav id="app-sidebar-navigation" className="sidebar-navigation" aria-label={words.mainNavigation}>
+        <button className={itemClass(importActive)} type="button" disabled={busy} onClick={onOpenImport} aria-current={importActive ? "page" : undefined} title={words.navImport}>
           <PlusIcon size={17} />
           <span>{words.navImport}</span>
         </button>
-        <button className={itemClass(libraryActive)} type="button" onClick={onOpenLibrary} aria-current={libraryActive ? "page" : undefined}>
+        <button className={itemClass(libraryActive)} type="button" onClick={onOpenLibrary} aria-current={libraryActive ? "page" : undefined} title={words.navLibrary}>
           <LibraryIcon size={17} />
           <span>{words.navLibrary}</span>
         </button>
-        <button className={itemClass(analysisActive)} type="button" disabled={!analysisAvailable} onClick={onOpenAnalysis} aria-current={analysisActive ? "page" : undefined} title={!analysisAvailable ? words.navAnalysisUnavailable : undefined}>
+        <button className={itemClass(analysisActive)} type="button" disabled={!analysisAvailable} onClick={onOpenAnalysis} aria-current={analysisActive ? "page" : undefined} title={!analysisAvailable ? words.navAnalysisUnavailable : words.navAnalysis}>
           <ReplayIcon size={17} />
           <span>{words.navAnalysis}</span>
         </button>
 
         <span className="sidebar-section-divider" />
-        <button className={itemClass(settingsActive)} type="button" onClick={onOpenSettings} aria-current={settingsActive ? "page" : undefined}>
+        <button className={itemClass(settingsActive)} type="button" onClick={onOpenSettings} aria-current={settingsActive ? "page" : undefined} title={words.navSettings}>
           <SlidersIcon size={17} />
           <span>{words.navSettings}</span>
         </button>
-        <button className={itemClass(faqActive)} type="button" onClick={onOpenFaq} aria-current={faqActive ? "page" : undefined}>
+        <button className={itemClass(faqActive)} type="button" onClick={onOpenFaq} aria-current={faqActive ? "page" : undefined} title={words.navFaq}>
           <HelpIcon size={17} />
           <span>{words.navFaq}</span>
         </button>
@@ -194,7 +215,7 @@ export function AppSidebar({
           <span className="sidebar-language-copy"><strong>{languageOption.label}</strong></span>
           <span className="sidebar-language-target" aria-hidden="true">{nextLanguageOption.shortLabel}</span>
         </button>
-        <button className="sidebar-theme" type="button" onClick={onToggleTheme} title={resolvedTheme === "dark" ? words.lightTheme : words.darkTheme}>
+        <button className="sidebar-theme" type="button" onClick={onToggleTheme} aria-label={resolvedTheme === "dark" ? words.lightTheme : words.darkTheme} title={resolvedTheme === "dark" ? words.lightTheme : words.darkTheme}>
           {resolvedTheme === "dark" ? <SunIcon size={16} /> : <MoonIcon size={16} />}
           <span>{resolvedTheme === "dark" ? words.lightTheme : words.darkTheme}</span>
         </button>

@@ -8,6 +8,7 @@ import type { Theme } from "./types";
 
 export type ResolvedTheme = Exclude<Theme, "system">;
 export const THEME_STORAGE_KEY = "demotracer.theme";
+export const SIDEBAR_COLLAPSED_STORAGE_KEY = "demotracer.sidebar-collapsed.v2";
 export const LEGACY_APPEARANCE_STORAGE_KEYS = [
   "demotracer.ui-skin.v1",
   "demotracer.sidebar-width.v1",
@@ -29,6 +30,10 @@ export function normalizeTheme(value: unknown): Theme {
   return value === "light" || value === "dark" || value === "system"
     ? value
     : "dark";
+}
+
+export function normalizeSidebarCollapsed(value: unknown): boolean {
+  return value === true || value === "true";
 }
 
 export function themeBackground(theme: ResolvedTheme): string {

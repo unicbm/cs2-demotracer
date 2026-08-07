@@ -67,7 +67,7 @@
   overflow-x: auto;
   background: color-mix(in srgb, var(--surface-subtle) 82%, transparent);
   border: 1px solid var(--divider);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   scrollbar-width: none;
 }
 
@@ -230,7 +230,7 @@
   padding: 4px;
   background: var(--surface-raised);
   border: 1px solid var(--divider-strong);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-sheet);
 }
 
@@ -609,7 +609,7 @@
   min-height: 36px;
   background: color-mix(in srgb, var(--surface-subtle) 72%, transparent);
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   transition: border-color 120ms ease, background 120ms ease;
 }
 
@@ -622,7 +622,7 @@
   color: color-mix(in srgb, var(--roster-player-color, var(--roster-team-color)) 74%, var(--text-secondary));
   background: color-mix(in srgb, var(--roster-player-color, var(--roster-team-color)) 7%, var(--surface-raised));
   border: 1px solid color-mix(in srgb, var(--roster-player-color, var(--roster-team-color)) 25%, var(--divider));
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   appearance: none;
   cursor: pointer;
   font-family: var(--mono);
@@ -656,7 +656,7 @@
   color: inherit;
   background: transparent;
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   text-align: left;
   user-select: none;
 }
@@ -778,7 +778,7 @@
   color: var(--text-secondary);
   background: transparent;
   border: 1px solid var(--divider);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 12px;
   font-weight: 650;
   white-space: nowrap;
@@ -845,7 +845,7 @@
   color: var(--text-secondary);
   background: transparent;
   border: 1px solid var(--divider);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 12px;
   font-weight: 650;
   white-space: nowrap;
@@ -896,7 +896,7 @@
   gap: 8px;
   background: color-mix(in srgb, var(--surface-raised) 78%, var(--workspace));
   border: 1px solid var(--divider);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 
 .player-config-command-list > li > span {
@@ -941,7 +941,7 @@
   color: var(--text-primary);
   background: var(--surface-raised);
   border: 1px solid var(--divider);
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   cursor: default;
   transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
 }
@@ -1019,7 +1019,7 @@
   height: 13px;
   background: color-mix(in srgb, var(--workspace) 75%, transparent);
   border: 3px solid;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
 }
 
 .roster-side-markers .is-ct { border-color: var(--side-ct); }
@@ -1038,7 +1038,7 @@
   color: #f5f8fb;
   background: rgba(20, 25, 31, 0.78);
   border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   box-shadow: 0 3px 10px rgba(5, 8, 12, 0.24);
   opacity: 0;
   transform: translateY(-2px);

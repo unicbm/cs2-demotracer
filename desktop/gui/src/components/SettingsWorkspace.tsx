@@ -1180,6 +1180,16 @@ export function SettingsWorkspace({
               aria-label={`GitHub: ${person.githubHandle}`}
               onClick={() => onOpenExternal(person.profileUrl)}
             >
+              <span className="credits-avatar" aria-hidden="true">
+                {person.githubHandle.slice(0, 2).toUpperCase()}
+                <img
+                  src={person.avatarUrl}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  onError={(event) => { event.currentTarget.hidden = true; }}
+                />
+              </span>
               <span className="credits-person-identity"><strong>{person.name}</strong><small>@{person.githubHandle}</small></span>
               <span className="credits-contribution">{person.githubHandle === DEMOTRACER_CREDITS.creator.githubHandle ? words.creditsCreatorRole : ""}</span>
               <ExternalLinkIcon className="credits-external-icon" size={14} />
@@ -1202,6 +1212,16 @@ export function SettingsWorkspace({
                 aria-label={`GitHub: ${foundation.githubHandle}`}
                 onClick={() => onOpenExternal(foundation.profileUrl)}
               >
+                <span className="credits-avatar" aria-hidden="true">
+                  {foundation.githubHandle.slice(0, 2).toUpperCase()}
+                  <img
+                    src={foundation.avatarUrl}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    onError={(event) => { event.currentTarget.hidden = true; }}
+                  />
+                </span>
                 <span><strong>{foundation.author}</strong><small>@{foundation.githubHandle}</small></span>
               </button>
               <div className="credits-project-links">

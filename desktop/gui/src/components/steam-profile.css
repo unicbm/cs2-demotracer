@@ -23,7 +23,7 @@
   background:
     linear-gradient(145deg, color-mix(in srgb, var(--trace) 12%, var(--surface-muted)), var(--surface-subtle));
   border: 1px solid color-mix(in srgb, var(--divider-strong) 82%, var(--trace));
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   font-size: 12px;
   font-weight: 720;
   line-height: 1;
@@ -36,7 +36,7 @@
   width: 96px;
   height: 96px;
   border-width: 2px;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   font-size: 30px;
 }
 

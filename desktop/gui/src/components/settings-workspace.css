@@ -311,7 +311,7 @@
   color: var(--trace);
   background: var(--surface-subtle);
   border: 1px solid var(--divider-strong);
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   font: 700 11px/1 var(--mono);
 }
 
@@ -497,7 +497,7 @@
   height: 4px;
   overflow: hidden;
   background: color-mix(in srgb, var(--trace) 12%, var(--surface-subtle));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .release-progress span {
@@ -756,7 +756,7 @@
   color: var(--text-tertiary);
   background: var(--surface-subtle);
   border: 1px solid var(--divider);
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
 }
 
 .diagnostic-empty h3 {
@@ -797,7 +797,7 @@
   color: var(--text-tertiary);
   background: var(--surface-subtle);
   border: 1px solid var(--divider);
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
 }
 
 .diagnostic-overview.is-pass .diagnostic-overview-mark { color: var(--success); background: var(--success-soft); }
@@ -958,7 +958,7 @@
   color: var(--text-secondary);
   background: var(--surface-subtle);
   border: 1px solid var(--divider);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 8.5px;
 }
 
@@ -989,7 +989,7 @@
   height: 24px;
   color: var(--text-tertiary);
   background: var(--surface-subtle);
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
 }
 
 .diagnostic-check.is-pass .diagnostic-check-mark { color: var(--success); background: var(--success-soft); }
@@ -1331,7 +1331,7 @@
   gap: 8px;
   color: var(--text-secondary);
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 .settings-section-nav button:hover { background: var(--surface-subtle); }
 .settings-section-nav button.is-active {
@@ -1353,7 +1353,7 @@
 .settings-card {
   margin-top: 8px;
   background: var(--surface-raised);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   box-shadow: none;
 }
 .settings-card-heading { min-height: 50px; padding: 8px 12px; }
@@ -1390,7 +1390,7 @@
   overflow: hidden;
   padding: 9px 11px;
   border: 1px solid var(--divider);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: var(--workspace);
   color: var(--text-tertiary);
   text-overflow: ellipsis;
@@ -1483,7 +1483,7 @@
   gap: 9px;
   align-items: start;
   padding: 10px 12px;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: var(--warning-soft);
 }
 
@@ -1587,7 +1587,7 @@
   color: var(--trace);
   background: color-mix(in srgb, var(--trace) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--trace) 30%, var(--divider));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 10.5px;
   font-weight: 680;
   transition: background var(--duration-fast) ease, border-color var(--duration-fast) ease, transform var(--duration-fast) ease;
@@ -1595,7 +1595,7 @@
 
 .settings-update-shortcut:hover { background: color-mix(in srgb, var(--trace) 16%, transparent); border-color: var(--trace); transform: translateY(-1px); }
 .settings-update-shortcut:active { transform: translateY(0) scale(.98); }
-.settings-update-shortcut i { width: 6px; height: 6px; background: var(--trace); border-radius: 50%; box-shadow: 0 0 0 4px color-mix(in srgb, var(--trace) 14%, transparent); }
+.settings-update-shortcut i { width: 6px; height: 6px; background: var(--trace); border-radius: var(--radius-circle); box-shadow: 0 0 0 4px color-mix(in srgb, var(--trace) 14%, transparent); }
 .settings-update-shortcut strong { font: 700 10px/1 var(--mono); }
 
 .settings-section-nav {
@@ -1629,7 +1629,7 @@
   height: 6px;
   margin-left: 1px;
   background: var(--trace);
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--trace) 14%, transparent);
   animation: settings-update-pulse 1.8s ease-in-out infinite;
 }
@@ -1685,7 +1685,7 @@
   left: 0;
   width: 3px;
   background: var(--trace);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   box-shadow: 0 0 10px color-mix(in srgb, var(--trace) 34%, transparent);
   content: "";
 }
@@ -1721,7 +1721,7 @@
 .credits-section { margin-top: 22px; }
 
 .credits-person-row {
-  grid-template-columns: minmax(170px, .55fr) minmax(260px, 1fr) auto;
+  grid-template-columns: auto minmax(170px, .55fr) minmax(260px, 1fr) auto;
   min-height: 52px;
   padding: 8px 4px;
 }
@@ -1732,8 +1732,7 @@
   padding: 9px 4px;
 }
 
-.credits-foundation-profile { grid-template-columns: minmax(0, 1fr); }
-.credits-avatar { display: none; }
+.credits-foundation-profile { grid-template-columns: auto minmax(0, 1fr); }
 
 /* Settings update surface, adapted from the authorized CS2 Insight settings flow. */
 .desktop-release-card { position: relative; }
@@ -1770,7 +1769,7 @@
   color: var(--trace);
   background: color-mix(in srgb, var(--trace) 10%, var(--surface-subtle));
   border: 1px solid color-mix(in srgb, var(--trace) 26%, var(--divider));
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 7%, transparent), 0 7px 20px color-mix(in srgb, var(--trace) 9%, transparent);
 }
 
@@ -1789,13 +1788,13 @@
   color: var(--text-secondary);
   background: var(--surface-subtle);
   border: 1px solid var(--divider);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 9.5px;
   font-weight: 700;
   white-space: nowrap;
 }
 
-.release-status-pill i { width: 6px; height: 6px; background: var(--text-tertiary); border-radius: 50%; }
+.release-status-pill i { width: 6px; height: 6px; background: var(--text-tertiary); border-radius: var(--radius-circle); }
 .release-status-pill.is-current { color: var(--success); background: color-mix(in srgb, var(--success) 8%, var(--surface-subtle)); border-color: color-mix(in srgb, var(--success) 30%, var(--divider)); }
 .release-status-pill.is-current i { background: var(--success); }
 .release-status-pill.is-available { color: var(--trace); background: color-mix(in srgb, var(--trace) 10%, var(--surface-subtle)); border-color: color-mix(in srgb, var(--trace) 36%, var(--divider)); }
@@ -1832,7 +1831,7 @@
   place-items: center;
   color: var(--trace) !important;
   background: color-mix(in srgb, var(--trace) 9%, transparent);
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
 }
 
 .release-notes-panel {
