@@ -6,7 +6,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isReusableDemoArchive, librarySeriesForManifest } from "./library.ts";
+import { demoLibraryTimestamp, isReusableDemoArchive, librarySeriesForManifest } from "./library.ts";
 import type { DemoLibraryEntry } from "./types.ts";
 
 function seriesEntry(
@@ -58,4 +58,22 @@ test("only a healthy archive suppresses re-importing the same demo", () => {
   assert.equal(isReusableDemoArchive({ ...healthy, compatibility: "unsupported" }), false);
   assert.equal(isReusableDemoArchive({ ...healthy, sourceAvailable: false }), false);
   assert.equal(isReusableDemoArchive({ ...healthy, files: 0 }), false);
+});
+
+test("library time prefers parsed match time while preserving legacy archive dates", () => {
+  const legacy = {
+    sourceModifiedAtMs: 1_750_469_653_000,
+    modifiedAtMs: 1_750_500_000_000,
+  } as DemoLibraryEntry;
+
+  assert.equal(demoLibraryTimestamp(legacy), 1_750_469_653_000);
+  assert.equal(
+    demoLibraryTimestamp({ ...legacy, playedAt: "2026-07-22T18:19:28Z" }),
+    Date.parse("2026-07-22T18:19:28Z"),
+  );
+  assert.equal(demoLibraryTimestamp({ ...legacy, playedAt: "invalid" }), 1_750_469_653_000);
+  assert.equal(
+    demoLibraryTimestamp({ ...legacy, sourceModifiedAtMs: null }),
+    1_750_500_000_000,
+  );
 });

@@ -85,6 +85,14 @@ export function isReusableDemoArchive(entry: DemoLibraryEntry): boolean {
     && entry.files > 0;
 }
 
+export function demoLibraryTimestamp(entry: DemoLibraryEntry): number {
+  if (entry.playedAt?.trim()) {
+    const playedAt = Date.parse(entry.playedAt);
+    if (Number.isFinite(playedAt)) return playedAt;
+  }
+  return entry.sourceModifiedAtMs ?? entry.modifiedAtMs ?? 0;
+}
+
 export function librarySeriesForManifest(
   entries: readonly DemoLibraryEntry[],
   manifestPath: string,

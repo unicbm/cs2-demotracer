@@ -14,6 +14,7 @@ import {
 } from "react";
 import { ArrowIcon, CloseIcon, FolderIcon, PlusIcon, RefreshIcon, ReplayIcon, SearchIcon, TraceMark, TrashIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
+import { demoLibraryTimestamp } from "../library";
 import { resolveProfessionalPlayer } from "../professionalPlayers";
 import type { DemoLibraryEntry, DemoLibraryScan, Language, LibraryPlayerSummary } from "../types";
 import { displayMap, MapArtwork, mapArtworkStyle } from "./MapArtwork";
@@ -75,10 +76,6 @@ function playedAtTimestamp(value: string | null | undefined): number {
   if (!value?.trim()) return 0;
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) ? timestamp : 0;
-}
-
-function librarySortTimestamp(entry: DemoLibraryEntry): number {
-  return playedAtTimestamp(entry.playedAt) || entry.sourceModifiedAtMs || entry.modifiedAtMs;
 }
 
 function formatDuration(value: number | null | undefined): string | null {
@@ -264,7 +261,7 @@ function LibraryRow({
   const firstPlayerNames = firstPlayers.map((player) => player.name);
   const secondPlayerNames = secondPlayers.map((player) => player.name);
   const duration = formatDuration(entry.durationSeconds);
-  const demoDate = formatDateParts(playedAtTimestamp(entry.playedAt), language);
+  const demoDate = formatDateParts(demoLibraryTimestamp(entry), language);
   const sourceName = entry.demoSource ? platformName(entry.demoSource.name) : words.unknownPlatform;
   const scoreStatus = entry.score?.status || (entry.scoreIsSnapshot ? "snapshot" : "final");
   const needsMetadata = entry.metadataStatus !== "current";
@@ -575,7 +572,7 @@ function LibrarySeriesGroup({
     .map((entry) => playedAtTimestamp(entry.playedAt))
     .filter((timestamp) => timestamp > 0)
     .sort((left, right) => left - right)[0] ?? 0;
-  const date = formatDateParts(playedAt, language);
+  const date = formatDateParts(playedAt || demoLibraryTimestamp(ordered[0]), language);
   const source = ordered.find((entry) => entry.demoSource)?.demoSource?.name;
   const firstWonSeries = decidedMaps > 0 && wins.first > wins.second;
   const secondWonSeries = decidedMaps > 0 && wins.second > wins.first;
@@ -748,8 +745,8 @@ export function LibraryWorkspace({
     .filter((entry) => !mapFilter || entry.map === mapFilter)
     .filter((entry) => !platformFilter || entry.demoSource?.name === platformFilter)
     .sort((left, right) => {
-      const leftDate = librarySortTimestamp(left);
-      const rightDate = librarySortTimestamp(right);
+      const leftDate = demoLibraryTimestamp(left);
+      const rightDate = demoLibraryTimestamp(right);
       if (sort === "map") return left.map.localeCompare(right.map) || rightDate - leftDate;
       if (sort === "platform") return (left.demoSource?.name ?? "").localeCompare(right.demoSource?.name ?? "") || rightDate - leftDate;
       return rightDate - leftDate;
