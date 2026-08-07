@@ -1,7 +1,7 @@
 # CS2 Insight GUI Reference and Authorization
 
-DemoTracer's `Insight` interface skin and selected menu, feedback-animation,
-and demo-presentation patterns reference
+DemoTracer's selected information-layout, navigation, and demo-presentation
+references draw from
 [DrEAmSs59/CS2-insight-agent](https://github.com/DrEAmSs59/CS2-insight-agent).
 The implementation was compared against upstream revision
 `17d2a213ee8c32608feee3c63f0b6d05eef8f945`.
@@ -18,11 +18,13 @@ independently authored integration code remains governed by the license notice
 on each file; this notice does not relicense CS2 Insight or expand the special
 authorization.
 
-The first maintained adaptation covers:
+The maintained reference scope covers:
 
-- the `Insight` black-and-gold light and dark palettes;
-- luminous active navigation and compact sidebar feedback;
-- tactile button hover and press motion; and
-- elevated demo rows with animated map-art depth;
-- card-based settings hierarchy and status navigation; and
+- compact navigation and information-dense demo presentation;
+- match, team, map, and status hierarchy;
+- settings and status navigation; and
 - desktop-update prompts, version routes, and download-progress feedback.
+
+DemoTracer uses its own single graphite-and-copper visual system. It does not
+ship an `Insight` skin or reproduce the referenced project's palettes, glow,
+elevation, or motion treatments.

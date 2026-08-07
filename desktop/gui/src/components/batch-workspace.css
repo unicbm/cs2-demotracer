@@ -70,7 +70,7 @@
   color: var(--text-secondary);
   background: var(--surface-subtle);
   border: 1px solid var(--divider);
-  border-left: 3px solid var(--trace);
+  border-left: 1px solid var(--divider);
   border-radius: 8px;
   font-size: 12px;
   line-height: 1.45;

@@ -12,7 +12,7 @@ import { exit as exitApp, relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import packageMetadata from "../package.json";
-import { AppChrome, AppSidebar, SIDEBAR_DEFAULT_WIDTH } from "./components/AppChrome";
+import { AppChrome, AppSidebar } from "./components/AppChrome";
 import { activeBatchItemCount, findRestorableBatch } from "./batchSession";
 import { ArchiveWorkspace } from "./components/ArchiveWorkspace";
 import type { InventorySimulatorItem } from "./inventorySimulator";
@@ -47,15 +47,14 @@ import {
 import { AlertIcon, ArrowIcon, CheckIcon, CloseIcon, CopyIcon, FolderIcon, RefreshIcon, ReplayIcon } from "./icons";
 import { COSMETIC_PHRASE, TEXT } from "./i18n";
 import {
+  LEGACY_APPEARANCE_STORAGE_KEYS,
   normalizeTheme,
-  normalizeUiSkin,
   normalizeUiScale,
   resolveTheme,
   stepUiScale,
   themeBackground,
   THEME_STORAGE_KEY,
   toggleResolvedTheme,
-  UI_SKIN_STORAGE_KEY,
   type UiScale,
 } from "./appearance";
 import {
@@ -117,7 +116,6 @@ import type {
   TaskEvent,
   TaskPhase,
   Theme,
-  UiSkin,
 } from "./types";
 
 const DEFAULT_SETTINGS: ConverterSettings = {
@@ -132,20 +130,6 @@ const DEFAULT_SETTINGS: ConverterSettings = {
   exportCharms: false,
   includeSuspicious: false,
 };
-
-const SIDEBAR_WIDTH_STORAGE_KEY = "demotracer.sidebar-width.v1";
-const SIDEBAR_COLLAPSED_STORAGE_KEY = "demotracer.sidebar-collapsed.v1";
-
-function storedSidebarWidth(): number {
-  const saved = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
-  if (saved === null || saved === "") return SIDEBAR_DEFAULT_WIDTH;
-  const value = Number(saved);
-  return Number.isFinite(value) ? Math.min(320, Math.max(184, value)) : SIDEBAR_DEFAULT_WIDTH;
-}
-
-function storedSidebarCollapsed(): boolean {
-  return localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "true";
-}
 
 const INITIAL_LIBRARY_PREFERENCES = storedLibraryPreferences();
 
@@ -656,10 +640,7 @@ function useMediaQuery(query: string): boolean {
 function App() {
   const [language, setLanguage] = useState<Language>(storedLanguage);
   const [theme, setTheme] = useState<Theme>(() => normalizeTheme(localStorage.getItem(THEME_STORAGE_KEY)));
-  const [uiSkin, setUiSkin] = useState<UiSkin>(() => normalizeUiSkin(localStorage.getItem(UI_SKIN_STORAGE_KEY)));
   const [uiScale, setUiScale] = useState<UiScale>(storedUiScale);
-  const [sidebarWidth, setSidebarWidth] = useState(storedSidebarWidth);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(storedSidebarCollapsed);
   const [phase, setPhase] = useState<Phase>("idle");
   const [singleTask, setSingleTask] = useState<"analysis" | "conversion" | null>(null);
   const [activeTaskSourcePath, setActiveTaskSourcePath] = useState("");
@@ -965,15 +946,13 @@ function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    document.documentElement.dataset.skin = uiSkin;
     document.documentElement.dataset.colorMode = resolvedTheme;
     document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
-    const nativeBackground = themeBackground(uiSkin, resolvedTheme);
+    const nativeBackground = themeBackground(resolvedTheme);
     document.documentElement.style.backgroundColor = nativeBackground;
     document.body.style.backgroundColor = nativeBackground;
     document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute("content", nativeBackground);
     localStorage.setItem(THEME_STORAGE_KEY, theme);
-    localStorage.setItem(UI_SKIN_STORAGE_KEY, uiSkin);
     localStorage.setItem("demotracer.language", language);
     if ("__TAURI_INTERNALS__" in window) {
       void Promise.all([
@@ -982,12 +961,11 @@ function App() {
         getCurrentWebview().setBackgroundColor(nativeBackground),
       ]).catch(() => undefined);
     }
-  }, [language, resolvedTheme, theme, uiSkin]);
+  }, [language, resolvedTheme, theme]);
 
   useEffect(() => {
-    localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
-    localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(sidebarCollapsed));
-  }, [sidebarCollapsed, sidebarWidth]);
+    for (const key of LEGACY_APPEARANCE_STORAGE_KEYS) localStorage.removeItem(key);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(UI_SCALE_STORAGE_KEY, String(uiScale));
@@ -3330,9 +3308,6 @@ function App() {
         words={words}
         sessionTitle={sessionTitle}
         sessionMeta={sessionMeta}
-        sidebarCollapsed={sidebarCollapsed}
-        sidebarWidth={sidebarWidth}
-        onToggleSidebar={() => setSidebarCollapsed((current) => !current)}
         onRequestClose={() => void requestWindowClose()}
       />
 
@@ -3342,8 +3317,6 @@ function App() {
           language={language}
           resolvedTheme={resolvedTheme}
           appVersion={appVersion}
-          collapsed={sidebarCollapsed}
-          width={sidebarWidth}
           busy={isBusy}
           importActive={activeSection === "batch"}
           libraryActive={activeSection === "library"}
@@ -3351,7 +3324,6 @@ function App() {
           analysisAvailable={analysisAvailable}
           settingsActive={activeSection === "settings"}
           faqActive={activeSection === "faq"}
-          onWidthChange={setSidebarWidth}
           onOpenImport={() => {
             if (batchInvocationActive || canResumeBatch || hasRetryableBatchJobs) {
               dispatchLibraryWorkspace({ type: "navigate", section: "batch" });
@@ -3415,7 +3387,6 @@ function App() {
           <SettingsWorkspace
             words={words}
             language={language}
-            uiSkin={uiSkin}
             uiScale={uiScale}
             environment={localEnvironment}
             exportRoot={libraryRoot}
@@ -3439,7 +3410,6 @@ function App() {
             playbackReleaseError={playbackReleaseError}
             releaseAction={releaseAction}
             releaseNotice={releaseNotice}
-            onUiSkinChange={setUiSkin}
             onUiScaleChange={setUiScale}
             onCs2PathChange={(cs2Path) => {
               setLocalEnvironment((current) => ({ ...current, cs2Path }));

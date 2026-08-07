@@ -12,6 +12,7 @@
   min-width: 0;
   min-height: 0;
   background: var(--workspace);
+  container-type: inline-size;
 }
 
 .player-analysis-workspace.is-team-b { --selected-team-color: var(--team-b); }
@@ -83,10 +84,10 @@
 
 .player-analysis-layout {
   display: grid;
-  grid-template-columns: minmax(214px, 248px) minmax(0, 1fr);
-  width: min(1560px, 100%);
+  grid-template-columns: clamp(264px, 23vw, 320px) minmax(0, 1fr);
+  width: 100%;
   min-height: 100%;
-  margin: 0 auto;
+  margin: 0;
 }
 
 .player-analysis-index {
@@ -94,29 +95,11 @@
   top: 0;
   align-self: start;
   min-width: 0;
-  padding: 18px 0 26px;
+  padding: 10px 0 24px;
   border-right: 1px solid var(--divider-strong);
 }
-
-.player-analysis-index > header {
-  padding: 0 18px 14px;
-  border-bottom: 1px solid var(--divider);
-}
-
-.player-analysis-index h2,
 .player-analysis-index h3 {
   margin: 0;
-}
-
-.player-analysis-index h2 {
-  color: var(--text-primary);
-  font-size: 14px;
-  font-weight: 680;
-  line-height: 24px;
-}
-
-.player-analysis-select {
-  display: none;
 }
 
 .player-analysis-index > nav {
@@ -165,12 +148,11 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   min-height: 42px;
-  padding: 6px 15px 6px 13px;
+  padding: 6px 15px;
   gap: 10px;
   color: var(--text-secondary);
   background: transparent;
   border: 0;
-  border-left: 3px solid transparent;
   border-radius: 0;
   text-align: left;
   user-select: none;
@@ -184,7 +166,6 @@
 .player-analysis-team-list > button.is-selected {
   color: var(--text-primary);
   background: color-mix(in srgb, var(--player-color, var(--player-team-color)) 10%, var(--surface-raised));
-  border-left-color: var(--player-color, var(--player-team-color));
 }
 
 .player-analysis-team-list > button strong {
@@ -228,12 +209,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 96px;
+  min-height: 154px;
   padding: 16px 18px;
   gap: 24px;
-  background:
-    linear-gradient(110deg, color-mix(in srgb, var(--selected-team-color) 10%, transparent), transparent 48%),
-    color-mix(in srgb, var(--surface-raised) 94%, var(--workspace));
+  background: var(--surface-raised);
   border: 1px solid var(--divider-strong);
   border-top: 3px solid var(--selected-team-color);
   border-radius: 4px 4px 0 0;
@@ -241,12 +220,16 @@
 
 .player-analysis-heading-identity {
   display: flex;
+  align-self: stretch;
   align-items: center;
   min-width: 0;
   gap: 17px;
 }
 
 .player-analysis-heading-identity > div {
+  display: grid;
+  grid-template-rows: 20px auto 83px;
+  align-content: center;
   min-width: 0;
 }
 
@@ -297,7 +280,7 @@
 .professional-player-identity {
   width: min(360px, 42vw);
   max-width: 100%;
-  margin-top: 9px;
+  margin-top: 6px;
   text-align: left;
 }
 
@@ -322,7 +305,7 @@
   flex: none;
   width: 24px;
   border: 1px solid color-mix(in srgb, var(--text-primary) 54%, var(--divider));
-  box-shadow: 0 1px 2px rgb(0 0 0 / 20%);
+  box-shadow: none;
   line-height: 16px;
 }
 
@@ -622,7 +605,7 @@
 
 .crosshair-config-list > li.is-selected {
   border-color: color-mix(in srgb, var(--trace) 55%, var(--divider));
-  box-shadow: inset var(--selection-rail-width) 0 0 var(--trace);
+  background: color-mix(in srgb, var(--trace) 7%, var(--surface-raised));
 }
 
 .crosshair-preview {
@@ -853,55 +836,86 @@
   .player-analysis-dossier .roster-cosmetic-list { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
-@media (max-width: 900px) {
+@container (max-width: 900px) {
   .player-analysis-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: 64px minmax(0, 1fr);
   }
 
   .player-analysis-index {
-    position: static;
-    padding-bottom: 20px;
-    border-right: 0;
-    border-bottom: 1px solid var(--divider-strong);
+    position: sticky;
+    top: 0;
+    padding: 7px 0 18px;
+    border-right: 1px solid var(--divider-strong);
+    border-bottom: 0;
   }
 
   .player-analysis-index > nav {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: grid;
   }
 
   .player-analysis-team + .player-analysis-team {
-    margin-top: 0;
-    border-top: 0;
-    border-left: 1px solid var(--divider);
-  }
-
-  .player-analysis-team:nth-child(odd) {
+    margin-top: 7px;
+    padding-top: 7px;
+    border-top: 1px solid var(--divider);
     border-left: 0;
   }
 
-  .player-analysis-team:nth-child(n + 3) {
-    margin-top: 14px;
-    border-top: 1px solid var(--divider);
+  .player-analysis-team {
+    padding-top: 0;
+  }
+
+  .player-analysis-team h3 {
+    height: 12px;
+    padding: 0;
+    overflow: visible;
+    font-size: 0;
+    line-height: 12px;
+    text-align: center;
+  }
+
+  .player-analysis-team h3::before {
+    width: 18px;
+    margin: 5px 0 0;
+  }
+
+  .player-analysis-team-list > button {
+    grid-template-columns: 1fr;
+    min-height: 46px;
+    padding: 6px;
+    gap: 0;
+  }
+
+  .player-analysis-index-identity {
+    justify-content: center;
+    gap: 0;
+  }
+
+  .player-analysis-index-identity strong,
+  .player-analysis-team-list > button > span:last-child {
+    display: none;
   }
 
   .player-analysis-main {
-    padding-top: 28px;
+    padding: 18px 18px 36px;
   }
 
   .player-analysis-heading {
-    align-items: flex-start;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
   }
 
   .player-analysis-heading-actions {
     flex-wrap: wrap;
-    justify-content: flex-end;
+    justify-content: flex-start;
   }
 
   .player-analysis-dossier .player-setup-grid { grid-template-columns: minmax(0, 1fr); }
   .player-analysis-dossier .roster-cosmetic-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
-@media (max-width: 620px) {
+@container (max-width: 620px) {
   .player-analysis-toolbar {
     padding-inline: 10px;
   }
@@ -910,46 +924,13 @@
     display: none;
   }
 
-  .player-analysis-index > nav {
-    display: none;
-  }
-
-  .player-analysis-index {
-    padding: 14px 0;
-  }
-
-  .player-analysis-index > header {
-    padding: 0 14px;
-    border-bottom: 0;
-  }
-
-  .player-analysis-select {
-    display: block;
-    width: 100%;
-    min-height: 42px;
-    margin-top: 9px;
-    padding: 0 10px;
-    color: var(--text-primary);
-    background: var(--surface-raised);
-    border: 1px solid var(--divider-strong);
-    border-radius: 3px;
-    font-size: 15px;
-  }
-
-  .player-analysis-team + .player-analysis-team {
-    margin-top: 14px;
-    border-top: 1px solid var(--divider);
-    border-left: 0;
-  }
-
   .player-analysis-main {
-    padding: 24px 14px 40px;
+    padding: 14px 12px 36px;
   }
 
   .player-analysis-heading {
-    flex-direction: column;
-    padding: 17px;
-    gap: 16px;
+    padding: 14px;
+    gap: 10px;
   }
 
   .player-analysis-heading-actions {

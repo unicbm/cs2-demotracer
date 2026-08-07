@@ -412,7 +412,7 @@
   overflow: hidden;
   background: color-mix(in srgb, var(--surface-raised) 97%, transparent);
   border: 1px solid var(--divider);
-  border-left: 4px solid color-mix(in srgb, var(--map-accent) 72%, var(--divider-strong));
+  border-left: 1px solid var(--divider);
   border-radius: var(--radius-md);
   animation: library-card-enter 260ms both ease-out;
 }
@@ -692,7 +692,7 @@
   overflow: hidden;
   background: color-mix(in srgb, var(--surface-raised) 97%, transparent);
   border: 1px solid var(--divider);
-  border-left: 4px solid color-mix(in srgb, var(--map-accent) 72%, var(--divider-strong));
+  border-left: 1px solid var(--divider);
   border-radius: var(--radius-md);
   transition: border-color 130ms ease-out, background 130ms ease-out, transform 130ms ease-out;
   animation: library-card-enter 260ms both ease-out;
@@ -886,65 +886,149 @@
 .library-card-skeleton > span:nth-child(3) { width: 88%; }
 .library-card-skeleton > span:nth-child(4) { width: 52%; }
 
-/* Insight skin keeps the dense DemoTracer row layout while borrowing the
- * authorized black-gold depth and interaction cadence of CS2 Insight. */
-:root[data-skin="insight"] :is(.library-series-group, .library-row) {
-  background:
-    linear-gradient(125deg, color-mix(in srgb, var(--trace) 4%, var(--surface-raised)), var(--surface-raised) 46%);
-  border-color: color-mix(in srgb, var(--trace) 12%, var(--divider));
-  border-left-color: color-mix(in srgb, var(--map-accent) 66%, var(--trace));
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent),
-    0 5px 18px color-mix(in srgb, #000 12%, transparent);
-  transition:
-    background var(--duration-base) ease,
-    border-color var(--duration-base) ease,
-    box-shadow var(--duration-slow) ease,
-    transform var(--duration-base) cubic-bezier(.2, .75, .25, 1);
-}
-
-:root[data-skin="insight"] .library-row:hover,
-:root[data-skin="insight"] .library-row:focus-visible,
-:root[data-skin="insight"] .library-series-group:hover,
-:root[data-skin="insight"] .library-series-group:focus-within {
-  animation: none;
-  border-color: color-mix(in srgb, var(--map-accent) 42%, var(--trace));
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, #fff 7%, transparent),
-    0 11px 30px color-mix(in srgb, #000 22%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--trace) 8%, transparent);
-  transform: translateY(-2px);
-}
-
-:root[data-skin="insight"] :is(.library-row-map-artwork, .library-series-map-artwork) .map-artwork-image {
-  filter: saturate(.94) contrast(1.06) brightness(.92);
-  transition:
-    filter var(--duration-slow) ease,
-    transform 360ms cubic-bezier(.2, .75, .25, 1);
-}
-
-:root[data-skin="insight"] .library-row:hover .library-row-map-artwork .map-artwork-image,
-:root[data-skin="insight"] .library-row:focus-visible .library-row-map-artwork .map-artwork-image,
-:root[data-skin="insight"] .library-series-map-card:hover .map-artwork-image,
-:root[data-skin="insight"] .library-series-map-card:focus-within .map-artwork-image {
-  filter: saturate(1.08) contrast(1.08) brightness(1);
-  transform: scale(1.065);
-}
-
-:root[data-skin="insight"] .library-row-arrow {
-  transition: color var(--duration-fast) ease, transform var(--duration-base) ease;
-}
-
-:root[data-skin="insight"] .library-row:hover .library-row-arrow,
-:root[data-skin="insight"] .library-row:focus-visible .library-row-arrow {
-  color: var(--trace);
-  transform: translateX(3px);
-}
-
 @keyframes library-card-enter {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* Flat, information-dense library */
+.library-workspace {
+  padding: 18px 20px 24px;
+}
+
+.library-heading {
+  max-width: none;
+  margin: 0 0 12px;
+}
+
+.library-heading h1 {
+  margin: 0;
+  font-family: inherit;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.library-command-bar {
+  grid-template-columns: minmax(160px, .8fr) minmax(210px, 1.4fr) minmax(96px, auto) minmax(96px, auto) minmax(112px, auto) 32px;
+  max-width: none;
+  min-height: 42px;
+  margin: 0;
+  padding: 5px;
+  gap: 5px;
+  background: var(--surface-raised);
+  border-radius: 4px;
+}
+
+.library-root-button,
+.library-command-bar input,
+.library-command-bar select {
+  height: 32px;
+}
+
+.library-result-meta {
+  max-width: none;
+  min-height: 32px;
+  margin: 0;
+  padding: 0 2px;
+  font-size: 10.5px;
+}
+
+.library-result-meta strong { font-size: 11.5px; font-weight: 600; }
+.library-source-link-note { max-width: none; margin: 0 0 8px; border-left-width: 2px; border-radius: 0; }
+
+.library-list {
+  --library-row-columns: minmax(108px, .62fr) minmax(300px, 2.4fr) minmax(94px, .58fr) minmax(132px, .9fr) 26px;
+
+  max-width: none;
+  margin: 0;
+  gap: 0;
+  overflow: hidden;
+  background: var(--surface-raised);
+  border: 1px solid var(--divider);
+  border-radius: 4px;
+}
+
+.library-row,
+.library-series-group {
+  min-height: 58px;
+  height: auto;
+  background: var(--surface-raised);
+  border: 0;
+  border-bottom: 1px solid var(--divider);
+  border-left: 0;
+  border-radius: 0;
+  animation: none;
+  transition: background-color 100ms ease;
+}
+
+.library-list > :last-child { border-bottom: 0; }
+.library-row:hover,
+.library-row:focus-visible { background: var(--hover-row); border-color: var(--divider); transform: none; }
+.library-row > div + div { border-left-color: var(--divider); }
+.library-row-date,
+.library-row-match,
+.library-row-score { padding: 8px 10px; }
+.library-row-date strong { font-family: inherit; font-size: 11px; font-weight: 600; }
+.library-row-date small,
+.library-row-team small,
+.library-row-score small { font-size: 9.5px; }
+.library-row-team strong { font-family: inherit; font-size: 12px; font-weight: 600; }
+.library-row-score-numbers strong { font-size: 17px; }
+.library-row-map { min-height: 57px; padding: 0 10px; }
+.library-row-map::before { background: rgba(7, 8, 10, .48); }
+.library-row-map-artwork .map-artwork-image { filter: saturate(.62) brightness(.72); transform: none; }
+.library-row-map strong { font-family: inherit; font-size: 11px; font-weight: 600; text-shadow: 0 1px 3px #000; }
+.library-row-arrow { margin-right: 6px; }
+
+.library-series-date,
+.library-series-match { padding: 8px 10px; transition: background-color 100ms ease; }
+.library-series-date:hover,
+.library-series-date:focus-visible,
+.library-series-match:hover,
+.library-series-match:focus-visible { background: var(--hover-row); box-shadow: none; }
+.library-series-scoreboard b { font-size: 17px; }
+.library-series-map-card,
+.library-series-map-open { height: 57px; }
+.library-series-map-card { background: #101114; transition: background-color 100ms ease; }
+.library-series-map-card:hover,
+.library-series-map-card:focus-within { background: #15171a; box-shadow: inset 0 0 0 1px var(--divider-strong); }
+.library-series-map-card:hover .library-series-map-artwork,
+.library-series-map-card:focus-within .library-series-map-artwork { transform: none; }
+.library-series-map-artwork .map-artwork-image { filter: saturate(.62) brightness(.66); transform: none; }
+
+.library-first-run {
+  width: min(780px, 100%);
+  min-height: 150px;
+  margin: 28px auto 0;
+  padding: 24px;
+  gap: 18px;
+  background: var(--surface-raised);
+  border-radius: 4px;
+}
+
+.library-empty-mark {
+  width: 52px;
+  height: 52px;
+  color: var(--accent);
+  background: var(--surface-subtle);
+  border: 1px solid var(--divider);
+  border-radius: 4px;
+}
+
+.library-first-run h2 { font-family: inherit; font-size: 18px; }
+.library-first-run > div:nth-child(2) > span { font-family: inherit; letter-spacing: 0; text-transform: none; }
+.library-no-results,
+.library-no-results.is-blank-slate {
+  width: 100%;
+  max-width: none;
+  min-height: 220px;
+  margin: 0;
+  background: var(--surface-subtle);
+  border: 1px solid var(--divider);
+  border-radius: 4px;
+}
+.library-blank-mark { border-radius: 4px; }
 
 @keyframes library-skeleton-pulse {
   0%, 100% { opacity: 0.58; }
@@ -1013,11 +1097,11 @@
   }
 
   .library-heading {
-    margin-bottom: 14px;
+    margin-bottom: 10px;
   }
 
   .library-heading h1 {
-    font-size: 28px;
+    font-size: 20px;
   }
 }
 

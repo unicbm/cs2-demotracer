@@ -37,8 +37,8 @@
   white-space: nowrap;
 }
 
-.analysis-score-team.is-team-a { padding-left: 9px; border-left: var(--selection-rail-width) solid var(--team-a); }
-.analysis-score-team.is-team-b { padding-right: 9px; border-right: var(--selection-rail-width) solid var(--team-b); text-align: right; }
+.analysis-score-team.is-team-a { padding-left: 9px; }
+.analysis-score-team.is-team-b { padding-right: 9px; text-align: right; }
 
 .analysis-scoreline { display: flex; align-items: baseline; justify-content: center; gap: 7px; font: 700 18px var(--mono); font-variant-numeric: tabular-nums; }
 .analysis-scoreline i { color: var(--text-tertiary); font-style: normal; }
@@ -106,10 +106,9 @@
   display: flex;
   align-items: baseline;
   min-height: 34px;
-  padding: 7px 14px 6px 11px;
+  padding: 7px 14px 6px;
   gap: 8px;
   background: color-mix(in srgb, var(--team-color) 6%, var(--surface-muted));
-  border-left: 3px solid var(--team-color);
 }
 
 .analysis-team-heading strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
@@ -138,7 +137,6 @@
 .analysis-player-stat-row:hover,
 .analysis-player-stat-row:focus-visible {
   background: color-mix(in srgb, var(--team-color) 6%, var(--surface-raised));
-  box-shadow: inset var(--selection-rail-width) 0 var(--team-color);
   outline: 0;
 }
 

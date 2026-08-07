@@ -4,18 +4,18 @@
  * See LICENSE in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { Theme, UiSkin } from "./types";
+import type { Theme } from "./types";
 
 export type ResolvedTheme = Exclude<Theme, "system">;
-export const UI_SKINS: readonly UiSkin[] = ["insight", "trace", "cobalt", "ember", "signal"];
 export const THEME_STORAGE_KEY = "demotracer.theme";
-export const UI_SKIN_STORAGE_KEY = "demotracer.ui-skin.v1";
-export const THEME_BACKGROUNDS: Record<UiSkin, Record<ResolvedTheme, string>> = {
-  insight: { light: "#e9e5dc", dark: "#090a08" },
-  trace: { light: "#e8e6e1", dark: "#10110f" },
-  cobalt: { light: "#e7ebf0", dark: "#0f141b" },
-  ember: { light: "#ece7e6", dark: "#151011" },
-  signal: { light: "#e5eae7", dark: "#0e1412" },
+export const LEGACY_APPEARANCE_STORAGE_KEYS = [
+  "demotracer.ui-skin.v1",
+  "demotracer.sidebar-width.v1",
+  "demotracer.sidebar-collapsed.v1",
+] as const;
+export const THEME_BACKGROUNDS: Record<ResolvedTheme, string> = {
+  light: "#eceef0",
+  dark: "#0d0e10",
 };
 export const UI_SCALE_STEPS = [0.9, 1, 1.1, 1.25] as const;
 export type UiScale = (typeof UI_SCALE_STEPS)[number];
@@ -28,15 +28,11 @@ export function resolveTheme(theme: Theme, systemDark: boolean): ResolvedTheme {
 export function normalizeTheme(value: unknown): Theme {
   return value === "light" || value === "dark" || value === "system"
     ? value
-    : "system";
+    : "dark";
 }
 
-export function normalizeUiSkin(value: unknown): UiSkin {
-  return UI_SKINS.includes(value as UiSkin) ? value as UiSkin : "insight";
-}
-
-export function themeBackground(skin: UiSkin, theme: ResolvedTheme): string {
-  return THEME_BACKGROUNDS[skin][theme];
+export function themeBackground(theme: ResolvedTheme): string {
+  return THEME_BACKGROUNDS[theme];
 }
 
 export function toggleResolvedTheme(theme: Theme, systemDark: boolean): ResolvedTheme {

@@ -167,29 +167,7 @@ export function PlayerAnalysisWorkspace({
 
       <div className="player-analysis-scroll">
         <div className="player-analysis-layout">
-          <aside className="player-analysis-index" aria-labelledby="player-analysis-index-title">
-            <header>
-              <h2 id="player-analysis-index-title">{words.choosePlayer}</h2>
-              <select
-                className="player-analysis-select"
-                aria-label={words.choosePlayer}
-                value={selectedEntry.key}
-                onChange={(event) => {
-                  const next = entries.find((entry) => entry.key === event.target.value);
-                  if (next) onSelectPlayer(next.selection);
-                }}
-              >
-                {teams.map((team) => (
-                  <optgroup label={team.name} key={team.id}>
-                    {team.players.map((optionPlayer, playerIndex) => {
-                      const option = { teamId: team.id, playerIndex };
-                      const optionKey = playerSelectionKey(option);
-                      return <option value={optionKey} key={optionKey}>{optionPlayer.name}</option>;
-                    })}
-                  </optgroup>
-                ))}
-              </select>
-            </header>
+          <aside className="player-analysis-index" aria-label={words.choosePlayer}>
             <nav aria-label={words.choosePlayer}>
               {teams.map((team) => (
                 <section className={`player-analysis-team is-team-${team.id}`} aria-labelledby={`player-analysis-team-${team.id}`} key={team.id}>
@@ -206,6 +184,7 @@ export function PlayerAnalysisWorkspace({
                           className={selected ? "is-selected" : ""}
                           type="button"
                           aria-current={selected ? "page" : undefined}
+                          aria-label={teamPlayer.name}
                           onClick={() => onSelectPlayer(selection)}
                           key={entryKey}
                           style={playerColor

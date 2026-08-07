@@ -221,7 +221,6 @@
   color: var(--text-primary);
   background: color-mix(in srgb, var(--trace) 7%, var(--surface-raised));
   border-color: color-mix(in srgb, var(--trace) 23%, var(--divider));
-  box-shadow: inset var(--selection-rail-width) 0 0 var(--trace);
 }
 
 .faq-question-list button > span {
@@ -283,9 +282,8 @@
 .faq-answer-summary {
   max-width: 720px;
   margin-top: 13px;
-  padding-left: 13px;
+  padding-left: 0;
   color: var(--text-secondary);
-  border-left: 3px solid var(--trace);
   font-size: 13px;
   font-weight: 600;
   line-height: 1.62;

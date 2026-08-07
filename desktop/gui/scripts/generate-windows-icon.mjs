@@ -22,6 +22,11 @@ const scriptsDir = dirname(fileURLToPath(import.meta.url));
 const desktopDir = dirname(scriptsDir);
 const sourcePath = join(desktopDir, "app-icon-taskbar.svg");
 const outputPath = join(desktopDir, "src-tauri", "icons", "icon.ico");
+const pngOutputs = new Map([
+  [32, "32x32.png"],
+  [128, "128x128.png"],
+  [256, "128x128@2x.png"],
+]);
 const tauriCliPath = join(desktopDir, "node_modules", "@tauri-apps", "cli", "tauri.js");
 const tempDir = mkdtempSync(join(tmpdir(), "cs2-demotracer-icon-"));
 
@@ -83,8 +88,13 @@ try {
     validatePng(png, size);
     return { size, png };
   });
+  for (const [size, filename] of pngOutputs) {
+    const image = images.find((candidate) => candidate.size === size);
+    if (!image) throw new Error(`Missing generated ${size}x${size} PNG`);
+    writeFileSync(join(desktopDir, "src-tauri", "icons", filename), image.png);
+  }
   writeFileSync(outputPath, buildIco(images));
-  console.log(`Wrote ${outputPath} with ${images.length} native Windows DPI sizes.`);
+  console.log(`Wrote Windows PNG assets and ${outputPath} with ${images.length} native DPI sizes.`);
 } finally {
   rmSync(tempDir, { recursive: true, force: true });
 }

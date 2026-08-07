@@ -20,7 +20,7 @@ import {
   SunIcon,
   TraceMark,
 } from "../icons";
-import { UI_SKINS, type UiScale } from "../appearance";
+import type { UiScale } from "../appearance";
 import { DEMOTRACER_CREDITS } from "../credits";
 import type { TextDictionary } from "../i18n";
 import type {
@@ -37,7 +37,6 @@ import type {
   RuntimeVerificationStatus,
   ServerConfigDocument,
   ServerConfigValidation,
-  UiSkin,
 } from "../types";
 import { releaseNotesForLanguage } from "../releaseNotes";
 import { SERVER_CONFIG_GUIDE, type ServerConfigGuideGroup } from "../serverConfigGuide";
@@ -54,7 +53,6 @@ type SettingsSection = "general" | "local" | "conversion" | "playback" | "advanc
 interface SettingsWorkspaceProps {
   words: TextDictionary;
   language: Language;
-  uiSkin: UiSkin;
   uiScale: UiScale;
   environment: LocalEnvironmentSettings;
   exportRoot: string;
@@ -78,7 +76,6 @@ interface SettingsWorkspaceProps {
   playbackReleaseError: string;
   releaseAction: "installingFile" | "rollingBack" | null;
   releaseNotice: string;
-  onUiSkinChange: (skin: UiSkin) => void;
   onUiScaleChange: (scale: UiScale) => void;
   onCs2PathChange: (path: string) => void;
   onBrowseCs2: () => void;
@@ -268,7 +265,6 @@ function PathRow({
 export function SettingsWorkspace({
   words,
   language,
-  uiSkin,
   uiScale,
   environment,
   exportRoot,
@@ -292,7 +288,6 @@ export function SettingsWorkspace({
   playbackReleaseError,
   releaseAction,
   releaseNotice,
-  onUiSkinChange,
   onUiScaleChange,
   onCs2PathChange,
   onBrowseCs2,
@@ -332,13 +327,6 @@ export function SettingsWorkspace({
   }, [language, report]);
   const defaultRootKey = exportRoot.replace(/\\/g, "/").toLocaleLowerCase();
   const normalizedGuideQuery = serverGuideQuery.trim().toLocaleLowerCase();
-  const skinOptions = {
-    insight: { label: words.skinInsight, palette: words.skinInsightPalette },
-    trace: { label: words.skinTrace, palette: words.skinTracePalette },
-    cobalt: { label: words.skinCobalt, palette: words.skinCobaltPalette },
-    ember: { label: words.skinEmber, palette: words.skinEmberPalette },
-    signal: { label: words.skinSignal, palette: words.skinSignalPalette },
-  } satisfies Record<UiSkin, { label: string; palette: string }>;
   const serverGuideGroups = useMemo(() => {
     const groups = new Map<ServerConfigGuideGroup, Array<(typeof SERVER_CONFIG_GUIDE)[number]>>();
     for (const field of SERVER_CONFIG_GUIDE) {
@@ -374,29 +362,6 @@ export function SettingsWorkspace({
       </header>
 
       <section className="settings-card settings-form-card" aria-label={words.appearanceTitle}>
-        <div className="settings-skin-line">
-          <div className="settings-skin-copy">
-            <strong>{words.uiSkin}</strong>
-            <small>{words.uiSkinHelp}</small>
-          </div>
-          <div className="settings-skin-grid" role="radiogroup" aria-label={words.uiSkin}>
-            {UI_SKINS.map((skin) => (
-              <button
-                className={`settings-skin-choice${uiSkin === skin ? " is-selected" : ""}`}
-                data-skin-preview={skin}
-                type="button"
-                role="radio"
-                aria-checked={uiSkin === skin}
-                key={skin}
-                onClick={() => onUiSkinChange(skin)}
-              >
-                <span className="settings-skin-swatches" aria-hidden="true"><i /><i /><i /></span>
-                <span><strong>{skinOptions[skin].label}</strong><small>{skinOptions[skin].palette}</small></span>
-                {uiSkin === skin ? <CheckIcon size={14} /> : null}
-              </button>
-            ))}
-          </div>
-        </div>
         <div className="settings-choice-row">
           <div><strong>{words.uiScale}</strong></div>
           <div className="segmented-control" role="group" aria-label={words.uiScale}>
@@ -1262,11 +1227,7 @@ export function SettingsWorkspace({
     <section className="settings-workspace" aria-labelledby="settings-workspace-title">
       <div className="settings-titlebar">
         <div className="settings-titlebar-copy">
-          <span className="settings-titlebar-mark" aria-hidden="true"><SlidersIcon size={18} /></span>
-          <div>
-            <h1 id="settings-workspace-title">{words.settingsTitle}</h1>
-            <p>{words.settingsSubtitle}</p>
-          </div>
+          <h1 id="settings-workspace-title">{words.settingsTitle}</h1>
         </div>
         {guiUpdate.phase === "available" ? (
           <button className="settings-update-shortcut" type="button" onClick={() => setSection("local")}>

@@ -43,9 +43,7 @@
 .steam-avatar.has-player-color {
   border-color: var(--steam-avatar-accent);
   border-width: 2px;
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--steam-avatar-accent) 35%, transparent),
-    0 2px 9px color-mix(in srgb, var(--steam-avatar-accent) 22%, transparent);
+  box-shadow: none;
 }
 
 .steam-avatar img {

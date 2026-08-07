@@ -147,7 +147,7 @@ export const DEMOTRACER_CREDITS = {
       profileUrl: "https://github.com/DrEAmSs59",
       projects: [
         {
-          name: "CS2 Insight Agent · Authorized UI Reference",
+          name: "CS2 Insight Agent · Authorized Interface Reference",
           repository: "DrEAmSs59/CS2-insight-agent",
           url: "https://github.com/DrEAmSs59/CS2-insight-agent",
         },
