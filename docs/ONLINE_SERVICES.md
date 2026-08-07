@@ -47,14 +47,10 @@ another duplicate check, and one retry. On success the window loads the
 refreshed official inventory; its compact completion indicator disappears
 automatically. This avoids racing several stale browser tabs.
 
-Each added entry is a simulated replica, not the original owned item:
-owner/account identifiers, the original item ID, and the exact StatTrak counter
-are not copied. Inventory Simulator does not represent DemoTracer's separate
-sticker-scale evidence in this item shape, so that field is not included.
-Supported weapon and knife replicas preserve the complete demo-backed custom
-name, including the Chinese fullwidth punctuation accepted by current cs2-lib
-and Inventory Simulator releases. Other item types remain unnamed because the
-simulator accepts custom names only on name-tag-compatible item types.
+Each added entry is a replica. DemoTracer omits owner/account identifiers, the
+original item ID, exact StatTrak counters, and unsupported sticker-scale evidence.
+Compatible weapon and knife custom names are preserved; other names are omitted
+without rejecting the item.
 
 The desktop app checks the signed stable GUI release manifest when it starts.
 The check is best-effort, does not upload local paths or application data, and

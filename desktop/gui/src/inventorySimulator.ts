@@ -121,8 +121,9 @@ export function inventorySimulatorItemForCosmetic(
     if (!Number.isFinite(cosmetic.wear) || cosmetic.wear < 0 || cosmetic.wear > 1) return null;
     item.wear = truncateTo(cosmetic.wear, 6);
   }
-  if (cosmetic.customName) {
-    if (!NAME_TAG_PATTERN.test(cosmetic.customName)) return null;
+  if ((cosmetic.kind === "weapon" || cosmetic.kind === "knife")
+    && cosmetic.customName
+    && NAME_TAG_PATTERN.test(cosmetic.customName)) {
     item.nameTag = cosmetic.customName;
   }
   if (cosmetic.quality === 9 || (cosmetic.stattrakCounter !== null && cosmetic.stattrakCounter !== undefined)) {

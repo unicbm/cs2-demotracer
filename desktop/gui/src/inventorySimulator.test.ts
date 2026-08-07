@@ -85,6 +85,18 @@ describe("Inventory Simulator cosmetic handoff", () => {
     }, { ...resolvers, stickerId: () => null }), null);
   });
 
+  it("drops only a simulator-incompatible custom name", () => {
+    assert.deepEqual(inventorySimulatorItemForCosmetic({
+      kind: "weapon",
+      customName: "invalid <name>",
+    }, resolvers), { id: 307 });
+
+    assert.deepEqual(inventorySimulatorItemForCosmetic({
+      kind: "glove",
+      customName: "valid but unsupported",
+    }, resolvers), { id: 307 });
+  });
+
   it("normalizes demo sticker slots to the catalog item's physical schemas", () => {
     const cosmetic: CosmeticEvidence = {
       kind: "weapon",
