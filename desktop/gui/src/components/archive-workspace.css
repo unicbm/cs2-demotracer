@@ -31,12 +31,27 @@
   gap: 14px;
 }
 
-.archive-toolbar-caption {
-  color: var(--text-tertiary);
-  font-size: 10px;
-  font-weight: 750;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.archive-library-back {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 9px;
+  gap: 7px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  font-weight: 680;
+}
+
+.archive-library-back svg { transform: rotate(180deg); }
+
+.archive-library-back:hover {
+  color: var(--text-primary);
+  background: var(--surface-subtle);
+  border-color: var(--divider-strong);
 }
 
 .archive-series-switcher {

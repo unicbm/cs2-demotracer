@@ -5,7 +5,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { useEffect, useState } from "react";
-import { AlertIcon, CheckIcon, ChevronIcon, CopyIcon, FolderIcon, NoteIcon, RefreshIcon } from "../icons";
+import { AlertIcon, ArrowIcon, CheckIcon, ChevronIcon, CopyIcon, FolderIcon, NoteIcon, RefreshIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
 import type { InventorySimulatorItem } from "../inventorySimulator";
 import { useInventorySimulatorSelection } from "../inventorySimulatorSelection";
@@ -49,6 +49,7 @@ interface ArchiveWorkspaceProps {
   onSelectPlayer: (selection: PlayerSelection) => void;
   onClosePlayer: () => void;
   onSelectSeriesMap: (manifestPath: string) => void;
+  onBackToLibrary: () => void;
   onReconvert: () => void;
   onSaveNote: (note: string) => Promise<boolean>;
   onChooseManifest: () => void;
@@ -260,6 +261,7 @@ export function ArchiveWorkspace({
   onSelectPlayer,
   onClosePlayer,
   onSelectSeriesMap,
+  onBackToLibrary,
   onReconvert,
   onSaveNote,
   onChooseManifest,
@@ -375,6 +377,10 @@ export function ArchiveWorkspace({
     <section className="archive-workspace" aria-label={archiveTitle} style={mapArtworkStyle(archive.map)}>
       <header className="archive-toolbar">
         <div className="archive-toolbar-context">
+          <button className="archive-library-back" type="button" onClick={onBackToLibrary}>
+            <ArrowIcon size={15} />
+            <span>{words.backToLibrary}</span>
+          </button>
           {seriesEntries.length > 1 ? (
             <nav className="archive-series-switcher" aria-label={words.seriesMapNavigation}>
               {seriesEntries.map((entry) => {
@@ -396,7 +402,7 @@ export function ArchiveWorkspace({
                 );
               })}
             </nav>
-          ) : <span className="archive-toolbar-caption">{words.archive}</span>}
+          ) : null}
         </div>
         <div className="archive-toolbar-actions">
           <details className="archive-actions-menu">

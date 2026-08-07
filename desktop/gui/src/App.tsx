@@ -3584,6 +3584,7 @@ function App() {
                 void runManifest(manifestPath);
               }
             }}
+            onBackToLibrary={() => dispatchLibraryWorkspace({ type: "navigate", section: "library" })}
             onReconvert={() => setReparseTarget({ kind: "archive", archive })}
             onSaveNote={saveArchiveNote}
             onChooseManifest={() => void chooseManifest()}
