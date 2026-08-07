@@ -596,7 +596,24 @@ function userFacingErrorMessage(error: { code: string; message: string; path?: s
   if (code.includes("analysis") || code.includes("demo") || code.includes("parse")) {
     return zh ? "无法分析此 Demo。请重试或选择其他文件。" : "This demo could not be analyzed. Retry or choose another file.";
   }
-  return zh ? "操作失败，请重试。" : "Operation failed. Try again.";
+  return zh
+    ? `操作失败（${error.code}）。请检查当前选择后重试。`
+    : `The operation failed (${error.code}). Check the current selection and try again.`;
+}
+
+function userFacingErrorTitle(error: { code: string }, language: Language): string {
+  const code = error.code.toLocaleLowerCase();
+  const zh = language === "zh";
+  if (code.includes("analysis") || code.includes("demo") || code.includes("parse")) {
+    return zh ? "Demo 分析失败" : "Demo analysis failed";
+  }
+  if (code.includes("playback")) return zh ? "回放组件操作失败" : "Playback operation failed";
+  if (code.includes("inventory_simulator")) return zh ? "饰品预览无法打开" : "Inventory preview unavailable";
+  if (code.includes("permission") || code.includes("denied") || code.includes("write")) {
+    return zh ? "目录不可写" : "Folder is not writable";
+  }
+  if (code.includes("not_found") || code.includes("missing")) return zh ? "文件不存在" : "File not found";
+  return zh ? "操作未完成" : "The operation did not finish";
 }
 
 function phaseFromBackend(phase: TaskPhase, current: ProgressPhase): ProgressPhase {
@@ -795,14 +812,24 @@ function App() {
   const inspectorVisible = selectedPlayer === null && (inspectorDocked || inspectorSheetOpen);
   const elapsedSeconds = useElapsed(singleTask === "analysis");
   const sourceFileName = analysis?.fileName || fileName(sourcePath);
-  const sessionTitle = activeSection === "analysis" && phase === "archive" && archive
+  const analysisSessionTitle = activeSection === "analysis" && phase === "archive" && archive
     ? archive.displayName || fileName(archive.demoPath) || archive.demoId
     : activeSection === "analysis" ? sourceFileName : "";
-  const sessionMeta = activeSection === "analysis" && phase === "archive" && archive
+  const analysisSessionMeta = activeSection === "analysis" && phase === "archive" && archive
     ? [fileName(archive.sourcePath || archive.demoPath), archive.map, `${archive.rounds.length} ${words.rounds}`].filter(Boolean).join(" · ")
     : activeSection === "analysis" && analysis
       ? [analysis.map || "—", `${analysis.rounds.length} ${words.rounds}`].join(" · ")
       : "";
+  const sessionTitle = analysisSessionTitle || (activeSection === "library" ? words.navLibrary
+    : activeSection === "batch" ? words.navImport
+      : activeSection === "settings" ? words.navSettings
+        : activeSection === "faq" ? words.navFaq
+          : words.navAnalysis);
+  const sessionMeta = analysisSessionMeta || (activeSection === "library"
+    ? libraryLoading ? words.scanningLibrary : libraryScan ? `${libraryScan.entries.length} Demo` : ""
+    : activeSection === "batch"
+      ? batchInvocationActive ? (language === "zh" ? "导入任务进行中" : "Import task in progress") : batchScan ? `${batchScan.candidates.length} Demo` : ""
+      : "");
   const analysisAvailable = phase !== "idle" || archive !== null || analysis !== null || result !== null;
   soundNotificationsRef.current = localEnvironment.soundNotifications;
   const importedBatchSources = useMemo(() => new Set(
@@ -3351,9 +3378,12 @@ function App() {
         />
         <main className="app-workspace">
         {globalError ? (
-          <div className="error-strip system-feedback-toast" role="status" aria-live="polite">
+          <div className="error-strip system-feedback-toast" role="alert" aria-live="assertive">
             <AlertIcon size={17} />
-            <div><strong>{words.errorTitle}</strong><span>{userFacingErrorMessage(globalError, language)}</span></div>
+            <div>
+              <span className="system-feedback-heading"><strong>{userFacingErrorTitle(globalError, language)}</strong><code title={globalError.message}>{globalError.code}</code></span>
+              <span>{userFacingErrorMessage(globalError, language)}</span>
+            </div>
             <button className="icon-button" type="button" onClick={() => setGlobalError(null)} aria-label={words.dismiss}><CloseIcon size={15} /></button>
           </div>
         ) : null}
@@ -3398,6 +3428,7 @@ function App() {
           <SettingsWorkspace
             words={words}
             language={language}
+            resolvedTheme={resolvedTheme}
             uiScale={uiScale}
             environment={localEnvironment}
             exportRoot={libraryRoot}
@@ -3422,6 +3453,8 @@ function App() {
             releaseAction={releaseAction}
             releaseNotice={releaseNotice}
             onUiScaleChange={setUiScale}
+            onLanguageChange={setLanguage}
+            onToggleTheme={() => setTheme(toggleResolvedTheme(theme, systemDark))}
             onCs2PathChange={(cs2Path) => {
               setLocalEnvironment((current) => ({ ...current, cs2Path }));
               setEnvironmentReport(null);

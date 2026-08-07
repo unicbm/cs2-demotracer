@@ -887,17 +887,17 @@ export function LibraryWorkspace({
               <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder={words.librarySearch} />
             </label>
 
-            <select value={mapFilter} onChange={(event) => onMapFilterChange(event.target.value)} aria-label={words.map}>
+            <select className="library-map-filter" value={mapFilter} onChange={(event) => onMapFilterChange(event.target.value)} aria-label={words.map}>
               <option value="">{words.allMaps}</option>
               {maps.map((map) => <option value={map} key={map}>{displayMap(map)}</option>)}
             </select>
 
-            <select value={platformFilter} onChange={(event) => onPlatformFilterChange(event.target.value)} aria-label={words.demoSource}>
+            <select className="library-platform-filter" value={platformFilter} onChange={(event) => onPlatformFilterChange(event.target.value)} aria-label={words.demoSource}>
               <option value="">{words.allPlatforms}</option>
               {platforms.map((platform) => <option value={platform} key={platform}>{platformName(platform)}</option>)}
             </select>
 
-            <select value={sort} onChange={(event) => onSortChange(event.target.value as LibrarySort)} aria-label={words.recentFirst}>
+            <select className="library-sort-filter" value={sort} onChange={(event) => onSortChange(event.target.value as LibrarySort)} aria-label={words.recentFirst}>
               <option value="recent">{words.recentFirst}</option>
               <option value="map">{words.mapOrder}</option>
               <option value="platform">{words.platformOrder}</option>
@@ -908,7 +908,8 @@ export function LibraryWorkspace({
             </button>
           </div> : null}
 
-          <div className="library-result-meta">
+          <div className={`library-result-meta${isScanning ? " is-scanning" : ""}`} role="status" aria-live="polite">
+            {isScanning ? <span className="library-scan-indicator" aria-hidden="true"><RefreshIcon size={13} /></span> : null}
             <strong>{importingArchives
               ? words.importingArchives
               : repairingLibrary

@@ -327,6 +327,7 @@ export function FaqWorkspace({ language }: FaqWorkspaceProps) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<FaqCategory | "all">("all");
   const [selectedId, setSelectedId] = useState(copy.entries[0].id);
+  const [mobileAnswerOpen, setMobileAnswerOpen] = useState(false);
 
   const filteredEntries = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase(language === "zh" ? "zh-CN" : "en-US");
@@ -359,19 +360,19 @@ export function FaqWorkspace({ language }: FaqWorkspaceProps) {
           <input
             type="search"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => { setQuery(event.target.value); setMobileAnswerOpen(false); }}
             placeholder={copy.searchPlaceholder}
           />
         </label>
         <div className="faq-category-list" aria-label={copy.categories.basics}>
-          <button className={category === "all" ? "is-active" : ""} type="button" onClick={() => setCategory("all")}>{copy.allCategories}</button>
+          <button className={category === "all" ? "is-active" : ""} type="button" onClick={() => { setCategory("all"); setMobileAnswerOpen(false); }}>{copy.allCategories}</button>
           {categories.map(([value, label]) => (
-            <button className={category === value ? "is-active" : ""} type="button" key={value} onClick={() => setCategory(value)}>{label}</button>
+            <button className={category === value ? "is-active" : ""} type="button" key={value} onClick={() => { setCategory(value); setMobileAnswerOpen(false); }}>{label}</button>
           ))}
         </div>
       </div>
 
-      <div className="faq-content">
+      <div className={`faq-content${mobileAnswerOpen ? " is-answer-open" : ""}`}>
         {filteredEntries.length > 0 && selectedEntry ? (
           <>
             <nav className="faq-question-pane" aria-label={copy.questions}>
@@ -383,10 +384,10 @@ export function FaqWorkspace({ language }: FaqWorkspaceProps) {
                     type="button"
                     key={entry.id}
                     aria-current={entry.id === selectedEntry.id ? "page" : undefined}
-                    onClick={() => setSelectedId(entry.id)}
+                    onClick={() => { setSelectedId(entry.id); setMobileAnswerOpen(true); }}
                   >
                     <span>{entry.question}</span>
-                    <small>{copy.categories[entry.category]}</small>
+                    {category === "all" ? <small>{copy.categories[entry.category]}</small> : null}
                     <ChevronIcon size={15} />
                   </button>
                 ))}
@@ -394,6 +395,10 @@ export function FaqWorkspace({ language }: FaqWorkspaceProps) {
             </nav>
 
             <article className="faq-answer-pane" key={selectedEntry.id}>
+              <button className="faq-mobile-back" type="button" onClick={() => setMobileAnswerOpen(false)}>
+                <ChevronIcon size={15} />
+                <span>{language === "zh" ? "返回问题列表" : "Back to questions"}</span>
+              </button>
               <span className="faq-pane-label">{copy.answer}</span>
               <h2>{selectedEntry.question}</h2>
               <p className="faq-answer-summary">{selectedEntry.summary}</p>
@@ -412,7 +417,7 @@ export function FaqWorkspace({ language }: FaqWorkspaceProps) {
             <SearchIcon size={24} />
             <strong>{copy.noResultsTitle}</strong>
             <p>{copy.noResultsBody}</p>
-            <button className="secondary-button" type="button" onClick={() => { setQuery(""); setCategory("all"); }}>{copy.clearSearch}</button>
+            <button className="secondary-button" type="button" onClick={() => { setQuery(""); setCategory("all"); setMobileAnswerOpen(false); }}>{copy.clearSearch}</button>
           </div>
         )}
       </div>

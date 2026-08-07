@@ -175,18 +175,27 @@ export function AppSidebar({
           <ChevronIcon className="sidebar-collapse-chevron" size={14} />
         </button>
       </div>
-      <nav id="app-sidebar-navigation" className="sidebar-navigation" aria-label={words.mainNavigation}>
-        <button className={itemClass(importActive)} type="button" disabled={busy} onClick={onOpenImport} aria-current={importActive ? "page" : undefined} title={words.navImport}>
+      <div className="sidebar-quick-actions">
+        <button
+          className={`sidebar-import-action${importActive ? " is-active" : ""}`}
+          type="button"
+          disabled={busy}
+          onClick={onOpenImport}
+          aria-current={importActive ? "page" : undefined}
+          title={words.navImport}
+        >
           <PlusIcon size={17} />
           <span>{words.navImport}</span>
         </button>
+      </div>
+      <nav id="app-sidebar-navigation" className="sidebar-navigation" aria-label={words.mainNavigation}>
         <button className={itemClass(libraryActive)} type="button" onClick={onOpenLibrary} aria-current={libraryActive ? "page" : undefined} title={words.navLibrary}>
           <LibraryIcon size={17} />
           <span>{words.navLibrary}</span>
         </button>
         <button className={itemClass(analysisActive)} type="button" disabled={!analysisAvailable} onClick={onOpenAnalysis} aria-current={analysisActive ? "page" : undefined} title={!analysisAvailable ? words.navAnalysisUnavailable : words.navAnalysis}>
           <ReplayIcon size={17} />
-          <span>{words.navAnalysis}</span>
+          <span><b>{words.navAnalysis}</b>{!analysisAvailable ? <small>{words.navAnalysisUnavailable}</small> : null}</span>
         </button>
 
         <span className="sidebar-section-divider" />

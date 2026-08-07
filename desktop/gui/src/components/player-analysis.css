@@ -84,7 +84,7 @@
 
 .player-analysis-layout {
   display: grid;
-  grid-template-columns: clamp(264px, 23vw, 320px) minmax(0, 1fr);
+  grid-template-columns: 220px minmax(0, 1fr);
   width: 100%;
   min-height: 100%;
   margin: 0;
@@ -121,7 +121,7 @@
 
 .player-analysis-team h3 {
   overflow: hidden;
-  padding: 0 18px 8px;
+  padding: 0 14px 8px;
   color: var(--text-secondary);
   font-size: 14px;
   font-weight: 700;
@@ -145,14 +145,14 @@
 
 .player-analysis-team-list > button {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  min-height: 42px;
-  padding: 6px 15px;
-  gap: 10px;
+  min-height: 40px;
+  padding: 5px 12px;
   color: var(--text-secondary);
   background: transparent;
   border: 0;
+  border-left: 2px solid transparent;
   border-radius: 0;
   text-align: left;
   user-select: none;
@@ -166,6 +166,7 @@
 .player-analysis-team-list > button.is-selected {
   color: var(--text-primary);
   background: color-mix(in srgb, var(--player-color, var(--player-team-color)) 10%, var(--surface-raised));
+  border-left-color: var(--player-color, var(--player-team-color));
 }
 
 .player-analysis-team-list > button strong {
@@ -181,18 +182,6 @@
   align-items: center;
   min-width: 0;
   gap: 8px;
-}
-
-.player-analysis-team-list > button > span:last-child {
-  color: var(--text-secondary);
-  font-family: var(--mono);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.player-analysis-team-list > button.is-selected > span:last-child {
-  color: var(--text-secondary);
 }
 
 .player-analysis-main {
@@ -427,40 +416,99 @@
 
 .player-analysis-metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
+  grid-template-columns: minmax(244px, 1.08fr) minmax(0, 1.92fr);
+  min-height: 92px;
 }
 
-.player-analysis-metrics > div {
-  display: grid;
-  min-height: 76px;
-  align-content: center;
-  padding: 10px 13px;
-  gap: 3px;
+.player-analysis-metrics.has-no-kda {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.player-analysis-kda {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 16px 20px;
   border-right: 1px solid var(--divider);
+  background: var(--surface-subtle);
 }
 
-.player-analysis-metrics > div:last-child { border-right: 0; }
+.player-analysis-kda-metric {
+  display: grid;
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  justify-items: center;
+  gap: 5px;
+}
 
-.player-analysis-metrics span {
+.player-analysis-kda-metric + .player-analysis-kda-metric::before {
+  position: absolute;
+  align-self: center;
+  justify-self: start;
+  color: var(--divider-strong);
+  content: "/";
+  font-size: 24px;
+  font-weight: 360;
+  transform: translateX(-50%);
+}
+
+.player-analysis-kda-metric strong {
+  color: var(--text-primary);
+  font-family: "Noto Sans SC Local", "Segoe UI Variable", sans-serif;
+  font-size: clamp(24px, 2vw, 29px);
+  font-variant-numeric: tabular-nums;
+  font-weight: 780;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+
+.player-analysis-kda-metric span {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+}
+
+.player-analysis-secondary-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
+  min-width: 0;
+}
+
+.player-analysis-secondary-metrics > div {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  justify-items: center;
+  padding: 12px 9px;
+  gap: 6px;
+  border-left: 1px solid var(--divider);
+}
+
+.player-analysis-secondary-metrics > div:first-child { border-left: 0; }
+
+.player-analysis-secondary-metrics span {
   color: var(--text-tertiary);
   font-size: 11px;
   font-weight: 760;
   letter-spacing: 0.05em;
 }
 
-.player-analysis-metrics strong {
+.player-analysis-secondary-metrics strong {
   color: var(--text-primary);
   font-family: "Noto Sans SC Local", "Segoe UI Variable", sans-serif;
-  font-size: clamp(20px, 1.8vw, 25px);
+  font-size: clamp(18px, 1.6vw, 22px);
   font-variant-numeric: tabular-nums;
   font-weight: 780;
   letter-spacing: -0.035em;
   line-height: 1.15;
 }
 
-.player-analysis-metrics .is-adr strong { color: var(--trace); }
-.player-analysis-metrics .is-kd strong,
-.player-analysis-metrics .is-kpr strong { color: var(--info); }
+.player-analysis-secondary-metrics .is-adr strong { color: var(--trace); }
+.player-analysis-secondary-metrics .is-kd strong,
+.player-analysis-secondary-metrics .is-kpr strong { color: var(--info); }
 
 .player-analysis-dossier {
   min-width: 0;
@@ -890,8 +938,7 @@
     gap: 0;
   }
 
-  .player-analysis-index-identity strong,
-  .player-analysis-team-list > button > span:last-child {
+  .player-analysis-index-identity strong {
     display: none;
   }
 
@@ -951,16 +998,26 @@
   }
 
   .player-analysis-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .player-analysis-metrics > div {
-    min-height: 78px;
+  .player-analysis-kda {
+    min-height: 88px;
+    border-right: 0;
     border-bottom: 1px solid var(--divider);
   }
 
-  .player-analysis-metrics > div:nth-child(2n) { border-right: 0; }
-  .player-analysis-metrics > div:nth-last-child(-n + 2) { border-bottom: 0; }
+  .player-analysis-secondary-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .player-analysis-secondary-metrics > div {
+    min-height: 70px;
+    border-bottom: 1px solid var(--divider);
+  }
+
+  .player-analysis-secondary-metrics > div:nth-child(2n + 1) { border-left: 0; }
+  .player-analysis-secondary-metrics > div:nth-last-child(-n + 2) { border-bottom: 0; }
 
   .player-analysis-dossier .player-setup-grid {
     grid-template-columns: 1fr;

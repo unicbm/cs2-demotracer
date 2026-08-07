@@ -20,9 +20,9 @@ import {
   SunIcon,
   TraceMark,
 } from "../icons";
-import type { UiScale } from "../appearance";
+import type { ResolvedTheme, UiScale } from "../appearance";
 import { DEMOTRACER_CREDITS } from "../credits";
-import type { TextDictionary } from "../i18n";
+import { LANGUAGE_OPTIONS, type TextDictionary } from "../i18n";
 import type {
   Cs2InstallCandidate,
   ConverterSettings,
@@ -48,11 +48,12 @@ import type {
 } from "./PlaybackCommandBuilder";
 import "./settings-workspace.css";
 
-type SettingsSection = "general" | "local" | "conversion" | "playback" | "advanced" | "about";
+type SettingsSection = "general" | "environment" | "storage" | "conversion" | "playback" | "advanced" | "about";
 
 interface SettingsWorkspaceProps {
   words: TextDictionary;
   language: Language;
+  resolvedTheme: ResolvedTheme;
   uiScale: UiScale;
   environment: LocalEnvironmentSettings;
   exportRoot: string;
@@ -77,6 +78,8 @@ interface SettingsWorkspaceProps {
   releaseAction: "installingFile" | "rollingBack" | null;
   releaseNotice: string;
   onUiScaleChange: (scale: UiScale) => void;
+  onLanguageChange: (language: Language) => void;
+  onToggleTheme: () => void;
   onCs2PathChange: (path: string) => void;
   onBrowseCs2: () => void;
   onDetectCs2: () => void;
@@ -190,18 +193,20 @@ function confidenceLabel(words: TextDictionary, confidence: string): string {
 function SettingLine({
   title,
   description,
+  tone,
   checked,
   disabled,
   onChange,
 }: {
   title: string;
   description?: string;
+  tone?: "warning";
   checked: boolean;
   disabled?: boolean;
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <div className={`settings-toggle-line${disabled ? " is-disabled" : ""}`}>
+    <div className={`settings-toggle-line${disabled ? " is-disabled" : ""}${tone === "warning" ? " is-warning" : ""}`}>
       <div>
         <strong>{title}</strong>
         {description ? <small>{description}</small> : null}
@@ -265,6 +270,7 @@ function PathRow({
 export function SettingsWorkspace({
   words,
   language,
+  resolvedTheme,
   uiScale,
   environment,
   exportRoot,
@@ -289,6 +295,8 @@ export function SettingsWorkspace({
   releaseAction,
   releaseNotice,
   onUiScaleChange,
+  onLanguageChange,
+  onToggleTheme,
   onCs2PathChange,
   onBrowseCs2,
   onDetectCs2,
@@ -362,6 +370,23 @@ export function SettingsWorkspace({
       </header>
 
       <section className="settings-card settings-form-card" aria-label={words.appearanceTitle}>
+        <div className="settings-choice-row">
+          <div><strong>{words.language}</strong></div>
+          <div className="segmented-control" role="group" aria-label={words.language}>
+            {(["zh", "en"] as const).map((option) => (
+              <button className={language === option ? "is-selected" : ""} type="button" aria-pressed={language === option} key={option} onClick={() => onLanguageChange(option)}>
+                {LANGUAGE_OPTIONS[option].label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="settings-choice-row">
+          <div><strong>{words.theme}</strong></div>
+          <div className="segmented-control" role="group" aria-label={words.theme}>
+            <button className={resolvedTheme === "light" ? "is-selected" : ""} type="button" aria-pressed={resolvedTheme === "light"} onClick={resolvedTheme === "light" ? undefined : onToggleTheme}>{words.lightTheme}</button>
+            <button className={resolvedTheme === "dark" ? "is-selected" : ""} type="button" aria-pressed={resolvedTheme === "dark"} onClick={resolvedTheme === "dark" ? undefined : onToggleTheme}>{words.darkTheme}</button>
+          </div>
+        </div>
         <div className="settings-choice-row">
           <div><strong>{words.uiScale}</strong></div>
           <div className="segmented-control" role="group" aria-label={words.uiScale}>
@@ -759,7 +784,7 @@ export function SettingsWorkspace({
   );
 
   const pathsView = (
-    <div className="settings-pane">
+    <div className="settings-pane settings-paths-pane">
       <header className="settings-pane-header">
         <h2>{words.pathsSettingsTitle}</h2>
       </header>
@@ -829,7 +854,7 @@ export function SettingsWorkspace({
   );
 
   const exportView = (
-    <div className="settings-pane">
+    <div className="settings-pane settings-export-pane">
       <header className="settings-pane-header">
         <h2>{words.exportDefaultsTitle}</h2>
         <div className="settings-header-actions">
@@ -863,6 +888,7 @@ export function SettingsWorkspace({
         <SettingLine
           title={words.exportCosmetics}
           description={cosmeticConsentAccepted ? words.cosmeticDefaultAcceptedHelp : words.cosmeticDefaultHelp}
+          tone={cosmeticConsentAccepted ? undefined : "warning"}
           checked={converter.exportCosmetics}
           onChange={(exportCosmetics) => {
             if (exportCosmetics) onRequestCosmetics();
@@ -932,7 +958,7 @@ export function SettingsWorkspace({
   );
 
   const playbackView = (
-    <div className="settings-pane">
+    <div className="settings-pane settings-playback-pane">
       <header className="settings-pane-header">
         <h2>{words.playbackDefaultsTitle}</h2>
         <span className="autosave-note"><CheckIcon size={14} />{words.settingsSavedAutomatically}</span>
@@ -1170,7 +1196,7 @@ export function SettingsWorkspace({
         <header className="credits-section-heading">
           <h3 id="credits-contributors-title">{words.creditsContributorsTitle}</h3>
         </header>
-        <div className="credits-list">
+        <div className="credits-list credits-contributor-list">
           {creditedPeople.map((person) => (
             <button
               className="credits-person-row"
@@ -1202,7 +1228,7 @@ export function SettingsWorkspace({
         <header className="credits-section-heading">
           <h3 id="credits-foundations-title">{words.creditsFoundationsTitle}</h3>
         </header>
-        <div className="credits-list">
+        <div className="credits-list credits-foundation-list">
           {DEMOTRACER_CREDITS.foundations.map((foundation) => (
             <article className="credits-foundation-row" key={foundation.id}>
               <button
@@ -1250,7 +1276,7 @@ export function SettingsWorkspace({
           <h1 id="settings-workspace-title">{words.settingsTitle}</h1>
         </div>
         {guiUpdate.phase === "available" ? (
-          <button className="settings-update-shortcut" type="button" onClick={() => setSection("local")}>
+          <button className="settings-update-shortcut" type="button" onClick={() => setSection("environment")}>
             <i aria-hidden="true" /><span>{words.releaseUpdateAvailable}</span><strong>v{guiUpdate.availableVersion || ""}</strong>
           </button>
         ) : null}
@@ -1260,9 +1286,12 @@ export function SettingsWorkspace({
           <button className={section === "general" ? "is-active" : ""} type="button" aria-current={section === "general" ? "page" : undefined} onClick={() => setSection("general")}>
             <SunIcon size={17} /><span><strong>{words.settingsNavAppearance}</strong></span>
           </button>
-          <button className={section === "local" ? "is-active" : ""} type="button" aria-current={section === "local" ? "page" : undefined} onClick={() => setSection("local")}>
-            <FolderIcon size={17} /><span><strong>{words.settingsNavEnvironment}</strong></span>
+          <button className={section === "environment" ? "is-active" : ""} type="button" aria-current={section === "environment" ? "page" : undefined} onClick={() => setSection("environment")}>
+            <RefreshIcon size={17} /><span><strong>{words.settingsNavEnvironment}</strong></span>
             {guiUpdate.phase === "available" ? <i className="settings-nav-update-dot" title={words.releaseUpdateAvailable} aria-hidden="true" /> : null}
+          </button>
+          <button className={section === "storage" ? "is-active" : ""} type="button" aria-current={section === "storage" ? "page" : undefined} onClick={() => setSection("storage")}>
+            <FolderIcon size={17} /><span><strong>{words.settingsNavPaths}</strong></span>
           </button>
           <button className={section === "conversion" ? "is-active" : ""} type="button" aria-current={section === "conversion" ? "page" : undefined} onClick={() => setSection("conversion")}>
             <SlidersIcon size={17} /><span><strong>{words.settingsNavExport}</strong></span>
@@ -1279,7 +1308,8 @@ export function SettingsWorkspace({
         </nav>
         <div className="settings-content">
           {section === "general" ? appearanceView : null}
-          {section === "local" ? <div className="settings-combined-pane">{updatesView}{environmentView}{pathsView}</div> : null}
+          {section === "environment" ? <div className="settings-combined-pane">{updatesView}{environmentView}</div> : null}
+          {section === "storage" ? pathsView : null}
           {section === "conversion" ? exportView : null}
           {section === "playback" ? playbackView : null}
           {section === "advanced" ? serverConfigView : null}

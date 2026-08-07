@@ -46,13 +46,6 @@ interface PlayerAnalysisWorkspaceProps {
   inventorySelection: InventorySimulatorSelectionController;
 }
 
-function playerKda(player: RosterPlayer): string | null {
-  const values = [player.kills, player.deaths, player.assists];
-  return values.some((value) => value !== null && value !== undefined)
-    ? values.map((value) => value ?? "—").join(" / ")
-    : null;
-}
-
 function playerMetricCards(player: RosterPlayer, words: TextDictionary) {
   const hasValue = (value: number | null | undefined): value is number => value !== null && value !== undefined;
   const rounds = player.details?.statsRounds;
@@ -143,6 +136,8 @@ export function PlayerAnalysisWorkspace({
   const professionalRoles = formattedProfessionalRoles(professionalPlayer?.registry?.roles);
   const steamProfileAvailable = hasSteamProfile(player.steamId);
   const metrics = playerMetricCards(player, words);
+  const kdaMetrics = metrics.filter((metric) => metric.key === "kills" || metric.key === "deaths" || metric.key === "assists");
+  const secondaryMetrics = metrics.filter((metric) => metric.key !== "kills" && metric.key !== "deaths" && metric.key !== "assists");
   const steamCopyTarget = `player:${selectedEntry.key}:steam:0` as CopyTarget;
   const selectedPlayerColor = demoPlayerColorValue(player.playerColor);
 
@@ -177,7 +172,6 @@ export function PlayerAnalysisWorkspace({
                       const selection = { teamId: team.id, playerIndex };
                       const entryKey = playerSelectionKey(selection);
                       const selected = entryKey === selectedEntry.key;
-                      const kda = playerKda(teamPlayer);
                       const playerColor = demoPlayerColorValue(teamPlayer.playerColor);
                       return (
                         <button
@@ -195,7 +189,6 @@ export function PlayerAnalysisWorkspace({
                             <SteamAvatar profile={steamProfiles.get(teamPlayer.steamId)} fallbackName={teamPlayer.name} playerColor={teamPlayer.playerColor} size="compact" />
                             <strong title={teamPlayer.name}>{teamPlayer.name}</strong>
                           </span>
-                          {kda ? <span aria-label={`${words.kda} ${kda}`}>{kda}</span> : null}
                         </button>
                       );
                     })}
@@ -258,13 +251,25 @@ export function PlayerAnalysisWorkspace({
                 <h2 id="player-match-data-title">{words.playerMatchData}</h2>
                 <span>{player.details?.statsRounds ? `${player.details.statsRounds} ${words.roundsUnit}` : team.name}</span>
               </header>
-              <div className="player-analysis-metrics">
-                {metrics.map((metric) => (
-                  <div className={`is-${metric.key}`} key={metric.key}>
-                    <span>{metric.label}</span>
-                    <strong>{metric.value}</strong>
+              <div className={`player-analysis-metrics${kdaMetrics.length === 0 ? " has-no-kda" : ""}`}>
+                {kdaMetrics.length > 0 ? (
+                  <div className="player-analysis-kda" aria-label={words.kda}>
+                    {kdaMetrics.map((metric) => (
+                      <div className="player-analysis-kda-metric" key={metric.key}>
+                        <strong>{metric.value}</strong>
+                        <span>{metric.label}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                ) : null}
+                <div className="player-analysis-secondary-metrics">
+                  {secondaryMetrics.map((metric) => (
+                    <div className={`is-${metric.key}`} key={metric.key}>
+                      <span>{metric.label}</span>
+                      <strong>{metric.value}</strong>
+                    </div>
+                  ))}
+                </div>
               </div>
             </section>
 
