@@ -40,12 +40,18 @@ export function resolveCrosshairGap(crosshair: Crosshair): number {
   return crosshair.style === 1 ? crosshair.fixedCrosshairGap : crosshair.gap;
 }
 
-export function buildCrosshairRects(crosshair: Crosshair, viewboxSize = 64): CrosshairRect[] {
-  const center = viewboxSize / 2;
+export function buildCrosshairRects(crosshair: Crosshair, viewboxSize = 48): CrosshairRect[] {
+  const pixelScale = viewboxSize / 64;
   const baseLength = Math.max(0, Math.floor(crosshair.length * 2));
-  const length = Math.floor(crosshair.length) > 2 ? baseLength + 1 : baseLength;
-  const thickness = Math.max(1, Math.floor(crosshair.thickness * 2));
-  const gap = Math.ceil(resolveCrosshairGap(crosshair) + 4);
+  const logicalLength = Math.floor(crosshair.length) > 2 ? baseLength + 1 : baseLength;
+  const logicalThickness = Math.max(1, Math.floor(crosshair.thickness * 2));
+  const length = logicalLength > 0 ? Math.max(1, Math.round(logicalLength * pixelScale)) : 0;
+  const thickness = Math.max(1, Math.round(logicalThickness * pixelScale));
+  const gap = Math.round(Math.ceil(resolveCrosshairGap(crosshair) + 4) * pixelScale);
+  // An even-sized SVG has no single center pixel. Align odd-width strokes to
+  // a pixel center and even-width strokes to a pixel boundary so every rect
+  // starts and ends on the same raster grid in all four directions.
+  const center = Math.floor(viewboxSize / 2) + (thickness % 2 === 0 ? 0 : 0.5);
   const offset = thickness / 2 + gap;
   const shapes: CrosshairRect[] = [];
 

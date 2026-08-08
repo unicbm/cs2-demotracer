@@ -23,7 +23,7 @@ import {
 import { ArrowIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
 
-const VIEWBOX_SIZE = 64;
+const VIEWBOX_SIZE = 48;
 const SCENE_STORAGE_KEY = "demotracer:crosshair-preview-scene:v1";
 const PREVIEW_SCENES = [
   { map: "Dust II", src: dust2SceneUrl },
@@ -47,7 +47,10 @@ function storedSceneIndex(): number {
 
 function CrosshairSvg({ crosshair }: { crosshair: Crosshair }) {
   const shapes = buildCrosshairRects(crosshair, VIEWBOX_SIZE);
-  const outline = resolveCrosshairOutline(crosshair);
+  const logicalOutline = resolveCrosshairOutline(crosshair);
+  const outline = logicalOutline > 0
+    ? Math.max(1, Math.round(logicalOutline * VIEWBOX_SIZE / 64))
+    : 0;
   const opacity = resolveCrosshairOpacity(crosshair);
   const viewBox = resolveCrosshairViewBox(shapes, outline, VIEWBOX_SIZE);
   return (
