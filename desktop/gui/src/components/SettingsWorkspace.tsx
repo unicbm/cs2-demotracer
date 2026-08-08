@@ -10,6 +10,7 @@ import {
   ArrowIcon,
   CheckIcon,
   ChevronIcon,
+  CloseIcon,
   ExternalLinkIcon,
   FolderIcon,
   LibraryIcon,
@@ -17,7 +18,6 @@ import {
   ReplayIcon,
   SearchIcon,
   SlidersIcon,
-  SunIcon,
   TraceMark,
 } from "../icons";
 import type { ResolvedTheme, UiScale } from "../appearance";
@@ -34,27 +34,23 @@ import type {
   Language,
   LocalEnvironmentSettings,
   PlaybackReleaseStatus,
-  RuntimeVerificationStatus,
   ServerConfigDocument,
   ServerConfigValidation,
 } from "../types";
 import { releaseNotesForLanguage } from "../releaseNotes";
 import { SERVER_CONFIG_GUIDE, type ServerConfigGuideGroup } from "../serverConfigGuide";
-import type {
-  PlaybackHandoffMode,
-  PlaybackMatchOverride,
-  PlaybackPresetOptions,
-  PlaybackToggleOverride,
-} from "./PlaybackCommandBuilder";
+import type { PlaybackHandoffMode, PlaybackPresetOptions } from "./PlaybackCommandBuilder";
+import { DialogPrimitive } from "./Dialog";
 import "./settings-workspace.css";
 
-type SettingsSection = "general" | "environment" | "storage" | "conversion" | "playback" | "advanced" | "about";
+type SettingsModal = "desktopUpdate" | "playbackInstall" | "advanced" | "about" | "customCss" | null;
 
 interface SettingsWorkspaceProps {
   words: TextDictionary;
   language: Language;
   resolvedTheme: ResolvedTheme;
   uiScale: UiScale;
+  customCss: string;
   environment: LocalEnvironmentSettings;
   exportRoot: string;
   archiveRoots: string[];
@@ -78,6 +74,7 @@ interface SettingsWorkspaceProps {
   releaseAction: "installingFile" | "rollingBack" | null;
   releaseNotice: string;
   onUiScaleChange: (scale: UiScale) => void;
+  onCustomCssChange: (css: string) => void;
   onLanguageChange: (language: Language) => void;
   onToggleTheme: () => void;
   onCs2PathChange: (path: string) => void;
@@ -89,10 +86,10 @@ interface SettingsWorkspaceProps {
   onInstallGuiUpdate: () => void;
   onInstallPlaybackBundle: () => void;
   onRollbackPlayback: () => void;
-  onLoadServerConfig: () => void;
+  onLoadServerConfig: () => Promise<boolean>;
   onServerConfigDraftChange: (json: string) => void;
-  onValidateServerConfig: () => void;
-  onSaveServerConfig: () => void;
+  onValidateServerConfig: () => Promise<ServerConfigValidation | null>;
+  onSaveServerConfig: () => Promise<boolean>;
   onChooseExportRoot: () => void;
   onAddArchiveRoot: () => void;
   onRemoveArchiveRoot: (root: string) => void;
@@ -151,13 +148,6 @@ function overallCopy(words: TextDictionary, status: EnvironmentOverallStatus) {
   if (status === "warning") return [words.environmentWarningTitle, words.environmentWarningBody] as const;
   if (status === "error") return [words.environmentErrorTitle, words.environmentErrorBody] as const;
   return [words.environmentUnverifiedTitle, words.environmentUnverifiedBody] as const;
-}
-
-function runtimeVerificationLabel(words: TextDictionary, status: RuntimeVerificationStatus): string {
-  if (status === "verified") return words.runtimeVerified;
-  if (status === "notRunning") return words.runtimeNotRunning;
-  if (status === "unavailable") return words.runtimeUnavailable;
-  return words.runtimeNotVerified;
 }
 
 function pluginClassification(words: TextDictionary, classification: EnvironmentPluginClassification): string {
@@ -237,6 +227,24 @@ function SettingSelectLine({
   );
 }
 
+function SettingsSubpageRow({
+  title,
+  status,
+  onClick,
+}: {
+  title: string;
+  status?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button className="settings-subpage-row" type="button" onClick={onClick}>
+      <span><strong>{title}</strong></span>
+      {status ? <em>{status}</em> : null}
+      <ChevronIcon size={15} />
+    </button>
+  );
+}
+
 function PathRow({
   path,
   badge,
@@ -256,10 +264,11 @@ function PathRow({
 }) {
   return (
     <div className="settings-path-row">
-      <FolderIcon size={16} />
-      <code title={path}>{path}</code>
-      {badge ? <span>{badge}</span> : null}
-      <button className="text-button" type="button" onClick={onOpen}>{openLabel}</button>
+      <button className="settings-path-open-target" type="button" onClick={onOpen} aria-label={`${openLabel}: ${path}`} title={path}>
+        <FolderIcon size={16} />
+        <code>{path}</code>
+        {badge ? <span>{badge}</span> : null}
+      </button>
       {removable ? (
         <button className="text-button" type="button" onClick={onRemove}>{removeLabel}</button>
       ) : null}
@@ -272,6 +281,7 @@ export function SettingsWorkspace({
   language,
   resolvedTheme,
   uiScale,
+  customCss,
   environment,
   exportRoot,
   archiveRoots,
@@ -295,6 +305,7 @@ export function SettingsWorkspace({
   releaseAction,
   releaseNotice,
   onUiScaleChange,
+  onCustomCssChange,
   onLanguageChange,
   onToggleTheme,
   onCs2PathChange,
@@ -322,17 +333,13 @@ export function SettingsWorkspace({
   onRequestCosmetics,
   onPlaybackChange,
 }: SettingsWorkspaceProps) {
-  const [section, setSection] = useState<SettingsSection>("general");
+  const [settingsModal, setSettingsModal] = useState<SettingsModal>(null);
+  const [customCssDraft, setCustomCssDraft] = useState(customCss);
   const [serverGuideQuery, setServerGuideQuery] = useState("");
+  const [validatingServerConfig, setValidatingServerConfig] = useState(false);
+  const [serverConfigFeedback, setServerConfigFeedback] = useState<{ tone: "progress" | "success" | "error"; message: string } | null>(null);
   const autoLoadedConfigPath = useRef("");
   const reportCopy = report ? overallCopy(words, report.overall) : null;
-  const formattedCheckTime = useMemo(() => {
-    if (!report) return "";
-    return new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-US", {
-      dateStyle: "medium",
-      timeStyle: "medium",
-    }).format(new Date(report.checkedAtMs));
-  }, [language, report]);
   const defaultRootKey = exportRoot.replace(/\\/g, "/").toLocaleLowerCase();
   const normalizedGuideQuery = serverGuideQuery.trim().toLocaleLowerCase();
   const serverGuideGroups = useMemo(() => {
@@ -347,13 +354,42 @@ export function SettingsWorkspace({
     return groups;
   }, [language, normalizedGuideQuery]);
 
+  const handleLoadServerConfig = async () => {
+    setServerConfigFeedback({ tone: "progress", message: words.loadingServerConfig });
+    const succeeded = await onLoadServerConfig();
+    setServerConfigFeedback({
+      tone: succeeded ? "success" : "error",
+      message: succeeded ? words.serverConfigLoadSucceeded : words.serverConfigLoadFailed,
+    });
+  };
+
+  const handleValidateServerConfig = async () => {
+    setValidatingServerConfig(true);
+    setServerConfigFeedback({ tone: "progress", message: words.validatingServerConfig });
+    const validation = await onValidateServerConfig();
+    setValidatingServerConfig(false);
+    setServerConfigFeedback({
+      tone: validation ? (validation.valid ? "success" : "error") : "error",
+      message: validation ? (validation.valid ? words.serverConfigValid : words.serverConfigInvalid) : words.serverConfigValidationFailed,
+    });
+  };
+
+  const handleSaveServerConfig = async () => {
+    setServerConfigFeedback({ tone: "progress", message: words.savingServerConfig });
+    const succeeded = await onSaveServerConfig();
+    setServerConfigFeedback({
+      tone: succeeded ? "success" : "error",
+      message: succeeded ? words.serverConfigSaveSucceeded : words.serverConfigSaveFailed,
+    });
+  };
+
   useEffect(() => {
     const path = environment.cs2Path.trim();
-    if (section !== "advanced" || !path || serverConfigDocument || loadingServerConfig) return;
+    if (settingsModal !== "advanced" || !path || serverConfigDocument || loadingServerConfig) return;
     if (autoLoadedConfigPath.current === path) return;
     autoLoadedConfigPath.current = path;
-    onLoadServerConfig();
-  }, [environment.cs2Path, loadingServerConfig, onLoadServerConfig, section, serverConfigDocument]);
+    void handleLoadServerConfig();
+  }, [environment.cs2Path, loadingServerConfig, onLoadServerConfig, serverConfigDocument, settingsModal]);
 
   const serverGuideGroupLabel = (group: ServerConfigGuideGroup): string => {
     if (group === "general") return words.serverConfigGroupGeneral;
@@ -365,11 +401,7 @@ export function SettingsWorkspace({
 
   const appearanceView = (
     <div className="settings-pane settings-appearance-pane">
-      <header className="settings-pane-header">
-        <h2>{words.appearanceTitle}</h2>
-      </header>
-
-      <section className="settings-card settings-form-card" aria-label={words.appearanceTitle}>
+      <section className="settings-card settings-form-card" aria-label={words.settingsNavAppearance}>
         <div className="settings-choice-row">
           <div><strong>{words.language}</strong></div>
           <div className="segmented-control" role="group" aria-label={words.language}>
@@ -408,44 +440,40 @@ export function SettingsWorkspace({
           checked={environment.soundNotifications}
           onChange={(soundNotifications) => onEnvironmentChange({ soundNotifications })}
         />
+        <button
+          className="settings-subpage-row"
+          type="button"
+          onClick={() => {
+            setCustomCssDraft(customCss);
+            setSettingsModal("customCss");
+          }}
+        >
+          <span><strong>{words.customCssTitle}</strong></span>
+          <em>{customCss.trim() ? words.customCssConfigured : words.customCssNotConfigured}</em>
+          <ChevronIcon size={15} />
+        </button>
       </section>
     </div>
   );
 
   const environmentView = (
     <div className="settings-pane settings-environment-pane">
-      <header className="settings-pane-header">
-        <h2>{words.environmentTitle}</h2>
-        <div className="settings-header-actions">
-          <button className="secondary-button" type="button" disabled={detecting || inspecting} onClick={onDetectCs2}>
-            <SearchIcon size={16} />{detecting ? words.detectingCs2 : words.autoDetectCs2}
-          </button>
-          <button className="primary-button" type="button" disabled={!environment.cs2Path.trim() || detecting || inspecting} onClick={onInspectEnvironment}>
-            <RefreshIcon size={16} />{inspecting ? words.inspectingEnvironment : words.inspectEnvironment}
-          </button>
-        </div>
-      </header>
-
-      <section className="settings-card cs2-location-card" aria-labelledby="cs2-location-title">
-        <div className="settings-card-heading">
-          <div>
-            <h3 id="cs2-location-title">{words.cs2Location}</h3>
-            <p>{words.cs2LocationHelp}</p>
+      <section className="settings-card cs2-location-card" aria-label={words.cs2Location}>
+        <div className="settings-environment-path-row">
+          <strong>{words.cs2Location}</strong>
+          <div className="settings-path-input">
+            <input
+              value={environment.cs2Path}
+              disabled={detecting || inspecting}
+              spellCheck={false}
+              placeholder={words.cs2PathPlaceholder}
+              aria-label={words.cs2Location}
+              onChange={(event) => onCs2PathChange(event.target.value)}
+            />
+            <button className="secondary-button" type="button" disabled={detecting || inspecting} onClick={onBrowseCs2}>
+              <FolderIcon size={15} />{words.browseFolder}
+            </button>
           </div>
-          <span className="local-read-badge">{words.readOnlyInspection}</span>
-        </div>
-        <div className="settings-path-input">
-          <input
-            value={environment.cs2Path}
-            disabled={detecting || inspecting}
-            spellCheck={false}
-            placeholder={words.cs2PathPlaceholder}
-            aria-label={words.cs2Location}
-            onChange={(event) => onCs2PathChange(event.target.value)}
-          />
-          <button className="secondary-button" type="button" disabled={detecting || inspecting} onClick={onBrowseCs2}>
-            <FolderIcon size={15} />{words.browseFolder}
-          </button>
         </div>
         {candidates.length > 0 ? (
           <div className="detected-install-list">
@@ -477,51 +505,24 @@ export function SettingsWorkspace({
             <small>{words.noDetectedCs2Help}</small>
           </div>
         ) : null}
+        <div className="settings-card-actions">
+          <button className="secondary-button" type="button" disabled={detecting || inspecting} onClick={onDetectCs2}>
+            <SearchIcon size={16} />{detecting ? words.detectingCs2 : words.autoDetectCs2}
+          </button>
+          <button className="primary-button" type="button" disabled={!environment.cs2Path.trim() || detecting || inspecting} onClick={onInspectEnvironment}>
+            <RefreshIcon size={16} />{inspecting ? words.inspectingEnvironment : words.inspectEnvironment}
+          </button>
+        </div>
       </section>
 
-      <aside className="vendor-warning" aria-labelledby="vendor-warning-title">
-        <span><AlertIcon size={18} /></span>
-        <div>
-          <strong id="vendor-warning-title">{words.vendorDifferenceTitle}</strong>
-          <p>{words.vendorDifferenceBody}</p>
-        </div>
-      </aside>
-
-      {!report ? (
-        <section className="diagnostic-empty settings-card">
-          <span><SearchIcon size={22} /></span>
-          <div>
-            <h3>{words.diagnosticNotRunTitle}</h3>
-          </div>
-        </section>
-      ) : (
+      {report ? (
         <>
-          <section className={`diagnostic-overview is-${report.overall}`}>
-            <span className="diagnostic-overview-mark"><StatusMark status={report.overall} /></span>
-            <div>
-              <h3>{reportCopy?.[0]}</h3>
-              <p>{reportCopy?.[1]}</p>
-              <small className="diagnostic-checked-at">
-                {words.diagnosticCheckedAt.replace("{time}", formattedCheckTime)}
-                {report.cached ? <b>{words.cachedDiagnosticBadge}</b> : null}
-              </small>
-              {report.cached ? <small className="cached-diagnostic-help">{words.cachedDiagnosticHelp}</small> : null}
-            </div>
-            <div className="diagnostic-mode">
-              <span>{words.fileCompatibility}</span>
-              <strong>{statusLabel(words, report.overall)}</strong>
-              <span>{words.runtimeState}</span>
-              <strong className={report.runtimeVerification === "verified" ? "is-verified" : ""}>
-                {runtimeVerificationLabel(words, report.runtimeVerification)}
-              </strong>
-            </div>
-          </section>
-
-          <details className="diagnostic-detail-bundle">
+          <details className={`diagnostic-detail-bundle is-${report.overall}`}>
             <summary>
-              <span>
-                <strong>{words.environmentDetails}</strong>
-                <small>{words.environmentDetailsHelp}</small>
+              <span className="diagnostic-detail-mark"><StatusMark status={report.overall} /></span>
+              <span className="diagnostic-detail-title">
+                <strong>{reportCopy?.[0]}</strong>
+                {report.cached ? <small>{words.cachedDiagnosticBadge}</small> : null}
               </span>
               <b>{words.environmentDetailCount
                 .replace("{checks}", String(report.checks.length))
@@ -659,7 +660,7 @@ export function SettingsWorkspace({
             </div>
           </details>
         </>
-      )}
+      ) : null}
     </div>
   );
 
@@ -678,12 +679,8 @@ export function SettingsWorkspace({
   const guiProgressPercent = guiUpdate.totalBytes && guiUpdate.downloadedBytes != null
     ? Math.min(100, Math.round((guiUpdate.downloadedBytes / guiUpdate.totalBytes) * 100))
     : null;
-  const updatesView = (
+  const desktopUpdateView = (
     <div className="settings-pane release-manager-pane">
-      <header className="settings-pane-header">
-        <h2>{words.releaseComponents}</h2>
-      </header>
-
       {releaseNotice ? <div className="release-notice" role="status"><CheckIcon size={16} /><span>{releaseNotice}</span></div> : null}
 
       <section
@@ -743,12 +740,14 @@ export function SettingsWorkspace({
           )}
         </footer>
       </section>
+    </div>
+  );
 
-      <section className="settings-card release-card" aria-labelledby="playback-release-title">
-        <div className="settings-card-heading">
-          <div>
-            <h3 id="playback-release-title">{words.releasePlayback}</h3>
-          </div>
+  const playbackInstallView = (
+    <div className="settings-pane release-manager-pane">
+      <section className="settings-card release-card" aria-label={words.releasePlayback}>
+        <div className="settings-card-heading release-compact-heading">
+          <strong>{words.releaseInstalled}</strong>
           <span className="count-badge">
             {playbackRelease?.currentVersion ? `v${playbackRelease.currentVersion}` : words.releaseUnverified}
           </span>
@@ -785,10 +784,6 @@ export function SettingsWorkspace({
 
   const pathsView = (
     <div className="settings-pane settings-paths-pane">
-      <header className="settings-pane-header">
-        <h2>{words.pathsSettingsTitle}</h2>
-      </header>
-
       <section className="settings-card" aria-labelledby="default-output-title">
         <div className="settings-card-heading">
           <div>
@@ -798,10 +793,11 @@ export function SettingsWorkspace({
             <FolderIcon size={15} />{words.changeFolder}
           </button>
         </div>
-        <div className="primary-path-readout">
-          <code>{exportRoot || words.notSelected}</code>
-          {exportRoot ? <button className="text-button" type="button" onClick={() => onOpenPath(exportRoot)}>{words.openFolder}</button> : null}
-        </div>
+        {exportRoot ? (
+          <button className="primary-path-readout" type="button" onClick={() => onOpenPath(exportRoot)} aria-label={`${words.openFolder}: ${exportRoot}`} title={exportRoot}>
+            <FolderIcon size={16} /><code>{exportRoot}</code>
+          </button>
+        ) : <div className="primary-path-readout is-empty"><code>{words.notSelected}</code></div>}
       </section>
 
       <section className="settings-card" aria-labelledby="archive-roots-title">
@@ -855,15 +851,8 @@ export function SettingsWorkspace({
 
   const exportView = (
     <div className="settings-pane settings-export-pane">
-      <header className="settings-pane-header">
-        <h2>{words.exportDefaultsTitle}</h2>
-        <div className="settings-header-actions">
-          <span className="autosave-note"><CheckIcon size={14} />{words.settingsSavedAutomatically}</span>
-          <button className="text-button" type="button" onClick={() => onConverterChange({ side: "both", fullRound: false, freezePrerollSeconds: 10, subtickMode: "auto", maxRoundSeconds: 240, exportVoice: true, exportCosmetics: false, exportStickers: false, exportCharms: false })}>{words.restoreSafeDefaults}</button>
-        </div>
-      </header>
-
       <section className="settings-card settings-form-card">
+        <div className="settings-card-heading settings-inline-card-heading"><h3>{words.settingsNavExport}</h3></div>
         <div className="settings-choice-row">
           <div><strong>{words.side}</strong></div>
           <div className="segmented-control" role="group" aria-label={words.side}>
@@ -891,15 +880,15 @@ export function SettingsWorkspace({
           tone={cosmeticConsentAccepted ? undefined : "warning"}
           checked={converter.exportCosmetics}
           onChange={(exportCosmetics) => {
-            if (exportCosmetics) onRequestCosmetics();
-            else onConverterChange({ exportCosmetics: false });
+            if (exportCosmetics && !cosmeticConsentAccepted) onRequestCosmetics();
+            else onConverterChange({ exportCosmetics });
           }}
         />
 
         {converter.exportCosmetics ? (
           <div className="settings-dependent-options">
-            <label><input type="checkbox" checked={converter.exportStickers} onChange={(event) => onConverterChange({ exportStickers: event.target.checked })} />{words.exportStickers}</label>
-            <label><input type="checkbox" checked={converter.exportCharms} onChange={(event) => onConverterChange({ exportCharms: event.target.checked })} />{words.exportCharms}</label>
+            <SettingLine title={words.exportStickers} checked={converter.exportStickers} onChange={(exportStickers) => onConverterChange({ exportStickers })} />
+            <SettingLine title={words.exportCharms} checked={converter.exportCharms} onChange={(exportCharms) => onConverterChange({ exportCharms })} />
           </div>
         ) : null}
 
@@ -926,13 +915,7 @@ export function SettingsWorkspace({
                 <span>{words.seconds}</span>
               </label>
             </div>
-            <div className="settings-choice-row">
-              <div><strong>{words.subtickCapture}</strong><small>{words.subtickCaptureHelp}</small></div>
-              <div className="segmented-control" role="group" aria-label={words.subtickCapture}>
-                <button className={converter.subtickMode === "auto" ? "is-selected" : ""} type="button" aria-pressed={converter.subtickMode === "auto"} onClick={() => onConverterChange({ subtickMode: "auto" })}>{words.subtickAuto}</button>
-                <button className={converter.subtickMode === "off" ? "is-selected" : ""} type="button" aria-pressed={converter.subtickMode === "off"} onClick={() => onConverterChange({ subtickMode: "off" })}>{words.subtickOff}</button>
-              </div>
-            </div>
+            <SettingLine title={words.subtickCapture} description={words.subtickCaptureHelp} checked={converter.subtickMode === "auto"} onChange={(enabled) => onConverterChange({ subtickMode: enabled ? "auto" : "off" })} />
             <div className="settings-number-row">
               <div><strong>{words.maxRoundDuration}</strong><small>{words.maxRoundDurationHelp}</small></div>
               <label>
@@ -959,12 +942,8 @@ export function SettingsWorkspace({
 
   const playbackView = (
     <div className="settings-pane settings-playback-pane">
-      <header className="settings-pane-header">
-        <h2>{words.playbackDefaultsTitle}</h2>
-        <span className="autosave-note"><CheckIcon size={14} />{words.settingsSavedAutomatically}</span>
-      </header>
-
       <section className="settings-card settings-form-card playback-defaults-card">
+        <div className="settings-card-heading settings-inline-card-heading"><h3>{words.settingsNavPlayback}</h3></div>
         <SettingLine
           title={words.syncWeapons}
           checked={playback.weapons || playback.cosmetics}
@@ -995,21 +974,11 @@ export function SettingsWorkspace({
               onChange={(avatar) => onPlaybackChange(avatar ? { avatar: true, steamIdentity: true } : { avatar: false })}
             />
             <SettingLine title={words.playoffBeta} description={words.playoffHelp} checked={playback.playoff} onChange={(playoff) => onPlaybackChange({ playoff })} />
-            <SettingSelectLine title={words.projectileAlignment} description={words.projectileAlignmentHelp} value={playback.projectileAlignment} onChange={(value) => onPlaybackChange({ projectileAlignment: value as PlaybackToggleOverride })}>
-              <option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
-            </SettingSelectLine>
-            <SettingSelectLine title={words.crosshairAlignment} description={words.crosshairAlignmentHelp} value={playback.crosshairAlignment} onChange={(value) => onPlaybackChange({ crosshairAlignment: value as PlaybackToggleOverride })}>
-              <option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
-            </SettingSelectLine>
-            <SettingSelectLine title={words.leftHandAlignment} description={words.leftHandAlignmentHelp} value={playback.leftHandAlignment} onChange={(value) => onPlaybackChange({ leftHandAlignment: value as PlaybackToggleOverride })}>
-              <option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
-            </SettingSelectLine>
-            <SettingSelectLine title={words.matchPresentation} description={words.matchPresentationHelp} value={playback.matchPresentation} onChange={(value) => onPlaybackChange({ matchPresentation: value as PlaybackMatchOverride })}>
-              <option value="off">{words.disabled}</option><option value="scoreboard">{words.scoreboardSync}</option>
-            </SettingSelectLine>
-            <SettingSelectLine title={words.partialReplay} description={words.partialReplayHelp} value={playback.allowPartial} onChange={(value) => onPlaybackChange({ allowPartial: value as PlaybackToggleOverride })}>
-              <option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
-            </SettingSelectLine>
+            <SettingLine title={words.projectileAlignment} description={words.projectileAlignmentHelp} checked={playback.projectileAlignment === "on"} onChange={(checked) => onPlaybackChange({ projectileAlignment: checked ? "on" : "off" })} />
+            <SettingLine title={words.crosshairAlignment} description={words.crosshairAlignmentHelp} checked={playback.crosshairAlignment === "on"} onChange={(checked) => onPlaybackChange({ crosshairAlignment: checked ? "on" : "off" })} />
+            <SettingLine title={words.leftHandAlignment} description={words.leftHandAlignmentHelp} checked={playback.leftHandAlignment === "on"} onChange={(checked) => onPlaybackChange({ leftHandAlignment: checked ? "on" : "off" })} />
+            <SettingLine title={words.matchPresentation} description={words.matchPresentationHelp} checked={playback.matchPresentation === "scoreboard"} onChange={(checked) => onPlaybackChange({ matchPresentation: checked ? "scoreboard" : "off" })} />
+            <SettingLine title={words.partialReplay} description={words.partialReplayHelp} checked={playback.allowPartial === "on"} onChange={(checked) => onPlaybackChange({ allowPartial: checked ? "on" : "off" })} />
             <SettingSelectLine title={words.handoffMode} description={words.handoffModeHelp} value={playback.handoffMode} onChange={(value) => onPlaybackChange({ handoffMode: value as PlaybackHandoffMode })}>
               <option value="death_contact_c4">{words.handoffDeathContactC4}</option>
               <option value="death_or_contact">{words.handoffDeathOrContact}</option>
@@ -1020,9 +989,7 @@ export function SettingsWorkspace({
             <SettingSelectLine title={words.handoffScope} description={words.handoffScopeHelp} value={playback.handoffScope} onChange={(value) => onPlaybackChange({ handoffScope: value as "slot" | "all" })}>
               <option value="slot">{words.handoffScopeSlot}</option><option value="all">{words.handoffScopeAll}</option>
             </SettingSelectLine>
-            <SettingSelectLine title={words.threat360} description={words.threat360Help} value={playback.threat360} onChange={(value) => onPlaybackChange({ threat360: value as PlaybackToggleOverride })}>
-              <option value="on">{words.enabled}</option><option value="off">{words.disabled}</option>
-            </SettingSelectLine>
+            <SettingLine title={words.threat360} description={words.threat360Help} checked={playback.threat360 === "on"} onChange={(checked) => onPlaybackChange({ threat360: checked ? "on" : "off" })} />
             {playback.threat360 === "on" ? (
               <div className="settings-advanced-inline">
                 <label>
@@ -1039,7 +1006,7 @@ export function SettingsWorkspace({
                     }}
                   />
                 </label>
-                <label><input type="checkbox" checked={playback.threat360Los} onChange={(event) => onPlaybackChange({ threat360Los: event.target.checked })} />{words.threat360RequireLos}</label>
+                <SettingLine title={words.threat360RequireLos} checked={playback.threat360Los} onChange={(threat360Los) => onPlaybackChange({ threat360Los })} />
               </div>
             ) : null}
           </div>
@@ -1052,20 +1019,20 @@ export function SettingsWorkspace({
   const effectiveServerValidation = serverConfigValidation ?? serverConfigDocument?.validation ?? null;
   const serverConfigView = (
     <div className="settings-pane server-config-pane">
-      <header className="settings-pane-header">
-        <h2>{words.serverConfigTitle}</h2>
+      <header className="settings-card settings-pane-toolbar">
         <div className="settings-header-actions">
-          <button className="secondary-button" type="button" disabled={!environment.cs2Path.trim() || loadingServerConfig || savingServerConfig} onClick={onLoadServerConfig}>
+          <button className="secondary-button" type="button" disabled={!environment.cs2Path.trim() || loadingServerConfig || savingServerConfig || validatingServerConfig} onClick={() => void handleLoadServerConfig()}>
             <RefreshIcon size={16} />{loadingServerConfig ? words.loadingServerConfig : words.loadServerConfig}
           </button>
-          <button className="secondary-button" type="button" disabled={!serverConfigDraft.trim() || savingServerConfig} onClick={onValidateServerConfig}>
-            <CheckIcon size={16} />{words.validateServerConfig}
+          <button className="secondary-button" type="button" disabled={!serverConfigDraft.trim() || loadingServerConfig || savingServerConfig || validatingServerConfig} onClick={() => void handleValidateServerConfig()}>
+            <CheckIcon size={16} />{validatingServerConfig ? words.validatingServerConfig : words.validateServerConfig}
           </button>
-          <button className="primary-button" type="button" disabled={!serverConfigDocument || !serverConfigDraft.trim() || savingServerConfig || effectiveServerValidation?.valid === false} onClick={onSaveServerConfig}>
+          <button className="primary-button" type="button" disabled={!serverConfigDocument || !serverConfigDraft.trim() || loadingServerConfig || savingServerConfig || validatingServerConfig || effectiveServerValidation?.valid === false} onClick={() => void handleSaveServerConfig()}>
             <SlidersIcon size={16} />{savingServerConfig ? words.savingServerConfig : words.saveServerConfig}
           </button>
         </div>
       </header>
+      {serverConfigFeedback ? <div className={`server-config-action-feedback is-${serverConfigFeedback.tone}`} role="status" aria-live="polite">{serverConfigFeedback.message}</div> : null}
 
       {!environment.cs2Path.trim() ? (
         <section className="settings-card diagnostic-empty">
@@ -1269,53 +1236,82 @@ export function SettingsWorkspace({
     </div>
   );
 
+  const playbackReleaseStatus = !environment.cs2Path.trim()
+    ? words.releaseUnverified
+    : playbackRelease?.currentVersion ? `v${playbackRelease.currentVersion}` : words.releaseMissingLegacy;
+  const modalTitle = settingsModal === "desktopUpdate" ? words.releaseDesktopApp
+    : settingsModal === "playbackInstall" ? words.releasePlayback
+    : settingsModal === "advanced" ? words.serverConfigTitle
+      : settingsModal === "about" ? words.settingsNavAbout
+        : words.customCssTitle;
+  const modalContent = settingsModal === "desktopUpdate" ? desktopUpdateView
+    : settingsModal === "playbackInstall" ? playbackInstallView
+    : settingsModal === "advanced" ? serverConfigView
+      : settingsModal === "about" ? aboutView
+        : null;
+
   return (
-    <section className="settings-workspace" aria-labelledby="settings-workspace-title">
-      <div className="settings-titlebar">
-        <div className="settings-titlebar-copy">
-          <h1 id="settings-workspace-title">{words.settingsTitle}</h1>
-        </div>
-        {guiUpdate.phase === "available" ? (
-          <button className="settings-update-shortcut" type="button" onClick={() => setSection("environment")}>
-            <i aria-hidden="true" /><span>{words.releaseUpdateAvailable}</span><strong>v{guiUpdate.availableVersion || ""}</strong>
-          </button>
-        ) : null}
-      </div>
-      <div className="settings-layout">
-        <nav className="settings-section-nav" aria-label={words.settingsSections}>
-          <button className={section === "general" ? "is-active" : ""} type="button" aria-current={section === "general" ? "page" : undefined} onClick={() => setSection("general")}>
-            <SunIcon size={17} /><span><strong>{words.settingsNavAppearance}</strong></span>
-          </button>
-          <button className={section === "environment" ? "is-active" : ""} type="button" aria-current={section === "environment" ? "page" : undefined} onClick={() => setSection("environment")}>
-            <RefreshIcon size={17} /><span><strong>{words.settingsNavEnvironment}</strong></span>
-            {guiUpdate.phase === "available" ? <i className="settings-nav-update-dot" title={words.releaseUpdateAvailable} aria-hidden="true" /> : null}
-          </button>
-          <button className={section === "storage" ? "is-active" : ""} type="button" aria-current={section === "storage" ? "page" : undefined} onClick={() => setSection("storage")}>
-            <FolderIcon size={17} /><span><strong>{words.settingsNavPaths}</strong></span>
-          </button>
-          <button className={section === "conversion" ? "is-active" : ""} type="button" aria-current={section === "conversion" ? "page" : undefined} onClick={() => setSection("conversion")}>
-            <SlidersIcon size={17} /><span><strong>{words.settingsNavExport}</strong></span>
-          </button>
-          <button className={section === "playback" ? "is-active" : ""} type="button" aria-current={section === "playback" ? "page" : undefined} onClick={() => setSection("playback")}>
-            <ReplayIcon size={17} /><span><strong>{words.settingsNavPlayback}</strong></span>
-          </button>
-          <button className={section === "advanced" ? "is-active" : ""} type="button" aria-current={section === "advanced" ? "page" : undefined} onClick={() => setSection("advanced")}>
-            <LibraryIcon size={17} /><span><strong>{words.settingsNavServerConfig}</strong></span>
-          </button>
-          <button className={section === "about" ? "is-active" : ""} type="button" aria-current={section === "about" ? "page" : undefined} onClick={() => setSection("about")}>
-            <TraceMark size={17} /><span><strong>{words.settingsNavAbout}</strong></span>
-          </button>
-        </nav>
-        <div className="settings-content">
-          {section === "general" ? appearanceView : null}
-          {section === "environment" ? <div className="settings-combined-pane">{updatesView}{environmentView}</div> : null}
-          {section === "storage" ? pathsView : null}
-          {section === "conversion" ? exportView : null}
-          {section === "playback" ? playbackView : null}
-          {section === "advanced" ? serverConfigView : null}
-          {section === "about" ? aboutView : null}
+    <section className="settings-workspace" aria-label={words.settingsTitle}>
+      <div className="settings-content">
+        <div className="settings-dashboard">
+          <div className="settings-dashboard-column">
+            <section className="settings-dashboard-panel is-general">
+              <header><strong>{words.settingsNavAppearance}</strong></header>
+              <div className="settings-dashboard-panel-body">{appearanceView}</div>
+            </section>
+          </div>
+          <div className="settings-dashboard-column">
+            <section className="settings-dashboard-panel is-environment">
+              <header>
+                <strong>{words.settingsNavEnvironment}</strong>
+                {guiUpdate.phase === "available" ? <i className="settings-nav-update-dot" title={words.releaseUpdateAvailable} aria-hidden="true" /> : null}
+              </header>
+              <div className="settings-subpage-list">
+                <SettingsSubpageRow title={`${words.releaseDesktopApp} · v${guiUpdate.currentVersion || appVersion || "—"}`} status={guiStatus} onClick={() => setSettingsModal("desktopUpdate")} />
+                <SettingsSubpageRow title={words.releasePlayback} status={playbackReleaseStatus} onClick={() => setSettingsModal("playbackInstall")} />
+              </div>
+            </section>
+            <section className="settings-dashboard-panel settings-subpage-list" aria-label={words.settingsSections}>
+              <SettingsSubpageRow title={words.settingsNavServerConfig} onClick={() => setSettingsModal("advanced")} />
+              <SettingsSubpageRow title={words.settingsNavAbout} onClick={() => setSettingsModal("about")} />
+            </section>
+          </div>
+          <div className="settings-dashboard-inline settings-dashboard-environment">{environmentView}</div>
+          <div className="settings-dashboard-inline settings-dashboard-storage">{pathsView}</div>
+          <div className="settings-dashboard-inline">{exportView}</div>
+          <div className="settings-dashboard-inline">{playbackView}</div>
         </div>
       </div>
+
+      {settingsModal && settingsModal !== "customCss" ? (
+        <DialogPrimitive labelledBy="settings-modal-title" onDismiss={() => setSettingsModal(null)} className={`dialog-surface settings-modal is-${settingsModal}`}>
+          <header className="settings-modal-header">
+            <h2 id="settings-modal-title">{modalTitle}</h2>
+            <button className="icon-button" type="button" onClick={() => setSettingsModal(null)} aria-label={words.close} title={words.close}><CloseIcon size={16} /></button>
+          </header>
+          <div className="settings-modal-body">{modalContent}</div>
+          <footer className="settings-modal-footer"><button className="secondary-button" type="button" onClick={() => setSettingsModal(null)}>{words.close}</button></footer>
+        </DialogPrimitive>
+      ) : null}
+
+      {settingsModal === "customCss" ? (
+        <DialogPrimitive labelledBy="custom-css-modal-title" onDismiss={() => setSettingsModal(null)} className="dialog-surface settings-modal settings-css-modal">
+          <header className="settings-modal-header">
+            <h2 id="custom-css-modal-title">{words.customCssTitle}</h2>
+            <button className="icon-button" type="button" onClick={() => setSettingsModal(null)} aria-label={words.close} title={words.close}><CloseIcon size={16} /></button>
+          </header>
+          <div className="settings-css-editor">
+            <p>{words.customCssHelp}</p>
+            <textarea value={customCssDraft} spellCheck={false} maxLength={65_536} placeholder={words.customCssPlaceholder} onChange={(event) => setCustomCssDraft(event.target.value)} />
+          </div>
+          <footer className="settings-modal-footer">
+            <button className="text-button" type="button" onClick={() => setCustomCssDraft("")}>{words.customCssReset}</button>
+            <span />
+            <button className="secondary-button" type="button" onClick={() => setSettingsModal(null)}>{words.cancel}</button>
+            <button className="primary-button" type="button" onClick={() => { onCustomCssChange(customCssDraft); setSettingsModal(null); }}>{words.customCssSave}</button>
+          </footer>
+        </DialogPrimitive>
+      ) : null}
     </section>
   );
 }

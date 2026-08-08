@@ -4,7 +4,7 @@
  * See LICENSE in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { SVGProps } from "react";
+import { useId, type SVGProps } from "react";
 
 type IconProps = SVGProps<SVGSVGElement> & { size?: number };
 
@@ -21,25 +21,23 @@ const base = (size: number): SVGProps<SVGSVGElement> => ({
 });
 
 export function TraceMark({ size = 34, ...props }: IconProps) {
+  const gradientId = `demotracer-mark-${useId().replaceAll(":", "")}`;
   return (
     <svg {...base(size)} viewBox="0 0 1024 1024" {...props}>
-      <rect x="40" y="40" width="944" height="944" rx="176" fill="#15171a" stroke="#2a2d33" strokeWidth="24" />
-      <path
-        d="M178 630C290 630 282 367 401 367S505 660 624 660 729 394 846 394"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="32"
-        strokeLinecap="round"
-      />
-      <g
-        fill="#15171a"
-        stroke="currentColor"
-        strokeWidth="22"
-      >
-        <circle cx="178" cy="630" r="42" />
-        <circle cx="401" cy="367" r="42" />
-        <circle cx="624" cy="660" r="42" />
-        <circle cx="846" cy="394" r="42" />
+      <defs>
+        <linearGradient id={gradientId} x1="0.24" y1="0.04" x2="0.75" y2="0.97">
+          <stop offset="0" stopColor="#FF5FA8" />
+          <stop offset="0.5" stopColor="#A744DF" />
+          <stop offset="1" stopColor="#3157FF" />
+        </linearGradient>
+      </defs>
+      <circle cx="512" cy="512" r="460" fill={`url(#${gradientId})`} stroke="none" />
+      <circle cx="512" cy="512" r="454" fill="none" stroke="#FFFFFF" strokeOpacity="0.22" strokeWidth="8" />
+      <g fill="#FFFFFF" stroke="none">
+        <path d="M334 656V286c0-12 10-22 22-22h158c98 0 181 62 214 149h-74c-28-49-80-82-140-82H402v258h90v67H334Z" />
+        <path d="M680 508h72c-5 96-60 178-145 218v-77c42-31 69-82 73-141Z" />
+        <rect x="438" y="423" width="326" height="66" rx="11" />
+        <rect x="520" y="460" width="70" height="302" rx="11" />
       </g>
     </svg>
   );
@@ -260,6 +258,14 @@ export function HelpIcon({ size = 18, ...props }: IconProps) {
       <circle cx="12" cy="12" r="9" />
       <path d="M9.8 9a2.45 2.45 0 1 1 3.62 2.15c-.88.5-1.42 1.02-1.42 2.1" />
       <path d="M12 17h.01" />
+    </svg>
+  );
+}
+
+export function GithubIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true" {...props}>
+      <path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.88c-2.78.6-3.37-1.18-3.37-1.18-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.35 1.09 2.92.83.09-.65.35-1.09.64-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.55 9.55 0 0 1 12 6.82a9.5 9.5 0 0 1 2.5.34c1.91-1.3 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.77c0 .27.18.58.69.48A10 10 0 0 0 12 2Z" />
     </svg>
   );
 }

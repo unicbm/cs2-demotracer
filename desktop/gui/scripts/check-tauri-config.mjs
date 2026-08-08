@@ -29,5 +29,8 @@ if (config.bundle?.active !== true || !config.bundle.targets?.includes("nsis")) 
 if (config.bundle?.windows?.nsis?.installMode !== "currentUser") {
   throw new Error("tauri.conf.json NSIS install mode must remain currentUser");
 }
+if (config.bundle?.windows?.nsis?.installerHooks !== "windows/installer-hooks.nsh") {
+  throw new Error("tauri.conf.json must keep the Windows shortcut repair hook enabled");
+}
 
 console.log("Tauri NSIS and signed stable updater configuration are valid.");

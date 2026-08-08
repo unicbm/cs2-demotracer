@@ -160,11 +160,21 @@ export function RoundWorkspace({
             <button className="text-button" type="button" disabled={convertPending} onClick={onClearSelection}>{words.clearSelection}</button>
           </div>
           {suspiciousCount > 0 ? (
-            <label className="allow-suspicious-control">
-              <input type="checkbox" checked={allowSuspicious} disabled={convertPending} onChange={(event) => onAllowSuspiciousChange(event.target.checked)} />
+            <div className="allow-suspicious-control">
               <span className="wide-label">{words.allowSuspicious}</span>
               <span className="compact-label">{words.allowSuspiciousShort}</span>
-            </label>
+              <button
+                className="switch-control"
+                type="button"
+                role="switch"
+                aria-checked={allowSuspicious}
+                aria-label={words.allowSuspicious}
+                disabled={convertPending}
+                onClick={() => onAllowSuspiciousChange(!allowSuspicious)}
+              >
+                <span />
+              </button>
+            </div>
           ) : <span className="toolbar-spacer" />}
         </div>
 

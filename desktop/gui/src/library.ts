@@ -11,6 +11,11 @@ const LIBRARY_ROOTS_KEY = "demotracer.library-roots.v2";
 const EXPORT_ROOT_KEY = "demotracer.export-root.v2";
 const DEMO_SOURCE_INDEX_KEY = "demotracer.demo-source-index.v1";
 const MAX_DEMO_SOURCE_INDEX_ENTRIES = 512;
+export const SOURCE_LINK_NOTE_DISMISSED_STORAGE_KEY = "demotracer.library-source-link-note-dismissed.v1";
+
+export function normalizeSourceLinkNoteDismissed(value: unknown): boolean {
+  return value === true || value === "true";
+}
 
 export interface LibraryPreferences {
   exportRoot: string;

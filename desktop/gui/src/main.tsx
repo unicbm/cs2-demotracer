@@ -15,6 +15,7 @@ import {
   THEME_STORAGE_KEY,
 } from "./appearance";
 import "./styles.css";
+import "./verge-theme.css";
 
 const initialTheme = normalizeTheme(localStorage.getItem(THEME_STORAGE_KEY));
 const initialResolvedTheme = resolveTheme(

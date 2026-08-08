@@ -138,7 +138,7 @@ interface BatchCopy {
 
 const COPY: Record<Language, BatchCopy> = {
   zh: {
-    title: "导入多个 Demo",
+    title: "导入 Demo",
     reselect: "重新选择",
     close: "关闭",
     demos: "Demo",
@@ -187,7 +187,7 @@ const COPY: Record<Language, BatchCopy> = {
     finish: "结束并返回回放库",
   },
   en: {
-    title: "Import multiple demos",
+    title: "Import demos",
     reselect: "Choose again",
     close: "Close",
     demos: "Demos",
@@ -272,6 +272,32 @@ function isCandidateSelectable(candidate: BatchScanCandidate): boolean {
 
 function isJobActive(phase: BatchJobPhase): boolean {
   return ["decompressing", "parsing", "analyzing", "selecting", "converting", "validating"].includes(phase);
+}
+
+function BatchSwitch({
+  checked,
+  disabled = false,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <button
+      className="switch-control"
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+    >
+      <span />
+    </button>
+  );
 }
 
 export function BatchWorkspace({
@@ -390,11 +416,7 @@ export function BatchWorkspace({
         </section>
 
         <div className="batch-control-pane">
-          <section className="batch-settings" aria-labelledby="batch-settings-title">
-            <header className="batch-section-heading">
-              <strong id="batch-settings-title">{copy.settings}</strong>
-            </header>
-
+          <section className="batch-settings" aria-label={copy.settings}>
             <div className="batch-setting-row">
               <span>{copy.concurrency}</span>
               <div className="batch-concurrency-options" role="radiogroup" aria-label={copy.concurrency}>
@@ -414,39 +436,39 @@ export function BatchWorkspace({
               </div>
             </div>
 
-            <fieldset className="batch-options" disabled={working || cosmeticOptionsLocked}>
-              <label>
-                <input
-                  type="checkbox"
+            <div className="batch-toggle-list">
+              <div className="batch-toggle-row">
+                <span>{copy.cosmetics}</span>
+                <BatchSwitch
                   checked={exportCosmetics}
-                  onChange={(event) => {
-                    if (event.target.checked) onRequestCosmetics();
+                  disabled={working || cosmeticOptionsLocked}
+                  label={copy.cosmetics}
+                  onChange={(checked) => {
+                    if (checked) onRequestCosmetics();
                     else onCosmeticOptionsChange({ exportCosmetics: false });
                   }}
                 />
-                <span>{copy.cosmetics}</span>
-              </label>
+              </div>
               {exportCosmetics ? (
                 <>
-                  <label>
-                    <input type="checkbox" checked={exportStickers} onChange={(event) => onCosmeticOptionsChange({ exportStickers: event.target.checked })} />
+                  <div className="batch-toggle-row is-dependent">
                     <span>{copy.stickers}</span>
-                  </label>
-                  <label>
-                    <input type="checkbox" checked={exportCharms} onChange={(event) => onCosmeticOptionsChange({ exportCharms: event.target.checked })} />
+                    <BatchSwitch checked={exportStickers} disabled={working || cosmeticOptionsLocked} label={copy.stickers} onChange={(checked) => onCosmeticOptionsChange({ exportStickers: checked })} />
+                  </div>
+                  <div className="batch-toggle-row is-dependent">
                     <span>{copy.charms}</span>
-                  </label>
+                    <BatchSwitch checked={exportCharms} disabled={working || cosmeticOptionsLocked} label={copy.charms} onChange={(checked) => onCosmeticOptionsChange({ exportCharms: checked })} />
+                  </div>
                 </>
               ) : null}
-            </fieldset>
-
-            <label className="batch-sound-option">
-              <input type="checkbox" checked={soundNotifications} onChange={(event) => onSoundNotificationsChange(event.target.checked)} />
-              <span>{copy.sound}</span>
-            </label>
+              <div className="batch-toggle-row">
+                <span>{copy.sound}</span>
+                <BatchSwitch checked={soundNotifications} disabled={working} label={copy.sound} onChange={onSoundNotificationsChange} />
+              </div>
+            </div>
           </section>
 
-          <section className="batch-monitor" aria-labelledby="batch-monitor-title">
+          {jobs.length > 0 || summary.total > 0 ? <section className="batch-monitor" aria-labelledby="batch-monitor-title">
             <header className="batch-section-heading">
               <strong id="batch-monitor-title">{copy.progress}</strong>
               <div className="batch-progress-summary" aria-live="polite">
@@ -457,7 +479,7 @@ export function BatchWorkspace({
                     {summary.skipped > 0 ? <span>{copy.skipped} <b>{summary.skipped}</b></span> : null}
                     <span>{copy.processed.replace("{done}", String(processed)).replace("{total}", String(summary.total))}</span>
                   </>
-                ) : <span>{copy.notStarted}</span>}
+                ) : null}
               </div>
             </header>
 
@@ -509,9 +531,9 @@ export function BatchWorkspace({
                     </div>
                   </article>
                 );
-              }) : <div className="batch-empty">{copy.notStarted}</div>}
+              }) : null}
             </div>
-          </section>
+          </section> : null}
         </div>
       </div>
 

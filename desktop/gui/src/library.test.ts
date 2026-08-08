@@ -6,7 +6,13 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { demoLibraryTimestamp, isReusableDemoArchive, librarySeriesForManifest } from "./library.ts";
+import {
+  demoLibraryTimestamp,
+  isReusableDemoArchive,
+  librarySeriesForManifest,
+  normalizeSourceLinkNoteDismissed,
+  SOURCE_LINK_NOTE_DISMISSED_STORAGE_KEY,
+} from "./library.ts";
 import type { DemoLibraryEntry } from "./types.ts";
 
 function seriesEntry(
@@ -24,6 +30,14 @@ function seriesEntry(
     } : null,
   } as DemoLibraryEntry;
 }
+
+test("the source-link hint uses a persistent explicit acknowledgement", () => {
+  assert.equal(SOURCE_LINK_NOTE_DISMISSED_STORAGE_KEY, "demotracer.library-source-link-note-dismissed.v1");
+  assert.equal(normalizeSourceLinkNoteDismissed("true"), true);
+  assert.equal(normalizeSourceLinkNoteDismissed(true), true);
+  assert.equal(normalizeSourceLinkNoteDismissed("false"), false);
+  assert.equal(normalizeSourceLinkNoteDismissed(null), false);
+});
 
 test("library series navigation resolves the active series and sorts by MAP index", () => {
   const entries = [

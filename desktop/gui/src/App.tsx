@@ -47,10 +47,14 @@ import {
 import { AlertIcon, ArrowIcon, CheckIcon, CloseIcon, CopyIcon, FolderIcon, RefreshIcon, ReplayIcon } from "./icons";
 import { COSMETIC_PHRASE, TEXT } from "./i18n";
 import {
+  applyCustomCss,
+  CUSTOM_CSS_STORAGE_KEY,
   LEGACY_APPEARANCE_STORAGE_KEYS,
+  normalizeCustomCss,
   normalizeSidebarCollapsed,
   normalizeTheme,
   normalizeUiScale,
+  recommendedUiScale,
   resolveTheme,
   SIDEBAR_COLLAPSED_STORAGE_KEY,
   stepUiScale,
@@ -337,7 +341,9 @@ function storedLanguage(): Language {
 }
 
 function storedUiScale(): UiScale {
-  return normalizeUiScale(localStorage.getItem(UI_SCALE_STORAGE_KEY)) === 1.1 ? 1.1 : 1;
+  const stored = localStorage.getItem(UI_SCALE_STORAGE_KEY);
+  if (stored !== null) return normalizeUiScale(stored) === 1.1 ? 1.1 : 1;
+  return recommendedUiScale(window.screen.width, window.screen.height, window.devicePixelRatio);
 }
 
 function storedCosmeticConsent(): boolean {
@@ -663,6 +669,7 @@ function App() {
     normalizeSidebarCollapsed(localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY))
   ));
   const [uiScale, setUiScale] = useState<UiScale>(storedUiScale);
+  const [customCss, setCustomCss] = useState(() => normalizeCustomCss(localStorage.getItem(CUSTOM_CSS_STORAGE_KEY)));
   const [phase, setPhase] = useState<Phase>("idle");
   const [singleTask, setSingleTask] = useState<"analysis" | "conversion" | null>(null);
   const [activeTaskSourcePath, setActiveTaskSourcePath] = useState("");
@@ -1012,6 +1019,13 @@ function App() {
       document.documentElement.style.zoom = String(uiScale);
     }
   }, [uiScale]);
+
+  useEffect(() => {
+    const normalized = normalizeCustomCss(customCss);
+    applyCustomCss(normalized);
+    if (normalized) localStorage.setItem(CUSTOM_CSS_STORAGE_KEY, normalized);
+    else localStorage.removeItem(CUSTOM_CSS_STORAGE_KEY);
+  }, [customCss]);
 
   useEffect(() => {
     if (!inventorySimulatorPanelAvailable) return;
@@ -2896,9 +2910,9 @@ function App() {
     }));
   }
 
-  async function loadServerConfig() {
+  async function loadServerConfig(): Promise<boolean> {
     const cs2Path = localEnvironment.cs2Path.trim();
-    if (!cs2Path || loadingServerConfig || savingServerConfig) return;
+    if (!cs2Path || loadingServerConfig || savingServerConfig) return false;
     setLoadingServerConfig(true);
     setGlobalError(null);
     try {
@@ -2906,28 +2920,33 @@ function App() {
       setServerConfigDocument(document);
       setServerConfigDraft(document.normalizedJson || document.json);
       setServerConfigValidation(document.validation);
+      return true;
     } catch (reason) {
       setGlobalError(parseCommandError(reason));
+      return false;
     } finally {
       setLoadingServerConfig(false);
     }
   }
 
-  async function validateServerConfigDraft() {
-    if (!serverConfigDraft.trim()) return;
+  async function validateServerConfigDraft(): Promise<ServerConfigValidation | null> {
+    if (!serverConfigDraft.trim()) return null;
+    setGlobalError(null);
     try {
       const validation = await invoke<ServerConfigValidation>("validate_server_config", {
         request: { json: serverConfigDraft },
       });
       setServerConfigValidation(validation);
+      return validation;
     } catch (reason) {
       setGlobalError(parseCommandError(reason));
+      return null;
     }
   }
 
-  async function saveServerConfig() {
+  async function saveServerConfig(): Promise<boolean> {
     const cs2Path = localEnvironment.cs2Path.trim();
-    if (!cs2Path || !serverConfigDocument || savingServerConfig || !serverConfigDraft.trim()) return;
+    if (!cs2Path || !serverConfigDocument || savingServerConfig || !serverConfigDraft.trim()) return false;
     primeTaskSound();
     setSavingServerConfig(true);
     setGlobalError(null);
@@ -2944,9 +2963,11 @@ function App() {
       setServerConfigDraft(saved.document.normalizedJson || saved.document.json);
       setServerConfigValidation(saved.document.validation);
       playTaskSound("success");
+      return true;
     } catch (reason) {
       setGlobalError(parseCommandError(reason));
       playTaskSound("failure");
+      return false;
     } finally {
       setSavingServerConfig(false);
     }
@@ -3344,6 +3365,9 @@ function App() {
         words={words}
         sessionTitle={sessionTitle}
         sessionMeta={sessionMeta}
+        faqActive={activeSection === "faq"}
+        onOpenFaq={() => dispatchLibraryWorkspace({ type: "navigate", section: "faq" })}
+        onOpenGithub={() => void openExternal("https://github.com/unicbm/demotracer")}
         onRequestClose={() => void requestWindowClose()}
       />
 
@@ -3359,7 +3383,6 @@ function App() {
           analysisActive={activeSection === "analysis"}
           analysisAvailable={analysisAvailable}
           settingsActive={activeSection === "settings"}
-          faqActive={activeSection === "faq"}
           collapsed={sidebarCollapsed}
           onOpenImport={() => {
             if (batchInvocationActive || canResumeBatch || hasRetryableBatchJobs) {
@@ -3371,7 +3394,6 @@ function App() {
           onOpenLibrary={() => dispatchLibraryWorkspace({ type: "navigate", section: "library" })}
           onOpenAnalysis={() => dispatchLibraryWorkspace({ type: "navigate", section: "analysis" })}
           onOpenSettings={() => dispatchLibraryWorkspace({ type: "navigate", section: "settings" })}
-          onOpenFaq={() => dispatchLibraryWorkspace({ type: "navigate", section: "faq" })}
           onLanguageChange={setLanguage}
           onToggleTheme={() => setTheme(toggleResolvedTheme(theme, systemDark))}
           onToggleCollapsed={() => setSidebarCollapsed((collapsed) => !collapsed)}
@@ -3430,6 +3452,7 @@ function App() {
             language={language}
             resolvedTheme={resolvedTheme}
             uiScale={uiScale}
+            customCss={customCss}
             environment={localEnvironment}
             exportRoot={libraryRoot}
             archiveRoots={libraryRoots}
@@ -3453,6 +3476,7 @@ function App() {
             releaseAction={releaseAction}
             releaseNotice={releaseNotice}
             onUiScaleChange={setUiScale}
+            onCustomCssChange={setCustomCss}
             onLanguageChange={setLanguage}
             onToggleTheme={() => setTheme(toggleResolvedTheme(theme, systemDark))}
             onCs2PathChange={(cs2Path) => {
@@ -3470,13 +3494,13 @@ function App() {
             onInstallGuiUpdate={() => setGuiUpdateDialogOpen(true)}
             onInstallPlaybackBundle={() => void installPlaybackBundle()}
             onRollbackPlayback={() => void rollbackPlaybackInstall()}
-            onLoadServerConfig={() => void loadServerConfig()}
+            onLoadServerConfig={loadServerConfig}
             onServerConfigDraftChange={(json) => {
               setServerConfigDraft(json);
               setServerConfigValidation(null);
             }}
-            onValidateServerConfig={() => void validateServerConfigDraft()}
-            onSaveServerConfig={() => void saveServerConfig()}
+            onValidateServerConfig={validateServerConfigDraft}
+            onSaveServerConfig={saveServerConfig}
             onChooseExportRoot={() => void chooseLibraryRoot()}
             onAddArchiveRoot={() => void addLibraryRoot()}
             onRemoveArchiveRoot={removeLibraryRoot}
@@ -3489,79 +3513,80 @@ function App() {
             onRequestCosmetics={requestCosmeticExport}
             onPlaybackChange={(patch) => setPlaybackPreset((current) => ({ ...current, ...patch }))}
           />
-        ) : activeSection === "batch" ? (
-          <BatchWorkspace
-            words={words}
-            language={language}
-            notice={batchScanError}
-            candidates={batchCandidates}
-            selectedCandidateIds={batchSelectedIds}
-            concurrency={batchConcurrency}
-            runState={currentBatchRunState}
-            startDisabled={singleTask !== null}
-            canResume={canResumeBatch}
-            jobs={batchJobs}
-            summary={batchSummary}
-            soundNotifications={localEnvironment.soundNotifications}
-            exportCosmetics={batchCosmeticSettings.exportCosmetics}
-            exportStickers={batchCosmeticSettings.exportStickers}
-            exportCharms={batchCosmeticSettings.exportCharms}
-            cosmeticOptionsLocked={batchCosmeticOptionsLocked}
-            onChooseDemos={() => void chooseDemos()}
-            onBack={leaveBatchWorkspace}
-            onSelectionChange={setBatchSelectedIds}
-            onConcurrencyChange={setBatchConcurrency}
-            onRequestCosmetics={requestCosmeticExport}
-            onCosmeticOptionsChange={updateSettings}
-            onSoundNotificationsChange={(enabled) => {
-              if (enabled) primeTaskSound(true);
-              setLocalEnvironment((current) => ({ ...current, soundNotifications: enabled }));
-            }}
-            onStart={(candidateIds) => void startBatchImport(candidateIds)}
-            onResume={() => void resumeBatchImport()}
-            onStop={() => void stopBatchImport()}
-            onFinish={() => finishBatchWorkspace(batchSummary.completed)}
-            onRetryJob={(jobId) => void resumeBatchImport(jobId)}
-            onOpenArchive={(job) => {
-              if (job.outputPath) void runManifest(job.outputPath);
-            }}
-          />
-        ) : activeSection === "library" ? (
-          <LibraryWorkspace
-            words={words}
-            language={language}
-            exportRoot={libraryRoot}
-            roots={libraryRoots}
-            scan={libraryScan}
-            loading={libraryLoading}
-            taskBusy={singleTask !== null || batchInvocationActive}
-            archiveOpenDisabled={singleTask === "conversion"}
-            repairingManifest={repairingManifest}
-            repairingLibrary={repairingLibrary}
-            importingArchives={importingArchives}
-            notice={libraryNotice}
-            query={libraryQuery}
-            mapFilter={libraryMap}
-            platformFilter={libraryPlatform}
-            sort={librarySort}
-            onQueryChange={setLibraryQuery}
-            onMapFilterChange={setLibraryMap}
-            onPlatformFilterChange={setLibraryPlatform}
-            onSortChange={setLibrarySort}
-            onAddRoot={() => void addLibraryRoot()}
-            onRemoveRoot={removeLibraryRoot}
-            onChooseExportRoot={() => void chooseLibraryRoot()}
-            onRefresh={() => void scanLibrary(libraryRoots)}
-            onImportArchives={() => void importArchives()}
-            onRepairLibrary={() => void repairLibraryMetadata()}
-            onConvert={() => void chooseDemos()}
-            onOpenEntry={(entry: DemoLibraryEntry) => void runManifest(entry.manifestPath)}
-            onRepairEntry={(entry: DemoLibraryEntry) => void repairArchiveMetadata(entry)}
-            onRevealManifest={(entry: DemoLibraryEntry) => void revealPath(entry.manifestPath)}
-            onRevealDemo={(entry: DemoLibraryEntry) => void revealPath(entry.sourcePath || entry.demoPath)}
-            onReparseEntry={(entry: DemoLibraryEntry) => setReparseTarget({ kind: "library", entry })}
-            onDeleteEntry={setArchiveDeleteTarget}
-          />
+        ) : activeSection === "batch" || activeSection === "library" ? (
+          <>
+            <LibraryWorkspace
+              words={words}
+              language={language}
+              exportRoot={libraryRoot}
+              roots={libraryRoots}
+              scan={libraryScan}
+              loading={libraryLoading}
+              taskBusy={singleTask !== null || batchInvocationActive}
+              archiveOpenDisabled={singleTask === "conversion"}
+              repairingManifest={repairingManifest}
+              repairingLibrary={repairingLibrary}
+              importingArchives={importingArchives}
+              notice={libraryNotice}
+              query={libraryQuery}
+              mapFilter={libraryMap}
+              platformFilter={libraryPlatform}
+              sort={librarySort}
+              onQueryChange={setLibraryQuery}
+              onMapFilterChange={setLibraryMap}
+              onPlatformFilterChange={setLibraryPlatform}
+              onSortChange={setLibrarySort}
+              onAddRoot={() => void addLibraryRoot()}
+              onRemoveRoot={removeLibraryRoot}
+              onChooseExportRoot={() => void chooseLibraryRoot()}
+              onRefresh={() => void scanLibrary(libraryRoots)}
+              onImportArchives={() => void importArchives()}
+              onRepairLibrary={() => void repairLibraryMetadata()}
+              onConvert={() => void chooseDemos()}
+              onOpenEntry={(entry: DemoLibraryEntry) => void runManifest(entry.manifestPath)}
+              onRepairEntry={(entry: DemoLibraryEntry) => void repairArchiveMetadata(entry)}
+              onRevealManifest={(entry: DemoLibraryEntry) => void revealPath(entry.manifestPath)}
+              onRevealDemo={(entry: DemoLibraryEntry) => void revealPath(entry.sourcePath || entry.demoPath)}
+              onReparseEntry={(entry: DemoLibraryEntry) => setReparseTarget({ kind: "library", entry })}
+              onDeleteEntry={setArchiveDeleteTarget}
+            />
+            {activeSection === "batch" ? <BatchWorkspace
+              words={words}
+              language={language}
+              notice={batchScanError}
+              candidates={batchCandidates}
+              selectedCandidateIds={batchSelectedIds}
+              concurrency={batchConcurrency}
+              runState={currentBatchRunState}
+              startDisabled={singleTask !== null}
+              canResume={canResumeBatch}
+              jobs={batchJobs}
+              summary={batchSummary}
+              soundNotifications={localEnvironment.soundNotifications}
+              exportCosmetics={batchCosmeticSettings.exportCosmetics}
+              exportStickers={batchCosmeticSettings.exportStickers}
+              exportCharms={batchCosmeticSettings.exportCharms}
+              cosmeticOptionsLocked={batchCosmeticOptionsLocked}
+              onChooseDemos={() => void chooseDemos()}
+              onBack={leaveBatchWorkspace}
+              onSelectionChange={setBatchSelectedIds}
+              onConcurrencyChange={setBatchConcurrency}
+              onRequestCosmetics={requestCosmeticExport}
+              onCosmeticOptionsChange={updateSettings}
+              onSoundNotificationsChange={(enabled) => {
+                if (enabled) primeTaskSound(true);
+                setLocalEnvironment((current) => ({ ...current, soundNotifications: enabled }));
+              }}
+              onStart={(candidateIds) => void startBatchImport(candidateIds)}
+              onResume={() => void resumeBatchImport()}
+              onStop={() => void stopBatchImport()}
+              onFinish={() => finishBatchWorkspace(batchSummary.completed)}
+              onRetryJob={(jobId) => void resumeBatchImport(jobId)}
+              onOpenArchive={(job) => {
+                if (job.outputPath) void runManifest(job.outputPath);
+              }}
+            /> : null}
+          </>
         ) : (
           <>
         {phase === "openingArchive" ? <OpeningArchiveView words={words} manifestName={fileName(archivePath)} /> : null}

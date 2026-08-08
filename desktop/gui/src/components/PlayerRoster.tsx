@@ -60,7 +60,7 @@ interface RosterTeamProps<T extends RosterPlayer> {
   name: string;
   players: T[];
   words: TextDictionary;
-  countLabel: string;
+  metaLabel?: string;
   matchRounds?: number | null;
   className?: string;
   steamProfiles?: SteamProfileMap;
@@ -817,7 +817,7 @@ export function RosterTeam<T extends RosterPlayer>({
   name,
   players,
   words,
-  countLabel,
+  metaLabel,
   matchRounds = null,
   className = "",
   steamProfiles,
@@ -910,7 +910,7 @@ export function RosterTeam<T extends RosterPlayer>({
         <div>
           <strong title={name}>{name}</strong>
         </div>
-        <span>{countLabel.replace("{count}", String(players.length))}</span>
+        {metaLabel ? <span>{metaLabel}</span> : null}
       </header>
       <div className={`archive-roster-stat-row${canPrioritize ? " has-retention" : ""}`}>
         {canPrioritize ? <span className="roster-retention-head" title={words.retentionPriority}>#</span> : null}

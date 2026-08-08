@@ -129,6 +129,23 @@ function PlaybackSelect({
   );
 }
 
+function PlaybackAdvancedSwitch({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="playback-advanced-switch">
+      <strong>{label}</strong>
+      <SwitchControl checked={checked} label={label} onChange={onChange} />
+    </div>
+  );
+}
+
 function formatPreset(mask: number): string {
   return `0x${mask.toString(16).toUpperCase().padStart(2, "0")}`;
 }
@@ -281,46 +298,31 @@ export function PlaybackCommandBuilder({
         <details className="playback-advanced">
           <summary><strong>{words.advancedPlaybackSettings}</strong><ChevronIcon size={15} /></summary>
           <div className="playback-override-grid" role="group" aria-label={words.playbackAdvancedOverrides}>
-            <PlaybackSelect
+            <PlaybackAdvancedSwitch
               label={words.projectileAlignment}
-              value={options.projectileAlignment}
-              onChange={(value) => onOptionsChange({ projectileAlignment: value as PlaybackToggleOverride })}
-            >
-              <option value="on">{words.enabled}</option>
-              <option value="off">{words.disabled}</option>
-            </PlaybackSelect>
-            <PlaybackSelect
+              checked={options.projectileAlignment === "on"}
+              onChange={(checked) => onOptionsChange({ projectileAlignment: checked ? "on" : "off" })}
+            />
+            <PlaybackAdvancedSwitch
               label={words.crosshairAlignment}
-              value={options.crosshairAlignment}
-              onChange={(value) => onOptionsChange({ crosshairAlignment: value as PlaybackToggleOverride })}
-            >
-              <option value="on">{words.enabled}</option>
-              <option value="off">{words.disabled}</option>
-            </PlaybackSelect>
-            <PlaybackSelect
+              checked={options.crosshairAlignment === "on"}
+              onChange={(checked) => onOptionsChange({ crosshairAlignment: checked ? "on" : "off" })}
+            />
+            <PlaybackAdvancedSwitch
               label={words.leftHandAlignment}
-              value={options.leftHandAlignment}
-              onChange={(value) => onOptionsChange({ leftHandAlignment: value as PlaybackToggleOverride })}
-            >
-              <option value="on">{words.enabled}</option>
-              <option value="off">{words.disabled}</option>
-            </PlaybackSelect>
-            <PlaybackSelect
+              checked={options.leftHandAlignment === "on"}
+              onChange={(checked) => onOptionsChange({ leftHandAlignment: checked ? "on" : "off" })}
+            />
+            <PlaybackAdvancedSwitch
               label={words.matchPresentation}
-              value={options.matchPresentation}
-              onChange={(value) => onOptionsChange({ matchPresentation: value as PlaybackMatchOverride })}
-            >
-              <option value="off">{words.disabled}</option>
-              <option value="scoreboard">{words.scoreboardSync}</option>
-            </PlaybackSelect>
-            <PlaybackSelect
+              checked={options.matchPresentation === "scoreboard"}
+              onChange={(checked) => onOptionsChange({ matchPresentation: checked ? "scoreboard" : "off" })}
+            />
+            <PlaybackAdvancedSwitch
               label={words.partialReplay}
-              value={options.allowPartial}
-              onChange={(value) => onOptionsChange({ allowPartial: value as PlaybackToggleOverride })}
-            >
-              <option value="on">{words.enabled}</option>
-              <option value="off">{words.disabled}</option>
-            </PlaybackSelect>
+              checked={options.allowPartial === "on"}
+              onChange={(checked) => onOptionsChange({ allowPartial: checked ? "on" : "off" })}
+            />
             <PlaybackSelect
               label={words.handoffMode}
               value={options.handoffMode}
@@ -340,14 +342,11 @@ export function PlaybackCommandBuilder({
               <option value="slot">{words.handoffScopeSlot}</option>
               <option value="all">{words.handoffScopeAll}</option>
             </PlaybackSelect>
-            <PlaybackSelect
+            <PlaybackAdvancedSwitch
               label={words.threat360}
-              value={options.threat360}
-              onChange={(value) => onOptionsChange({ threat360: value as PlaybackToggleOverride })}
-            >
-              <option value="on">{words.enabled}</option>
-              <option value="off">{words.disabled}</option>
-            </PlaybackSelect>
+              checked={options.threat360 === "on"}
+              onChange={(checked) => onOptionsChange({ threat360: checked ? "on" : "off" })}
+            />
             {options.threat360 === "on" ? (
               <div className="playback-360-fields">
                 <label>
@@ -364,10 +363,10 @@ export function PlaybackCommandBuilder({
                     }}
                   />
                 </label>
-                <label>
-                  <input type="checkbox" checked={options.threat360Los} onChange={(event) => onOptionsChange({ threat360Los: event.target.checked })} />
-                  {words.threat360RequireLos}
-                </label>
+                <div className="playback-360-toggle">
+                  <span>{words.threat360RequireLos}</span>
+                  <SwitchControl checked={options.threat360Los} label={words.threat360RequireLos} onChange={(checked) => onOptionsChange({ threat360Los: checked })} />
+                </div>
               </div>
             ) : null}
           </div>

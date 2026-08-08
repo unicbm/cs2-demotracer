@@ -8,10 +8,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   cycleUiScale,
+  CUSTOM_CSS_STORAGE_KEY,
   LEGACY_APPEARANCE_STORAGE_KEYS,
   normalizeSidebarCollapsed,
+  normalizeCustomCss,
   normalizeUiScale,
   normalizeTheme,
+  recommendedUiScale,
   resolveTheme,
   stepUiScale,
   SIDEBAR_COLLAPSED_STORAGE_KEY,
@@ -57,8 +60,8 @@ describe("appearance preferences", () => {
   });
 
   it("uses one native background per color mode", () => {
-    assert.equal(themeBackground("light"), "#eceef0");
-    assert.equal(themeBackground("dark"), "#0d0e10");
+    assert.equal(themeBackground("light"), "#f5f6f8");
+    assert.equal(themeBackground("dark"), "#20212b");
   });
 
   it("normalizes and steps persistent UI scale values", () => {
@@ -70,5 +73,19 @@ describe("appearance preferences", () => {
     assert.equal(stepUiScale(1, -1), 0.9);
     assert.equal(stepUiScale(1.25, 1), 1.25);
     assert.equal(cycleUiScale(1.25), 0.9);
+  });
+
+  it("recommends the larger first-run scale only for high-resolution displays", () => {
+    assert.equal(recommendedUiScale(1920, 1080, 1), 1);
+    assert.equal(recommendedUiScale(2560, 1440, 1), 1);
+    assert.equal(recommendedUiScale(2560, 1440, 1.5), 1.1);
+    assert.equal(recommendedUiScale(1920, 1080, 2), 1.1);
+  });
+
+  it("keeps custom CSS local storage bounded and ignores non-text values", () => {
+    assert.equal(CUSTOM_CSS_STORAGE_KEY, "demotracer.custom-css.v1");
+    assert.equal(normalizeCustomCss(".card { border-radius: 18px; }"), ".card { border-radius: 18px; }");
+    assert.equal(normalizeCustomCss(null), "");
+    assert.equal(normalizeCustomCss("x".repeat(70_000)).length, 65_536);
   });
 });

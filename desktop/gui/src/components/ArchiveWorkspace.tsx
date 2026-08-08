@@ -9,6 +9,7 @@ import { AlertIcon, ArrowIcon, CheckIcon, ChevronIcon, CopyIcon, FolderIcon, Not
 import type { TextDictionary } from "../i18n";
 import type { InventorySimulatorItem } from "../inventorySimulator";
 import { useInventorySimulatorSelection } from "../inventorySimulatorSelection";
+import { rosterOpeningSide } from "../openingSide";
 import {
   buildReplayRetentionCommand,
   canPrioritizeReplayRoster,
@@ -316,6 +317,8 @@ export function ArchiveWorkspace({
   const teamBRetentionOrder = normalizeReplayRetentionOrder(teamBSteamIds, retentionOrders.b);
   const teamARoster = orderReplayRoster(baseTeamARoster, teamARetentionOrder);
   const teamBRoster = orderReplayRoster(baseTeamBRoster, teamBRetentionOrder);
+  const teamAOpeningSide = rosterOpeningSide(teamARoster, playableRounds);
+  const teamBOpeningSide = rosterOpeningSide(teamBRoster, playableRounds);
   const setRetentionPriority = (team: "a" | "b", playerIndex: number, priority: number) => {
     const priorityIndex = priority - 1;
     const next: ReplayRetentionOrders = {
@@ -508,10 +511,10 @@ export function ArchiveWorkspace({
             <b>{words.rosterPlayerCount.replace("{count}", String(rosterPlayers.length))}</b>
           </header>
           <div className="archive-roster-grid">
-            <RosterTeam teamId="a" name={teamAName} players={teamARoster} words={words} countLabel={words.rosterPlayerCount} matchRounds={matchRounds} steamProfiles={steamProfiles} retentionPriority={canPrioritizeReplayRoster(teamASteamIds)} onSetPlayerPriority={(playerIndex, priority) => setRetentionPriority("a", playerIndex, priority)} onSelectPlayer={onSelectPlayer} onCopy={onCopy} onOpenExternal={onOpenExternal} />
-            <RosterTeam teamId="b" name={teamBName} players={teamBRoster} words={words} countLabel={words.rosterPlayerCount} matchRounds={matchRounds} className="is-team-b" steamProfiles={steamProfiles} retentionPriority={canPrioritizeReplayRoster(teamBSteamIds)} onSetPlayerPriority={(playerIndex, priority) => setRetentionPriority("b", playerIndex, priority)} onSelectPlayer={onSelectPlayer} onCopy={onCopy} onOpenExternal={onOpenExternal} />
+            <RosterTeam teamId="a" name={teamAName} players={teamARoster} words={words} metaLabel={teamAOpeningSide === "t" ? words.startsAsT : teamAOpeningSide === "ct" ? words.startsAsCt : undefined} matchRounds={matchRounds} steamProfiles={steamProfiles} retentionPriority={canPrioritizeReplayRoster(teamASteamIds)} onSetPlayerPriority={(playerIndex, priority) => setRetentionPriority("a", playerIndex, priority)} onSelectPlayer={onSelectPlayer} onCopy={onCopy} onOpenExternal={onOpenExternal} />
+            <RosterTeam teamId="b" name={teamBName} players={teamBRoster} words={words} metaLabel={teamBOpeningSide === "t" ? words.startsAsT : teamBOpeningSide === "ct" ? words.startsAsCt : undefined} matchRounds={matchRounds} className="is-team-b" steamProfiles={steamProfiles} retentionPriority={canPrioritizeReplayRoster(teamBSteamIds)} onSetPlayerPriority={(playerIndex, priority) => setRetentionPriority("b", playerIndex, priority)} onSelectPlayer={onSelectPlayer} onCopy={onCopy} onOpenExternal={onOpenExternal} />
             {unassignedRoster.length > 0 ? (
-              <RosterTeam teamId="unknown" name={words.unassignedPlayers} players={unassignedRoster} words={words} countLabel={words.rosterPlayerCount} matchRounds={matchRounds} className="is-unassigned" steamProfiles={steamProfiles} onSelectPlayer={onSelectPlayer} onCopy={onCopy} onOpenExternal={onOpenExternal} />
+              <RosterTeam teamId="unknown" name={words.unassignedPlayers} players={unassignedRoster} words={words} metaLabel={words.rosterPlayerCount.replace("{count}", String(unassignedRoster.length))} matchRounds={matchRounds} className="is-unassigned" steamProfiles={steamProfiles} onSelectPlayer={onSelectPlayer} onCopy={onCopy} onOpenExternal={onOpenExternal} />
             ) : null}
           </div>
         </section>

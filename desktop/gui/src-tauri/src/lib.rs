@@ -1495,6 +1495,8 @@ fn validate_external_url(value: &str) -> CommandResult<String> {
     const LEGACY_INSPECT_PREFIX: &str =
         "steam://rungame/730/76561202255233023/+csgo_econ_action_preview%20";
     const CREDIT_GITHUB_URLS: &[&str] = &[
+        "https://github.com/unicbm/demotracer",
+        "https://github.com/unicbm/demotracer/releases",
         "https://github.com/unicbm",
         "https://github.com/ed0ard",
         "https://github.com/Newbie046",
@@ -5434,6 +5436,15 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .setup(|app| {
+            if let (Some(window), Some(icon)) = (
+                app.get_webview_window("main"),
+                app.default_window_icon().cloned(),
+            ) {
+                window.set_icon(icon)?;
+            }
+            Ok(())
+        })
         .on_window_event(|window, event| {
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
                 window.app_handle().exit(0);
@@ -5555,6 +5566,8 @@ mod tests {
         assert_eq!(validate_external_url(profile).unwrap(), profile);
         assert_eq!(validate_external_url(inspect).unwrap(), inspect);
         for credit_url in [
+            "https://github.com/unicbm/demotracer",
+            "https://github.com/unicbm/demotracer/releases",
             "https://github.com/unicbm",
             "https://github.com/ed0ard",
             "https://github.com/Newbie046",

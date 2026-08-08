@@ -14,7 +14,11 @@ import {
 } from "react";
 import { ArrowIcon, CloseIcon, FolderIcon, PlusIcon, RefreshIcon, ReplayIcon, SearchIcon, TraceMark, TrashIcon } from "../icons";
 import type { TextDictionary } from "../i18n";
-import { demoLibraryTimestamp } from "../library";
+import {
+  demoLibraryTimestamp,
+  normalizeSourceLinkNoteDismissed,
+  SOURCE_LINK_NOTE_DISMISSED_STORAGE_KEY,
+} from "../library";
 import { resolveProfessionalPlayer } from "../professionalPlayers";
 import type { DemoLibraryEntry, DemoLibraryScan, Language, LibraryPlayerSummary } from "../types";
 import { displayMap, MapArtwork, mapArtworkStyle } from "./MapArtwork";
@@ -704,6 +708,21 @@ export function LibraryWorkspace({
   onReparseEntry,
   onDeleteEntry,
 }: LibraryWorkspaceProps) {
+  const [sourceLinkNoteDismissed, setSourceLinkNoteDismissed] = useState(() => {
+    try {
+      return normalizeSourceLinkNoteDismissed(localStorage.getItem(SOURCE_LINK_NOTE_DISMISSED_STORAGE_KEY));
+    } catch {
+      return false;
+    }
+  });
+  const dismissSourceLinkNote = () => {
+    setSourceLinkNoteDismissed(true);
+    try {
+      localStorage.setItem(SOURCE_LINK_NOTE_DISMISSED_STORAGE_KEY, "true");
+    } catch {
+      // The current session still honors the dismissal when storage is unavailable.
+    }
+  };
   const rootsMenuRef = useRef<HTMLDetailsElement | null>(null);
   useEffect(() => {
     const closeOnPointer = (event: PointerEvent) => {
@@ -920,10 +939,11 @@ export function LibraryWorkspace({
               : scan && scan.skipped.length > 0 ? <em>{words.libraryScanNotes.replace("{count}", String(scan.skipped.length))}</em> : null}
           </div>
 
-          {hasMissingSourceArchives ? (
+          {hasMissingSourceArchives && !sourceLinkNoteDismissed ? (
             <aside className="library-source-link-note">
               <FolderIcon size={16} />
               <span><strong>{words.linkSourceDemo}</strong><small>{words.linkSourceDemoHelp}</small></span>
+              <button type="button" onClick={dismissSourceLinkNote}>{words.acknowledge}</button>
             </aside>
           ) : null}
 

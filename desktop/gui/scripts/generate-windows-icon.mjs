@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 const WINDOWS_ICON_SIZES = [256, 128, 96, 64, 48, 40, 36, 32, 28, 24, 20, 16];
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
 const desktopDir = dirname(scriptsDir);
-const sourcePath = join(desktopDir, "app-icon-taskbar.svg");
+const sourcePath = join(desktopDir, "brand", "demotracer-logo-color.svg");
 const outputPath = join(desktopDir, "src-tauri", "icons", "icon.ico");
 const pngOutputs = new Map([
   [32, "32x32.png"],

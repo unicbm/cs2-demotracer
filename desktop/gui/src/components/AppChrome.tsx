@@ -7,8 +7,8 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
 import {
-  ChevronIcon,
   CloseIcon,
+  GithubIcon,
   HelpIcon,
   LanguageIcon,
   LibraryIcon,
@@ -30,6 +30,9 @@ interface AppChromeProps {
   words: TextDictionary;
   sessionTitle: string;
   sessionMeta: string;
+  faqActive: boolean;
+  onOpenFaq: () => void;
+  onOpenGithub: () => void;
   onRequestClose: () => void;
 }
 
@@ -44,13 +47,11 @@ interface AppSidebarProps {
   analysisActive: boolean;
   analysisAvailable: boolean;
   settingsActive: boolean;
-  faqActive: boolean;
   collapsed: boolean;
   onOpenImport: () => void;
   onOpenLibrary: () => void;
   onOpenAnalysis: () => void;
   onOpenSettings: () => void;
-  onOpenFaq: () => void;
   onLanguageChange: (language: Language) => void;
   onToggleTheme: () => void;
   onToggleCollapsed: () => void;
@@ -60,6 +61,9 @@ export function AppChrome({
   words,
   sessionTitle,
   sessionMeta,
+  faqActive,
+  onOpenFaq,
+  onOpenGithub,
   onRequestClose,
 }: AppChromeProps) {
   const [maximized, setMaximized] = useState(false);
@@ -116,6 +120,14 @@ export function AppChrome({
           </div>
         ) : null}
         <div className="titlebar-drag-surface" data-tauri-drag-region />
+        <div className="titlebar-utilities" role="group" aria-label={words.mainNavigation}>
+          <button className={`titlebar-utility${faqActive ? " is-active" : ""}`} type="button" onClick={onOpenFaq} aria-label={words.navFaq} title={words.navFaq}>
+            <HelpIcon size={18} />
+          </button>
+          <button className="titlebar-utility" type="button" onClick={onOpenGithub} aria-label="GitHub" title="GitHub">
+            <GithubIcon size={18} />
+          </button>
+        </div>
         <div className="window-controls" role="group" aria-label={words.windowControls}>
           <button className="window-control" type="button" onClick={minimizeWindow} aria-label={words.minimizeWindow} title={words.minimizeWindow}>
             <MinimizeIcon />
@@ -143,13 +155,11 @@ export function AppSidebar({
   analysisActive,
   analysisAvailable,
   settingsActive,
-  faqActive,
   collapsed,
   onOpenImport,
   onOpenLibrary,
   onOpenAnalysis,
   onOpenSettings,
-  onOpenFaq,
   onLanguageChange,
   onToggleTheme,
   onToggleCollapsed,
@@ -170,9 +180,7 @@ export function AppSidebar({
           aria-expanded={!collapsed}
           title={collapsed ? words.expandSidebar : words.collapseSidebar}
         >
-          <SidebarIcon size={17} />
-          <span>{words.collapseSidebar}</span>
-          <ChevronIcon className="sidebar-collapse-chevron" size={14} />
+          <SidebarIcon size={18} />
         </button>
       </div>
       <div className="sidebar-quick-actions">
@@ -184,7 +192,7 @@ export function AppSidebar({
           aria-current={importActive ? "page" : undefined}
           title={words.navImport}
         >
-          <PlusIcon size={17} />
+          <PlusIcon size={16} />
           <span>{words.navImport}</span>
         </button>
       </div>
@@ -195,17 +203,13 @@ export function AppSidebar({
         </button>
         <button className={itemClass(analysisActive)} type="button" disabled={!analysisAvailable} onClick={onOpenAnalysis} aria-current={analysisActive ? "page" : undefined} title={!analysisAvailable ? words.navAnalysisUnavailable : words.navAnalysis}>
           <ReplayIcon size={17} />
-          <span><b>{words.navAnalysis}</b>{!analysisAvailable ? <small>{words.navAnalysisUnavailable}</small> : null}</span>
+          <span>{words.navAnalysis}</span>
         </button>
 
         <span className="sidebar-section-divider" />
         <button className={itemClass(settingsActive)} type="button" onClick={onOpenSettings} aria-current={settingsActive ? "page" : undefined} title={words.navSettings}>
           <SlidersIcon size={17} />
           <span>{words.navSettings}</span>
-        </button>
-        <button className={itemClass(faqActive)} type="button" onClick={onOpenFaq} aria-current={faqActive ? "page" : undefined} title={words.navFaq}>
-          <HelpIcon size={17} />
-          <span>{words.navFaq}</span>
         </button>
       </nav>
 

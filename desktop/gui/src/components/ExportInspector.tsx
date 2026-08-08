@@ -157,8 +157,8 @@ function InspectorContents({
           </div>
           {settings.exportCosmetics ? (
             <div className="sub-settings">
-              <label><input type="checkbox" checked={settings.exportStickers} onChange={(event) => onChange({ exportStickers: event.target.checked })} />{words.exportStickers}</label>
-              <label><input type="checkbox" checked={settings.exportCharms} onChange={(event) => onChange({ exportCharms: event.target.checked })} />{words.exportCharms}</label>
+              <div><span>{words.exportStickers}</span><SwitchControl checked={settings.exportStickers} label={words.exportStickers} onChange={(exportStickers) => onChange({ exportStickers })} /></div>
+              <div><span>{words.exportCharms}</span><SwitchControl checked={settings.exportCharms} label={words.exportCharms} onChange={(exportCharms) => onChange({ exportCharms })} /></div>
             </div>
           ) : null}
         </section>

@@ -1,4 +1,8 @@
-# DemoTracer
+<p align="center">
+  <img src="desktop/gui/brand/demotracer-logo-color.svg" alt="DemoTracer logo" width="128" height="128">
+</p>
+
+<h1 align="center">DemoTracer</h1>
 
 Trace CS2 demos into bot-executable route replays.
 
